@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>XPyCode Taskpane</title>
+    <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+    <script src="functions.js"></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Loader UI (shown during initialization) -->
+    <div id="loader-container" class="loader-container">
+        <div class="loader-spinner"></div>
+        <p id="loader-status" class="loader-status">Discovering XPyCode server...</p>
+    </div>
+    
+    <!-- Error UI (shown on failure) -->
+    <div id="error-container" class="error-container" style="display: none;">
+        <div class="error-icon">⚠️</div>
+        <h2>Connection Error</h2>
+        <p id="error-message">Could not connect to XPyCode server.</p>
+        <button id="retry-button" class="retry-button">Retry</button>
+        <p class="error-hint">Make sure xpycode_master is running:<br><code>python -m xpycode_master</code></p>
+    </div>
+    
+    <!-- Main content container (populated by versioned module) -->
+    <div id="app-container" style="display: none;">
+    <div id="content">
+    <!-- Rest of HTML content from here -->
+        <div id="header-container">
+            <img src="assets/small_transparent.png" alt="XPyCode Logo" id="header-logo" />
+            <span id="header-title">XPyCode</span>
+            <button id="advanced-actions-btn" title="Advanced Actions">⚡</button>
+            <button id="settings-btn" title="Settings">⚙️</button>
+        </div>
+        <div id="useful-links-container"></div>
+        <div id="status-indicator" class="status-disconnected">Disconnected</div>
+        <div id="error-indicator" style="display:none;"></div>
+        <div class="console-container">
+            <div class="console-toolbar">
+                <button id="show-editor-btn" class="toolbar-btn" title="Show Python Editor" aria-label="Show Python Editor">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="16 18 22 12 16 6"></polyline>
+                        <polyline points="8 6 2 12 8 18"></polyline>
+                    </svg>
+					<span style="white-space: pre-wrap"> Editor</span>
+                </button>
+                
+                <!-- NEW: Binding dropdown button -->
+                <div class="dropdown" id="binding-dropdown">
+                    <button class="toolbar-btn dropdown-toggle" title="Manage Bindings">
+                        <!-- Link/binding icon 🔗 -->
+                        <svg viewBox="0 0 24 24" width="16" height="16">
+                            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" 
+                                  stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>
+                            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" 
+                                  stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>
+                        </svg>
+                        <svg class="dropdown-arrow" viewBox="0 0 12 12" width="8" height="8">
+                            <path d="M2 4 L6 8 L10 4" stroke="currentColor" stroke-width="2" fill="none"/>
+                        </svg>
+                    </button>
+                    <div class="dropdown-menu" id="binding-menu">
+                        <button class="dropdown-item" data-action="new-range">New Range Binding</button>
+                        <button class="dropdown-item" data-action="new-table">New Table Binding</button>
+                        <button class="dropdown-item" data-action="new-text">New Text Binding</button>
+                        <div class="dropdown-separator"></div>
+                        <button class="dropdown-item" data-action="manage">Manage Bindings</button>
+                    </div>
+                </div>
+                
+                <!-- Documentation button -->
+                <button id="btn-docs" class="toolbar-btn" title="Open Documentation" aria-label="Open Documentation">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+                        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+                    </svg>
+                </button>
+                
+                <div class="toolbar-spacer"></div>
+                <button id="clean-console-btn" class="toolbar-btn" title="Clear Console" aria-label="Clear Console">
+                    <svg viewBox="0 0 24 24" width="16" height="16">
+                        <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" fill="none"/>
+                        <line x1="5" y1="5" x2="19" y2="19" stroke="currentColor" stroke-width="2"/>
+                    </svg>
+                </button>
+            </div>
+            <div id="console-output"></div>
+        </div>
+    </div>
+    <div id="settings-overlay" style="display:none;">
+        <div id="settings-dialog">
+            <div id="settings-header">
+                <h2>Settings</h2>
+                <button id="settings-close">✕</button>
+            </div>
+            <div id="settings-content">
+                <div class="settings-section">
+                    <h3>Notifications</h3>
+                    <label class="settings-row">
+                        <input type="checkbox" id="setting-notifications" checked />
+                        <span>Show error notifications</span>
+                    </label>
+                </div>
+                <div class="settings-section">
+                    <h3>Opening</h3>
+                    <label class="settings-row">
+                        <input type="checkbox" id="setting-autostart" />
+                        <span>Start XPyCode when workbook opens</span>
+                    </label>
+                </div>
+                <div class="settings-section">
+                    <h3>Console</h3>
+                    <label class="settings-row">
+                        <input type="checkbox" id="setting-autoscroll" checked />
+                        <span>Auto-scroll to latest output</span>
+                    </label>
+                    <label class="settings-row">
+                        <input type="checkbox" id="setting-wraptext" />
+                        <span>Wrap text in console</span>
+                    </label>
+                </div>
+                <div class="settings-section">
+                    <h3>Events</h3>
+                    <label class="settings-row">
+                        <input type="checkbox" id="setting-enable-editor-events" checked />
+                        <span>Enable Editor Events</span>
+                    </label>
+                </div>
+            </div>
+            <div id="settings-footer">
+                <button id="settings-save">Save</button>
+                <button id="settings-cancel">Cancel</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- New Binding Dialog -->
+    <div class="dialog-overlay" id="new-binding-dialog" style="display: none;">
+        <div class="dialog">
+            <div class="dialog-header">
+                <h3 id="new-binding-title">New Range Binding</h3>
+                <button class="dialog-close" id="new-binding-close">&times;</button>
+            </div>
+            <div class="dialog-body">
+                <label for="binding-name-input">Binding Name:</label>
+                <input type="text" id="binding-name-input" class="dialog-input" 
+                       placeholder="Enter binding name" autocomplete="off">
+                <div class="validation-message" id="binding-validation-message"></div>
+            </div>
+            <div class="dialog-footer">
+                <button class="dialog-btn primary" id="binding-select-btn" disabled>Select Range</button>
+                <button class="dialog-btn" id="binding-cancel-btn">Cancel</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Manage Bindings Dialog -->
+    <div class="dialog-overlay" id="manage-bindings-dialog" style="display: none;">
+        <div class="dialog dialog-large">
+            <div class="dialog-header">
+                <h3>Manage Bindings</h3>
+                <button class="dialog-close" id="manage-bindings-close">&times;</button>
+            </div>
+            <div class="dialog-body" id="manage-bindings-content">
+                <!-- Bindings will be populated dynamically -->
+                <div class="bindings-loading">Loading bindings...</div>
+            </div>
+            <div class="dialog-footer">
+                <button class="dialog-btn" id="manage-bindings-done">Close</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Delete Confirmation Dialog -->
+    <div class="dialog-overlay" id="delete-confirm-dialog" style="display: none;">
+        <div class="dialog dialog-small">
+            <div class="dialog-header">
+                <h3>Delete Binding?</h3>
+            </div>
+            <div class="dialog-body">
+                <p>Are you sure you want to delete binding "<span id="delete-binding-name"></span>"?</p>
+            </div>
+            <div class="dialog-footer">
+                <button class="dialog-btn danger" id="delete-confirm-yes">Yes, Delete</button>
+                <button class="dialog-btn" id="delete-confirm-cancel">Cancel</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Success/Error Popup -->
+    <div class="dialog-overlay" id="message-dialog" style="display: none;">
+        <div class="dialog dialog-small">
+            <div class="dialog-header">
+                <h3 id="message-dialog-title">Success</h3>
+            </div>
+            <div class="dialog-body">
+                <p id="message-dialog-text"></p>
+            </div>
+            <div class="dialog-footer">
+                <button class="dialog-btn primary" id="message-dialog-ok">OK</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- XPyCode Message Box (for Python showMessageBox) -->
+    <div class="dialog-overlay" id="xpycode-message-box" style="display: none;">
+        <div class="dialog dialog-small">
+            <div class="dialog-header">
+                <span id="xpycode-message-box-icon" class="message-box-icon"></span>
+                <h3 id="xpycode-message-box-title">XPyCode</h3>
+            </div>
+            <div class="dialog-body">
+                <p id="xpycode-message-box-text"></p>
+            </div>
+            <div class="dialog-footer">
+                <button class="dialog-btn primary" id="xpycode-message-box-ok">OK</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Advanced Actions Dialog -->
+    <div class="dialog-overlay" id="advanced-actions-dialog" style="display: none;">
+        <div class="dialog dialog-large">
+            <div class="dialog-header">
+                <h3>Advanced Actions</h3>
+                <button class="dialog-close" id="advanced-actions-close">&times;</button>
+            </div>
+            <div class="dialog-body">
+                <div class="tabs-container" id="advanced-actions-tabs">
+                    <!-- Tabs will be built dynamically -->
+                </div>
+                <div id="advanced-actions-content">
+                    <!-- Content will be built dynamically -->
+                </div>
+            </div>
+            <div class="dialog-footer">
+                <button class="dialog-btn" id="advanced-actions-done">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirm Action Dialog -->
+    <div class="dialog-overlay" id="confirm-action-dialog" style="display: none;">
+        <div class="dialog dialog-small">
+            <div class="dialog-header">
+                <h3 id="confirm-action-title">Confirm Action</h3>
+            </div>
+            <div class="dialog-body">
+                <p id="confirm-action-message">Are you sure?</p>
+            </div>
+            <div class="dialog-footer">
+                <button class="dialog-btn danger" id="confirm-action-yes">Yes</button>
+                <button class="dialog-btn" id="confirm-action-cancel">Cancel</button>
+            </div>
+        </div>
+    </div>
+    
+    <script type="module" src="taskpane.js"></script>
+</body>
+</html>
