@@ -1,0 +1,100 @@
+[package]
+name = "cortex_rust"
+version = "0.6.0"
+edition = "2021"
+readme = "README.md"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+rand = "0.8"
+libc = "0.2"
+candle-core = { version = "=0.8.4", default-features = false }
+candle-nn = { version = "=0.8.4", default-features = false }
+anyhow = "1.0"
+thiserror = "2.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# WASM specific dependencies
+wasm-bindgen = { version = "0.2", optional = true }
+js-sys = { version = "0.3", optional = true }
+web-sys = { version = "0.3", optional = true, features = ["console"] }
+console_error_panic_hook = { version = "0.1", optional = true }
+getrandom = { version = "0.3", optional = true, features = ["wasm_js"] }
+
+# CUDA specific dependencies
+cuda-runtime-sys = { version = "0.3.0-alpha.1", optional = true }
+
+# Optional dependencies
+pyo3 = { version = "0.24", features = ["extension-module", "macros"], optional = true }
+byteorder = "1.5.0"
+half = "2.3"
+rayon = "1.8"
+tracing = "0.1"
+tokenizers = { version = "0.22", optional = true }
+safetensors = { version = "0.5", optional = true }
+env_logger = { version = "0.11", optional = true }
+windows-sys = { version = "0.59", features = ["Win32_System_ProcessStatus", "Win32_System_Threading"], optional = true }
+reqwest = { version = "0.12", features = ["blocking"] }
+
+[build-dependencies]
+cc = "1.0"
+anyhow = "1.0"
+glob = "0.3"
+
+# Binaries with extra features (require tokenizers)
+[[bin]]
+name = "test_13b"
+path = "src/bin/test_13b.rs"
+required-features = ["tokenizers"]
+
+[[bin]]
+name = "bench_tinyllama"
+path = "src/bin/bench_tinyllama.rs"
+required-features = ["tokenizers"]
+
+[[bin]]
+name = "quick_gen"
+path = "src/bin/quick_gen.rs"
+required-features = ["tokenizers"]
+
+[[bin]]
+name = "bench_4bit_gpu"
+path = "src/bin/bench_4bit_gpu.rs"
+required-features = ["tokenizers"]
+
+[[bin]]
+name = "run_4bit_llama"
+path = "src/bin/run_4bit_llama.rs"
+required-features = ["tokenizers"]
+
+[[bin]]
+name = "test_4bit_inference"
+path = "src/bin/test_4bit_inference.rs"
+required-features = ["tokenizers"]
+
+[features]
+default = ["python", "tokenizers"]
+python = ["dep:pyo3"]
+safetensors = ["dep:safetensors"]
+tokenizers = ["dep:tokenizers"]
+dev-bins = ["dep:safetensors", "dep:env_logger", "dep:windows-sys", "tokenizers"]
+wasm = [
+    "dep:wasm-bindgen", 
+    "dep:js-sys",
+    "dep:web-sys", 
+    "dep:console_error_panic_hook",
+    "dep:getrandom"
+]
+cuda = [
+    "dep:cuda-runtime-sys",
+    "candle-core/cuda"
+]
+# Flash Attention for optimized attention computation
+flash-attention = []
+
+# WASM target-specific dependencies
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
