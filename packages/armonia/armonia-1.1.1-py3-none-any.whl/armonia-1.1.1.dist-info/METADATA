@@ -1,0 +1,555 @@
+Metadata-Version: 2.4
+Name: armonia
+Version: 1.1.1
+Summary: A Python library for theming facilities
+Project-URL: Homepage, https://gitlab.com/Kencho1/armonia
+Project-URL: Repository, https://gitlab.com/Kencho1/armonia.git
+Project-URL: Issues, https://gitlab.com/Kencho1/armonia/-/issues
+Author: Jesús Alonso Abad
+License: MIT
+License-File: LICENSE
+Keywords: color-management,colors,polychromos,theme,theming
+Classifier: Development Status :: 5 - Production/Stable
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Programming Language :: Python :: 3.14
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Requires-Python: >=3.11
+Requires-Dist: polychromos~=1.4
+Provides-Extra: test
+Requires-Dist: mypy>=1.0.0; extra == 'test'
+Requires-Dist: pytest>=8.0.0; extra == 'test'
+Requires-Dist: ruff>=0.6.0; extra == 'test'
+Requires-Dist: tox>=4.0.0; extra == 'test'
+Description-Content-Type: text/markdown
+
+# Armonia
+
+> **ἁρμονία**
+>
+> _Ancient Greek; noun_
+>
+> The principle of order and beauty through balanced relationships.
+>
+> A joining, joint; harmony, agreement, concord.
+
+A Python library for elegant color theme management with dynamic computed colors and powerful transformation functions.
+
+[![Python Version](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+## Overview
+
+**Armonia** provides a sophisticated yet simple system for managing color themes in Python applications.
+
+Built on top of [polychromos](https://pypi.org/project/polychromos/), it offers:
+
+- **Centralized Theme Management**: Define all your colors in one place
+- **Dynamic Computed Colors**: Colors that automatically update when base colors change
+- **Color Functions**: Comprehensive transformation library (lighter, darker, mix, contrast, etc.)
+- **Palette System**: Organize colors into named collections
+- **Logotype Management**: Store and manage logo URIs alongside your theme colors
+- **Serialization Support**: Save and load themes from JSON/YAML
+- **Safety First**: Recursion protection and conflict detection
+- **Type-Safe**: Full type hints and mypy compatibility
+
+## Installation
+
+```bash
+pip install armonia
+```
+
+Or using `uv`:
+
+```bash
+uv add armonia
+```
+
+## Quick Start
+
+```python
+from armonia import Theme
+from armonia import colorfunctions as cf
+from polychromos.color import HSLColor
+
+# Create a theme
+theme = Theme()
+
+# Set base colors
+theme.set_color("primary", HSLColor.from_hex("#2563eb"))
+theme.set_color("background", HSLColor.from_hex("#ffffff"))
+theme.set_color("text", HSLColor.from_hex("#1f2937"))
+
+# Create computed colors that automatically derive from base colors
+theme.set_computed_color("primary_light", cf.lighter("primary", 0.2))
+theme.set_computed_color("primary_dark", cf.darker("primary", 0.2))
+theme.set_computed_color("text_muted", cf.mix("text", "background", 0.4))
+theme.set_computed_color("on_primary", cf.contrast("primary"))
+
+# Get colors - they resolve automatically
+print(theme.get_color("primary_light").to_css_hex())  # #6b95f1
+
+# Change the base color - computed colors update automatically!
+theme.set_color("primary", HSLColor.from_hex("#7c3aed"))
+print(theme.get_color("primary_light").to_css_hex())  # Now reflects new primary color
+```
+
+## Key Features
+
+### 1. Dynamic Color Computation
+
+Computed colors are functions that derive their values from other colors in the theme. When you change a base color, all computed colors update automatically:
+
+```python
+# Define once
+theme.set_color("brand", HSLColor.from_hex("#ff6b6b"))
+theme.set_computed_color("brand_hover", cf.darker("brand", 0.1))
+theme.set_computed_color("brand_subtle", cf.alpha("brand", 0.3))
+
+# Update anywhere - computed colors follow
+theme.set_color("brand", HSLColor.from_hex("#4ecdc4"))
+# brand_hover and brand_subtle automatically reflect the new brand color
+```
+
+### 2. Comprehensive Color Functions
+
+Over 40 built-in transformation functions organized by purpose:
+
+#### Lightness & Darkness
+```python
+cf.lighter("color", 0.2)      # Increase lightness
+cf.darker("color", 0.2)       # Decrease lightness
+cf.brighten("color", 0.3)     # Significantly lighter
+cf.dim("color", 0.3)          # Significantly darker
+```
+
+#### Saturation
+```python
+cf.saturate("color", 0.2)     # More vivid
+cf.desaturate("color", 0.2)   # More gray
+cf.muted("color", 0.4)        # Significantly less saturated
+cf.grayscale("color")         # Complete desaturation
+```
+
+#### Mixing & Blending
+```python
+cf.mix("color1", "color2", 0.5)           # Blend two colors
+cf.tint("color", 0.2)                     # Mix with white
+cf.shade("color", 0.2)                    # Mix with black
+cf.tone("color", 0.2)                     # Mix with gray
+cf.softer("color", "background", 0.3)     # Shift toward background
+```
+
+#### Opacity
+```python
+cf.alpha("color", 0.5)        # Set opacity
+cf.fade("color", 0.3)         # Fade (alias for alpha)
+```
+
+#### Advanced Transformations
+```python
+cf.rotate_hue("color", 180)                # Rotate hue by degrees
+cf.complementary("color")                  # Opposite on color wheel
+cf.invert("color")                         # Invert lightness
+cf.contrast("color")                       # Choose black or white for contrast
+cf.alias("color")                          # Reference another color
+```
+
+#### Scaling Functions
+```python
+# Multiply mode (direct multiplication)
+cf.scale_lightness("color", 0.7)          # new = old * 0.7
+cf.scale_saturation("color", 0.5)         # new = old * 0.5
+
+# Screen mode (gentler, preserves more original color)
+cf.screen_lightness("color", 0.6)         # new = 1 - (1-old) * 0.6
+cf.screen_saturation("color", 0.4)        # new = 1 - (1-old) * 0.4
+```
+
+#### Multi-Step Transformations
+```python
+# Chain multiple transformations
+theme.set_computed_color(
+    "accent_complex",
+    cf.multi(
+        "accent",
+        lambda c: c.delta(0, 0, 0.1),    # Lighter
+        lambda c: c.delta(0, -0.2, 0),   # Less saturated
+    )
+)
+```
+
+### 3. Color Palettes
+
+Organize related colors into named palettes:
+
+```python
+# Define a palette
+theme.set_palette("primary_scale", [
+    "primary_dark",
+    "primary",
+    "primary_light",
+    "primary_bright"
+])
+
+# Get all colors in the palette
+colors = theme.get_palette("primary_scale")  # Returns List[HSLColor]
+
+# Use for UI scales, gradients, etc.
+theme.set_palette("grays", ["gray_900", "gray_700", "gray_500", "gray_300", "gray_100"])
+```
+
+### 4. Logotype Management
+
+Store and manage logotype URIs in your theme alongside colors:
+
+```python
+# Add logotypes with different URI schemes
+theme.set_logotype("company_logo", "https://example.com/logo.svg")
+theme.set_logotype("dark_logo", "https://example.com/logo-dark.svg")
+theme.set_logotype("favicon", "https://example.com/favicon.ico")
+
+# File URIs for local assets
+theme.set_logotype("local_logo", "file:///path/to/logo.png")
+
+# Data URIs for inline resources
+theme.set_logotype("inline_icon", "data:image/svg+xml,<svg>...</svg>")
+
+# Retrieve logotype URIs
+logo_uri = theme.get_logotype("company_logo")  # Returns the URI string
+print(logo_uri)  # https://example.com/logo.svg
+
+# Remove logotypes
+theme.remove_logotype("old_logo")
+
+# URI validation
+theme.set_logotype("invalid", "not-a-uri")  # Raises InvalidURIError
+```
+
+Logotypes accept any valid URI scheme including `https://`, `http://`, `file://`, `data:`, `ftp://`, and others. URIs are validated to ensure they follow standard format.
+
+### 5. Get All Colors
+
+Retrieve and sort all theme colors:
+
+```python
+# Get all colors sorted by name (alphabetically)
+colors = theme.get_all_colors(sort_by="name")
+
+# Sort by hue (color wheel order)
+colors = theme.get_all_colors(sort_by="hue")
+
+# Sort by saturation (most vivid to most muted)
+colors = theme.get_all_colors(sort_by="saturation", reverse=True)
+
+# Sort by lightness (dark to light)
+colors = theme.get_all_colors(sort_by="lightness")
+
+# Each entry includes name, color, and source
+for entry in colors:
+    print(f"{entry.name}: {entry.color.to_css_hex()} ({entry.source})")
+    # Example: "primary: #2563eb (manual)"
+    # Example: "primary_light: #6b95f1 (computed)"
+```
+
+### 6. Flexible Color Resolution
+
+The `get_color()` method resolves colors with a smart fallback chain:
+
+```python
+# 1. Theme colors (highest priority)
+theme.set_color("brand", HSLColor.from_hex("#ff6b6b"))
+theme.get_color("brand")
+
+# 2. Computed colors
+theme.set_computed_color("brand_light", cf.lighter("brand"))
+theme.get_color("brand_light")
+
+# 3. Web colors (CSS/HTML standard colors)
+theme.get_color("tomato")      # Falls back to web color
+theme.get_color("skyblue")
+
+# 4. Hex colors (direct parsing)
+theme.get_color("#3498db")     # Parses as hex
+```
+
+### 7. Serialization Support
+
+Load themes from dictionaries (compatible with JSON/YAML):
+
+```python
+# Export theme to dictionary
+theme_dict = {
+    "colors": {
+        "primary": "#2563eb",
+        "secondary": "#7c3aed"
+    },
+    "computed_colors": {
+        "primary_light": {
+            "function": "lighter",
+            "args": ["primary", 0.15]
+        }
+    },
+    "palettes": {
+        "primary_scale": ["primary_dark", "primary", "primary_light"]
+    },
+    "logotypes": {
+        "company_logo": "https://example.com/logo.svg",
+        "favicon": "https://example.com/favicon.ico"
+    }
+}
+
+# Load from dictionary
+theme = Theme.from_dict(theme_dict)
+
+# Or load from JSON
+import json
+
+with open("theme.json", "r") as f:
+    theme = Theme.from_dict(json.load(f))
+
+# Access logotypes
+logo_uri = theme.get_logotype("company_logo")
+```
+
+### 8. Safety & Validation
+
+Armonia protects against common errors:
+
+```python
+# Prevents naming conflicts
+theme.set_color("red", ...)          # Error: 'red' is a web color
+theme.set_color("primary", ...)
+theme.set_computed_color("primary", ...) # Error: already exists as manual color
+
+# Detects circular dependencies
+theme.set_computed_color("a", cf.lighter("b"))
+theme.set_computed_color("b", cf.darker("a"))
+theme.get_color("a")  # Raises ColorRecursionError
+
+# Clear error messages
+theme.get_color("nonexistent")  # ColorNotFoundError with helpful message
+```
+
+## Complete Example
+
+Here's a complete example of a modern design system:
+
+```python
+from armonia import Theme
+from armonia import colorfunctions as cf
+from polychromos.color import HSLColor
+
+# Create theme
+theme = Theme()
+
+# Base colors
+theme.set_color("primary", HSLColor.from_hex("#2563eb"))
+theme.set_color("secondary", HSLColor.from_hex("#7c3aed"))
+theme.set_color("accent", HSLColor.from_hex("#f59e0b"))
+theme.set_color("background", HSLColor.from_hex("#ffffff"))
+theme.set_color("surface", HSLColor.from_hex("#f3f4f6"))
+theme.set_color("text", HSLColor.from_hex("#1f2937"))
+
+# Primary variations
+theme.set_computed_color("primary_light", cf.lighter("primary", 0.15))
+theme.set_computed_color("primary_dark", cf.darker("primary", 0.15))
+theme.set_computed_color("primary_muted", cf.muted("primary", 0.4))
+theme.set_computed_color("primary_vivid", cf.saturate("primary", 0.2))
+
+# Semantic colors
+theme.set_computed_color("on_primary", cf.contrast("primary"))
+theme.set_computed_color("on_secondary", cf.contrast("secondary"))
+theme.set_computed_color("on_accent", cf.contrast("accent"))
+
+# Surface variations
+theme.set_computed_color("surface_light", cf.lighter("surface", 0.05))
+theme.set_computed_color("surface_dark", cf.darker("surface", 0.05))
+
+# Text hierarchy
+theme.set_computed_color("text_muted", cf.mix("text", "background", 0.4))
+theme.set_computed_color("text_subtle", cf.alpha("text", 0.6))
+
+# Define palettes
+theme.set_palette("primary_scale", [
+    "primary_dark",
+    "primary",
+    "primary_light",
+    "primary_vivid"
+])
+
+theme.set_palette("surfaces", [
+    "background",
+    "surface",
+    "surface_light",
+    "surface_dark"
+])
+
+theme.set_palette("text_hierarchy", [
+    "text",
+    "text_muted",
+    "text_subtle"
+])
+
+# Add logotypes
+theme.set_logotype("company_logo", "https://example.com/logo.svg")
+theme.set_logotype("dark_logo", "https://example.com/logo-dark.svg")
+theme.set_logotype("favicon", "https://example.com/favicon.ico")
+
+# Use colors
+print(f"Primary: {theme.get_color('primary').to_css_hex()}")
+print(f"Primary Light: {theme.get_color('primary_light').to_css_hex()}")
+print(f"Text on Primary: {theme.get_color('on_primary').to_css_hex()}")
+
+# Get a palette
+primary_colors = theme.get_palette("primary_scale")
+for i, color in enumerate(primary_colors):
+    print(f"  {i}: {color.to_css_hex()}")
+
+# Get logotypes
+print(f"Logo: {theme.get_logotype('company_logo')}")
+```
+
+## Integration Examples
+
+### Flask/Django (CSS Custom Properties)
+
+```python
+from armonia import Theme
+from polychromos.color import HSLColor
+
+theme = Theme()
+# ... setup theme ...
+
+def generate_css():
+    """Generate CSS custom properties from theme."""
+    css_vars = [":root {"]
+
+    for entry in theme.get_all_colors():
+        css_name = entry.name.replace("_", "-")
+        css_value = entry.color.to_css_hex()
+        css_vars.append(f"  --color-{css_name}: {css_value};")
+
+    css_vars.append("}")
+    return "\n".join(css_vars)
+
+# In your Flask/Django view
+@app.route('/theme.css')
+def theme_css():
+    return generate_css(), 200, {'Content-Type': 'text/css'}
+```
+
+### TailwindCSS Integration
+
+```python
+import json
+
+def generate_tailwind_colors(theme):
+    """Generate Tailwind color configuration."""
+    colors = {}
+    for entry in theme.get_all_colors():
+        colors[entry.name] = entry.color.to_css_hex()
+
+    config = {
+        "theme": {
+            "extend": {
+                "colors": colors
+            }
+        }
+    }
+
+    with open("tailwind.theme.json", "w") as f:
+        json.dump(config, f, indent=2)
+```
+
+### Terminal/CLI Applications
+
+```python
+from armonia import Theme
+from polychromos.color import HSLColor
+
+theme = Theme()
+# ... setup theme ...
+
+# Get ANSI color codes for terminal output using polychromos
+def color_text(text, color_name):
+    color = theme.get_color(color_name)
+    # Use 24-bit true color ANSI codes for best color accuracy
+    ansi_code = color.to_ansi_color(foreground=True, bits=24)
+    return f"{ansi_code}{text}\033[0m"
+
+# For backgrounds
+def color_background(text, bg_color_name, fg_color_name="white"):
+    bg_color = theme.get_color(bg_color_name)
+    fg_color = theme.get_color(fg_color_name)
+    bg_ansi = bg_color.to_ansi_color(foreground=False, bits=24)
+    fg_ansi = fg_color.to_ansi_color(foreground=True, bits=24)
+    return f"{bg_ansi}{fg_ansi}{text}\033[0m"
+
+print(color_text("Success!", "success"))
+print(color_text("Warning!", "warning"))
+print(color_background(" INFO ", "primary", "white"))
+```
+
+## Live Example
+
+Check out the interactive example in `examples/color-showcase.py`:
+
+```bash
+cd examples
+uv run color-showcase.py
+```
+
+Then open http://localhost:5000 to see a live demonstration with:
+- Interactive color pickers
+- Real-time computed color updates
+- Light/dark theme switching
+- All colors panel with sorting options
+
+## Development
+
+This project uses `uv` for dependency management.
+
+### Setup
+
+```bash
+# Clone the repository
+git clone https://gitlab.com/Kencho1/armonia.git
+cd armonia
+
+# Install dependencies
+uv sync
+
+# Install with test dependencies
+uv sync --extra test
+```
+
+### Testing
+
+```bash
+# Run tests
+uv run pytest
+
+# Run with coverage
+uv run pytest --cov=armonia
+
+# Type checking
+uv run mypy armonia
+
+# Linting
+uv run ruff check armonia
+```
+
+## License
+
+MIT License - see [LICENSE](LICENSE) file for details.
+
+## Links
+
+- **Repository**: https://gitlab.com/Kencho1/armonia
+- **Issues**: https://gitlab.com/Kencho1/armonia/-/issues
+- **Changelog**: [CHANGELOG.md](CHANGELOG.md)
