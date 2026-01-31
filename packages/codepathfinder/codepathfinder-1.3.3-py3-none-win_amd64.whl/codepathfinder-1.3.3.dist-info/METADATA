@@ -1,0 +1,111 @@
+Metadata-Version: 2.4
+Name: codepathfinder
+Version: 1.3.3
+Summary: Python SDK for code-pathfinder static analysis for modern security teams
+Home-page: https://github.com/shivasurya/code-pathfinder
+Author: code-pathfinder contributors
+License: AGPL-3.0
+Project-URL: Homepage, https://codepathfinder.dev
+Project-URL: Repository, https://github.com/shivasurya/code-pathfinder
+Project-URL: Documentation, https://codepathfinder.dev
+Keywords: sast,security,static-analysis,codeql-alternative
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: GNU Affero General Public License v3
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Security
+Classifier: Topic :: Software Development :: Testing
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0.0; extra == "dev"
+Requires-Dist: pytest-cov>=4.0.0; extra == "dev"
+Requires-Dist: black>=23.0.0; extra == "dev"
+Requires-Dist: mypy>=1.0.0; extra == "dev"
+Requires-Dist: ruff>=0.1.0; extra == "dev"
+Dynamic: home-page
+Dynamic: license-file
+Dynamic: requires-python
+
+# Code Pathfinder Python SDK
+
+Write security rules in Python for Code Pathfinder, an open-source security scanner that combines structural code analysis with AI-powered vulnerability detection.
+
+**What you can do:**
+- Write custom security rules using Python instead of regex or YAML
+- Trace data flows from sources (user input) to sinks (SQL, eval, file operations)
+- Run rules in VS Code, CLI, or CI/CD pipelines
+- Export findings to DefectDojo, GitHub Advanced Security, SARIF, JSON, or CSV
+
+**Documentation**: https://codepathfinder.dev/
+
+## Installation
+
+```bash
+pip install codepathfinder
+```
+
+This installs both the Python SDK and the `pathfinder` CLI binary for your platform.
+
+### Verify Installation
+
+```bash
+# Test CLI binary
+pathfinder --version
+
+# Test Python SDK
+python -c "from codepathfinder import rule, calls; print('SDK OK')"
+```
+
+### Supported Platforms
+
+- Linux (glibc): x86_64, aarch64
+- macOS: arm64 (Apple Silicon), x86_64 (Intel)
+- Windows: x86_64
+
+Source distributions are available for other platforms - the binary will be downloaded automatically on first use.
+
+## Quick Example
+
+```python
+from codepathfinder import rule, flows, calls
+from codepathfinder.presets import PropagationPresets
+
+@rule(id="sql-injection", severity="critical", cwe="CWE-89")
+def detect_sql_injection():
+    """Detects SQL injection vulnerabilities"""
+    return flows(
+        from_sources=calls("request.GET", "request.POST"),
+        to_sinks=calls("execute", "executemany"),
+        sanitized_by=calls("quote_sql"),
+        propagates_through=PropagationPresets.standard(),
+        scope="global"
+    )
+```
+
+## Features
+
+- **Matchers**: `calls()`, `variable()` for pattern matching
+- **Dataflow Analysis**: `flows()` for source-to-sink taint tracking
+- **Propagation**: Explicit propagation primitives (assignment, function args, returns)
+- **Logic Operators**: `And()`, `Or()`, `Not()` for complex rules
+- **JSON IR**: Serializes to JSON for Go executor integration
+
+## Documentation
+
+For detailed documentation, visit https://codepathfinder.dev/
+
+## Requirements
+
+- Python 3.8+
+- No external dependencies (stdlib only!)
+
+## License
+
+AGPL-3.0 - GNU Affero General Public License v3
