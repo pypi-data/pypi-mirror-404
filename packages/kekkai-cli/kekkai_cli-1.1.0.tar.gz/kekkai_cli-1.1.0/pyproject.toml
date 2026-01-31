@@ -1,0 +1,73 @@
+[project]
+name = "kekkai-cli"
+version = "1.1.0"
+description = "Kekkai monorepo (local-first AppSec orchestration + compliance checker)"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "rich>=13.0.0",
+    "jsonschema>=4.20.0",
+    "textual>=0.50.0",
+    "httpx>=0.24.0",
+]
+
+[project.scripts]
+kekkai = "kekkai.cli:main"
+kekkai-portal = "portal.web:main"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = ["dist", "build", ".venv"]
+lint.select = ["E", "F", "I", "B", "UP", "S", "SIM"]
+lint.ignore = ["S101"]  # allow asserts in tests
+lint.per-file-ignores = { "tests/**" = ["S"], "src/kekkai_core/docker/**" = ["S603"], "src/kekkai_core/slsa/**" = ["S603", "S607"], "src/kekkai/github/**" = ["S105"] }
+
+[tool.mypy]
+python_version = "3.12"
+mypy_path = "src"
+strict = true
+warn_unused_configs = true
+warn_return_any = true
+disallow_any_generics = true
+no_implicit_optional = true
+check_untyped_defs = true
+exclude = ["apps/"]
+
+[[tool.mypy.overrides]]
+module = ["cryptography.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+markers = [
+  "integration: integration tests",
+  "e2e: end-to-end tests",
+  "regression: regression/golden tests",
+  "benchmark: performance benchmark tests",
+  "requires_admin: tests requiring admin privileges"
+]
+
+[tool.coverage.run]
+branch = true
+source = ["src"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+fail_under = 69
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+]
+
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
