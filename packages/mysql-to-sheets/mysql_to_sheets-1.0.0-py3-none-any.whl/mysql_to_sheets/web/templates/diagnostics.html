@@ -1,0 +1,267 @@
+{% extends "base.html" %}
+{% from "macros/ui.html" import btn, badge, alert, card, info_row, spinner, code_block %}
+
+{% block title %}Diagnostics - MySQL to Sheets Sync{% endblock %}
+{% block page_title %}System Diagnostics{% endblock %}
+
+{% block content %}
+<div class="flex justify-end mb-6">
+    {{ btn("Export Report", variant="secondary", onclick="exportDiagnostics()") }}
+</div>
+
+<div id="alertContainer"></div>
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+    {# System Info Card #}
+    {% call card(title="System Information") %}
+    {{ info_row("Python Version", system_info.python_version) }}
+    {{ info_row("Implementation", system_info.python_implementation) }}
+    {{ info_row("Platform", system_info.platform[:40] ~ ('...' if system_info.platform|length > 40 else '')) }}
+    {{ info_row("Machine", system_info.machine) }}
+    {{ info_row("App Version", system_info.app_version) }}
+    {% endcall %}
+
+    {# Environment Card #}
+    {% call card(title="Environment") %}
+    <div class="flex justify-between items-center py-2 border-b border-slate-200 dark:border-slate-700">
+        <span class="text-sm text-slate-500 dark:text-slate-400">.env File</span>
+        {% if env_info.env_file_exists %}
+        {{ badge("Found", variant="success", size="sm") }}
+        {% else %}
+        {{ badge("Missing", variant="error", size="sm") }}
+        {% endif %}
+    </div>
+    <div class="flex justify-between items-center py-2 border-b border-slate-200 dark:border-slate-700">
+        <span class="text-sm text-slate-500 dark:text-slate-400">Service Account</span>
+        {% if env_info.service_account_exists %}
+        {{ badge("Found", variant="success", size="sm") }}
+        {% else %}
+        {{ badge("Missing", variant="error", size="sm") }}
+        {% endif %}
+    </div>
+    <div class="mt-4">
+        <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-3">Environment Variables</p>
+        <div class="grid grid-cols-2 gap-2">
+            {% for var_name, is_set in env_info.env_vars_set.items() %}
+            <div class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full flex-shrink-0 {% if is_set %}bg-green-500{% else %}bg-slate-400 dark:bg-slate-600{% endif %}"></span>
+                <span class="text-xs font-mono text-slate-700 dark:text-slate-300 truncate">{{ var_name }}</span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endcall %}
+</div>
+
+{# Paths Card #}
+{% call card(title="Application Paths") %}
+{{ info_row("Config Directory", paths_info.config_dir) }}
+{{ info_row("Data Directory", paths_info.data_dir) }}
+{{ info_row("Logs Directory", paths_info.logs_dir) }}
+{{ info_row("Working Directory", paths_info.working_dir) }}
+{% endcall %}
+
+{# Connectivity Tests Card #}
+{% call card(title="Connectivity Tests") %}
+<div class="flex justify-end mb-4">
+    {{ btn("Run All Tests", variant="primary", onclick="runAllTests()") }}
+</div>
+
+{# Database Test #}
+<div class="bg-slate-50 dark:bg-slate-800/50 rounded-lg p-4 mb-4" id="dbTestCard">
+    <div class="flex justify-between items-center mb-2">
+        <span class="font-semibold text-slate-900 dark:text-white">Database Connection</span>
+        <span id="dbTestStatus" class="inline-flex items-center px-2.5 py-1 text-xs font-semibold rounded-full bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300">Not tested</span>
+    </div>
+    <p class="text-sm text-slate-500 dark:text-slate-400 mb-3">Tests connectivity to your configured database server.</p>
+    {{ btn("Test Database", variant="secondary", size="sm", id="dbTestBtn", onclick="testDatabase()") }}
+    <div id="dbTestResult" class="hidden mt-3 bg-white dark:bg-slate-900 p-3 rounded-md font-mono text-xs text-slate-800 dark:text-slate-200 whitespace-pre-wrap break-words"></div>
+    <div id="dbTestRemediation" class="hidden mt-3 bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 p-3 rounded-md text-sm"></div>
+</div>
+
+{# Google Sheets Test #}
+<div class="bg-slate-50 dark:bg-slate-800/50 rounded-lg p-4 mb-4" id="sheetsTestCard">
+    <div class="flex justify-between items-center mb-2">
+        <span class="font-semibold text-slate-900 dark:text-white">Google Sheets Connection</span>
+        <span id="sheetsTestStatus" class="inline-flex items-center px-2.5 py-1 text-xs font-semibold rounded-full bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300">Not tested</span>
+    </div>
+    <p class="text-sm text-slate-500 dark:text-slate-400 mb-3">Tests connectivity to Google Sheets API using your service account.</p>
+    {{ btn("Test Sheets", variant="secondary", size="sm", id="sheetsTestBtn", onclick="testSheets()") }}
+    <div id="sheetsTestResult" class="hidden mt-3 bg-white dark:bg-slate-900 p-3 rounded-md font-mono text-xs text-slate-800 dark:text-slate-200 whitespace-pre-wrap break-words"></div>
+    <div id="sheetsTestRemediation" class="hidden mt-3 bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 p-3 rounded-md text-sm"></div>
+</div>
+
+{# Config Check #}
+<div class="bg-slate-50 dark:bg-slate-800/50 rounded-lg p-4" id="configCheckCard">
+    <div class="flex justify-between items-center mb-2">
+        <span class="font-semibold text-slate-900 dark:text-white">Configuration Validation</span>
+        <span id="configCheckStatus" class="inline-flex items-center px-2.5 py-1 text-xs font-semibold rounded-full bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300">Not checked</span>
+    </div>
+    <p class="text-sm text-slate-500 dark:text-slate-400 mb-3">Validates your configuration settings.</p>
+    {{ btn("Check Config", variant="secondary", size="sm", id="configCheckBtn", onclick="checkConfig()") }}
+    <div id="configCheckResult" class="hidden mt-3 bg-white dark:bg-slate-900 p-3 rounded-md font-mono text-xs text-slate-800 dark:text-slate-200 whitespace-pre-wrap break-words"></div>
+</div>
+{% endcall %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function showAlert(message, type = 'success') {
+        const container = document.getElementById('alertContainer');
+        const alertClass = type === 'success'
+            ? 'bg-green-50 dark:bg-green-900/30 border-green-200 dark:border-green-800 text-green-800 dark:text-green-300'
+            : 'bg-red-50 dark:bg-red-900/30 border-red-200 dark:border-red-800 text-red-800 dark:text-red-300';
+        container.innerHTML = `<div class="p-4 rounded-md border mb-4 ${alertClass}" role="alert">
+            <p class="text-sm">${message}</p>
+        </div>`;
+        setTimeout(() => container.innerHTML = '', 5000);
+    }
+
+    function getStatusClasses(status) {
+        const classes = {
+            'ok': 'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300',
+            'error': 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300',
+            'warning': 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300',
+            'pending': 'bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300',
+            'unknown': 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300'
+        };
+        return classes[status] || classes['unknown'];
+    }
+
+    function setTestStatus(prefix, status, message) {
+        const statusEl = document.getElementById(`${prefix}Status`);
+        statusEl.className = `inline-flex items-center px-2.5 py-1 text-xs font-semibold rounded-full ${getStatusClasses(status)}`;
+        statusEl.textContent = message;
+    }
+
+    function setTestResult(prefix, result, remediation = null) {
+        const resultEl = document.getElementById(`${prefix}Result`);
+        resultEl.classList.remove('hidden');
+        resultEl.textContent = typeof result === 'object' ? JSON.stringify(result, null, 2) : result;
+
+        const remediationEl = document.getElementById(`${prefix}Remediation`);
+        if (remediation) {
+            remediationEl.classList.remove('hidden');
+            remediationEl.innerHTML = `<strong>Suggestion:</strong> ${remediation}`;
+        } else {
+            remediationEl.classList.add('hidden');
+        }
+    }
+
+    async function testDatabase() {
+        const btn = document.getElementById('dbTestBtn');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="inline-block w-4 h-4 border-2 border-slate-200 border-t-blue-600 rounded-full animate-spin mr-2"></span>Testing...';
+        setTestStatus('dbTest', 'pending', 'Testing...');
+
+        try {
+            const res = await fetch('/api/diagnostics/db', { method: 'POST' });
+            const result = await res.json();
+
+            if (result.status === 'ok') {
+                setTestStatus('dbTest', 'ok', 'Connected');
+                setTestResult('dbTest', `Connected to ${result.db_type} at ${result.db_host}\nServer: ${result.details.server_version}`);
+            } else {
+                setTestStatus('dbTest', 'error', 'Failed');
+                setTestResult('dbTest', result.message, result.remediation);
+            }
+        } catch (err) {
+            setTestStatus('dbTest', 'error', 'Error');
+            setTestResult('dbTest', err.message);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Test Database';
+        }
+    }
+
+    async function testSheets() {
+        const btn = document.getElementById('sheetsTestBtn');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="inline-block w-4 h-4 border-2 border-slate-200 border-t-blue-600 rounded-full animate-spin mr-2"></span>Testing...';
+        setTestStatus('sheetsTest', 'pending', 'Testing...');
+
+        try {
+            const res = await fetch('/api/diagnostics/sheets', { method: 'POST' });
+            const result = await res.json();
+
+            if (result.status === 'ok') {
+                setTestStatus('sheetsTest', 'ok', 'Connected');
+                setTestResult('sheetsTest', `Spreadsheet: ${result.details.spreadsheet_title}\nWorksheets: ${result.details.worksheet_count}\nService Account: ${result.details.service_account_email}`);
+            } else {
+                setTestStatus('sheetsTest', 'error', 'Failed');
+                setTestResult('sheetsTest', result.message, result.remediation);
+            }
+        } catch (err) {
+            setTestStatus('sheetsTest', 'error', 'Error');
+            setTestResult('sheetsTest', err.message);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Test Sheets';
+        }
+    }
+
+    async function checkConfig() {
+        const btn = document.getElementById('configCheckBtn');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="inline-block w-4 h-4 border-2 border-slate-200 border-t-blue-600 rounded-full animate-spin mr-2"></span>Checking...';
+        setTestStatus('configCheck', 'pending', 'Checking...');
+
+        try {
+            const res = await fetch('/api/diagnostics/config');
+            const result = await res.json();
+
+            if (result.status === 'ok') {
+                setTestStatus('configCheck', 'ok', 'Valid');
+                let msg = 'Configuration is valid.';
+                if (result.warnings && result.warnings.length > 0) {
+                    msg += '\n\nWarnings:\n- ' + result.warnings.join('\n- ');
+                }
+                setTestResult('configCheck', msg);
+            } else {
+                setTestStatus('configCheck', 'error', 'Issues Found');
+                let msg = 'Configuration errors:\n- ' + result.errors.join('\n- ');
+                if (result.warnings && result.warnings.length > 0) {
+                    msg += '\n\nWarnings:\n- ' + result.warnings.join('\n- ');
+                }
+                setTestResult('configCheck', msg);
+            }
+        } catch (err) {
+            setTestStatus('configCheck', 'error', 'Error');
+            setTestResult('configCheck', err.message);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Check Config';
+        }
+    }
+
+    async function runAllTests() {
+        await checkConfig();
+        await testDatabase();
+        await testSheets();
+        showAlert('All tests completed');
+    }
+
+    async function exportDiagnostics() {
+        try {
+            const res = await fetch('/api/diagnostics/export');
+            const report = await res.json();
+
+            // Download as JSON file
+            const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `diagnostics-report-${new Date().toISOString().slice(0, 10)}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            showAlert('Diagnostics report exported');
+        } catch (err) {
+            showAlert('Failed to export report: ' + err.message, 'error');
+        }
+    }
+</script>
+{% endblock %}

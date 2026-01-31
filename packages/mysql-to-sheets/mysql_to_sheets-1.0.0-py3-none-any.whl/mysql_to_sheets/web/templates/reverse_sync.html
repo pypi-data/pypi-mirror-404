@@ -1,0 +1,550 @@
+{% extends "base.html" %}
+
+{% block title %}Reverse Sync - MySQL to Sheets{% endblock %}
+
+{% block page_title %}Reverse Sync{% endblock %}
+{% block page_subtitle %}
+<span class="text-muted">Sync data from Google Sheets to your database</span>
+{% endblock %}
+
+{% block content %}
+{% if not feature_available %}
+<div class="card">
+    <div class="alert alert-info" style="display: flex; align-items: center; gap: 1rem; margin: 0;">
+        <div style="flex: 1;">
+            <strong>Reverse Sync</strong> is available on the <strong>{{ required_tier }}</strong> plan and above.
+            <span class="text-muted">You are currently on the {{ current_tier }} plan.</span>
+        </div>
+        <a href="{{ url_for('tier.upgrade') }}" class="btn btn-primary">Upgrade</a>
+    </div>
+</div>
+{% else %}
+
+<div class="grid grid-2">
+    <!-- Configuration Card -->
+    <div class="card">
+        <h2>Source: Google Sheets</h2>
+        <form id="reverseSyncForm">
+            <div class="form-group">
+                <label for="sheetId">Sheet ID</label>
+                <input type="text" id="sheetId" name="sheet_id" class="form-control"
+                       value="{{ default_sheet_id }}"
+                       placeholder="Enter Google Sheet ID or URL">
+                <small class="text-muted">The spreadsheet ID from the URL or the full URL</small>
+            </div>
+
+            <div class="form-group">
+                <label for="worksheet">Worksheet Name</label>
+                <input type="text" id="worksheet" name="worksheet" class="form-control"
+                       value="{{ default_worksheet }}"
+                       placeholder="Sheet1">
+            </div>
+
+            <div class="form-group">
+                <label for="sheetRange">Range (Optional)</label>
+                <input type="text" id="sheetRange" name="sheet_range" class="form-control"
+                       placeholder="A1:E100 (leave empty for all data)">
+                <small class="text-muted">Specific range to read, or leave blank for all data</small>
+            </div>
+
+            <div class="form-group">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="skipHeader" name="skip_header" checked>
+                    <span>First row contains headers</span>
+                </label>
+            </div>
+        </form>
+    </div>
+
+    <!-- Target Configuration Card -->
+    <div class="card">
+        <h2>Target: Database ({{ db_type|upper }})</h2>
+
+        <div class="form-group">
+            <label for="tableName">Target Table</label>
+            <div class="input-group">
+                <select id="tableName" name="table_name" class="form-control">
+                    <option value="">-- Select a table --</option>
+                </select>
+                <button type="button" class="btn btn-secondary" onclick="loadTables()">
+                    Refresh
+                </button>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label for="keyColumns">Key Columns</label>
+            <input type="text" id="keyColumns" name="key_columns" class="form-control"
+                   placeholder="id, email (comma-separated)">
+            <small class="text-muted">Columns used to identify existing rows (required for overwrite/skip modes)</small>
+        </div>
+
+        <div class="form-group">
+            <label for="conflictMode">Conflict Mode</label>
+            <select id="conflictMode" name="conflict_mode" class="form-control">
+                {% for mode in conflict_modes %}
+                <option value="{{ mode.value }}" title="{{ mode.description }}">
+                    {{ mode.label }}
+                </option>
+                {% endfor %}
+            </select>
+            <small class="text-muted" id="conflictModeDescription">Update existing rows, insert new ones</small>
+        </div>
+    </div>
+</div>
+
+<!-- Column Mapping Card -->
+<div class="card">
+    <h2>
+        Column Mapping
+        <span class="badge badge-secondary" style="font-size: 0.75rem;">Optional</span>
+    </h2>
+    <p class="text-muted" style="margin-bottom: 1rem;">
+        Map sheet column headers to database column names. Leave empty to use sheet headers as-is.
+    </p>
+
+    <div id="columnMappingContainer">
+        <div class="column-mapping-row" style="display: flex; gap: 1rem; margin-bottom: 0.5rem; align-items: center;">
+            <input type="text" class="form-control mapping-sheet-col" placeholder="Sheet Column" style="flex: 1;">
+            <span style="color: var(--text-muted);">-></span>
+            <input type="text" class="form-control mapping-db-col" placeholder="DB Column" style="flex: 1;">
+            <button type="button" class="btn btn-secondary btn-sm" onclick="removeMappingRow(this)">Remove</button>
+        </div>
+    </div>
+    <button type="button" class="btn btn-secondary btn-sm" onclick="addMappingRow()" style="margin-top: 0.5rem;">
+        + Add Mapping
+    </button>
+</div>
+
+<!-- Actions Card -->
+<div class="card">
+    <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
+        <button type="button" id="previewBtn" class="btn btn-secondary" onclick="runPreview()">
+            Preview
+        </button>
+        <button type="button" id="executeBtn" class="btn btn-primary" onclick="runSync()">
+            Execute Reverse Sync
+        </button>
+        <span id="statusText" class="text-muted" style="margin-left: auto;"></span>
+    </div>
+</div>
+
+<!-- Results Card (hidden by default) -->
+<div class="card" id="resultsCard" style="display: none;">
+    <h2>Results</h2>
+    <div id="resultsContent"></div>
+</div>
+
+{% endif %}
+
+<style>
+.grid-2 {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1.5rem;
+}
+
+@media (max-width: 900px) {
+    .grid-2 {
+        grid-template-columns: 1fr;
+    }
+}
+
+.form-group {
+    margin-bottom: 1rem;
+}
+
+.form-group label {
+    display: block;
+    font-weight: 500;
+    margin-bottom: 0.25rem;
+}
+
+.form-control {
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 0.375rem;
+    font-size: 0.875rem;
+    background: var(--card-bg);
+}
+
+.form-control:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+}
+
+.input-group {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.input-group .form-control {
+    flex: 1;
+}
+
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"] {
+    width: 1rem;
+    height: 1rem;
+}
+
+.btn {
+    padding: 0.5rem 1rem;
+    border: none;
+    border-radius: 0.375rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.btn-primary {
+    background: var(--primary);
+    color: white;
+}
+
+.btn-primary:hover {
+    background: var(--primary-hover);
+}
+
+.btn-secondary {
+    background: white;
+    color: var(--text);
+    border: 1px solid var(--border);
+}
+
+.btn-secondary:hover {
+    background: var(--bg);
+}
+
+.btn-sm {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+}
+
+.btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.badge {
+    display: inline-block;
+    padding: 0.125rem 0.5rem;
+    border-radius: 0.25rem;
+    font-weight: 500;
+}
+
+.badge-secondary {
+    background: var(--border);
+    color: var(--text-muted);
+}
+
+.text-muted {
+    color: var(--text-muted);
+    font-size: 0.875rem;
+}
+
+.alert {
+    padding: 0.75rem 1rem;
+    border-radius: 0.375rem;
+    margin-bottom: 1rem;
+}
+
+.alert-info {
+    background: #dbeafe;
+    color: #1e40af;
+    border: 1px solid #93c5fd;
+}
+
+.alert-success {
+    background: #dcfce7;
+    color: var(--success);
+    border: 1px solid #86efac;
+}
+
+.alert-error {
+    background: #fee2e2;
+    color: var(--error);
+    border: 1px solid #fca5a5;
+}
+
+.results-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.stat-card {
+    background: var(--bg);
+    padding: 1rem;
+    border-radius: 0.375rem;
+    text-align: center;
+}
+
+.stat-card .stat-value {
+    font-size: 1.5rem;
+    font-weight: 600;
+}
+
+.stat-card .stat-label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+}
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const conflictDescriptions = {
+    'overwrite': 'Update existing rows, insert new ones',
+    'skip': 'Only insert rows that don\'t exist',
+    'error': 'Fail if any row already exists'
+};
+
+document.getElementById('conflictMode').addEventListener('change', function() {
+    document.getElementById('conflictModeDescription').textContent = conflictDescriptions[this.value] || '';
+});
+
+function addMappingRow() {
+    const container = document.getElementById('columnMappingContainer');
+    const row = document.createElement('div');
+    row.className = 'column-mapping-row';
+    row.style.cssText = 'display: flex; gap: 1rem; margin-bottom: 0.5rem; align-items: center;';
+    row.innerHTML = `
+        <input type="text" class="form-control mapping-sheet-col" placeholder="Sheet Column" style="flex: 1;">
+        <span style="color: var(--text-muted);">-></span>
+        <input type="text" class="form-control mapping-db-col" placeholder="DB Column" style="flex: 1;">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="removeMappingRow(this)">Remove</button>
+    `;
+    container.appendChild(row);
+}
+
+function removeMappingRow(btn) {
+    const rows = document.querySelectorAll('.column-mapping-row');
+    if (rows.length > 1) {
+        btn.closest('.column-mapping-row').remove();
+    } else {
+        // Clear the last row instead of removing
+        const row = btn.closest('.column-mapping-row');
+        row.querySelectorAll('input').forEach(input => input.value = '');
+    }
+}
+
+function getColumnMapping() {
+    const mapping = {};
+    document.querySelectorAll('.column-mapping-row').forEach(row => {
+        const sheetCol = row.querySelector('.mapping-sheet-col').value.trim();
+        const dbCol = row.querySelector('.mapping-db-col').value.trim();
+        if (sheetCol && dbCol) {
+            mapping[sheetCol] = dbCol;
+        }
+    });
+    return Object.keys(mapping).length > 0 ? mapping : null;
+}
+
+function getFormData() {
+    return {
+        sheet_id: document.getElementById('sheetId').value.trim(),
+        worksheet: document.getElementById('worksheet').value.trim() || 'Sheet1',
+        sheet_range: document.getElementById('sheetRange').value.trim() || null,
+        skip_header: document.getElementById('skipHeader').checked,
+        table_name: document.getElementById('tableName').value,
+        key_columns: document.getElementById('keyColumns').value.trim(),
+        conflict_mode: document.getElementById('conflictMode').value,
+        column_mapping: getColumnMapping(),
+    };
+}
+
+function validateForm() {
+    const data = getFormData();
+    const errors = [];
+
+    if (!data.sheet_id) errors.push('Sheet ID is required');
+    if (!data.table_name) errors.push('Target table is required');
+
+    const mode = data.conflict_mode;
+    if ((mode === 'overwrite' || mode === 'skip') && !data.key_columns) {
+        errors.push('Key columns are required for ' + mode + ' mode');
+    }
+
+    return errors;
+}
+
+function setStatus(message, isError = false) {
+    const statusEl = document.getElementById('statusText');
+    statusEl.textContent = message;
+    statusEl.style.color = isError ? 'var(--error)' : 'var(--text-muted)';
+}
+
+function showResults(result, isPreview = false) {
+    const card = document.getElementById('resultsCard');
+    const content = document.getElementById('resultsContent');
+
+    card.style.display = 'block';
+
+    if (isPreview) {
+        content.innerHTML = `
+            <div class="alert alert-info">
+                <strong>Preview:</strong> ${result.rows_to_sync} rows would be synced to table "${result.table_name}"
+            </div>
+            <div class="results-stats">
+                <div class="stat-card">
+                    <div class="stat-value">${result.rows_to_sync}</div>
+                    <div class="stat-label">Rows to Sync</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">${result.conflict_mode}</div>
+                    <div class="stat-label">Conflict Mode</div>
+                </div>
+            </div>
+            <p style="margin-top: 1rem; color: var(--text-muted);">${result.message}</p>
+        `;
+    } else {
+        const alertClass = result.success ? 'alert-success' : 'alert-error';
+        content.innerHTML = `
+            <div class="alert ${alertClass}">
+                ${result.success ? 'Reverse sync completed successfully!' : 'Reverse sync failed: ' + (result.error || 'Unknown error')}
+            </div>
+            ${result.success ? `
+            <div class="results-stats">
+                <div class="stat-card">
+                    <div class="stat-value">${result.rows_processed}</div>
+                    <div class="stat-label">Rows Processed</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">${result.rows_inserted}</div>
+                    <div class="stat-label">Inserted</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">${result.rows_updated}</div>
+                    <div class="stat-label">Updated</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">${result.rows_skipped}</div>
+                    <div class="stat-label">Skipped</div>
+                </div>
+            </div>
+            ` : ''}
+            <p style="margin-top: 1rem; color: var(--text-muted);">${result.message}</p>
+        `;
+    }
+
+    // Scroll to results
+    card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+async function loadTables() {
+    const select = document.getElementById('tableName');
+    select.disabled = true;
+
+    try {
+        const response = await fetch('/api/reverse-sync/tables');
+        const data = await response.json();
+
+        if (data.success) {
+            select.innerHTML = '<option value="">-- Select a table --</option>';
+            data.tables.forEach(table => {
+                const option = document.createElement('option');
+                option.value = table;
+                option.textContent = table;
+                select.appendChild(option);
+            });
+            setStatus(`Loaded ${data.tables.length} tables from ${data.database}`);
+        } else {
+            setStatus('Failed to load tables: ' + data.error, true);
+        }
+    } catch (error) {
+        setStatus('Failed to load tables: ' + error.message, true);
+    } finally {
+        select.disabled = false;
+    }
+}
+
+async function runPreview() {
+    const errors = validateForm();
+    if (errors.length > 0) {
+        setStatus(errors.join(', '), true);
+        return;
+    }
+
+    const btn = document.getElementById('previewBtn');
+    btn.disabled = true;
+    btn.textContent = 'Loading...';
+    setStatus('Running preview...');
+
+    try {
+        const response = await fetch('/api/reverse-sync/preview', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(getFormData()),
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            showResults(data.preview, true);
+            setStatus('Preview complete');
+        } else {
+            setStatus('Preview failed: ' + data.error, true);
+        }
+    } catch (error) {
+        setStatus('Preview failed: ' + error.message, true);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Preview';
+    }
+}
+
+async function runSync() {
+    const errors = validateForm();
+    if (errors.length > 0) {
+        setStatus(errors.join(', '), true);
+        return;
+    }
+
+    if (!confirm('This will modify your database. Are you sure you want to proceed?')) {
+        return;
+    }
+
+    const btn = document.getElementById('executeBtn');
+    btn.disabled = true;
+    btn.textContent = 'Syncing...';
+    setStatus('Executing reverse sync...');
+
+    try {
+        const response = await fetch('/api/reverse-sync/execute', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(getFormData()),
+        });
+        const data = await response.json();
+
+        showResults(data.result || data, false);
+        if (data.success) {
+            setStatus('Reverse sync completed!');
+        } else {
+            setStatus('Reverse sync failed', true);
+        }
+    } catch (error) {
+        setStatus('Reverse sync failed: ' + error.message, true);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Execute Reverse Sync';
+    }
+}
+
+// Load tables on page load
+document.addEventListener('DOMContentLoaded', function() {
+    loadTables();
+});
+</script>
+{% endblock %}

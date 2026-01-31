@@ -1,0 +1,272 @@
+{% extends "base.html" %}
+
+{% block title %}Scheduled Jobs - MySQL to Sheets Sync{% endblock %}
+
+{% block breadcrumbs %}
+{{ breadcrumb([{'label': 'Schedule', 'url': '/schedules'}, {'label': 'Scheduled Jobs'}]) }}
+{% endblock %}
+
+{% block page_title %}Scheduled Jobs{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="toolbar">
+        <h2 style="margin-bottom: 0;">Scheduler Status</h2>
+        <button class="btn" onclick="location.reload()">Refresh</button>
+    </div>
+    <div class="scheduler-status">
+        <div class="stat">
+            <span class="stat-label">Status:</span>
+            <span class="badge {% if scheduler_status.running %}badge-success{% else %}badge-warning{% endif %}">
+                {{ 'Running' if scheduler_status.running else 'Stopped' }}
+            </span>
+        </div>
+        <div class="stat">
+            <span class="stat-label">Enabled Jobs:</span>
+            <span class="stat-value">{{ scheduler_status.enabled_jobs }}</span>
+        </div>
+        <div class="stat">
+            <span class="stat-label">Disabled Jobs:</span>
+            <span class="stat-value">{{ scheduler_status.disabled_jobs }}</span>
+        </div>
+        <div class="stat">
+            <span class="stat-label">Timezone:</span>
+            <span class="stat-value">{{ scheduler_status.timezone }}</span>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="toolbar">
+        <h2 style="margin-bottom: 0;">Scheduled Jobs</h2>
+        <button class="btn btn-primary" onclick="openAddModal()">Add Job</button>
+    </div>
+
+    {% if jobs %}
+    <table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Schedule</th>
+                <th>Status</th>
+                <th>Last Run</th>
+                <th>Next Run</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody id="jobsTable">
+            {% for job in jobs %}
+            <tr data-id="{{ job.id }}">
+                <td>{{ job.name }}</td>
+                <td>
+                    {% if job.cron_expression %}
+                    <code>{{ job.cron_expression }}</code>
+                    {% elif job.interval_minutes %}
+                    Every {{ job.interval_minutes }} min
+                    {% endif %}
+                </td>
+                <td>
+                    <span class="badge {% if job.enabled %}badge-success{% elif job.status == 'disabled' %}badge-warning{% else %}badge-info{% endif %}">
+                        {{ job.status | capitalize }}
+                    </span>
+                </td>
+                <td>
+                    {% if job.last_run_at %}
+                    {{ job.last_run_at[:19] }}
+                    {% if job.last_run_success is not none %}
+                    <span class="badge {{ 'badge-success' if job.last_run_success else 'badge-error' }}">
+                        {{ 'OK' if job.last_run_success else 'FAIL' }}
+                    </span>
+                    {% endif %}
+                    {% else %}
+                    <span style="color: var(--text-muted);">Never</span>
+                    {% endif %}
+                </td>
+                <td>{{ job.next_run_at[:16] if job.next_run_at else 'N/A' }}</td>
+                <td class="actions">
+                    <button class="btn btn-sm btn-success" onclick="triggerJob({{ job.id }})">Run</button>
+                    {% if job.enabled %}
+                    <button class="btn btn-sm" onclick="disableJob({{ job.id }})">Disable</button>
+                    {% else %}
+                    <button class="btn btn-sm" onclick="enableJob({{ job.id }})">Enable</button>
+                    {% endif %}
+                    <button class="btn btn-sm btn-danger" onclick="deleteJob({{ job.id }}, '{{ job.name }}')">Delete</button>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+        <p>No scheduled jobs yet. Create one to automate your syncs!</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Add Job Modal -->
+<div id="addModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>Add Scheduled Job</h3>
+            <button class="modal-close" onclick="closeModal('addModal')">&times;</button>
+        </div>
+        <form id="addJobForm" onsubmit="submitAddJob(event)">
+            <div class="form-group">
+                <label for="name">Job Name</label>
+                <input type="text" id="name" name="name" required placeholder="daily-sync">
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="cron_expression">Cron Expression</label>
+                    <input type="text" id="cron_expression" name="cron_expression" placeholder="0 6 * * *">
+                    <span class="help-text">e.g., "0 6 * * *" for daily at 6 AM</span>
+                </div>
+                <div class="form-group">
+                    <label for="interval_minutes">Or Interval (minutes)</label>
+                    <input type="number" id="interval_minutes" name="interval_minutes" min="1" placeholder="60">
+                    <span class="help-text">Run every N minutes</span>
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="sheet_id">Override Sheet ID (optional)</label>
+                <input type="text" id="sheet_id" name="sheet_id" placeholder="Leave blank to use default">
+            </div>
+            <div class="form-group">
+                <label for="worksheet_name">Override Worksheet (optional)</label>
+                <input type="text" id="worksheet_name" name="worksheet_name" placeholder="Leave blank to use default">
+            </div>
+            <div class="form-group">
+                <label for="sql_query">Override SQL Query (optional)</label>
+                <textarea id="sql_query" name="sql_query" placeholder="Leave blank to use default"></textarea>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn" onclick="closeModal('addModal')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Create Job</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function openAddModal() {
+        openModal('addModal');
+    }
+
+    async function submitAddJob(e) {
+        e.preventDefault();
+        const form = e.target;
+        const formData = new FormData(form);
+
+        const data = {
+            name: formData.get('name'),
+            cron_expression: formData.get('cron_expression') || null,
+            interval_minutes: formData.get('interval_minutes') ? parseInt(formData.get('interval_minutes')) : null,
+            sheet_id: formData.get('sheet_id') || null,
+            worksheet_name: formData.get('worksheet_name') || null,
+            sql_query: formData.get('sql_query') || null,
+        };
+
+        if (!data.cron_expression && !data.interval_minutes) {
+            showAlert('Either cron expression or interval is required', 'error');
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/schedules', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            const result = await response.json();
+
+            if (result.success || result.id) {
+                showAlert('Job created successfully', 'success');
+                closeModal('addModal');
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                showAlert(result.message || result.error || 'Failed to create job', 'error');
+            }
+        } catch (error) {
+            showAlert('Network error: ' + error.message, 'error');
+        }
+    }
+
+    async function triggerJob(id) {
+        if (!confirmAction('Run this job now?')) return;
+
+        try {
+            const response = await fetch(`/api/schedules/${id}/trigger`, { method: 'POST' });
+            const result = await response.json();
+
+            if (result.success || result.last_run_at) {
+                showAlert('Job triggered successfully', 'success');
+                setTimeout(() => location.reload(), 1500);
+            } else {
+                showAlert(result.message || result.error || 'Failed to trigger job', 'error');
+            }
+        } catch (error) {
+            showAlert('Network error: ' + error.message, 'error');
+        }
+    }
+
+    async function enableJob(id) {
+        try {
+            const response = await fetch(`/api/schedules/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled: true })
+            });
+            const result = await response.json();
+
+            if (result.success || result.id) {
+                showAlert('Job enabled', 'success');
+                setTimeout(() => location.reload(), 500);
+            } else {
+                showAlert(result.message || 'Failed to enable job', 'error');
+            }
+        } catch (error) {
+            showAlert('Network error: ' + error.message, 'error');
+        }
+    }
+
+    async function disableJob(id) {
+        try {
+            const response = await fetch(`/api/schedules/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled: false })
+            });
+            const result = await response.json();
+
+            if (result.success || result.id) {
+                showAlert('Job disabled', 'success');
+                setTimeout(() => location.reload(), 500);
+            } else {
+                showAlert(result.message || 'Failed to disable job', 'error');
+            }
+        } catch (error) {
+            showAlert('Network error: ' + error.message, 'error');
+        }
+    }
+
+    async function deleteJob(id, name) {
+        if (!confirmAction(`Delete job "${name}"? This cannot be undone.`)) return;
+
+        try {
+            const response = await fetch(`/api/schedules/${id}`, { method: 'DELETE' });
+            const result = await response.json();
+
+            if (result.success) {
+                showAlert('Job deleted', 'success');
+                setTimeout(() => location.reload(), 500);
+            } else {
+                showAlert(result.message || 'Failed to delete job', 'error');
+            }
+        } catch (error) {
+            showAlert('Network error: ' + error.message, 'error');
+        }
+    }
+</script>
+{% endblock %}

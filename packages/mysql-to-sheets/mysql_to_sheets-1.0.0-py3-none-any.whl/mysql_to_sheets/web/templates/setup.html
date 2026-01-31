@@ -1,0 +1,1564 @@
+{% extends "base.html" %}
+
+{% block title %}Setup Wizard - MySQL to Sheets Sync{% endblock %}
+
+{% block nav %}
+{# Use minimal nav for setup wizard #}
+{% from "macros/nav.html" import minimal_nav %}
+{{ minimal_nav() }}
+{% endblock %}
+
+{% block page_title %}Setup Wizard{% endblock %}
+{% block page_subtitle %}
+<span class="version">v{{ version }}</span>
+{% endblock %}
+
+{% block head %}
+<style>
+    /* Setup Wizard Specific Styles */
+    .wizard-container {
+        max-width: 700px;
+        margin: 0 auto;
+    }
+
+    .wizard-progress {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 2rem;
+        position: relative;
+    }
+
+    .wizard-progress::before {
+        content: '';
+        position: absolute;
+        top: 1rem;
+        left: 10%;
+        right: 10%;
+        height: 2px;
+        background: var(--border);
+        z-index: 0;
+    }
+
+    .wizard-step-indicator {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.5rem;
+        position: relative;
+        z-index: 1;
+    }
+
+    .wizard-step-indicator .step-number {
+        width: 2rem;
+        height: 2rem;
+        border-radius: 50%;
+        background: var(--card-bg);
+        border: 2px solid var(--border);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.875rem;
+        font-weight: 600;
+        color: var(--text-muted);
+        transition: all 0.2s ease;
+    }
+
+    .wizard-step-indicator.active .step-number {
+        border-color: var(--primary);
+        color: var(--primary);
+    }
+
+    .wizard-step-indicator.completed .step-number {
+        background: var(--success);
+        border-color: var(--success);
+        color: white;
+    }
+
+    .wizard-step-indicator .step-label {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        white-space: nowrap;
+    }
+
+    .wizard-step-indicator.active .step-label {
+        color: var(--primary);
+        font-weight: 500;
+    }
+
+    .wizard-step-indicator.completed .step-label {
+        color: var(--success);
+    }
+
+    .wizard-step {
+        display: none;
+    }
+
+    .wizard-step.active {
+        display: block;
+    }
+
+    .test-result {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.75rem;
+        border-radius: var(--radius);
+        margin-top: 1rem;
+        font-size: 0.875rem;
+    }
+
+    .test-result.success {
+        background: #dcfce7;
+        color: var(--success);
+    }
+
+    .test-result.error {
+        background: #fee2e2;
+        color: var(--error);
+    }
+
+    .test-result.loading {
+        background: var(--bg);
+        color: var(--text-muted);
+    }
+
+    .wizard-nav {
+        display: flex;
+        justify-content: space-between;
+        margin-top: 1.5rem;
+        padding-top: 1.5rem;
+        border-top: 1px solid var(--border);
+    }
+
+    .success-celebration {
+        text-align: center;
+        padding: 2rem;
+    }
+
+    .success-celebration .icon {
+        width: 4rem;
+        height: 4rem;
+        background: #dcfce7;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 1rem;
+    }
+
+    .success-celebration .icon svg {
+        width: 2rem;
+        height: 2rem;
+        color: var(--success);
+    }
+
+    .success-celebration h2 {
+        margin-bottom: 0.5rem;
+    }
+
+    .success-celebration p {
+        color: var(--text-muted);
+        margin-bottom: 1.5rem;
+    }
+
+    .file-upload-area {
+        border: 2px dashed var(--border);
+        border-radius: var(--radius);
+        padding: 2rem;
+        text-align: center;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+
+    .file-upload-area:hover {
+        border-color: var(--primary);
+        background: rgba(37, 99, 235, 0.02);
+    }
+
+    .file-upload-area.dragover {
+        border-color: var(--primary);
+        background: rgba(37, 99, 235, 0.05);
+    }
+
+    .file-upload-area .upload-icon {
+        font-size: 2rem;
+        color: var(--text-muted);
+        margin-bottom: 0.5rem;
+    }
+
+    .file-upload-area p {
+        color: var(--text-muted);
+        font-size: 0.875rem;
+    }
+
+    .file-upload-area .selected-file {
+        color: var(--success);
+        font-weight: 500;
+    }
+
+    .next-step-card:hover {
+        border-color: var(--primary);
+        background: rgba(37, 99, 235, 0.02);
+    }
+
+    /* Responsive breakpoints */
+    @media (max-width: 900px) {
+        .wizard-container { max-width: 100%; }
+        .wizard-progress { gap: 0.25rem; }
+        .wizard-step-indicator .step-label { font-size: 0.65rem; }
+    }
+
+    @media (max-width: 600px) {
+        .wizard-progress { margin-bottom: 1rem; }
+        .wizard-step-indicator .step-number { width: 1.5rem; height: 1.5rem; font-size: 0.75rem; }
+        .wizard-nav { flex-direction: column; gap: 0.5rem; }
+        .wizard-nav .btn { width: 100%; text-align: center; }
+        .file-upload-area { padding: 1rem; }
+        .success-celebration { padding: 1rem; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="wizard-container">
+    <!-- Progress Indicator -->
+    <div class="wizard-progress">
+        <div class="wizard-step-indicator active" data-step="1">
+            <div class="step-number">1</div>
+            <div class="step-label">Database</div>
+        </div>
+        <div class="wizard-step-indicator" data-step="2">
+            <div class="step-number">2</div>
+            <div class="step-label">Google Sheets</div>
+        </div>
+        <div class="wizard-step-indicator" data-step="3">
+            <div class="step-number">3</div>
+            <div class="step-label">First Query</div>
+        </div>
+        <div class="wizard-step-indicator" data-step="4">
+            <div class="step-number">4</div>
+            <div class="step-label">First Sync</div>
+        </div>
+    </div>
+
+    <!-- Step 1: Database Connection -->
+    <div class="wizard-step active" data-step="1">
+        <div class="card">
+            <h2>Step 1: Database Connection</h2>
+            <p style="color: var(--text-muted); margin-bottom: 1.5rem;">
+                Enter your database credentials. We'll test the connection before proceeding.
+            </p>
+
+            <!-- Demo Mode Option -->
+            <div class="demo-option" style="background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); border: 1px solid #0ea5e9; border-radius: var(--radius); padding: 1rem; margin-bottom: 1.5rem;">
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 1rem;">
+                    <div>
+                        <strong style="color: #0369a1;">Try with demo data</strong>
+                        <p style="color: #64748b; font-size: 0.875rem; margin: 0.25rem 0 0 0;">
+                            No database needed - use sample data to explore the sync features
+                        </p>
+                    </div>
+                    <button type="button" class="btn btn-primary" onclick="setupDemoMode()" style="white-space: nowrap;">
+                        <span id="demoText">Use Demo</span>
+                        <span id="demoLoading" class="loading" style="display: none;"></span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="divider" style="display: flex; align-items: center; margin: 1.5rem 0; color: var(--text-muted);">
+                <div style="flex: 1; height: 1px; background: var(--border);"></div>
+                <span style="padding: 0 1rem; font-size: 0.875rem;">Or connect your database</span>
+                <div style="flex: 1; height: 1px; background: var(--border);"></div>
+            </div>
+
+            <!-- Connection String Option -->
+            <div class="form-group" id="connectionStringGroup">
+                <div class="label-with-help">
+                    <label for="connectionString">Connection String (optional)</label>
+                    <span class="help-icon" title="Paste a database URI to auto-fill the fields below">?</span>
+                </div>
+                <div style="display: flex; gap: 0.5rem;">
+                    <input type="text" id="connectionString" placeholder="mysql://user:pass@host:3306/dbname" style="flex: 1;">
+                    <button type="button" class="btn btn-secondary" onclick="parseConnectionString()" style="white-space: nowrap;">
+                        Parse
+                    </button>
+                </div>
+                <div class="field-hint">Supports mysql://, postgres://, sqlite://, mssql://</div>
+            </div>
+
+            <div id="uriParseResult" class="test-result" style="display: none; margin-bottom: 1rem;"></div>
+
+            <div class="form-group">
+                <div class="label-with-help">
+                    <label for="dbType">Database Type</label>
+                    <span class="help-icon" title="Select your database system">?</span>
+                </div>
+                <select id="dbType" onchange="updatePortDefault()">
+                    <option value="mysql" selected>MySQL</option>
+                    <option value="postgres">PostgreSQL</option>
+                    <option value="sqlite">SQLite</option>
+                    <option value="mssql">SQL Server</option>
+                </select>
+
+                <!-- Database Type Helper for Non-Technical Users -->
+                <details class="db-type-helper" style="margin-top: 0.75rem; background: var(--bg); border-radius: var(--radius); padding: 0;">
+                    <summary style="cursor: pointer; padding: 0.75rem; color: var(--primary); font-size: 0.875rem; font-weight: 500;">
+                        🤔 Not sure which database you have?
+                    </summary>
+                    <div style="padding: 0 0.75rem 0.75rem 0.75rem;">
+                        <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.75rem;">
+                            Here are some clues to help identify your database:
+                        </p>
+                        <div style="display: grid; gap: 0.5rem; font-size: 0.8rem;">
+                            <div style="display: flex; align-items: flex-start; gap: 0.5rem; padding: 0.5rem; background: white; border-radius: 4px;">
+                                <span style="font-size: 1.2rem;">🐬</span>
+                                <div>
+                                    <strong>MySQL</strong> - Most common. Used by WordPress, many web apps.<br>
+                                    <code style="font-size: 0.7rem; background: #f1f5f9; padding: 2px 4px; border-radius: 2px;">mysql://</code> in connection strings
+                                </div>
+                            </div>
+                            <div style="display: flex; align-items: flex-start; gap: 0.5rem; padding: 0.5rem; background: white; border-radius: 4px;">
+                                <span style="font-size: 1.2rem;">🐘</span>
+                                <div>
+                                    <strong>PostgreSQL</strong> - Advanced features, used by Heroku, Railway.<br>
+                                    <code style="font-size: 0.7rem; background: #f1f5f9; padding: 2px 4px; border-radius: 2px;">postgres://</code> or <code style="font-size: 0.7rem; background: #f1f5f9; padding: 2px 4px; border-radius: 2px;">postgresql://</code>
+                                </div>
+                            </div>
+                            <div style="display: flex; align-items: flex-start; gap: 0.5rem; padding: 0.5rem; background: white; border-radius: 4px;">
+                                <span style="font-size: 1.2rem;">📁</span>
+                                <div>
+                                    <strong>SQLite</strong> - Single file database, often <code style="font-size: 0.7rem;">.db</code> or <code style="font-size: 0.7rem;">.sqlite</code> extension.<br>
+                                    No server needed - just a file path
+                                </div>
+                            </div>
+                            <div style="display: flex; align-items: flex-start; gap: 0.5rem; padding: 0.5rem; background: white; border-radius: 4px;">
+                                <span style="font-size: 1.2rem;">🪟</span>
+                                <div>
+                                    <strong>SQL Server</strong> - Microsoft database, enterprise apps.<br>
+                                    <code style="font-size: 0.7rem; background: #f1f5f9; padding: 2px 4px; border-radius: 2px;">mssql://</code> or <code style="font-size: 0.7rem; background: #f1f5f9; padding: 2px 4px; border-radius: 2px;">Server=...</code>
+                                </div>
+                            </div>
+                        </div>
+                        <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.75rem; padding: 0.5rem; background: #fef3c7; border-radius: 4px;">
+                            💡 <strong>Still unsure?</strong> Ask your IT team or check your application's config file for database connection details.
+                        </p>
+                    </div>
+                </details>
+            </div>
+
+            <div id="sqliteFields" style="display: none;">
+                <div class="form-group">
+                    <label for="dbPath">Database File Path</label>
+                    <input type="text" id="dbPath" placeholder="/path/to/database.db">
+                    <div class="field-hint">Full path to your SQLite database file</div>
+                </div>
+            </div>
+
+            <div id="serverFields">
+                <div class="form-row">
+                    <div class="form-group">
+                        <div class="label-with-help">
+                            <label for="dbHost">Host</label>
+                            <span class="help-icon" title="Database server hostname or IP">?</span>
+                        </div>
+                        <input type="text" id="dbHost" value="localhost" placeholder="localhost">
+                    </div>
+                    <div class="form-group">
+                        <div class="label-with-help">
+                            <label for="dbPort">Port</label>
+                            <span class="help-icon" title="Database server port (usually 3306 for MySQL, 5432 for PostgreSQL)">?</span>
+                        </div>
+                        <input type="number" id="dbPort" value="3306" placeholder="3306">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="dbUser">Username</label>
+                        <input type="text" id="dbUser" placeholder="your_db_username">
+                    </div>
+                    <div class="form-group">
+                        <label for="dbPassword">Password</label>
+                        <input type="password" id="dbPassword" placeholder="your_db_password">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <div class="label-with-help">
+                        <label for="dbName">Database Name</label>
+                        <span class="help-icon" title="The name of the database to connect to">?</span>
+                    </div>
+                    <input type="text" id="dbName" placeholder="your_database_name">
+                </div>
+            </div>
+
+            <div id="dbTestResult" class="test-result" style="display: none;"></div>
+
+            <div class="wizard-nav">
+                <div></div>
+                <div style="display: flex; gap: 0.75rem;">
+                    <button type="button" class="btn btn-secondary" onclick="testDatabaseConnection()">
+                        <span id="testDbText">Test Connection</span>
+                        <span id="testDbLoading" class="loading" style="display: none;"></span>
+                    </button>
+                    <button type="button" class="btn btn-primary" onclick="nextStep()" id="step1Next" disabled>
+                        Continue
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Step 2: Google Sheets -->
+    <div class="wizard-step" data-step="2">
+        <div class="card">
+            <h2>Step 2: Google Sheets Access</h2>
+            <p style="color: var(--text-muted); margin-bottom: 1.5rem;">
+                Configure access to Google Sheets using a Service Account.
+            </p>
+
+            <div class="form-group">
+                <div class="label-with-help">
+                    <label>Service Account JSON</label>
+                    <span class="help-icon" title="Download from Google Cloud Console > APIs & Services > Credentials">?</span>
+                </div>
+                <div class="file-upload-area" id="uploadArea" onclick="document.getElementById('serviceAccountFile').click()">
+                    <div class="upload-icon">📁</div>
+                    <p id="uploadText">Click to upload or drag and drop<br><small>service_account.json</small></p>
+                </div>
+                <input type="file" id="serviceAccountFile" accept=".json" style="display: none;" onchange="handleFileSelect(event)">
+
+                <!-- Embedded GCP Setup Guide -->
+                <details class="gcp-setup-guide" style="margin-top: 0.75rem; background: var(--bg); border-radius: var(--radius); padding: 0;">
+                    <summary style="cursor: pointer; padding: 0.75rem; color: var(--primary); font-size: 0.875rem; font-weight: 500;">
+                        📖 Step-by-step: How to get a Service Account JSON
+                    </summary>
+                    <div style="padding: 0 0.75rem 0.75rem 0.75rem; font-size: 0.8rem;">
+                        <ol style="margin: 0; padding-left: 1.25rem; line-height: 1.8;">
+                            <li style="margin-bottom: 0.75rem;">
+                                <strong>Go to Google Cloud Console</strong><br>
+                                <a href="https://console.cloud.google.com" target="_blank" class="btn btn-secondary" style="font-size: 0.75rem; padding: 0.25rem 0.5rem; margin-top: 0.25rem;">
+                                    Open Google Cloud Console →
+                                </a>
+                            </li>
+                            <li style="margin-bottom: 0.75rem;">
+                                <strong>Create a project</strong> (or select existing)<br>
+                                <span style="color: var(--text-muted);">Click the project dropdown at the top → "New Project"</span>
+                            </li>
+                            <li style="margin-bottom: 0.75rem;">
+                                <strong>Enable Google Sheets API</strong><br>
+                                <a href="https://console.cloud.google.com/apis/library/sheets.googleapis.com" target="_blank" style="color: var(--primary);">
+                                    Direct link to enable Sheets API →
+                                </a>
+                            </li>
+                            <li style="margin-bottom: 0.75rem;">
+                                <strong>Create Service Account</strong><br>
+                                <a href="https://console.cloud.google.com/iam-admin/serviceaccounts/create" target="_blank" style="color: var(--primary);">
+                                    Go to Service Accounts →
+                                </a><br>
+                                <span style="color: var(--text-muted);">Name it anything (e.g., "sheets-sync") → Click "Create and Continue" → Skip optional steps → "Done"</span>
+                            </li>
+                            <li style="margin-bottom: 0.75rem;">
+                                <strong>Create JSON Key</strong><br>
+                                <span style="color: var(--text-muted);">Click the service account → "Keys" tab → "Add Key" → "Create new key" → Choose "JSON" → Download</span>
+                            </li>
+                            <li>
+                                <strong>Upload the downloaded JSON file above</strong> ☝️
+                            </li>
+                        </ol>
+                        <div style="margin-top: 0.75rem; padding: 0.5rem; background: #dbeafe; border-radius: 4px;">
+                            <strong style="color: #1e40af;">⏱️ First time?</strong>
+                            <span style="color: #1e40af;">This takes about 5 minutes. You only need to do it once.</span>
+                        </div>
+                    </div>
+                </details>
+            </div>
+
+            <div class="form-group">
+                <div class="label-with-help">
+                    <label for="sheetId">Google Sheet ID or URL</label>
+                    <span class="help-icon" title="The spreadsheet ID from the URL, or paste the full URL">?</span>
+                </div>
+                <input type="text" id="sheetId" placeholder="e.g., 1abc123XYZ or paste full URL">
+                <div class="field-hint">Find in your sheet URL: <code>docs.google.com/spreadsheets/d/<strong>SHEET_ID</strong>/edit</code></div>
+            </div>
+
+            <div class="form-group">
+                <div class="label-with-help">
+                    <label for="worksheetName">Worksheet Name</label>
+                    <span class="help-icon" title="The tab name at the bottom of your spreadsheet">?</span>
+                </div>
+                <input type="text" id="worksheetName" value="Sheet1" placeholder="Sheet1">
+            </div>
+
+            <div id="sheetsTestResult" class="test-result" style="display: none;"></div>
+
+            <div id="shareReminder" class="alert alert-info" style="display: none; margin-top: 1rem;">
+                <strong>Important:</strong> Share your Google Sheet with the service account email:
+                <div style="background: #f1f5f9; padding: 0.5rem; border-radius: 0.25rem; margin-top: 0.5rem; font-family: monospace; font-size: 0.875rem; word-break: break-all;" id="serviceAccountEmail"></div>
+            </div>
+
+            <div class="wizard-nav">
+                <button type="button" class="btn btn-secondary" onclick="prevStep()">Back</button>
+                <div style="display: flex; gap: 0.75rem;">
+                    <button type="button" class="btn btn-secondary" onclick="testSheetsConnection()">
+                        <span id="testSheetsText">Verify Access</span>
+                        <span id="testSheetsLoading" class="loading" style="display: none;"></span>
+                    </button>
+                    <button type="button" class="btn btn-primary" onclick="nextStep()" id="step2Next" disabled>
+                        Continue
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Step 3: First Query -->
+    <div class="wizard-step" data-step="3">
+        <div class="card">
+            <h2>Step 3: Your First Query</h2>
+            <p style="color: var(--text-muted); margin-bottom: 1.5rem;">
+                Select data from your database to sync to Google Sheets.
+            </p>
+
+            <!-- Query Mode Tabs -->
+            <div class="query-mode-tabs">
+                <button type="button" class="tab active" data-mode="visual" onclick="switchQueryMode('visual')">
+                    <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor" style="margin-right: 0.25rem;">
+                        <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm0 6a1 1 0 011-1h12a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6z"/>
+                    </svg>
+                    Visual Builder
+                </button>
+                <button type="button" class="tab" data-mode="sql" onclick="switchQueryMode('sql')">
+                    <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor" style="margin-right: 0.25rem;">
+                        <path fill-rule="evenodd" d="M12.316 3.051a1 1 0 01.633 1.265l-4 12a1 1 0 11-1.898-.632l4-12a1 1 0 011.265-.633zM5.707 6.293a1 1 0 010 1.414L3.414 10l2.293 2.293a1 1 0 11-1.414 1.414l-3-3a1 1 0 010-1.414l3-3a1 1 0 011.414 0zm8.586 0a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 01-1.414-1.414L16.586 10l-2.293-2.293a1 1 0 010-1.414z" clip-rule="evenodd"/>
+                    </svg>
+                    SQL Editor
+                </button>
+            </div>
+
+            <!-- Visual Builder Panel -->
+            <div class="query-panel" id="visual-builder-panel">
+                <!-- Table Selection -->
+                <div class="form-group">
+                    <div class="label-with-help">
+                        <label for="tableSelect">Select Table</label>
+                        <span class="help-icon" title="Choose which table to sync data from">?</span>
+                    </div>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <select id="tableSelect" class="form-select" style="flex: 1;" disabled>
+                            <option value="">-- Test database connection first --</option>
+                        </select>
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="loadTablesForBuilder()" id="loadTablesBtn">
+                            <span id="loadTablesText">Load Tables</span>
+                            <span id="loadTablesLoading" class="loading" style="display: none;"></span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Column Selection (hidden until table selected) -->
+                <div class="form-group" id="columns-section" style="display: none;">
+                    <div class="label-with-help">
+                        <label>Select Columns</label>
+                        <span class="help-icon" title="Choose which columns to include in the sync">?</span>
+                    </div>
+                    <div style="display: flex; gap: 0.5rem; margin-bottom: 0.5rem;">
+                        <button type="button" class="btn-link" onclick="queryBuilder.selectAllColumns()">Select All</button>
+                        <button type="button" class="btn-link" onclick="queryBuilder.deselectAllColumns()">Deselect All</button>
+                    </div>
+                    <div class="column-checkboxes" id="columnsContainer"></div>
+                </div>
+
+                <!-- Filters (hidden until table selected) -->
+                <div class="form-group" id="filters-section" style="display: none;">
+                    <div class="label-with-help">
+                        <label>Filters (optional)</label>
+                        <span class="help-icon" title="Add conditions to filter which rows are synced">?</span>
+                    </div>
+                    <div id="filtersContainer"></div>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="queryBuilder.addFilterRow()" style="margin-top: 0.5rem;">
+                        + Add Filter
+                    </button>
+                </div>
+
+                <!-- Row Limit (hidden until table selected) -->
+                <div class="form-group" id="limit-section" style="display: none;">
+                    <div class="label-with-help">
+                        <label for="limitSlider">Row Limit: <strong id="limitValue">1,000</strong></label>
+                        <span class="help-icon" title="Maximum number of rows to sync">?</span>
+                    </div>
+                    <input type="range" id="limitSlider" min="100" max="10000" step="100" value="1000" class="form-range">
+                    <div class="field-hint">Start with a lower limit for testing, increase for production.</div>
+                </div>
+
+                <!-- Generated SQL Preview -->
+                <div class="form-group" id="generated-sql-section" style="display: none;">
+                    <label style="font-size: 0.75rem; color: var(--text-muted);">Generated SQL:</label>
+                    <pre id="generatedSqlPreview" style="background: var(--bg); padding: 0.75rem; border-radius: var(--radius); font-size: 0.75rem; margin: 0; white-space: pre-wrap; word-break: break-all;"></pre>
+                </div>
+            </div>
+
+            <!-- SQL Editor Panel (hidden by default) -->
+            <div class="query-panel" id="sql-editor-panel" style="display: none;">
+                <div class="form-group">
+                    <div class="label-with-help">
+                        <label for="sqlQuery">SQL Query</label>
+                        <span class="help-icon" title="SELECT query to run against your database">?</span>
+                    </div>
+                    <div class="quick-insert-group">
+                        <button type="button" class="quick-insert-btn" onclick="insertQueryTemplate('basic')">Basic SELECT</button>
+                        <button type="button" class="quick-insert-btn" onclick="insertQueryTemplate('where')">With WHERE</button>
+                        <button type="button" class="quick-insert-btn" onclick="insertQueryTemplate('limit')">With LIMIT</button>
+                        <button type="button" class="quick-insert-btn" onclick="insertQueryTemplate('recent')">Recent Records</button>
+                        <button type="button" class="quick-insert-btn" onclick="insertQueryTemplate('count')">With COUNT</button>
+                    </div>
+                    <textarea id="sqlQuery" rows="6" placeholder="SELECT * FROM table_name LIMIT 100" class="code-editor"></textarea>
+                    <div class="field-hint">Only <code>SELECT</code> queries are allowed. Start with <code>LIMIT 100</code> for testing.</div>
+                </div>
+            </div>
+
+            <div id="queryTestResult" class="test-result" style="display: none;"></div>
+
+            <!-- Query Preview -->
+            <div id="queryPreview" style="display: none; margin-top: 1rem;">
+                <h3 style="font-size: 0.875rem; margin-bottom: 0.5rem;">Preview (<span id="previewRowCount">0</span> rows)</h3>
+                <div style="overflow-x: auto; max-height: 200px; border: 1px solid var(--border); border-radius: var(--radius);">
+                    <table id="previewTable" style="margin-bottom: 0;">
+                        <thead id="previewHead"></thead>
+                        <tbody id="previewBody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="wizard-nav">
+                <button type="button" class="btn btn-secondary" onclick="prevStep()">Back</button>
+                <div style="display: flex; gap: 0.75rem;">
+                    <button type="button" class="btn btn-secondary" onclick="previewQuery()">
+                        <span id="previewQueryText">Preview Data</span>
+                        <span id="previewQueryLoading" class="loading" style="display: none;"></span>
+                    </button>
+                    <button type="button" class="btn btn-primary" onclick="nextStep()" id="step3Next" disabled>
+                        Continue
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Step 4: First Sync -->
+    <div class="wizard-step" data-step="4">
+        <div class="card">
+            <h2>Step 4: Run Your First Sync</h2>
+            <p style="color: var(--text-muted); margin-bottom: 1.5rem;">
+                Review your configuration and run your first sync.
+            </p>
+
+            <div style="background: var(--bg); padding: 1rem; border-radius: var(--radius); margin-bottom: 1.5rem;">
+                <h3 style="font-size: 0.875rem; margin-bottom: 0.75rem;">Configuration Summary</h3>
+                <div class="info-row">
+                    <span class="info-label">Database</span>
+                    <span class="info-value" id="summaryDb">-</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Sheet</span>
+                    <span class="info-value" id="summarySheet">-</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Worksheet</span>
+                    <span class="info-value" id="summaryWorksheet">-</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Query Preview</span>
+                    <span class="info-value" id="summaryQuery" style="font-family: var(--font-mono); font-size: 0.75rem;">-</span>
+                </div>
+            </div>
+
+            <div id="syncResult" style="display: none;"></div>
+
+            <div id="syncSuccess" class="success-celebration" style="display: none;">
+                <div class="icon">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                    </svg>
+                </div>
+                <h2>Sync Complete!</h2>
+                <p><span id="syncRowCount">0</span> rows synced successfully</p>
+                <div style="display: flex; gap: 0.75rem; justify-content: center; margin-bottom: 2rem;">
+                    <a href="/" class="btn btn-primary">Go to Dashboard</a>
+                    <button type="button" class="btn btn-secondary" onclick="saveConfiguration()">Save Configuration</button>
+                </div>
+
+                <!-- Next Steps Cards -->
+                <div style="text-align: left; margin-top: 1.5rem;">
+                    <h3 style="font-size: 1rem; margin-bottom: 1rem; color: var(--text);">What's Next?</h3>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+                        <a href="/schedules" class="next-step-card" style="display: block; padding: 1rem; border: 1px solid var(--border); border-radius: var(--radius); text-decoration: none; color: inherit; transition: border-color 0.2s;">
+                            <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">📅</div>
+                            <strong style="display: block; margin-bottom: 0.25rem;">Schedule Syncs</strong>
+                            <span style="font-size: 0.875rem; color: var(--text-muted);">Run automatically on a schedule</span>
+                        </a>
+                        <a href="/history" class="next-step-card" style="display: block; padding: 1rem; border: 1px solid var(--border); border-radius: var(--radius); text-decoration: none; color: inherit; transition: border-color 0.2s;">
+                            <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">📊</div>
+                            <strong style="display: block; margin-bottom: 0.25rem;">View History</strong>
+                            <span style="font-size: 0.875rem; color: var(--text-muted);">See past sync operations</span>
+                        </a>
+                        <a href="/configs" class="next-step-card" style="display: block; padding: 1rem; border: 1px solid var(--border); border-radius: var(--radius); text-decoration: none; color: inherit; transition: border-color 0.2s;">
+                            <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">⚙️</div>
+                            <strong style="display: block; margin-bottom: 0.25rem;">Add More Sources</strong>
+                            <span style="font-size: 0.875rem; color: var(--text-muted);">Configure additional data</span>
+                        </a>
+                        <a href="https://github.com/BrandonFricke/mysql-to-sheets#readme" target="_blank" class="next-step-card" style="display: block; padding: 1rem; border: 1px solid var(--border); border-radius: var(--radius); text-decoration: none; color: inherit; transition: border-color 0.2s;">
+                            <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">📖</div>
+                            <strong style="display: block; margin-bottom: 0.25rem;">Documentation</strong>
+                            <span style="font-size: 0.875rem; color: var(--text-muted);">Learn advanced features</span>
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Demo mode upsell -->
+                <div id="demoUpsell" style="display: none; margin-top: 1.5rem; padding: 1rem; background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); border: 1px solid #f59e0b; border-radius: var(--radius);">
+                    <strong style="color: #92400e;">Ready for real data?</strong>
+                    <p style="color: #78350f; font-size: 0.875rem; margin: 0.25rem 0 0.75rem 0;">
+                        Connect your actual database to start syncing production data.
+                    </p>
+                    <a href="/setup" class="btn btn-primary" style="background: #f59e0b; border-color: #f59e0b;">Connect Real Database</a>
+                </div>
+            </div>
+
+            <div id="step4Actions" class="wizard-nav">
+                <button type="button" class="btn btn-secondary" onclick="prevStep()">Back</button>
+                <button type="button" class="btn btn-success" onclick="runFirstSync()" id="runSyncBtn">
+                    <span id="runSyncText">Run Sync</span>
+                    <span id="runSyncLoading" class="loading" style="display: none;"></span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/query-builder.js') }}"></script>
+<script>
+    let currentStep = 1;
+    let dbTestPassed = false;
+    let sheetsTestPassed = false;
+    let queryTestPassed = false;
+    let serviceAccountData = null;
+    let isDemo = false;
+    let demoQueries = [];
+
+    const portDefaults = {
+        mysql: 3306,
+        postgres: 5432,
+        mssql: 1433,
+        sqlite: null
+    };
+
+    const FORM_STATE_KEY = 'mysql_to_sheets_setup_state';
+
+    // =========================================================================
+    // Form State Persistence (localStorage)
+    // =========================================================================
+
+    function saveFormState() {
+        const state = {
+            currentStep: currentStep,
+            dbTestPassed: dbTestPassed,
+            sheetsTestPassed: sheetsTestPassed,
+            queryTestPassed: queryTestPassed,
+            isDemo: isDemo,
+            // Step 1 fields
+            dbType: document.getElementById('dbType')?.value,
+            dbHost: document.getElementById('dbHost')?.value,
+            dbPort: document.getElementById('dbPort')?.value,
+            dbUser: document.getElementById('dbUser')?.value,
+            dbName: document.getElementById('dbName')?.value,
+            dbPath: document.getElementById('dbPath')?.value,
+            // Step 2 fields (not password or service account for security)
+            sheetId: document.getElementById('sheetId')?.value,
+            worksheetName: document.getElementById('worksheetName')?.value,
+            // Step 3 fields
+            sqlQuery: document.getElementById('sqlQuery')?.value,
+            savedAt: new Date().toISOString()
+        };
+        try {
+            localStorage.setItem(FORM_STATE_KEY, JSON.stringify(state));
+            showDraftSaved();
+        } catch (e) {
+            console.warn('Failed to save form state:', e);
+        }
+    }
+
+    function loadFormState() {
+        try {
+            const saved = localStorage.getItem(FORM_STATE_KEY);
+            if (!saved) return false;
+
+            const state = JSON.parse(saved);
+
+            // Check if state is recent (within 24 hours)
+            const savedAt = new Date(state.savedAt);
+            const hoursSince = (Date.now() - savedAt.getTime()) / (1000 * 60 * 60);
+            if (hoursSince > 24) {
+                clearFormState();
+                return false;
+            }
+
+            // Restore step 1 fields
+            if (state.dbType) document.getElementById('dbType').value = state.dbType;
+            updatePortDefault();
+            if (state.dbHost) document.getElementById('dbHost').value = state.dbHost;
+            if (state.dbPort) document.getElementById('dbPort').value = state.dbPort;
+            if (state.dbUser) document.getElementById('dbUser').value = state.dbUser;
+            if (state.dbName) document.getElementById('dbName').value = state.dbName;
+            if (state.dbPath) document.getElementById('dbPath').value = state.dbPath;
+
+            // Restore step 2 fields
+            if (state.sheetId) document.getElementById('sheetId').value = state.sheetId;
+            if (state.worksheetName) document.getElementById('worksheetName').value = state.worksheetName;
+
+            // Restore step 3 fields
+            if (state.sqlQuery) document.getElementById('sqlQuery').value = state.sqlQuery;
+
+            // Restore progress state
+            isDemo = state.isDemo || false;
+            dbTestPassed = state.dbTestPassed || false;
+            sheetsTestPassed = state.sheetsTestPassed || false;
+            queryTestPassed = state.queryTestPassed || false;
+
+            // Enable buttons if tests were passed
+            if (dbTestPassed) document.getElementById('step1Next').disabled = false;
+            if (sheetsTestPassed) document.getElementById('step2Next').disabled = false;
+            if (queryTestPassed) document.getElementById('step3Next').disabled = false;
+
+            return true;
+        } catch (e) {
+            console.warn('Failed to load form state:', e);
+            return false;
+        }
+    }
+
+    function clearFormState() {
+        try {
+            localStorage.removeItem(FORM_STATE_KEY);
+        } catch (e) {
+            console.warn('Failed to clear form state:', e);
+        }
+    }
+
+    function showDraftSaved() {
+        // Show brief "Draft saved" indicator
+        let indicator = document.getElementById('draftSavedIndicator');
+        if (!indicator) {
+            indicator = document.createElement('div');
+            indicator.id = 'draftSavedIndicator';
+            indicator.style.cssText = 'position: fixed; bottom: 1rem; right: 1rem; background: var(--success); color: white; padding: 0.5rem 1rem; border-radius: var(--radius); font-size: 0.75rem; opacity: 0; transition: opacity 0.3s; z-index: 1000;';
+            indicator.textContent = '✓ Draft saved';
+            document.body.appendChild(indicator);
+        }
+        indicator.style.opacity = '1';
+        setTimeout(() => { indicator.style.opacity = '0'; }, 2000);
+    }
+
+    // Auto-save on input changes (debounced)
+    let saveTimeout = null;
+    function autoSaveFormState() {
+        if (saveTimeout) clearTimeout(saveTimeout);
+        saveTimeout = setTimeout(saveFormState, 1000);
+    }
+
+    // =========================================================================
+    // Demo Query Suggestions
+    // =========================================================================
+
+    function showDemoQuerySuggestions() {
+        if (!isDemo || !demoQueries || demoQueries.length === 0) return;
+
+        const queryGroup = document.querySelector('.wizard-step[data-step="3"] .form-group');
+        if (!queryGroup) return;
+
+        // Check if suggestions already exist
+        if (document.getElementById('demoQuerySuggestions')) return;
+
+        const suggestionsHtml = `
+            <div id="demoQuerySuggestions" style="background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%); border: 1px solid #22c55e; border-radius: var(--radius); padding: 1rem; margin-bottom: 1rem;">
+                <strong style="color: #166534;">📊 Demo Data Queries</strong>
+                <p style="color: #15803d; font-size: 0.8rem; margin: 0.25rem 0 0.75rem 0;">
+                    Try one of these queries on the demo database:
+                </p>
+                <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
+                    ${demoQueries.map((q, i) => `
+                        <button type="button" class="btn btn-secondary" style="font-size: 0.75rem; padding: 0.375rem 0.75rem;"
+                            onclick="document.getElementById('sqlQuery').value = '${q.replace(/'/g, "\\'")}'; autoSaveFormState();">
+                            ${q.length > 35 ? q.substring(0, 35) + '...' : q}
+                        </button>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+
+        queryGroup.insertAdjacentHTML('afterbegin', suggestionsHtml);
+    }
+
+    // Parse connection string and fill form fields
+    async function parseConnectionString() {
+        const uri = document.getElementById('connectionString').value.trim();
+        const resultEl = document.getElementById('uriParseResult');
+
+        if (!uri) {
+            resultEl.style.display = 'none';
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/setup/parse-uri', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ uri: uri })
+            });
+            const result = await response.json();
+
+            resultEl.style.display = 'flex';
+            if (result.success) {
+                // Fill in form fields
+                document.getElementById('dbType').value = result.db_type;
+                updatePortDefault();
+
+                if (result.db_type === 'sqlite') {
+                    document.getElementById('dbPath').value = result.db_name;
+                } else {
+                    document.getElementById('dbHost').value = result.db_host || '';
+                    document.getElementById('dbPort').value = result.db_port || portDefaults[result.db_type];
+                    document.getElementById('dbUser').value = result.db_user || '';
+                    document.getElementById('dbPassword').value = result.db_password || '';
+                    document.getElementById('dbName').value = result.db_name || '';
+                }
+
+                resultEl.className = 'test-result success';
+                resultEl.textContent = '✓ Connection string parsed successfully';
+            } else {
+                resultEl.className = 'test-result error';
+                resultEl.textContent = '✗ ' + result.message;
+            }
+        } catch (error) {
+            resultEl.style.display = 'flex';
+            resultEl.className = 'test-result error';
+            resultEl.textContent = '✗ ' + error.message;
+        }
+    }
+
+    // Set up demo mode
+    async function setupDemoMode() {
+        const textEl = document.getElementById('demoText');
+        const loadingEl = document.getElementById('demoLoading');
+
+        textEl.style.display = 'none';
+        loadingEl.style.display = 'inline-block';
+
+        try {
+            const response = await fetch('/api/setup/demo', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            const result = await response.json();
+
+            if (result.success) {
+                isDemo = true;
+                demoQueries = result.suggested_queries || [];
+
+                // Fill in demo database info
+                document.getElementById('dbType').value = 'sqlite';
+                updatePortDefault();
+                document.getElementById('dbPath').value = result.db_name;
+
+                // Mark database test as passed for demo
+                dbTestPassed = true;
+                document.getElementById('step1Next').disabled = false;
+
+                // Show success message
+                const resultEl = document.getElementById('dbTestResult');
+                resultEl.style.display = 'flex';
+                resultEl.className = 'test-result success';
+                resultEl.textContent = '✓ Demo database ready! Includes sample customers, orders, and products.';
+
+                showAlert('Demo mode activated! Click Continue to proceed.', 'success');
+            } else {
+                showAlert(result.message || 'Failed to set up demo', 'error');
+            }
+        } catch (error) {
+            showAlert('Error: ' + error.message, 'error');
+        } finally {
+            textEl.style.display = 'inline';
+            loadingEl.style.display = 'none';
+        }
+    }
+
+    function updatePortDefault() {
+        const dbType = document.getElementById('dbType').value;
+        const serverFields = document.getElementById('serverFields');
+        const sqliteFields = document.getElementById('sqliteFields');
+
+        if (dbType === 'sqlite') {
+            serverFields.style.display = 'none';
+            sqliteFields.style.display = 'block';
+        } else {
+            serverFields.style.display = 'block';
+            sqliteFields.style.display = 'none';
+            document.getElementById('dbPort').value = portDefaults[dbType];
+        }
+    }
+
+    function updateStepIndicators() {
+        document.querySelectorAll('.wizard-step-indicator').forEach(el => {
+            const step = parseInt(el.dataset.step);
+            el.classList.remove('active', 'completed');
+            if (step < currentStep) {
+                el.classList.add('completed');
+            } else if (step === currentStep) {
+                el.classList.add('active');
+            }
+        });
+
+        document.querySelectorAll('.wizard-step').forEach(el => {
+            const step = parseInt(el.dataset.step);
+            el.classList.toggle('active', step === currentStep);
+        });
+    }
+
+    function nextStep() {
+        if (currentStep < 4) {
+            currentStep++;
+            updateStepIndicators();
+            if (currentStep === 4) {
+                updateSummary();
+            }
+        }
+    }
+
+    function prevStep() {
+        if (currentStep > 1) {
+            currentStep--;
+            updateStepIndicators();
+        }
+    }
+
+    async function testDatabaseConnection() {
+        const dbType = document.getElementById('dbType').value;
+        const resultEl = document.getElementById('dbTestResult');
+        const textEl = document.getElementById('testDbText');
+        const loadingEl = document.getElementById('testDbLoading');
+
+        textEl.style.display = 'none';
+        loadingEl.style.display = 'inline-block';
+        resultEl.style.display = 'none';
+
+        let data = { db_type: dbType };
+        if (dbType === 'sqlite') {
+            data.db_name = document.getElementById('dbPath').value;
+        } else {
+            data = {
+                ...data,
+                db_host: document.getElementById('dbHost').value,
+                db_port: parseInt(document.getElementById('dbPort').value),
+                db_user: document.getElementById('dbUser').value,
+                db_password: document.getElementById('dbPassword').value,
+                db_name: document.getElementById('dbName').value
+            };
+        }
+
+        try {
+            const response = await fetch('/api/setup/test-db', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            const result = await response.json();
+
+            resultEl.style.display = 'flex';
+            if (result.success) {
+                resultEl.className = 'test-result success';
+                resultEl.textContent = '✓ Connected successfully!';
+                dbTestPassed = true;
+                document.getElementById('step1Next').disabled = false;
+            } else {
+                resultEl.className = 'test-result error';
+                resultEl.textContent = '✗ ' + (result.message || 'Connection failed');
+                if (result.remediation) {
+                    resultEl.textContent += '\n\nFix: ' + result.remediation;
+                }
+                dbTestPassed = false;
+                document.getElementById('step1Next').disabled = true;
+            }
+        } catch (error) {
+            resultEl.style.display = 'flex';
+            resultEl.className = 'test-result error';
+            resultEl.textContent = '✗ ' + error.message;
+            dbTestPassed = false;
+        } finally {
+            textEl.style.display = 'inline';
+            loadingEl.style.display = 'none';
+        }
+    }
+
+    function handleFileSelect(event) {
+        const file = event.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    serviceAccountData = JSON.parse(e.target.result);
+                    document.getElementById('uploadText').innerHTML = '<span class="selected-file">✓ ' + file.name + '</span>';
+
+                    // Show share reminder with email
+                    if (serviceAccountData.client_email) {
+                        document.getElementById('serviceAccountEmail').textContent = serviceAccountData.client_email;
+                        document.getElementById('shareReminder').style.display = 'block';
+                    }
+                } catch (err) {
+                    showAlert('Invalid JSON file', 'error');
+                }
+            };
+            reader.readAsText(file);
+        }
+    }
+
+    // Drag and drop
+    const uploadArea = document.getElementById('uploadArea');
+    uploadArea.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        uploadArea.classList.add('dragover');
+    });
+    uploadArea.addEventListener('dragleave', () => {
+        uploadArea.classList.remove('dragover');
+    });
+    uploadArea.addEventListener('drop', (e) => {
+        e.preventDefault();
+        uploadArea.classList.remove('dragover');
+        if (e.dataTransfer.files.length) {
+            document.getElementById('serviceAccountFile').files = e.dataTransfer.files;
+            handleFileSelect({ target: { files: e.dataTransfer.files } });
+        }
+    });
+
+    async function testSheetsConnection() {
+        const resultEl = document.getElementById('sheetsTestResult');
+        const textEl = document.getElementById('testSheetsText');
+        const loadingEl = document.getElementById('testSheetsLoading');
+
+        if (!serviceAccountData) {
+            showAlert('Please upload a service account JSON file', 'error');
+            return;
+        }
+
+        textEl.style.display = 'none';
+        loadingEl.style.display = 'inline-block';
+        resultEl.style.display = 'none';
+
+        try {
+            const response = await fetch('/api/setup/test-sheets', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    service_account: serviceAccountData,
+                    sheet_id: document.getElementById('sheetId').value,
+                    worksheet: document.getElementById('worksheetName').value
+                })
+            });
+            const result = await response.json();
+
+            resultEl.style.display = 'flex';
+            if (result.success) {
+                resultEl.className = 'test-result success';
+                resultEl.textContent = '✓ Sheet access verified! Found: ' + result.sheet_title;
+                sheetsTestPassed = true;
+                document.getElementById('step2Next').disabled = false;
+            } else {
+                resultEl.className = 'test-result error';
+                resultEl.textContent = '✗ ' + (result.message || 'Access failed');
+                if (result.remediation) {
+                    resultEl.textContent += '\n\nFix: ' + result.remediation;
+                }
+                sheetsTestPassed = false;
+                document.getElementById('step2Next').disabled = true;
+            }
+        } catch (error) {
+            resultEl.style.display = 'flex';
+            resultEl.className = 'test-result error';
+            resultEl.textContent = '✗ ' + error.message;
+            sheetsTestPassed = false;
+        } finally {
+            textEl.style.display = 'inline';
+            loadingEl.style.display = 'none';
+        }
+    }
+
+    function insertQueryTemplate(type) {
+        const templates = {
+            basic: 'SELECT * FROM table_name',
+            where: 'SELECT * FROM table_name WHERE column = "value"',
+            limit: 'SELECT * FROM table_name LIMIT 100',
+            recent: 'SELECT * FROM table_name ORDER BY created_at DESC LIMIT 1000',
+            count: 'SELECT column_name, COUNT(*) as count FROM table_name GROUP BY column_name'
+        };
+        document.getElementById('sqlQuery').value = templates[type] || '';
+        autoSaveFormState();
+    }
+
+    // =========================================================================
+    // Visual Query Builder
+    // =========================================================================
+
+    let queryBuilder = null;
+    let currentQueryMode = 'visual';
+
+    function switchQueryMode(mode) {
+        currentQueryMode = mode;
+
+        // Update tab styles
+        document.querySelectorAll('.query-mode-tabs .tab').forEach(tab => {
+            tab.classList.toggle('active', tab.dataset.mode === mode);
+        });
+
+        // Show/hide panels
+        document.getElementById('visual-builder-panel').style.display = mode === 'visual' ? 'block' : 'none';
+        document.getElementById('sql-editor-panel').style.display = mode === 'sql' ? 'block' : 'none';
+
+        // Sync SQL if switching from visual to sql
+        if (mode === 'sql' && queryBuilder) {
+            const generatedSql = queryBuilder.buildSQL();
+            if (generatedSql) {
+                document.getElementById('sqlQuery').value = generatedSql;
+            }
+        }
+    }
+
+    function getDbParams() {
+        const dbType = document.getElementById('dbType').value;
+        if (dbType === 'sqlite') {
+            return {
+                db_type: dbType,
+                db_name: document.getElementById('dbPath').value
+            };
+        } else {
+            return {
+                db_type: dbType,
+                db_host: document.getElementById('dbHost').value,
+                db_port: document.getElementById('dbPort').value,
+                db_user: document.getElementById('dbUser').value,
+                db_password: document.getElementById('dbPassword').value,
+                db_name: document.getElementById('dbName').value
+            };
+        }
+    }
+
+    async function loadTablesForBuilder() {
+        const textEl = document.getElementById('loadTablesText');
+        const loadingEl = document.getElementById('loadTablesLoading');
+
+        textEl.style.display = 'none';
+        loadingEl.style.display = 'inline-block';
+
+        try {
+            // Initialize query builder if not already done
+            if (!queryBuilder) {
+                queryBuilder = new QueryBuilder({
+                    tableSelect: document.getElementById('tableSelect'),
+                    columnsContainer: document.getElementById('columnsContainer'),
+                    filtersContainer: document.getElementById('filtersContainer'),
+                    limitSlider: document.getElementById('limitSlider'),
+                    limitValue: document.getElementById('limitValue'),
+                    sqlOutput: document.getElementById('sqlQuery'),
+                    onQueryChange: (sql) => {
+                        // Update generated SQL preview
+                        const preview = document.getElementById('generatedSqlPreview');
+                        if (preview) preview.textContent = sql;
+                        if (sql) document.getElementById('generated-sql-section').style.display = 'block';
+                        autoSaveFormState();
+                    }
+                });
+            }
+
+            // Set database parameters
+            queryBuilder.setDbParams(getDbParams());
+
+            // Load tables
+            await queryBuilder.loadTables();
+
+            // Enable table select
+            document.getElementById('tableSelect').disabled = false;
+
+            showAlert('Tables loaded successfully!', 'success');
+        } catch (error) {
+            showAlert('Failed to load tables: ' + error.message, 'error');
+        } finally {
+            textEl.style.display = 'inline';
+            loadingEl.style.display = 'none';
+        }
+    }
+
+    // Override previewQuery to handle visual builder mode
+    const originalPreviewQuery = previewQuery;
+    previewQuery = async function() {
+        // If in visual mode, use the built SQL
+        if (currentQueryMode === 'visual' && queryBuilder) {
+            const sql = queryBuilder.buildSQL();
+            if (sql) {
+                document.getElementById('sqlQuery').value = sql;
+            }
+        }
+        await originalPreviewQuery();
+    };
+
+    async function previewQuery() {
+        const resultEl = document.getElementById('queryTestResult');
+        const textEl = document.getElementById('previewQueryText');
+        const loadingEl = document.getElementById('previewQueryLoading');
+        const previewEl = document.getElementById('queryPreview');
+
+        const query = document.getElementById('sqlQuery').value.trim();
+        if (!query) {
+            showAlert('Please enter a SQL query', 'error');
+            return;
+        }
+
+        textEl.style.display = 'none';
+        loadingEl.style.display = 'inline-block';
+        resultEl.style.display = 'none';
+        previewEl.style.display = 'none';
+
+        const dbType = document.getElementById('dbType').value;
+        let dbConfig = { db_type: dbType };
+        if (dbType === 'sqlite') {
+            dbConfig.db_name = document.getElementById('dbPath').value;
+        } else {
+            dbConfig = {
+                ...dbConfig,
+                db_host: document.getElementById('dbHost').value,
+                db_port: parseInt(document.getElementById('dbPort').value),
+                db_user: document.getElementById('dbUser').value,
+                db_password: document.getElementById('dbPassword').value,
+                db_name: document.getElementById('dbName').value
+            };
+        }
+
+        try {
+            const response = await fetch('/api/setup/preview-query', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...dbConfig, sql_query: query })
+            });
+            const result = await response.json();
+
+            if (result.success) {
+                resultEl.style.display = 'flex';
+                resultEl.className = 'test-result success';
+                resultEl.textContent = '✓ Query executed successfully! ' + result.row_count + ' rows returned.';
+
+                // Show preview table
+                if (result.headers && result.preview_rows) {
+                    document.getElementById('previewRowCount').textContent = result.row_count;
+
+                    const head = document.getElementById('previewHead');
+                    head.innerHTML = '<tr>' + result.headers.map(h => '<th>' + escapeHtml(h) + '</th>').join('') + '</tr>';
+
+                    const body = document.getElementById('previewBody');
+                    body.innerHTML = result.preview_rows.slice(0, 5).map(row =>
+                        '<tr>' + row.map(cell => '<td>' + escapeHtml(String(cell ?? '')) + '</td>').join('') + '</tr>'
+                    ).join('');
+
+                    previewEl.style.display = 'block';
+                }
+
+                queryTestPassed = true;
+                document.getElementById('step3Next').disabled = false;
+            } else {
+                resultEl.style.display = 'flex';
+                resultEl.className = 'test-result error';
+                resultEl.textContent = '✗ ' + (result.message || 'Query failed');
+                queryTestPassed = false;
+                document.getElementById('step3Next').disabled = true;
+            }
+        } catch (error) {
+            resultEl.style.display = 'flex';
+            resultEl.className = 'test-result error';
+            resultEl.textContent = '✗ ' + error.message;
+            queryTestPassed = false;
+        } finally {
+            textEl.style.display = 'inline';
+            loadingEl.style.display = 'none';
+        }
+    }
+
+    function updateSummary() {
+        const dbType = document.getElementById('dbType').value;
+        const dbName = dbType === 'sqlite'
+            ? document.getElementById('dbPath').value
+            : document.getElementById('dbName').value + ' on ' + document.getElementById('dbHost').value;
+
+        document.getElementById('summaryDb').textContent = dbType.toUpperCase() + ': ' + dbName;
+        document.getElementById('summarySheet').textContent = document.getElementById('sheetId').value.substring(0, 30) + '...';
+        document.getElementById('summaryWorksheet').textContent = document.getElementById('worksheetName').value;
+
+        const query = document.getElementById('sqlQuery').value;
+        document.getElementById('summaryQuery').textContent = query.length > 50 ? query.substring(0, 50) + '...' : query;
+    }
+
+    async function runFirstSync() {
+        const resultEl = document.getElementById('syncResult');
+        const textEl = document.getElementById('runSyncText');
+        const loadingEl = document.getElementById('runSyncLoading');
+        const successEl = document.getElementById('syncSuccess');
+        const actionsEl = document.getElementById('step4Actions');
+
+        textEl.style.display = 'none';
+        loadingEl.style.display = 'inline-block';
+        resultEl.style.display = 'none';
+
+        const dbType = document.getElementById('dbType').value;
+        let config = {
+            db_type: dbType,
+            sheet_id: document.getElementById('sheetId').value,
+            worksheet: document.getElementById('worksheetName').value,
+            sql_query: document.getElementById('sqlQuery').value,
+            service_account: serviceAccountData
+        };
+
+        if (dbType === 'sqlite') {
+            config.db_name = document.getElementById('dbPath').value;
+        } else {
+            config.db_host = document.getElementById('dbHost').value;
+            config.db_port = parseInt(document.getElementById('dbPort').value);
+            config.db_user = document.getElementById('dbUser').value;
+            config.db_password = document.getElementById('dbPassword').value;
+            config.db_name = document.getElementById('dbName').value;
+        }
+
+        try {
+            const response = await fetch('/api/setup/run-sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(config)
+            });
+            const result = await response.json();
+
+            if (result.success) {
+                document.getElementById('syncRowCount').textContent = result.rows_synced;
+                successEl.style.display = 'block';
+                actionsEl.style.display = 'none';
+
+                // Show demo upsell if in demo mode
+                if (isDemo) {
+                    document.getElementById('demoUpsell').style.display = 'block';
+                }
+            } else {
+                resultEl.style.display = 'block';
+                resultEl.className = 'alert alert-error';
+                resultEl.textContent = 'Sync failed: ' + (result.message || result.error);
+                if (result.remediation) {
+                    resultEl.textContent += '\n\nFix: ' + result.remediation;
+                }
+            }
+        } catch (error) {
+            resultEl.style.display = 'block';
+            resultEl.className = 'alert alert-error';
+            resultEl.textContent = 'Error: ' + error.message;
+        } finally {
+            textEl.style.display = 'inline';
+            loadingEl.style.display = 'none';
+        }
+    }
+
+    async function saveConfiguration() {
+        // Save to .env file via API
+        const dbType = document.getElementById('dbType').value;
+        let config = {
+            DB_TYPE: dbType,
+            GOOGLE_SHEET_ID: document.getElementById('sheetId').value,
+            GOOGLE_WORKSHEET_NAME: document.getElementById('worksheetName').value,
+            SQL_QUERY: document.getElementById('sqlQuery').value
+        };
+
+        if (dbType === 'sqlite') {
+            config.DB_NAME = document.getElementById('dbPath').value;
+        } else {
+            config.DB_HOST = document.getElementById('dbHost').value;
+            config.DB_PORT = document.getElementById('dbPort').value;
+            config.DB_USER = document.getElementById('dbUser').value;
+            config.DB_PASSWORD = document.getElementById('dbPassword').value;
+            config.DB_NAME = document.getElementById('dbName').value;
+        }
+
+        try {
+            const response = await fetch('/api/setup/save-config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(config)
+            });
+            const result = await response.json();
+            if (result.success) {
+                showAlert('Configuration saved to .env file!', 'success');
+                // Clear draft on successful save
+                clearFormState();
+            } else {
+                showAlert(result.message || 'Failed to save configuration', 'error');
+            }
+        } catch (error) {
+            showAlert('Error saving configuration: ' + error.message, 'error');
+        }
+    }
+
+    // =========================================================================
+    // Initialization
+    // =========================================================================
+
+    document.addEventListener('DOMContentLoaded', function() {
+        // Try to restore saved form state
+        const hasState = loadFormState();
+
+        if (hasState) {
+            // Show a notice that we restored their progress
+            const notice = document.createElement('div');
+            notice.style.cssText = 'background: #dbeafe; border: 1px solid #3b82f6; color: #1e40af; padding: 0.75rem 1rem; border-radius: var(--radius); margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center; font-size: 0.875rem;';
+            notice.innerHTML = `
+                <span>📝 We restored your previous progress. <a href="#" onclick="clearFormState(); location.reload(); return false;" style="color: #1e40af; text-decoration: underline;">Start fresh?</a></span>
+                <button onclick="this.parentElement.remove()" style="background: none; border: none; color: #1e40af; cursor: pointer; font-size: 1.2rem;">&times;</button>
+            `;
+            const container = document.querySelector('.wizard-container');
+            if (container) {
+                container.insertBefore(notice, container.firstChild);
+            }
+        }
+
+        // Add auto-save listeners to all input fields
+        const inputs = document.querySelectorAll('input, select, textarea');
+        inputs.forEach(input => {
+            input.addEventListener('input', autoSaveFormState);
+            input.addEventListener('change', autoSaveFormState);
+        });
+
+        // Show demo query suggestions if we're already in demo mode
+        if (isDemo) {
+            showDemoQuerySuggestions();
+        }
+    });
+
+    // Override nextStep to show demo suggestions when entering step 3
+    const originalNextStep = nextStep;
+    nextStep = function() {
+        originalNextStep();
+        if (currentStep === 3 && isDemo) {
+            showDemoQuerySuggestions();
+        }
+        saveFormState();
+    };
+
+    // Clear form state on successful sync
+    const originalRunFirstSync = runFirstSync;
+    runFirstSync = async function() {
+        await originalRunFirstSync();
+        // If sync was successful, clear the saved state
+        if (document.getElementById('syncSuccess').style.display === 'block') {
+            clearFormState();
+        }
+    };
+</script>
+{% endblock %}

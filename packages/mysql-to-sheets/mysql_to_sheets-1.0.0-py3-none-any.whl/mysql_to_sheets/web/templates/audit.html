@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audit Logs - MySQL to Sheets Sync</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --success: #16a34a;
+            --error: #dc2626;
+            --warning: #ca8a04;
+            --bg: #f8fafc;
+            --card-bg: #ffffff;
+            --border: #e2e8f0;
+            --text: #1e293b;
+            --text-muted: #64748b;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.5;
+            padding: 2rem;
+        }
+
+        .container { max-width: 1400px; margin: 0 auto; }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
+
+        h1 { font-size: 1.5rem; font-weight: 600; }
+        .version { color: var(--text-muted); font-size: 0.875rem; }
+
+        nav {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 2rem;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 1rem;
+        }
+
+        nav a {
+            color: var(--text-muted);
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem;
+        }
+
+        nav a:hover { background: var(--border); color: var(--text); }
+        nav a.active { background: var(--primary); color: white; }
+
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .card h2 { font-size: 1.125rem; font-weight: 600; margin-bottom: 1rem; }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            border: 1px solid var(--border);
+            border-radius: 0.375rem;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            background: var(--card-bg);
+            color: var(--text);
+            text-decoration: none;
+        }
+
+        .btn:hover { background: var(--bg); }
+        .btn-primary { background: var(--primary); color: white; border-color: var(--primary); }
+        .btn-primary:hover { background: var(--primary-hover); }
+        .btn-success { background: var(--success); color: white; border-color: var(--success); }
+        .btn-sm { padding: 0.25rem 0.5rem; font-size: 0.75rem; }
+
+        table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+        th, td { padding: 0.5rem 0.75rem; text-align: left; border-bottom: 1px solid var(--border); }
+        th { font-weight: 500; color: var(--text-muted); font-size: 0.75rem; text-transform: uppercase; }
+        tr:hover { background: var(--bg); }
+
+        .badge {
+            display: inline-flex;
+            padding: 0.25rem 0.5rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+
+        .badge-success { background: #dcfce7; color: #166534; }
+        .badge-warning { background: #fef3c7; color: #92400e; }
+        .badge-error { background: #fee2e2; color: #991b1b; }
+        .badge-info { background: #dbeafe; color: #1e40af; }
+        .badge-neutral { background: #f1f5f9; color: #475569; }
+
+        .filters {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+            align-items: flex-end;
+        }
+
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        .filter-group label {
+            font-size: 0.75rem;
+            font-weight: 500;
+            color: var(--text-muted);
+        }
+
+        input[type="date"],
+        input[type="number"],
+        select {
+            padding: 0.5rem 0.75rem;
+            border: 1px solid var(--border);
+            border-radius: 0.375rem;
+            font-size: 0.875rem;
+            font-family: inherit;
+        }
+
+        input:focus, select:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+
+        .toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .toolbar-actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            color: var(--text-muted);
+        }
+
+        .alert {
+            padding: 0.75rem 1rem;
+            border-radius: 0.375rem;
+            margin-bottom: 1rem;
+        }
+
+        .alert-error { background: #fee2e2; border: 1px solid #fecaca; color: var(--error); }
+        .alert-success { background: #dcfce7; border: 1px solid #bbf7d0; color: var(--success); }
+
+        .pagination {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 1rem;
+        }
+
+        .pagination-info {
+            color: var(--text-muted);
+            font-size: 0.875rem;
+        }
+
+        .pagination-buttons {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .truncate {
+            max-width: 200px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .stat-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 0.5rem;
+            padding: 1rem;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--primary);
+        }
+
+        .stat-label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active { display: flex; }
+
+        .modal-content {
+            background: var(--card-bg);
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            width: 100%;
+            max-width: 600px;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .modal-header h3 { font-size: 1.125rem; font-weight: 600; }
+        .modal-close { cursor: pointer; font-size: 1.5rem; color: var(--text-muted); }
+
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .detail-label { font-weight: 500; color: var(--text-muted); }
+
+        pre {
+            background: var(--bg);
+            padding: 0.75rem;
+            border-radius: 0.375rem;
+            font-size: 0.75rem;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div>
+                <h1>Audit Logs</h1>
+                <span class="version">{{ current_user.organization_name }}</span>
+            </div>
+            <div>
+                <span style="margin-right: 1rem;">{{ current_user.email }}</span>
+                <a href="{{ url_for('auth.logout') }}" class="btn btn-sm">Logout</a>
+            </div>
+        </header>
+
+        <nav>
+            <a href="{{ url_for('dashboard.index') }}">Dashboard</a>
+            <a href="{{ url_for('dashboard.schedules') }}">Schedules</a>
+            <a href="{{ url_for('dashboard.users') }}">Users</a>
+            <a href="{{ url_for('dashboard.configs_page') }}">Configs</a>
+            <a href="{{ url_for('dashboard.webhooks_page') }}">Webhooks</a>
+            <a href="{{ url_for('dashboard.audit_page') }}" class="active">Audit Logs</a>
+        </nav>
+
+        <div id="alertContainer"></div>
+
+        <!-- Stats Cards -->
+        <div class="stats-grid" id="statsGrid">
+            <div class="stat-card">
+                <div class="stat-value" id="statTotal">-</div>
+                <div class="stat-label">Total Logs</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="statOldest">-</div>
+                <div class="stat-label">Oldest Log</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="statNewest">-</div>
+                <div class="stat-label">Newest Log</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="statRetention">-</div>
+                <div class="stat-label">Retention Days</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="toolbar">
+                <h2>Audit Trail</h2>
+                <div class="toolbar-actions">
+                    <select id="exportFormat">
+                        <option value="csv">CSV</option>
+                        <option value="json">JSON</option>
+                        <option value="jsonl">JSON Lines</option>
+                        <option value="cef">CEF (SIEM)</option>
+                    </select>
+                    <button class="btn btn-primary" onclick="exportLogs()">Export</button>
+                </div>
+            </div>
+
+            <div class="filters">
+                <div class="filter-group">
+                    <label>From Date</label>
+                    <input type="date" id="filterFromDate">
+                </div>
+                <div class="filter-group">
+                    <label>To Date</label>
+                    <input type="date" id="filterToDate">
+                </div>
+                <div class="filter-group">
+                    <label>Action</label>
+                    <select id="filterAction">
+                        <option value="">All Actions</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>Resource Type</label>
+                    <select id="filterResourceType">
+                        <option value="">All Types</option>
+                        <option value="sync">sync</option>
+                        <option value="auth">auth</option>
+                        <option value="user">user</option>
+                        <option value="config">config</option>
+                        <option value="schedule">schedule</option>
+                        <option value="webhook">webhook</option>
+                        <option value="audit">audit</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>&nbsp;</label>
+                    <button class="btn" onclick="loadLogs()">Apply Filters</button>
+                </div>
+                <div class="filter-group">
+                    <label>&nbsp;</label>
+                    <button class="btn" onclick="clearFilters()">Clear</button>
+                </div>
+            </div>
+
+            <table id="logsTable">
+                <thead>
+                    <tr>
+                        <th>Timestamp</th>
+                        <th>Action</th>
+                        <th>Resource</th>
+                        <th>User</th>
+                        <th>IP Address</th>
+                        <th>Rows</th>
+                        <th>Details</th>
+                    </tr>
+                </thead>
+                <tbody id="logsBody">
+                    <tr>
+                        <td colspan="7" class="empty-state">Loading...</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <div class="pagination">
+                <div class="pagination-info" id="paginationInfo">
+                    Showing 0 of 0 logs
+                </div>
+                <div class="pagination-buttons">
+                    <button class="btn btn-sm" id="prevBtn" onclick="prevPage()" disabled>Previous</button>
+                    <button class="btn btn-sm" id="nextBtn" onclick="nextPage()" disabled>Next</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Detail Modal -->
+    <div class="modal" id="detailModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Audit Log Details</h3>
+                <span class="modal-close" onclick="closeModal()">&times;</span>
+            </div>
+            <div id="detailContent">
+                <!-- Populated by JavaScript -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentOffset = 0;
+        const limit = 50;
+        let totalLogs = 0;
+
+        function showAlert(message, type = 'success') {
+            const container = document.getElementById('alertContainer');
+            container.innerHTML = `<div class="alert alert-${type}">${message}</div>`;
+            setTimeout(() => container.innerHTML = '', 5000);
+        }
+
+        function formatDate(isoString) {
+            if (!isoString) return '-';
+            const date = new Date(isoString);
+            return date.toLocaleString();
+        }
+
+        function formatDateShort(isoString) {
+            if (!isoString) return '-';
+            const date = new Date(isoString);
+            return date.toLocaleDateString();
+        }
+
+        function getActionBadgeClass(action) {
+            if (action.includes('failed') || action.includes('deleted')) return 'badge-error';
+            if (action.includes('completed') || action.includes('created') || action.includes('login')) return 'badge-success';
+            if (action.includes('started') || action.includes('updated')) return 'badge-warning';
+            return 'badge-neutral';
+        }
+
+        async function loadStats() {
+            try {
+                const res = await fetch('/api/audit/stats');
+                const data = await res.json();
+                if (data.success) {
+                    document.getElementById('statTotal').textContent = data.stats.total_logs.toLocaleString();
+                    document.getElementById('statOldest').textContent = formatDateShort(data.stats.oldest_log);
+                    document.getElementById('statNewest').textContent = formatDateShort(data.stats.newest_log);
+                    document.getElementById('statRetention').textContent = data.stats.retention_days;
+                }
+            } catch (err) {
+                console.error('Failed to load stats:', err);
+            }
+        }
+
+        async function loadActions() {
+            try {
+                const res = await fetch('/api/audit/actions');
+                const data = await res.json();
+                if (data.success) {
+                    const select = document.getElementById('filterAction');
+                    data.actions.forEach(action => {
+                        const opt = document.createElement('option');
+                        opt.value = action;
+                        opt.textContent = action;
+                        select.appendChild(opt);
+                    });
+                }
+            } catch (err) {
+                console.error('Failed to load actions:', err);
+            }
+        }
+
+        async function loadLogs() {
+            const params = new URLSearchParams();
+            params.set('limit', limit);
+            params.set('offset', currentOffset);
+
+            const fromDate = document.getElementById('filterFromDate').value;
+            const toDate = document.getElementById('filterToDate').value;
+            const action = document.getElementById('filterAction').value;
+            const resourceType = document.getElementById('filterResourceType').value;
+
+            if (fromDate) params.set('from_date', fromDate + 'T00:00:00');
+            if (toDate) params.set('to_date', toDate + 'T23:59:59');
+            if (action) params.set('action', action);
+            if (resourceType) params.set('resource_type', resourceType);
+
+            try {
+                const res = await fetch('/api/audit?' + params.toString());
+                const data = await res.json();
+
+                const tbody = document.getElementById('logsBody');
+
+                if (!data.success) {
+                    tbody.innerHTML = `<tr><td colspan="7" class="empty-state">Error loading logs</td></tr>`;
+                    return;
+                }
+
+                totalLogs = data.total;
+
+                if (data.logs.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="7" class="empty-state">No audit logs found</td></tr>`;
+                } else {
+                    tbody.innerHTML = data.logs.map(log => `
+                        <tr>
+                            <td style="white-space: nowrap;">${formatDate(log.timestamp)}</td>
+                            <td>
+                                <span class="badge ${getActionBadgeClass(log.action)}">${log.action}</span>
+                            </td>
+                            <td>
+                                ${log.resource_type}${log.resource_id ? '/' + log.resource_id : ''}
+                            </td>
+                            <td>${log.user_id || 'system'}</td>
+                            <td>${log.source_ip || '-'}</td>
+                            <td>${log.rows_affected !== null ? log.rows_affected : '-'}</td>
+                            <td>
+                                <button class="btn btn-sm" onclick='showDetail(${JSON.stringify(log)})'>View</button>
+                            </td>
+                        </tr>
+                    `).join('');
+                }
+
+                updatePagination();
+            } catch (err) {
+                console.error('Failed to load logs:', err);
+                document.getElementById('logsBody').innerHTML =
+                    `<tr><td colspan="7" class="empty-state">Error loading logs</td></tr>`;
+            }
+        }
+
+        function updatePagination() {
+            const start = totalLogs > 0 ? currentOffset + 1 : 0;
+            const end = Math.min(currentOffset + limit, totalLogs);
+            document.getElementById('paginationInfo').textContent =
+                `Showing ${start}-${end} of ${totalLogs.toLocaleString()} logs`;
+
+            document.getElementById('prevBtn').disabled = currentOffset === 0;
+            document.getElementById('nextBtn').disabled = currentOffset + limit >= totalLogs;
+        }
+
+        function prevPage() {
+            if (currentOffset > 0) {
+                currentOffset = Math.max(0, currentOffset - limit);
+                loadLogs();
+            }
+        }
+
+        function nextPage() {
+            if (currentOffset + limit < totalLogs) {
+                currentOffset += limit;
+                loadLogs();
+            }
+        }
+
+        function clearFilters() {
+            document.getElementById('filterFromDate').value = '';
+            document.getElementById('filterToDate').value = '';
+            document.getElementById('filterAction').value = '';
+            document.getElementById('filterResourceType').value = '';
+            currentOffset = 0;
+            loadLogs();
+        }
+
+        function showDetail(log) {
+            const content = document.getElementById('detailContent');
+            content.innerHTML = `
+                <div class="detail-row">
+                    <span class="detail-label">ID</span>
+                    <span>${log.id}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Timestamp</span>
+                    <span>${formatDate(log.timestamp)}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Action</span>
+                    <span class="badge ${getActionBadgeClass(log.action)}">${log.action}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Resource Type</span>
+                    <span>${log.resource_type}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Resource ID</span>
+                    <span>${log.resource_id || '-'}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">User ID</span>
+                    <span>${log.user_id || 'system'}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Source IP</span>
+                    <span>${log.source_ip || '-'}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">User Agent</span>
+                    <span style="word-break: break-all;">${log.user_agent || '-'}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Rows Affected</span>
+                    <span>${log.rows_affected !== null ? log.rows_affected : '-'}</span>
+                </div>
+                ${log.query_executed ? `
+                <div style="margin-top: 1rem;">
+                    <div class="detail-label" style="margin-bottom: 0.5rem;">SQL Query (sanitized)</div>
+                    <pre>${log.query_executed}</pre>
+                </div>
+                ` : ''}
+                ${log.metadata ? `
+                <div style="margin-top: 1rem;">
+                    <div class="detail-label" style="margin-bottom: 0.5rem;">Metadata</div>
+                    <pre>${JSON.stringify(log.metadata, null, 2)}</pre>
+                </div>
+                ` : ''}
+            `;
+            document.getElementById('detailModal').classList.add('active');
+        }
+
+        function closeModal() {
+            document.getElementById('detailModal').classList.remove('active');
+        }
+
+        function exportLogs() {
+            const params = new URLSearchParams();
+            const format = document.getElementById('exportFormat').value;
+            params.set('format', format);
+
+            const fromDate = document.getElementById('filterFromDate').value;
+            const toDate = document.getElementById('filterToDate').value;
+            const action = document.getElementById('filterAction').value;
+
+            if (fromDate) params.set('from_date', fromDate + 'T00:00:00');
+            if (toDate) params.set('to_date', toDate + 'T23:59:59');
+            if (action) params.set('action', action);
+
+            // Trigger download
+            window.location.href = '/api/audit/export?' + params.toString();
+            showAlert('Export started - file download should begin shortly');
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            loadStats();
+            loadActions();
+            loadLogs();
+        });
+    </script>
+</body>
+</html>

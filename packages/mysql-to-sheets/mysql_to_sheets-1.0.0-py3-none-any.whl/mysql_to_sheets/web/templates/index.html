@@ -1,0 +1,604 @@
+{% extends "base.html" %}
+{% from "macros/ui.html" import btn, btn_link, alert, badge, table, empty_state %}
+
+{% block title %}MySQL to Sheets Sync Dashboard{% endblock %}
+
+{% block page_title %}MySQL to Sheets Sync{% endblock %}
+
+{% block content %}
+{% if show_first_run_banner %}
+<div class="alert alert-warning" style="position: relative; padding-right: 3rem;">
+    <strong>Welcome!</strong> A default admin account has been created:<br>
+    <strong>Email:</strong> {{ default_admin_email }}<br>
+    <strong>Password:</strong> {{ default_admin_password }}<br>
+    <em style="font-size: 0.85em;">Please change your password immediately after logging in.</em>
+    <br><a href="/login" style="color: #1d4ed8; font-weight: 500;">Click here to login</a>
+    <form action="/dismiss-banner" method="POST" style="position: absolute; top: 0.5rem; right: 0.5rem;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" style="background: none; border: none; cursor: pointer; font-size: 1.25rem; color: #92400e; padding: 0.25rem;" title="Dismiss">&times;</button>
+    </form>
+</div>
+{% endif %}
+
+<!-- Main Sync Form (Primary Action) -->
+<div class="card">
+    <h2>Run Sync</h2>
+    <form id="syncForm">
+        <!-- Google Sheet Section -->
+        <div class="form-group">
+            <div class="label-with-help">
+                <label for="favorite_sheet">Use Saved Sheet</label>
+                <span class="help-icon" title="Select a previously saved sheet configuration">?</span>
+            </div>
+            <div class="form-row" style="grid-template-columns: 1fr auto auto auto;">
+                <select id="favorite_sheet" onchange="applyFavoriteSheet()">
+                    <option value="">-- Select a saved sheet --</option>
+                </select>
+                <button type="button" class="save-btn" onclick="saveCurrentSheet()" title="Save current sheet as favorite">Save</button>
+                <button type="button" class="remove-btn" id="remove_sheet_btn" onclick="removeSelectedSheet()" title="Remove selected favorite" style="display:none;">&times;</button>
+                <a href="/favorites" class="manage-link" title="Manage all favorites">Manage</a>
+            </div>
+        </div>
+        <div class="form-group">
+            <div class="label-with-help">
+                <label for="sheet_id">Google Sheet ID or URL</label>
+                <span class="help-icon" title="Copy from your spreadsheet URL: docs.google.com/spreadsheets/d/SHEET_ID/edit">?</span>
+            </div>
+            <input type="text" id="sheet_id" name="sheet_id"
+                   value="{{ config.sheet_id }}"
+                   placeholder="e.g., 1abc123XYZ or paste full URL">
+            <div class="field-hint">Find in your sheet URL: <code>docs.google.com/spreadsheets/d/<strong>SHEET_ID</strong>/edit</code></div>
+        </div>
+        <div class="form-group">
+            <div class="label-with-help">
+                <label for="worksheet">Worksheet Name</label>
+                <span class="help-icon" title="The tab name at the bottom of your spreadsheet, or a URL with #gid=">?</span>
+            </div>
+            <input type="text" id="worksheet" name="worksheet"
+                   value="{{ config.worksheet }}"
+                   placeholder="Sheet1">
+            <div class="field-hint">Tab name (default: <code>Sheet1</code>) or URL with <code>#gid=123456</code></div>
+        </div>
+
+        <!-- SQL Query Section -->
+        <div class="form-group">
+            <div class="label-with-help">
+                <label for="favorite_query">Use Saved Query</label>
+                <span class="help-icon" title="Select a previously saved SQL query">?</span>
+            </div>
+            <div class="form-row" style="grid-template-columns: 1fr auto auto auto;">
+                <select id="favorite_query" onchange="applyFavoriteQuery()">
+                    <option value="">-- Select a saved query --</option>
+                </select>
+                <button type="button" class="save-btn" onclick="saveCurrentQuery()" title="Save current query as favorite">Save</button>
+                <button type="button" class="remove-btn" id="remove_query_btn" onclick="removeSelectedQuery()" title="Remove selected favorite" style="display:none;">&times;</button>
+                <a href="/favorites" class="manage-link" title="Manage all favorites">Manage</a>
+            </div>
+        </div>
+        <div class="form-group">
+            <div class="label-with-help">
+                <label for="sql_query">SQL Query</label>
+                <span class="help-icon" title="The SELECT query to run against your database">?</span>
+            </div>
+            <div class="quick-insert-group">
+                <button type="button" class="quick-insert-btn" onclick="insertQuery('basic')">Basic SELECT</button>
+                <button type="button" class="quick-insert-btn" onclick="insertQuery('where')">With WHERE</button>
+                <button type="button" class="quick-insert-btn" onclick="insertQuery('limit')">With LIMIT</button>
+                <button type="button" class="quick-insert-btn" onclick="insertQuery('join')">With JOIN</button>
+            </div>
+            <textarea id="sql_query" name="sql_query"
+                      placeholder="SELECT * FROM table_name">{{ config.sql_query }}</textarea>
+            <div class="field-hint">Only <code>SELECT</code> queries are allowed. Results will be pushed to your sheet.</div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="flex gap-3 mt-6">
+            <button type="submit" id="syncBtn" class="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium rounded-md bg-blue-600 text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">Sync Now</button>
+            <button type="button" id="validateBtn" class="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium rounded-md bg-white text-slate-700 hover:bg-slate-50 border border-slate-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">Validate Only</button>
+        </div>
+    </form>
+
+    <!-- Sync Progress Indicator -->
+    <div id="syncProgress" class="sync-progress">
+        <div class="progress-steps">
+            <div class="progress-step" id="step-connect">
+                <div class="step-icon">1</div>
+                <div class="step-label">Connect to DB</div>
+            </div>
+            <div class="progress-step" id="step-fetch">
+                <div class="step-icon">2</div>
+                <div class="step-label">Fetch Data</div>
+            </div>
+            <div class="progress-step" id="step-push">
+                <div class="step-icon">3</div>
+                <div class="step-label">Push to Sheets</div>
+            </div>
+            <div class="progress-step" id="step-done">
+                <div class="step-icon">4</div>
+                <div class="step-label">Done</div>
+            </div>
+        </div>
+        <div class="progress-bar">
+            <div class="progress-bar-fill" id="progressBarFill"></div>
+        </div>
+        <div id="progressMessage" style="text-align: center; margin-top: 0.5rem; font-size: 0.875rem; color: var(--text-muted);"></div>
+    </div>
+
+    <div id="result" class="alert" style="margin-top: 1rem; display: none;"></div>
+</div>
+
+<!-- Recent Sync History (Last 5) -->
+<div class="card">
+    <div class="card-header">
+        <h2>Recent Syncs</h2>
+        <a href="/history" style="font-size: 0.875rem; color: var(--primary); text-decoration: none;">View All History</a>
+    </div>
+    {% if history %}
+    <table>
+        <thead>
+            <tr>
+                <th>Time</th>
+                <th>Status</th>
+                <th>Rows</th>
+                <th>Sheet</th>
+                <th>Duration</th>
+            </tr>
+        </thead>
+        <tbody id="historyTable">
+            {% for entry in history[:5] %}
+            <tr>
+                <td>{{ entry.timestamp }}</td>
+                <td>
+                    <span class="status-badge {{ 'status-success' if entry.success else 'status-error' }}">
+                        {{ 'Success' if entry.success else 'Failed' }}
+                    </span>
+                    {% if not entry.success and entry.error_code %}
+                    <span class="error-code">{{ entry.error_code }}</span>
+                    {% endif %}
+                </td>
+                <td>{{ entry.rows_synced }}</td>
+                <td class="truncate" style="max-width: 120px;">{{ entry.worksheet }}</td>
+                <td>{{ entry.duration_ms }}ms</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+        <p>No sync history yet. Run your first sync above!</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Current Environment (Collapsed by Default) -->
+<details class="collapsible-section">
+    <summary>Current Environment</summary>
+    <div class="collapsible-content">
+        <div class="info-row">
+            <span class="info-label">Database Type</span>
+            <span class="info-value">{{ config.db_type|default('mysql') }}</span>
+        </div>
+        <div class="info-row">
+            <span class="info-label">Database Host</span>
+            <span class="info-value">{{ config.db_host }}</span>
+        </div>
+        <div class="info-row">
+            <span class="info-label">Database Name</span>
+            <span class="info-value">{{ config.db_name }}</span>
+        </div>
+        <div class="info-row">
+            <span class="info-label">Sheet ID</span>
+            <span class="info-value">{{ config.sheet_id[:20] }}...</span>
+        </div>
+        <div class="info-row">
+            <span class="info-label">Worksheet</span>
+            <span class="info-value">{{ config.worksheet }}</span>
+        </div>
+        <div class="info-row">
+            <span class="info-label">Service Account</span>
+            <span class="info-value">{{ config.service_account_file|default('./service_account.json') }}</span>
+        </div>
+    </div>
+</details>
+
+<!-- Error Summary (Collapsed, Hidden if 0 Errors) -->
+<details class="collapsible-section" id="error-section" style="display: none;">
+    <summary>Error Summary (24h) - <span id="error-count-summary">0</span> errors</summary>
+    <div class="collapsible-content">
+        <div class="stats-grid" id="error-stats">
+            <div class="stat-card">
+                <div id="total-errors" class="stat-value" style="color: var(--error);">-</div>
+                <div class="stat-label">Total Errors</div>
+            </div>
+            <div class="stat-card">
+                <div id="transient-count" class="stat-value" style="color: var(--warning);">-</div>
+                <div class="stat-label">Transient</div>
+            </div>
+            <div class="stat-card">
+                <div id="top-code" class="stat-value" style="font-size: 1.25rem;">-</div>
+                <div class="stat-label">Top Error Code</div>
+            </div>
+        </div>
+        <div class="mt-4 text-center">
+            <a href="/errors" class="inline-flex items-center justify-center gap-2 px-2.5 py-1.5 text-xs font-medium rounded-md bg-white text-slate-700 hover:bg-slate-50 border border-slate-300 transition-colors">View All Errors</a>
+        </div>
+    </div>
+</details>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const form = document.getElementById('syncForm');
+    const syncBtn = document.getElementById('syncBtn');
+    const validateBtn = document.getElementById('validateBtn');
+    const result = document.getElementById('result');
+    const syncProgress = document.getElementById('syncProgress');
+    const progressBarFill = document.getElementById('progressBarFill');
+    const progressMessage = document.getElementById('progressMessage');
+
+    // SQL Query Templates
+    const queryTemplates = {
+        basic: 'SELECT * FROM table_name',
+        where: 'SELECT * FROM table_name WHERE column = "value"',
+        limit: 'SELECT * FROM table_name LIMIT 100',
+        join: 'SELECT a.*, b.column\nFROM table_a a\nJOIN table_b b ON a.id = b.a_id'
+    };
+
+    function insertQuery(type) {
+        const textarea = document.getElementById('sql_query');
+        const template = queryTemplates[type];
+        if (template) {
+            textarea.value = template;
+            textarea.focus();
+        }
+    }
+
+    function showResult(message, type) {
+        result.style.display = 'block';
+        result.className = `alert alert-${type}`;
+        result.textContent = message;
+    }
+
+    function hideResult() {
+        result.style.display = 'none';
+    }
+
+    // Progress indicator functions
+    function showProgress() {
+        syncProgress.classList.add('active');
+        resetProgress();
+    }
+
+    function hideProgress() {
+        syncProgress.classList.remove('active');
+    }
+
+    function resetProgress() {
+        ['step-connect', 'step-fetch', 'step-push', 'step-done'].forEach(id => {
+            const step = document.getElementById(id);
+            step.classList.remove('active', 'completed', 'error');
+        });
+        progressBarFill.style.width = '0%';
+        progressBarFill.classList.remove('indeterminate');
+        progressMessage.textContent = '';
+    }
+
+    function setProgressStep(stepId, state, message = '') {
+        const step = document.getElementById(stepId);
+        step.classList.remove('active', 'completed', 'error');
+        step.classList.add(state);
+
+        if (message) {
+            progressMessage.textContent = message;
+        }
+
+        // Update progress bar
+        const steps = ['step-connect', 'step-fetch', 'step-push', 'step-done'];
+        const currentIndex = steps.indexOf(stepId);
+        const progress = ((currentIndex + 1) / steps.length) * 100;
+        progressBarFill.style.width = `${progress}%`;
+    }
+
+    async function doSync(dryRun = false) {
+        const formData = new FormData(form);
+        const data = {
+            sheet_id: formData.get('sheet_id'),
+            worksheet: formData.get('worksheet'),
+            sql_query: formData.get('sql_query'),
+            dry_run: dryRun
+        };
+
+        const button = dryRun ? validateBtn : syncBtn;
+        setButtonLoading(button, true, dryRun ? 'Validating...' : 'Syncing...');
+        hideResult();
+
+        if (!dryRun) {
+            showProgress();
+            setProgressStep('step-connect', 'active', 'Connecting to database...');
+        }
+
+        try {
+            // Simulate progress steps for better UX
+            if (!dryRun) {
+                await new Promise(r => setTimeout(r, 300));
+                setProgressStep('step-connect', 'completed');
+                setProgressStep('step-fetch', 'active', 'Fetching data from database...');
+            }
+
+            const response = await fetch('/api/sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                if (!dryRun) {
+                    setProgressStep('step-fetch', 'completed');
+                    setProgressStep('step-push', 'completed');
+                    setProgressStep('step-done', 'completed', 'Sync complete!');
+                }
+
+                const msg = dryRun
+                    ? `Validation passed: ${result.rows_synced} rows would be synced`
+                    : `Success: ${result.rows_synced} rows synced in ${result.duration_ms}ms`;
+                showResult(msg, 'success');
+
+                if (!dryRun) {
+                    setTimeout(() => {
+                        hideProgress();
+                        location.reload();
+                    }, 1500);
+                }
+            } else {
+                if (!dryRun) {
+                    // Determine which step failed based on error
+                    const errorCode = result.error_code || '';
+                    if (errorCode.startsWith('DB_')) {
+                        setProgressStep('step-connect', 'error', 'Database connection failed');
+                    } else if (errorCode.startsWith('SHEETS_')) {
+                        setProgressStep('step-connect', 'completed');
+                        setProgressStep('step-fetch', 'completed');
+                        setProgressStep('step-push', 'error', 'Failed to push to Google Sheets');
+                    } else {
+                        setProgressStep('step-fetch', 'error', 'Error during sync');
+                    }
+                }
+
+                let errorMsg = result.errors ? result.errors.join(', ') : (result.message || result.error || 'An unknown error occurred');
+
+                // Include remediation hint if available
+                if (result.remediation) {
+                    errorMsg += `\n\nFix: ${result.remediation}`;
+                }
+
+                showResult(`Error: ${errorMsg}`, 'error');
+            }
+        } catch (error) {
+            if (!dryRun) {
+                setProgressStep('step-connect', 'error', 'Network error');
+            }
+            showResult(`Network error: ${error.message}`, 'error');
+        } finally {
+            setButtonLoading(button, false);
+            button.textContent = dryRun ? 'Validate Only' : 'Sync Now';
+        }
+    }
+
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        await doSync(false);
+    });
+
+    validateBtn.addEventListener('click', async () => {
+        await doSync(true);
+    });
+
+    // Load error statistics
+    async function loadErrorStats() {
+        try {
+            const response = await fetch('/api/errors/stats');
+            const data = await response.json();
+
+            const totalErrors = data.total_errors_24h || 0;
+
+            // Show/hide error section based on error count
+            const errorSection = document.getElementById('error-section');
+            if (totalErrors > 0) {
+                errorSection.style.display = 'block';
+                document.getElementById('error-count-summary').textContent = totalErrors;
+            } else {
+                errorSection.style.display = 'none';
+            }
+
+            document.getElementById('total-errors').textContent = totalErrors;
+            document.getElementById('transient-count').textContent = data.errors_by_category?.transient || 0;
+
+            if (data.top_error_codes && data.top_error_codes.length > 0) {
+                document.getElementById('top-code').textContent = data.top_error_codes[0].code;
+            } else {
+                document.getElementById('top-code').textContent = 'None';
+            }
+        } catch (error) {
+            console.error('Failed to load error stats:', error);
+        }
+    }
+
+    loadErrorStats();
+
+    // Favorites functionality
+    let favoriteQueries = [];
+    let favoriteSheets = [];
+
+    async function loadFavorites() {
+        try {
+            const queriesRes = await fetch('/api/favorites/queries');
+            const queriesData = await queriesRes.json();
+            if (queriesData.success) {
+                favoriteQueries = queriesData.queries || [];
+                const querySelect = document.getElementById('favorite_query');
+                querySelect.innerHTML = '<option value="">-- Select a saved query --</option>';
+                favoriteQueries.forEach(q => {
+                    const opt = document.createElement('option');
+                    opt.value = q.id;
+                    opt.textContent = q.name + (q.is_private ? ' (private)' : '');
+                    opt.dataset.query = q.sql_query;
+                    querySelect.appendChild(opt);
+                });
+                document.getElementById('remove_query_btn').style.display = 'none';
+            }
+
+            const sheetsRes = await fetch('/api/favorites/sheets');
+            const sheetsData = await sheetsRes.json();
+            if (sheetsData.success) {
+                favoriteSheets = sheetsData.sheets || [];
+                const sheetSelect = document.getElementById('favorite_sheet');
+                sheetSelect.innerHTML = '<option value="">-- Select a saved sheet --</option>';
+                favoriteSheets.forEach(s => {
+                    const opt = document.createElement('option');
+                    opt.value = s.id;
+                    opt.textContent = s.name + (s.is_private ? ' (private)' : '');
+                    opt.dataset.sheetId = s.sheet_id;
+                    opt.dataset.worksheet = s.default_worksheet;
+                    sheetSelect.appendChild(opt);
+                });
+                document.getElementById('remove_sheet_btn').style.display = 'none';
+            }
+        } catch (error) {
+            console.error('Failed to load favorites:', error);
+        }
+    }
+
+    function applyFavoriteQuery() {
+        const select = document.getElementById('favorite_query');
+        const selectedOption = select.options[select.selectedIndex];
+        const removeBtn = document.getElementById('remove_query_btn');
+
+        if (selectedOption && selectedOption.dataset.query) {
+            document.getElementById('sql_query').value = selectedOption.dataset.query;
+            removeBtn.style.display = 'inline-block';
+        } else {
+            removeBtn.style.display = 'none';
+        }
+    }
+
+    function applyFavoriteSheet() {
+        const select = document.getElementById('favorite_sheet');
+        const selectedOption = select.options[select.selectedIndex];
+        const removeBtn = document.getElementById('remove_sheet_btn');
+
+        if (selectedOption && selectedOption.dataset.sheetId) {
+            document.getElementById('sheet_id').value = selectedOption.dataset.sheetId;
+            document.getElementById('worksheet').value = selectedOption.dataset.worksheet || 'Sheet1';
+            removeBtn.style.display = 'inline-block';
+        } else {
+            removeBtn.style.display = 'none';
+        }
+    }
+
+    async function removeSelectedQuery() {
+        const select = document.getElementById('favorite_query');
+        const selectedId = select.value;
+        const selectedName = select.options[select.selectedIndex].textContent;
+
+        if (!selectedId) return;
+        if (!confirmAction(`Remove "${selectedName}" from favorites?`)) return;
+
+        try {
+            const response = await fetch(`/api/favorites/queries/${selectedId}`, { method: 'DELETE' });
+            const data = await response.json();
+            if (data.success) {
+                showResult('Query removed from favorites', 'success');
+                loadFavorites();
+            } else {
+                showResult(data.message || 'Failed to remove query', 'error');
+            }
+        } catch (error) {
+            showResult('Failed to remove query: ' + error.message, 'error');
+        }
+    }
+
+    async function removeSelectedSheet() {
+        const select = document.getElementById('favorite_sheet');
+        const selectedId = select.value;
+        const selectedName = select.options[select.selectedIndex].textContent;
+
+        if (!selectedId) return;
+        if (!confirmAction(`Remove "${selectedName}" from favorites?`)) return;
+
+        try {
+            const response = await fetch(`/api/favorites/sheets/${selectedId}`, { method: 'DELETE' });
+            const data = await response.json();
+            if (data.success) {
+                showResult('Sheet removed from favorites', 'success');
+                loadFavorites();
+            } else {
+                showResult(data.message || 'Failed to remove sheet', 'error');
+            }
+        } catch (error) {
+            showResult('Failed to remove sheet: ' + error.message, 'error');
+        }
+    }
+
+    async function saveCurrentQuery() {
+        const query = document.getElementById('sql_query').value.trim();
+        if (!query) {
+            showResult('Please enter a SQL query first', 'error');
+            return;
+        }
+
+        const name = prompt('Enter a name for this query:');
+        if (!name) return;
+
+        try {
+            const response = await fetch('/api/favorites/queries', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, sql_query: query })
+            });
+            const data = await response.json();
+            if (data.success) {
+                showResult('Query saved to favorites!', 'success');
+                loadFavorites();
+            } else {
+                showResult(data.message || 'Failed to save query', 'error');
+            }
+        } catch (error) {
+            showResult('Failed to save query: ' + error.message, 'error');
+        }
+    }
+
+    async function saveCurrentSheet() {
+        const sheetId = document.getElementById('sheet_id').value.trim();
+        const worksheet = document.getElementById('worksheet').value.trim() || 'Sheet1';
+
+        if (!sheetId) {
+            showResult('Please enter a Sheet ID first', 'error');
+            return;
+        }
+
+        const name = prompt('Enter a name for this sheet:');
+        if (!name) return;
+
+        try {
+            const response = await fetch('/api/favorites/sheets', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, sheet_id: sheetId, default_worksheet: worksheet })
+            });
+            const data = await response.json();
+            if (data.success) {
+                showResult('Sheet saved to favorites!', 'success');
+                loadFavorites();
+            } else {
+                showResult(data.message || 'Failed to save sheet', 'error');
+            }
+        } catch (error) {
+            showResult('Failed to save sheet: ' + error.message, 'error');
+        }
+    }
+
+    loadFavorites();
+</script>
+{% endblock %}
