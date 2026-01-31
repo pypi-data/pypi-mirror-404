@@ -1,0 +1,190 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Copyright ((copyrightdate)) Louis Paternault
+% License : Creative Commons Attribution License
+%
+% Produced by ((version)).
+% http://git.framasoft.org/spalax/scal
+%
+% Compile it using `lualatex`
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% Compile it twice (or thrice?) using LuaLaTeX
+%$ lualatex $basename
+%$ lualatex $basename
+%$ lualatex $basename
+
+\documentclass[12pt]{article}
+
+\usepackage[(( variables.language ))]{babel}
+\usepackage[(( variables.language ))]{translator} % Internationalized  Month and Day names
+\renewcommand{\familydefault}{\sfdefault}
+
+\usepackage{etoolbox}
+\usepackage{hyperref}
+\usepackage{graphicx}
+\usepackage[export]{adjustbox}
+
+\usepackage{tikz}
+\usetikzlibrary{tikzmark}
+\usetikzlibrary{calc}
+\usetikzlibrary{calendar}
+
+\usepackage[
+  (( variables.papersize )),
+  margin=5mm,
+]{geometry}
+\newlength{\cellwidth}
+\setlength{\cellwidth}{\dimexpr(\paperwidth-10mm)/7\relax}
+\newlength{\cellheight}
+\setlength{\cellheight}{2.5cm}
+\pagestyle{empty}
+\setlength{\parindent}{0pt}
+
+\newcommand{\buildmonth}[2]{%
+  % Arguments:
+  % #1: Year (e.g. 2026)
+  % #2: Month (e.g. 7)
+  \begin{center}
+      \begin{tikzpicture}[remember picture, every day/.style={anchor=north west}]
+    \tikzmark{calendartop#2}{(0, 0)}
+    \fill[white] (0, {1.1}) rectangle ({7*\cellwidth}, {-\cellheight});
+    \draw (0, 1) node[fill=white, above right]{\textbf{\Huge\pgfcalendarmonthname{#2}}};
+    \calendar[
+      dates=#1-#2-01 to #1-#2-last,
+      week list,
+      day xshift=\cellwidth,
+      day yshift=\cellheight,
+      day text={\LARGE \%d0},
+      at={(0, 0)},
+    ]
+      if (day of month=1) {\node (firstday) at  (0, 1em) {};}
+      if (end of month=1) {\node (lastday) at (0, 1em) {};}
+      if (Monday) {\node (monday) at  ({\cellwidth/2}, 0) {};}
+      if (Tuesday) {\node (tuesday) at  ({\cellwidth/2}, 0) {};}
+      if (Wednesday) {\node (wednesday) at  ({\cellwidth/2}, 0) {};}
+      if (Thursday) {\node (thursday) at  ({\cellwidth/2}, 0) {};}
+      if (Friday) {\node (friday) at  ({\cellwidth/2}, 0) {};}
+      if (Saturday) {\node (saturday) at  ({\cellwidth/2}, 0) {};}
+      if (Sunday) {\node (sunday) at  ({\cellwidth/2}, 0) {};}
+      if (all) {\draw[fill=white] (0, 0) rectangle ++(\cellwidth, -\cellheight);}
+    ;
+    \draw (firstday -| monday) node{\Large \pgfcalendarweekdayname{0}};
+    \draw (firstday -| tuesday) node{\Large \pgfcalendarweekdayname{1}};
+    \draw (firstday -| wednesday) node{\Large \pgfcalendarweekdayname{2}};
+    \draw (firstday -| thursday) node{\Large \pgfcalendarweekdayname{3}};
+    \draw (firstday -| friday) node{\Large \pgfcalendarweekdayname{4}};
+    \draw (firstday -| saturday) node{\Large \pgfcalendarweekdayname{5}};
+    \draw (firstday -| sunday) node{\Large \pgfcalendarweekdayname{6}};
+  \end{tikzpicture}
+  \end{center}
+  \restoregeometry
+}
+
+\begin{document}
+
+% First page
+\newcommand{\thumbnail}[1]{%
+    \adjustbox{min size={\paperwidth/3}{.2\paperheight}}{%
+        \includegraphics[
+            width={.3\paperwidth}, height={.2\paperheight}, clip=true, keepaspectratio=true
+        ]{#1}%
+    }
+}
+\begin{tikzpicture}[remember picture, overlay]
+    (* for picture in variables.pictures *)
+    \begin{scope}
+        \clip ($
+            (* if loop.index <= 6 *)
+                (current page.north west) + ({(( loop.index0 % 3 ))*\paperwidth/3},{-(( loop.index0 // 3 ))*\paperheight/5})
+            (* else *)
+                (current page.south west) + ({(( loop.index0 % 3 ))*\paperwidth/3},{(( loop.index0 // 3 - 2 ))*\paperheight/5})
+            (* endif *)
+        $) rectangle ++({\paperwidth/3}, {(* if loop.index <= 6 *)-(* endif *)\paperheight/5});
+        \draw ($
+            (* if loop.index <= 6 *)
+                ({\paperwidth/6}, {-\paperheight/10}) + (current page.north west) + ({(( loop.index0 % 3 ))*\paperwidth/3},{-(( loop.index0 // 3 ))*\paperheight/5})
+            (* else *)
+                ({\paperwidth/6}, {\paperheight/10}) + (current page.south west) + ({(( loop.index0 % 3 ))*\paperwidth/3},{(( loop.index0 // 3 - 2 ))*\paperheight/5})
+            (* endif *)
+        $) node[inner sep=0]{\thumbnail{(( picture.filename ))}};
+    \end{scope}
+    (* endfor *)
+
+    (* if variables.subtitle *)
+    \draw ($(current page.center) + (0, {\paperheight/20})$) node{%
+            \adjustbox{height={.05\paperheight}}{%
+                (*- if variables.title -*)
+                    (( variables.title ))
+                (*- else -*)
+                    (( start.year ))
+                (*- endif -*)
+            }%
+        };
+        \draw ($(current page.center) - (0, {\paperheight/20})$) node[text width={.9*\paperwidth}, align=center]{\Large (( variables.subtitle ))};
+    (* else *)
+    \draw (current page.center) node{%
+        \adjustbox{height={\paperheight/10}, max size={.9\paperwidth}{.1\paperheight}}{%
+            (* if variables.title -*)
+                (( variables.title ))
+            (*- else -*)
+                (( start.year ))
+            (*- endif -*)
+        }%
+    };
+    (* endif *)
+\end{tikzpicture}
+
+(* for month in variables.pictures *)
+  \newgeometry{margin=0cm}
+  \iftikzmark{calendartop(( loop.index ))}{
+    \begin{tikzpicture}[remember picture, overlay]
+      \node (temp) at (pic cs:calendartop(( loop.index ))) {};
+          \draw (current page.north) node[anchor=north, inner sep=0]{
+            \includegraphics[
+              (* if month.orientation == "vertical" *)
+                height={.5\paperheight},
+              (* else *)
+                width=\paperwidth,
+              (* endif *)
+              keepaspectratio,
+            ]{(( month.filename ))}
+          };
+    \end{tikzpicture}
+  }{}
+
+  ~\vfill{}
+
+  \buildmonth{(( start.year ))}{(( loop.index ))}
+  \pagebreak
+(* endfor *)
+
+(* if
+    variables.pictures[0].credit or
+    variables.pictures[1].credit or
+    variables.pictures[2].credit or
+    variables.pictures[3].credit or
+    variables.pictures[4].credit or
+    variables.pictures[5].credit or
+    variables.pictures[6].credit or
+    variables.pictures[7].credit or
+    variables.pictures[8].credit or
+    variables.pictures[9].credit or
+    variables.pictures[10].credit or
+    variables.pictures[11].credit
+*)
+    \section*{Credits}
+
+    Produced by ((version)), by Louis Paternault.
+    \url{http://git.framasoft.org/spalax/scal}
+
+    \begin{description}
+    (* for month in variables.pictures *)
+      (* if month.credit *)
+        \item[\pgfcalendarmonthname{(( loop.index ))}] (( month.credit ))
+      (* endif *)
+    (* endfor *)
+    \end{description}
+(* endif *)
+
+\end{document}
