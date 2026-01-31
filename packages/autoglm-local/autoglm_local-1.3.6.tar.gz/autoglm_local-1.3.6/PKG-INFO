@@ -1,0 +1,364 @@
+Metadata-Version: 2.1
+Name: autoglm-local
+Version: 1.3.6
+Summary: AutoGLM AI-APPUI 自动化测试平台 - 本地客户端（内置完整依赖）
+Home-page: http://qa.local:8787/zsdx/AI_UIauto_app
+Author: chenwenkun
+Author-email: 
+Keywords: appium,automation,testing,android,ios,ai
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Topic :: Software Development :: Testing
+Classifier: Topic :: Software Development :: Quality Assurance
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+Requires-Dist: fastapi>=0.100.0
+Requires-Dist: uvicorn>=0.22.0
+Requires-Dist: websockets>=11.0
+Requires-Dist: python-multipart>=0.0.6
+Requires-Dist: httpx>=0.24.0
+Requires-Dist: openai>=1.0.0
+Requires-Dist: adbutils>=2.0.0
+Requires-Dist: tidevice>=0.12.0
+Requires-Dist: loguru>=0.7.0
+Requires-Dist: requests>=2.28.0
+Requires-Dist: pydantic>=2.0.0
+Requires-Dist: Pillow>=10.0.0
+Requires-Dist: openpyxl>=3.1.0
+
+# AutoGLM WebUI 部署指南
+
+## 🚀 快速启动（参考 appinstalltest）
+
+### 独立模式（推荐，无需 Docker）
+
+```bash
+cd web_ui
+./start_standalone.sh
+```
+
+### Docker 模式
+
+```bash
+cd web_ui
+
+# 构建镜像
+docker build -t autoglm .
+
+# 启动服务
+docker run -d -p 8792:8792 --name autoglm autoglm
+```
+
+### 访问
+
+浏览器访问：`http://localhost:8792`
+
+## 📦 架构说明
+
+```
+┌─────────────────────────────┐          ┌─────────────────────────────┐
+│      Linux 服务器           │          │        Mac 本地             │
+│      (Docker 部署)          │   HTTP   │        (pip 安装)           │
+│                             │◀────────▶│                             │
+│   服务端 (remote_server)    │  注册    │   本地端 (local_server)     │
+│   端口: 8792                │  心跳    │   端口: 8793                │
+│                             │          │                             │
+│   - 页面展示                │          │   - 设备管理                │
+│   - 配置管理                │          │   - 截图/远程控制           │
+│   - 接收本地端注册          │          │   - AI 任务执行             │
+│   - 代理转发                │          │   - 主动注册到服务端        │
+└─────────────────────────────┘          └─────────────────────────────┘
+         ▲                                           │
+         │                                           ▼
+         │                                    ┌──────────────┐
+    访问 Web                                  │ Android/iOS  │
+                                              │    设备      │
+                                              └──────────────┘
+```
+
+**工作流程**：
+1. Linux 服务端启动（Docker）
+2. Mac 本地端启动，**指定服务端地址**，自动注册
+3. 用户访问服务端 Web 页面
+4. 服务端代理请求到已注册的本地端
+
+---
+
+## 🐳 服务端部署 (Linux Docker)
+
+### 🇨🇳 中国大陆用户（推荐）
+
+#### 1. 自动配置 Docker 国内源
+
+```bash
+cd web_ui
+./setup_docker_china.sh
+```
+
+这个脚本会：
+- 配置 Docker 国内镜像加速源
+- 启用 BuildKit 加速构建
+- 优化 DNS 设置
+
+#### 2. 一键构建和启动
+
+```bash
+# 使用中国大陆优化构建脚本
+./build_china.sh
+```
+
+#### 3. 启动服务
+
+```bash
+# 不需要指定任何 Mac 地址！
+docker-compose up -d
+```
+
+#### 4. 管理服务
+
+```bash
+# 停止服务
+./stop.sh
+
+# 查看状态
+docker-compose ps
+
+# 查看日志
+docker-compose logs -f
+
+# 重启服务
+docker-compose restart
+
+# 完全清理（删除容器、镜像、数据）
+./clean.sh
+```
+
+### 🌍 国际用户 / 手动配置
+
+#### 1. 构建镜像
+
+```bash
+cd web_ui
+docker build -t autoglm-server .
+```
+
+#### 2. 运行容器
+
+```bash
+docker run -d \
+  -p 8792:8792 \
+  --restart always \
+  --name autoglm-server \
+  autoglm-server
+```
+
+或使用 docker-compose：
+```bash
+docker-compose up -d
+```
+
+---
+
+## 🔧 独立模式部署（最简单）
+
+适合单机使用，参考 appinstalltest 的架构。
+
+### 快速启动
+
+```bash
+cd web_ui
+./start_standalone.sh
+```
+
+这个脚本会：
+1. 检查 Python 环境
+2. 安装依赖包
+3. 检查设备连接
+4. 启动 Web 服务
+
+### 手动启动
+
+```bash
+cd web_ui
+pip install -r requirements.txt
+python server.py
+```
+
+### 访问
+
+浏览器访问：`http://localhost:8792`
+
+---
+
+## 🖥️ 分离模式部署（多设备场景）
+
+### 方式一：pip 安装（推荐）
+
+```bash
+# 打包
+cd web_ui
+python setup.py sdist bdist_wheel
+
+# 安装
+pip install dist/autoglm_local-1.0.0-py3-none-any.whl
+```
+
+### 方式二：直接运行
+
+```bash
+pip install -r requirements_local.txt
+python start_local.py --server http://服务器IP:8792
+```
+
+### 启动本地端
+
+```bash
+# 指定服务端地址，自动注册
+autoglm-local --server http://服务器IP:8792
+
+# 或使用环境变量
+export SERVER_URL=http://服务器IP:8792
+autoglm-local
+```
+
+启动后，本地端会：
+1. 自动向服务端注册
+2. 定期发送心跳（30秒）
+3. 报告连接的设备列表
+
+---
+
+## 📋 部署示例
+
+### 🇨🇳 中国大陆完整部署流程
+
+假设：
+- Linux 服务器 IP: `192.168.1.200`
+- Mac 本地 IP: `192.168.1.100`
+
+#### Step 1: Linux 服务器配置和部署
+
+```bash
+# 进入项目目录
+cd /path/to/cloudGLM/Open-AutoGLM/web_ui
+
+# 🚀 中国大陆用户：配置 Docker 国内源
+./setup_docker_china.sh
+
+# 🏗️ 使用优化构建脚本
+./build_china.sh
+
+# 🚀 启动服务
+docker-compose up -d
+
+# 检查状态
+docker-compose ps
+docker-compose logs -f
+```
+
+#### Step 2: Mac 本地端部署
+
+```bash
+# 在 Mac 上进入项目目录
+cd /Users/chenwenkun/Documents/AIcwk/cloudGLM/Open-AutoGLM/web_ui
+
+# 📦 打包安装本地端
+python setup.py sdist bdist_wheel
+pip install dist/autoglm_local-1.0.0-py3-none-any.whl
+
+# 🚀 启动本地端，指定服务端地址
+autoglm-local --server http://192.168.1.200:8792
+```
+
+#### Step 3: 验证部署
+
+```bash
+# 🌐 浏览器访问
+http://192.168.1.200:8792
+
+# 📱 页面会自动显示已注册的本地端和连接的设备！
+```
+
+### 🔧 快速启动脚本（中国大陆）
+
+创建 `start_china.sh`：
+
+```bash
+#!/bin/bash
+# 中国大陆一键启动脚本
+
+echo "🇨🇳 AutoGLM 中国大陆启动脚本"
+
+# 配置 Docker（如果还没配置）
+if [ ! -f ~/.docker/daemon.json ]; then
+    echo "🔧 配置 Docker 国内源..."
+    ./setup_docker_china.sh
+fi
+
+# 构建和启动
+echo "🏗️ 构建服务端..."
+./build_china.sh
+
+echo "🚀 启动服务..."
+docker-compose up -d
+
+echo "✅ 部署完成！"
+echo "🌐 访问地址: http://localhost:8792"
+echo "📝 本地端启动命令: autoglm-local --server http://服务器IP:8792"
+```
+
+---
+
+## 🔧 配置说明
+
+### 本地端参数
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--server`, `-s` | 服务端地址 | 无（独立运行） |
+| `--port`, `-p` | 本地端口 | 8793 |
+| `--name`, `-n` | 本地端名称 | 主机名 |
+
+### 环境变量
+
+| 变量名 | 说明 |
+|--------|------|
+| `SERVER_URL` | 服务端地址 |
+| `LOCAL_PORT` | 本地端口 |
+| `LOCAL_NAME` | 本地端名称 |
+
+---
+
+## 🛠️ API 说明
+
+### 服务端新增 API
+
+| 路径 | 方法 | 说明 |
+|------|------|------|
+| `/local/register` | POST | 本地端注册 |
+| `/local/heartbeat` | POST | 本地端心跳 |
+| `/local/list` | GET | 列出所有本地端 |
+| `/local/{name}` | DELETE | 移除本地端 |
+
+---
+
+## ⚠️ 注意事项
+
+1. **网络连通性**：Mac 需要能访问 Linux 服务器的 8792 端口
+2. **防火墙设置**：
+   - Linux: 允许 8792 端口入站
+   - Mac: 允许 8793 端口入站（服务端代理请求）
+3. **心跳超时**：本地端 60 秒无心跳会被标记为离线
+4. **多本地端**：支持多台 Mac 同时注册到同一服务端
+
+---
+
+## 作者
+
+chenwenkun
