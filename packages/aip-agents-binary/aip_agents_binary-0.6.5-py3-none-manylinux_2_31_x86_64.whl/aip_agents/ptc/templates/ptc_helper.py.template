@@ -1,0 +1,134 @@
+"""PTC Discovery Helper Module.
+
+This module provides discovery functions for exploring available PTC tools
+inside the PTC sandbox. Use these functions to find packages, list tools,
+and get detailed documentation.
+
+Usage:
+    from tools.ptc_helper import list_packages, list_tools, describe_tool
+
+    # List all available packages
+    packages = list_packages()
+
+    # List tools in a package
+    tools = list_tools("package_name")
+
+    # Get tool documentation
+    doc = describe_tool("package_name", "tool_name")
+"""
+
+import difflib
+import json
+import os
+from typing import Any
+
+# Load the index at module import time
+_INDEX_PATH = os.path.join(os.path.dirname(__file__), "ptc_index.json")
+_DOCS_DIR = os.path.join(os.path.dirname(__file__), "docs")
+
+_index: dict[str, Any] = {}
+if os.path.exists(_INDEX_PATH):
+    with open(_INDEX_PATH, "r") as f:
+        _index = json.load(f)
+
+
+def _suggest_closest(name: str, valid_names: list[str], kind: str = "name") -> str:
+    """Generate a suggestion message for closest match.
+
+    Args:
+        name: The name that was not found.
+        valid_names: List of valid names to match against.
+        kind: Type of name (package or tool) for the error message.
+
+    Returns:
+        Suggestion string or empty string if no close match.
+    """
+    matches = difflib.get_close_matches(name, valid_names, n=1, cutoff=0.6)
+    if matches:
+        return f" Did you mean '{matches[0]}'?"
+    return ""
+
+
+def list_packages() -> list[str]:
+    """List all available package names.
+
+    Returns:
+        Sorted list of sanitized package names.
+    """
+    packages = _index.get("packages", {})
+    return sorted(packages.keys())
+
+
+def list_tools(package: str) -> list[dict[str, str]]:
+    """List tools available in a package.
+
+    Args:
+        package: Sanitized package name (e.g., 'deepwiki').
+
+    Returns:
+        List of tool info dicts with 'name' keys.
+
+    Raises:
+        ValueError: If package is not found.
+    """
+    packages = _index.get("packages", {})
+    if package not in packages:
+        valid = list(packages.keys())
+        suggestion = _suggest_closest(package, valid, "package")
+        raise ValueError(f"Unknown package '{package}'.{suggestion}")
+
+    pkg_data = packages[package]
+    tools = pkg_data.get("tools", [])
+    return [{"name": t["name"]} for t in tools]
+
+
+def describe_tool(package: str, tool: str) -> dict[str, Any]:
+    """Get detailed documentation for a tool.
+
+    Args:
+        package: Sanitized package name.
+        tool: Sanitized tool name.
+
+    Returns:
+        Dict with 'name', 'signature', 'doc', and 'doc_path' keys.
+
+    Raises:
+        ValueError: If package or tool is not found.
+    """
+    packages = _index.get("packages", {})
+    if package not in packages:
+        valid = list(packages.keys())
+        suggestion = _suggest_closest(package, valid, "package")
+        raise ValueError(f"Unknown package '{package}'.{suggestion}")
+
+    pkg_data = packages[package]
+    tools = pkg_data.get("tools", [])
+    tool_names = [t["name"] for t in tools]
+
+    if tool not in tool_names:
+        suggestion = _suggest_closest(tool, tool_names, "tool")
+        raise ValueError(f"Unknown tool '{tool}' in package '{package}'.{suggestion}")
+
+    tool_info = next(t for t in tools if t["name"] == tool)
+    doc_path = tool_info.get("doc_path", "")
+
+    doc_content = ""
+    if doc_path:
+        full_path = os.path.join(os.path.dirname(__file__), doc_path.replace("tools/", ""))
+        if os.path.exists(full_path):
+            with open(full_path, "r") as f:
+                doc_content = f.read()
+        else:
+            doc_content = f"# {tool}\n\n**Signature:** `{tool_info.get('signature', f'{tool}(**kwargs: Any)')}`"
+    else:
+        doc_content = f"# {tool}\n\n**Signature:** `{tool_info.get('signature', f'{tool}(**kwargs: Any)')}`"
+
+    return {
+        "name": tool,
+        "signature": tool_info.get("signature", f"{tool}(**kwargs)"),
+        "doc": doc_content,
+        "doc_path": doc_path,
+    }
+
+
+__all__ = ["list_packages", "list_tools", "describe_tool"]
