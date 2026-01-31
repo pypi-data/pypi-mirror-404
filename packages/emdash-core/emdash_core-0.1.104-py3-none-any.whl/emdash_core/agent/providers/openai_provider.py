@@ -1,0 +1,1041 @@
+"""OpenAI SDK-based provider - unified interface to OpenAI-compatible APIs."""
+
+import json
+import os
+import base64
+import re
+import time
+import uuid
+from typing import Any, Optional, Union
+
+from openai import OpenAI
+
+from .base import LLMProvider, LLMResponse, ToolCall, ImageContent
+from .models import ChatModel
+from ...utils.logger import log
+
+
+def _parse_xml_tool_calls(error_message: str) -> list[ToolCall]:
+    """Parse XML-formatted tool calls from LLM error messages.
+
+    Supports multiple XML formats used by different models:
+
+    1. MiniMax M2 format:
+       <invoke name="tool_name">
+       <parameter name="param1">value1</parameter>
+       </invoke>
+
+    2. GLM-4 format (arg_key/arg_value):
+       <tool_call>function_name
+       <arg_key>param1</arg_key>
+       <arg_value>value1</arg_value>
+       </tool_call>
+
+    3. GLM-4 JSON format:
+       <tool_call>
+       {"name": "function_name", "arguments": {...}}
+       </tool_call>
+
+    Args:
+        error_message: The error message containing XML tool calls
+
+    Returns:
+        List of parsed ToolCall objects
+    """
+    tool_calls = []
+
+    # Pattern 1: MiniMax format - <invoke name="...">...</invoke>
+    invoke_pattern = r'<invoke\s+name="([^"]+)"[^>]*>(.*?)</invoke>'
+    matches = re.findall(invoke_pattern, error_message, re.DOTALL | re.IGNORECASE)
+
+    for tool_name, invoke_content in matches:
+        # Extract parameters from within the invoke block
+        param_pattern = r'<parameter\s+name="([^"]+)"[^>]*>(.*?)</parameter>'
+        params = re.findall(param_pattern, invoke_content, re.DOTALL | re.IGNORECASE)
+
+        # Build arguments dict
+        arguments = {}
+        for param_name, param_value in params:
+            param_value = param_value.strip()
+            try:
+                arguments[param_name] = json.loads(param_value)
+            except json.JSONDecodeError:
+                arguments[param_name] = param_value
+
+        tool_call_id = f"call_{uuid.uuid4().hex[:24]}"
+        tool_calls.append(ToolCall(
+            id=tool_call_id,
+            name=tool_name,
+            arguments=json.dumps(arguments),
+        ))
+        log.info("Parsed MiniMax XML tool call: name={} args={}", tool_name, arguments)
+
+    # Pattern 2: GLM-4 format - <tool_call>...</tool_call>
+    tool_call_pattern = r'<tool_call>(.*?)</tool_call>'
+    tool_call_matches = re.findall(tool_call_pattern, error_message, re.DOTALL | re.IGNORECASE)
+
+    for tool_call_content in tool_call_matches:
+        content = tool_call_content.strip()
+
+        # Try GLM-4 JSON format first: {"name": "...", "arguments": {...}}
+        try:
+            data = json.loads(content)
+            if isinstance(data, dict) and "name" in data:
+                tool_name = data["name"]
+                args = data.get("arguments", {})
+                if isinstance(args, str):
+                    args = json.loads(args)
+                tool_call_id = f"call_{uuid.uuid4().hex[:24]}"
+                tool_calls.append(ToolCall(
+                    id=tool_call_id,
+                    name=tool_name,
+                    arguments=json.dumps(args),
+                ))
+                log.info("Parsed GLM-4 JSON tool call: name={} args={}", tool_name, args)
+                continue
+        except json.JSONDecodeError:
+            pass
+
+        # Try GLM-4 arg_key/arg_value format
+        # First line is function name, then <arg_key>/<arg_value> pairs
+        lines = content.split('\n')
+        if lines:
+            func_name = lines[0].strip()
+            if func_name and not func_name.startswith('<'):
+                # Extract arg_key/arg_value pairs
+                arg_key_pattern = r'<arg_key>(.*?)</arg_key>'
+                arg_value_pattern = r'<arg_value>(.*?)</arg_value>'
+                keys = re.findall(arg_key_pattern, content, re.DOTALL)
+                values = re.findall(arg_value_pattern, content, re.DOTALL)
+
+                if keys and len(keys) == len(values):
+                    arguments = {}
+                    for k, v in zip(keys, values):
+                        k = k.strip()
+                        v = v.strip()
+                        try:
+                            arguments[k] = json.loads(v)
+                        except json.JSONDecodeError:
+                            arguments[k] = v
+
+                    tool_call_id = f"call_{uuid.uuid4().hex[:24]}"
+                    tool_calls.append(ToolCall(
+                        id=tool_call_id,
+                        name=func_name,
+                        arguments=json.dumps(arguments),
+                    ))
+                    log.info("Parsed GLM-4 arg_key/arg_value tool call: name={} args={}", func_name, arguments)
+
+    return tool_calls
+
+
+# Provider configuration: base URLs and API key environment variables
+PROVIDER_CONFIG = {
+    "openai": {
+        "base_url": None,  # Uses default OpenAI URL
+        "api_key_env": "OPENAI_API_KEY",
+    },
+    "anthropic": {
+        "base_url": "https://api.anthropic.com/v1",
+        "api_key_env": "ANTHROPIC_API_KEY",
+    },
+    "fireworks": {
+        "base_url": "https://api.fireworks.ai/inference/v1",
+        "api_key_env": "FIREWORKS_API_KEY",
+    },
+}
+
+# Providers that support the reasoning parameter via extra_body
+REASONING_SUPPORTED_PROVIDERS = {"openai"}
+
+# Providers that support extended thinking
+THINKING_SUPPORTED_PROVIDERS = {"anthropic"}
+
+
+class OpenAIProvider(LLMProvider):
+    """
+    Unified LLM provider using OpenAI SDK.
+
+    Supports OpenAI, Anthropic, and Fireworks through their OpenAI-compatible APIs.
+    Just change the model - the provider auto-configures based on the model's provider.
+    """
+
+    def __init__(self, model: Union[ChatModel, str]):
+        """
+        Initialize the provider.
+
+        Args:
+            model: ChatModel enum or model string
+        """
+        if isinstance(model, ChatModel):
+            self.chat_model = model
+            self.model = model.api_model
+            self._context_limit = model.context_window
+            self._provider = model.provider
+        else:
+            # Raw model string - try to parse it
+            parsed = ChatModel.from_string(model)
+            if parsed:
+                self.chat_model = parsed
+                self.model = parsed.api_model
+                self._context_limit = parsed.context_window
+                self._provider = parsed.provider
+            else:
+                # Fallback for unknown models
+                self.chat_model = None
+                self.model = model
+                self._context_limit = 128000
+                self._provider = self._infer_provider(model)
+
+        # Note: We no longer override provider based on OPENAI_BASE_URL
+        # Each provider (fireworks, anthropic) uses its own base_url
+        # OPENAI_BASE_URL only applies to "openai" provider
+
+        # Create OpenAI client with provider-specific configuration
+        config = PROVIDER_CONFIG.get(self._provider, PROVIDER_CONFIG["openai"])
+
+        # Check for provider-specific API key first, then fallback to OPENAI_API_KEY
+        # if the provider is openai-compatible
+        api_key_env = config["api_key_env"]
+        raw_api_key = os.environ.get(api_key_env)
+
+        if not raw_api_key and self._provider != "openai":
+            # Fallback to OPENAI_API_KEY for third-party providers if their specific key is missing
+            raw_api_key = os.environ.get("OPENAI_API_KEY")
+            if raw_api_key:
+                log.debug(
+                    f"Using OPENAI_API_KEY fallback for provider '{self._provider}' "
+                    f"because {api_key_env} is not set."
+                )
+
+        api_key = self._sanitize_api_key(raw_api_key)
+        if not api_key:
+            raise ValueError(
+                f"Missing API key. Set {config['api_key_env']} for provider '{self._provider}'."
+            )
+        self._api_key = api_key
+        if raw_api_key and api_key != raw_api_key:
+            log.debug(
+                f"Sanitized API key for provider={self._provider} env={config['api_key_env']} "
+                "(trimmed whitespace/quotes)."
+            )
+        log_api_key = os.environ.get("EMDASH_LOG_LLM_API_KEY", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+        }
+        if log_api_key:
+            log.debug(
+                "LLM provider init provider={} model={} base_url={} key_env={} api_key={}",
+                self._provider,
+                self.model,
+                config["base_url"] or "https://api.openai.com/v1",
+                config["api_key_env"],
+                api_key,
+            )
+        else:
+            log.debug(
+                "LLM provider init provider={} model={} base_url={} key_env={} key_len={} key_hint={}",
+                self._provider,
+                self.model,
+                config["base_url"] or "https://api.openai.com/v1",
+                config["api_key_env"],
+                len(api_key),
+                self._mask_api_key(api_key),
+            )
+        if len(api_key) < 20:
+            log.warning(
+                "API key for provider={} looks short (len={}). Verify {}.",
+                self._provider,
+                len(api_key),
+                config["api_key_env"],
+            )
+
+        self._reasoning_override = self._parse_bool_env("EMDASH_LLM_REASONING")
+        self._thinking_override = self._parse_bool_env("EMDASH_LLM_THINKING")
+        self._thinking_budget = int(os.environ.get("EMDASH_THINKING_BUDGET", "10000"))
+        # Reasoning effort for Fireworks thinking models: none, low, medium, high
+        self._reasoning_effort = os.environ.get("EMDASH_REASONING_EFFORT", "medium")
+        # Parallel tool calls for OpenAI-compatible APIs (Fireworks supports this)
+        self._parallel_tool_calls = self._parse_bool_env("EMDASH_PARALLEL_TOOL_CALLS")
+
+        # Use OPENAI_BASE_URL env var only for OpenAI provider, otherwise use provider config
+        if self._provider == "openai":
+            base_url = os.environ.get("OPENAI_BASE_URL") or config["base_url"]
+        else:
+            base_url = config["base_url"]
+
+        # Configure timeout from environment (default 300 seconds / 5 minutes)
+        # LLM calls can take a while with large contexts, so we use a generous default
+        timeout_seconds = int(os.environ.get("EMDASH_LLM_TIMEOUT", "300"))
+        self._timeout = timeout_seconds
+
+        self.client = OpenAI(
+            api_key=api_key,
+            base_url=base_url,
+            timeout=timeout_seconds,
+        )
+
+    @staticmethod
+    def _sanitize_api_key(api_key: Optional[str]) -> Optional[str]:
+        """Normalize API key values loaded from env/.env."""
+        if api_key is None:
+            return None
+        cleaned = api_key.strip()
+        if len(cleaned) >= 2 and cleaned[0] == cleaned[-1] and cleaned[0] in {"'", '"'}:
+            cleaned = cleaned[1:-1].strip()
+        return cleaned or None
+
+    @staticmethod
+    def _parse_bool_env(name: str) -> Optional[bool]:
+        """Parse a boolean environment variable."""
+        raw = os.environ.get(name)
+        if raw is None:
+            return None
+        cleaned = raw.strip().lower()
+        if cleaned in {"1", "true", "yes", "y", "on"}:
+            return True
+        if cleaned in {"0", "false", "no", "n", "off"}:
+            return False
+        return None
+
+    @staticmethod
+    def _mask_api_key(api_key: str) -> str:
+        """Mask API key for safe logging."""
+        if len(api_key) <= 8:
+            return "*" * len(api_key)
+        return f"{api_key[:4]}...{api_key[-4:]}"
+
+    def _infer_provider(self, model: str) -> str:
+        """Infer provider from model string.
+
+        Returns the appropriate provider based on model name.
+        OPENAI_BASE_URL only affects the openai provider's base URL,
+        not provider selection.
+        """
+        model_lower = model.lower()
+        if "claude" in model_lower or "anthropic" in model_lower:
+            return "anthropic"
+        elif "fireworks" in model_lower or "accounts/fireworks" in model_lower:
+            return "fireworks"
+        else:
+            return "openai"  # Default
+
+    def chat(
+        self,
+        messages: list[dict],
+        tools: Optional[list[dict]] = None,
+        system: Optional[str] = None,
+        reasoning: bool = False,
+        thinking: bool = False,
+        images: Optional[list[ImageContent]] = None,
+    ) -> LLMResponse:
+        """
+        Send a chat completion request via OpenAI SDK.
+
+        Args:
+            messages: List of message dicts with 'role' and 'content'
+            tools: Optional list of tool schemas (OpenAI format)
+            system: Optional system prompt
+            reasoning: Enable reasoning mode (for models that support it)
+            thinking: Enable extended thinking (for Anthropic models)
+            images: Optional list of images for vision-capable models
+
+        Returns:
+            LLMResponse with content and/or tool calls
+        """
+        # Add model-specific instructions for MiniMax models
+        # MiniMax M2 is trained to output XML tool calls, but Fireworks API expects JSON
+        # Adding explicit JSON format instructions helps ensure compatibility
+        if tools and "minimax" in self.model.lower():
+            minimax_tool_instruction = (
+                "\n\n## CRITICAL: Tool Call Format\n"
+                "When calling tools/functions, you MUST use the standard OpenAI function calling format. "
+                "DO NOT use XML format like <invoke> or <parameter> tags. "
+                "The API will automatically handle your tool calls - just specify which function to call and its arguments."
+            )
+            if system:
+                system = system + minimax_tool_instruction
+            else:
+                system = minimax_tool_instruction.strip()
+
+        # Prepend system message if provided
+        if system:
+            messages = [{"role": "system", "content": system}] + messages
+
+        if self._reasoning_override is not None:
+            reasoning = self._reasoning_override
+        if self._thinking_override is not None:
+            thinking = self._thinking_override
+
+        # Build completion kwargs
+        kwargs = {
+            "model": self.model,
+            "messages": messages,
+        }
+
+        # Set max_tokens from model spec or env override
+        max_tokens = int(os.environ.get("EMDASH_MAX_OUTPUT_TOKENS", "0"))
+        if max_tokens == 0 and self.chat_model:
+            max_tokens = self.chat_model.spec.max_output_tokens
+        if max_tokens > 0:
+            kwargs["max_tokens"] = max_tokens
+
+        # Fireworks requires stream=true when max_tokens > 4096
+        use_streaming = False
+        if self._provider == "fireworks" and max_tokens > 4096:
+            kwargs["stream"] = True
+            use_streaming = True
+            log.debug(
+                "Enabling streaming for Fireworks (max_tokens={} > 4096)",
+                max_tokens,
+            )
+
+        # Add tools if provided
+        if tools:
+            kwargs["tools"] = tools
+            kwargs["tool_choice"] = "auto"
+            # Add parallel_tool_calls if enabled (Fireworks and OpenAI support this)
+            if self._parallel_tool_calls is True:
+                kwargs["parallel_tool_calls"] = True
+                log.debug(
+                    "Parallel tool calls enabled provider={} model={}",
+                    self._provider,
+                    self.model,
+                )
+
+        # Add reasoning support via extra_body for providers that support it
+        # Skip reasoning for custom base URLs (they may not support it)
+        is_custom_api = bool(os.environ.get("OPENAI_BASE_URL"))
+        if reasoning and self._provider in REASONING_SUPPORTED_PROVIDERS and not is_custom_api:
+            kwargs["extra_body"] = {"reasoning": {"enabled": True}}
+
+        # Add extended thinking for Anthropic models
+        # This uses Anthropic's native thinking parameter
+        if thinking and self._provider in THINKING_SUPPORTED_PROVIDERS and not is_custom_api:
+            extra_body = kwargs.get("extra_body", {})
+            extra_body["thinking"] = {
+                "type": "enabled",
+                "budget_tokens": self._thinking_budget,
+            }
+            kwargs["extra_body"] = extra_body
+            log.info(
+                "Extended thinking enabled provider={} model={} budget={}",
+                self._provider,
+                self.model,
+                self._thinking_budget,
+            )
+
+        # Add reasoning_effort for Fireworks models that support it
+        # We'll try with it first, and if rejected, retry without
+        if thinking and self._provider == "fireworks" and self._reasoning_effort != "none":
+            if not getattr(self, '_reasoning_effort_unsupported', False):
+                kwargs["reasoning_effort"] = self._reasoning_effort
+                log.info(
+                    "Reasoning effort enabled provider={} model={} effort={}",
+                    self._provider,
+                    self.model,
+                    self._reasoning_effort,
+                )
+
+        # Add images if provided (vision support)
+        if images:
+            log.info(
+                "Adding {} images to request provider={} model={}",
+                len(images),
+                self._provider,
+                self.model,
+            )
+            # Find the last user message and add images to it
+            for i in range(len(messages) - 1, -1, -1):
+                if messages[i].get("role") == "user":
+                    messages[i]["content"] = self._format_content_with_images(
+                        messages[i].get("content", ""), images
+                    )
+                    break
+
+        extra_headers = {}
+
+        messages_summary = [
+            {
+                "role": m.get("role"),
+                "content_len": len(str(m.get("content", ""))),
+            }
+            for m in messages
+        ]
+        log.info(
+            "LLM request start provider={} model={} messages={} tools={} reasoning={} max_tokens={}",
+            self._provider,
+            self.model,
+            len(messages),
+            bool(tools),
+            reasoning,
+            kwargs.get("max_tokens", "default"),
+        )
+        log_payload = os.environ.get("EMDASH_LOG_LLM_PAYLOAD", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+        }
+        if log_payload:
+            log.debug(
+                "LLM request payload provider={} model={} headers={} payload={}",
+                self._provider,
+                self.model,
+                sorted(extra_headers.keys()),
+                kwargs,
+            )
+        else:
+            log.debug(
+                "LLM request provider={} model={} messages={} tools={} reasoning={} headers={}",
+                self._provider,
+                self.model,
+                messages_summary,
+                bool(tools),
+                reasoning,
+                sorted(extra_headers.keys()),
+            )
+
+        # Call OpenAI SDK
+        start_time = time.time()
+        try:
+            response = self.client.chat.completions.create(**kwargs)
+
+            # Handle streaming response (required for Fireworks with max_tokens > 4096)
+            if use_streaming:
+                response = self._collect_stream(response)
+        except Exception as exc:  # pragma: no cover - defensive logging
+            elapsed = time.time() - start_time
+            status = getattr(exc, "status_code", None)
+            code = getattr(exc, "code", None)
+            error_msg = str(exc).lower()
+
+            # Check if error is XML tool call format issue (MiniMax or GLM-4)
+            # MiniMax M2 outputs <invoke> format, GLM-4 outputs <tool_call> format
+            # Fireworks sometimes fails to parse these - we can extract from error message
+            has_xml_tool_call = "<invoke" in error_msg or "<tool_call>" in error_msg
+            if "json does not contain content for both" in error_msg and has_xml_tool_call:
+                # Try to parse XML tool calls from the error message
+                original_error = str(exc)
+                parsed_tool_calls = _parse_xml_tool_calls(original_error)
+
+                if parsed_tool_calls:
+                    elapsed = time.time() - start_time
+                    log.info(
+                        "Successfully parsed {} XML tool call(s) from MiniMax error "
+                        "provider={} model={} elapsed={:.1f}s",
+                        len(parsed_tool_calls),
+                        self._provider,
+                        self.model,
+                        elapsed,
+                    )
+                    # Return a synthetic LLMResponse with the parsed tool calls
+                    return LLMResponse(
+                        content=None,
+                        thinking=None,
+                        tool_calls=parsed_tool_calls,
+                        raw=None,  # No raw response since we parsed from error
+                        stop_reason="tool_calls",
+                        input_tokens=0,  # Unknown
+                        output_tokens=0,  # Unknown
+                        thinking_tokens=0,
+                    )
+                else:
+                    log.error(
+                        "MiniMax XML tool call format error detected but failed to parse. "
+                        "provider={} model={} error={}",
+                        self._provider,
+                        self.model,
+                        exc,
+                    )
+                    # Re-raise with helpful message
+                    raise RuntimeError(
+                        f"MiniMax tool call format error: The model output XML-formatted tool calls "
+                        f"which could not be parsed. Original error: {exc}"
+                    ) from exc
+
+            # Check if error is about reasoning_effort not being supported
+            if "reasoning_effort" in error_msg or "reasoning" in error_msg and "not support" in error_msg:
+                if "reasoning_effort" in kwargs:
+                    log.warning(
+                        "Model doesn't support reasoning_effort, retrying without it provider={} model={}",
+                        self._provider,
+                        self.model,
+                    )
+                    # Remember this model doesn't support reasoning_effort
+                    self._reasoning_effort_unsupported = True
+                    # Remove reasoning_effort and retry
+                    del kwargs["reasoning_effort"]
+                    try:
+                        response = self.client.chat.completions.create(**kwargs)
+                        # Success - continue to return response below
+                        elapsed = time.time() - start_time
+                        log.info(
+                            "LLM request completed (without reasoning_effort) provider={} model={} elapsed={:.1f}s",
+                            self._provider,
+                            self.model,
+                            elapsed,
+                        )
+                        return self._to_llm_response(response)
+                    except Exception as retry_exc:
+                        log.exception(
+                            "LLM retry request failed provider={} model={} error={}",
+                            self._provider,
+                            self.model,
+                            retry_exc,
+                        )
+                        raise
+
+            log.exception(
+                "LLM request failed provider={} model={} status={} code={} elapsed={:.1f}s error={}",
+                self._provider,
+                self.model,
+                status,
+                code,
+                elapsed,
+                exc,
+            )
+            raise
+
+        elapsed = time.time() - start_time
+        log.info(
+            "LLM request completed provider={} model={} elapsed={:.1f}s",
+            self._provider,
+            self.model,
+            elapsed,
+        )
+
+        return self._to_llm_response(response)
+
+    def _collect_stream(self, stream):
+        """Collect streaming chunks into a single response object.
+
+        This is used for Fireworks API which requires streaming for max_tokens > 4096.
+        We collect all chunks and build a response object that matches the non-streaming format.
+        """
+        content_parts = []
+        reasoning_parts = []  # Collect reasoning/thinking content
+        tool_calls_data = {}  # id -> {name, arguments}
+        finish_reason = None
+        model = None
+        usage = None
+
+        for chunk in stream:
+            if not chunk.choices:
+                continue
+
+            delta = chunk.choices[0].delta
+            model = chunk.model or model
+
+            # Collect content
+            if delta.content:
+                content_parts.append(delta.content)
+
+            # Collect reasoning_content if present in delta
+            # Check multiple ways since the SDK might not expose extra fields directly
+            reasoning_chunk = None
+            if hasattr(delta, "reasoning_content") and delta.reasoning_content:
+                reasoning_chunk = delta.reasoning_content
+            elif hasattr(delta, "model_extra"):
+                reasoning_chunk = delta.model_extra.get("reasoning_content")
+            elif hasattr(chunk, "_raw_response"):
+                # Try to get from raw response
+                try:
+                    raw = chunk._raw_response
+                    if hasattr(raw, "json"):
+                        raw_json = raw.json()
+                        choices = raw_json.get("choices", [])
+                        if choices and choices[0].get("delta"):
+                            reasoning_chunk = choices[0]["delta"].get("reasoning_content")
+                except Exception:
+                    pass
+            if reasoning_chunk:
+                reasoning_parts.append(reasoning_chunk)
+
+            # Collect tool calls
+            if delta.tool_calls:
+                for tc in delta.tool_calls:
+                    tc_id = tc.id or str(tc.index)
+                    if tc_id not in tool_calls_data:
+                        tool_calls_data[tc_id] = {"id": tc.id, "name": "", "arguments": ""}
+                    if tc.function:
+                        if tc.function.name:
+                            tool_calls_data[tc_id]["name"] = tc.function.name
+                        if tc.function.arguments:
+                            tool_calls_data[tc_id]["arguments"] += tc.function.arguments
+
+            # Capture finish reason
+            if chunk.choices[0].finish_reason:
+                finish_reason = chunk.choices[0].finish_reason
+
+            # Capture usage if present
+            if hasattr(chunk, "usage") and chunk.usage:
+                usage = chunk.usage
+
+        # Build a mock response object that matches non-streaming format
+        collected_reasoning = "".join(reasoning_parts) if reasoning_parts else None
+        if collected_reasoning:
+            log.info(
+                "Stream reasoning collected provider={} model={} len={}",
+                self._provider,
+                self.model,
+                len(collected_reasoning),
+            )
+
+        class MockMessage:
+            def __init__(self):
+                self.content = "".join(content_parts) if content_parts else None
+                self.tool_calls = []
+                self.reasoning_content = collected_reasoning
+
+                for tc_data in tool_calls_data.values():
+                    tc = type("ToolCall", (), {
+                        "id": tc_data["id"],
+                        "type": "function",
+                        "function": type("Function", (), {
+                            "name": tc_data["name"],
+                            "arguments": tc_data["arguments"],
+                        })(),
+                    })()
+                    self.tool_calls.append(tc)
+
+                if not self.tool_calls:
+                    self.tool_calls = None
+
+        class MockChoice:
+            def __init__(self):
+                self.message = MockMessage()
+                self.finish_reason = finish_reason
+
+        class MockResponse:
+            def __init__(self):
+                self.choices = [MockChoice()]
+                self.model = model
+                self.usage = usage
+
+        return MockResponse()
+
+    def _to_llm_response(self, response) -> LLMResponse:
+        """Convert OpenAI response to our LLMResponse format."""
+        response_model = getattr(response, "model", None)
+        log.info(
+            "LLM response received provider={} model={} response_model={}",
+            self._provider,
+            self.model,
+            response_model,
+        )
+        log.debug(
+            "LLM response provider={} model={} response_model={}",
+            self._provider,
+            self.model,
+            response_model,
+        )
+        choice = response.choices[0]
+        message = choice.message
+
+        # Debug: Log message attributes to help trace reasoning_content extraction
+        msg_attrs = [attr for attr in dir(message) if not attr.startswith('_')]
+        log.debug(
+            "Message attributes provider={} model={} attrs={}",
+            self._provider,
+            self.model,
+            msg_attrs[:20],  # First 20 to avoid log spam
+        )
+        if hasattr(message, "model_extra") and message.model_extra:
+            log.debug(
+                "Message model_extra keys provider={} keys={}",
+                self._provider,
+                list(message.model_extra.keys()),
+            )
+
+        # Extract content and thinking
+        content = None
+        thinking = None
+
+        # Check if content is a list of content blocks (Anthropic extended thinking)
+        raw_content = message.content
+        if isinstance(raw_content, list):
+            # Content blocks format (Anthropic with extended thinking)
+            text_parts = []
+            thinking_parts = []
+            for block in raw_content:
+                if hasattr(block, "type"):
+                    if block.type == "thinking":
+                        thinking_parts.append(getattr(block, "thinking", ""))
+                    elif block.type == "text":
+                        text_parts.append(getattr(block, "text", ""))
+                elif isinstance(block, dict):
+                    if block.get("type") == "thinking":
+                        thinking_parts.append(block.get("thinking", ""))
+                    elif block.get("type") == "text":
+                        text_parts.append(block.get("text", ""))
+            content = "\n".join(text_parts) if text_parts else None
+            thinking = "\n".join(thinking_parts) if thinking_parts else None
+        else:
+            # Simple string content
+            content = raw_content
+
+        # Check for reasoning_content field (Fireworks/OpenAI thinking models)
+        # This is separate from Anthropic's content blocks format
+        # The OpenAI SDK might not expose this as an attribute, so we check multiple ways
+        reasoning_content = None
+
+        # Method 1: Direct attribute access
+        if hasattr(message, "reasoning_content"):
+            reasoning_content = message.reasoning_content
+
+        # Method 2: Check model_extra (Pydantic v2 stores extra fields here)
+        if not reasoning_content and hasattr(message, "model_extra"):
+            reasoning_content = message.model_extra.get("reasoning_content")
+
+        # Method 3: Try to access via __dict__ or model_dump
+        if not reasoning_content:
+            try:
+                if hasattr(message, "model_dump"):
+                    msg_dict = message.model_dump()
+                    reasoning_content = msg_dict.get("reasoning_content")
+                elif hasattr(message, "__dict__"):
+                    reasoning_content = message.__dict__.get("reasoning_content")
+            except Exception:
+                pass
+
+        # Method 4: Access raw response data through OpenAI client's internal structure
+        # The SDK stores raw JSON in _raw_response or similar attributes
+        if not reasoning_content:
+            try:
+                # Check if response has _raw_response (httpx response)
+                if hasattr(response, "_raw_response"):
+                    raw = response._raw_response
+                    if hasattr(raw, "json"):
+                        raw_json = raw.json()
+                        choices = raw_json.get("choices", [])
+                        if choices:
+                            msg = choices[0].get("message", {})
+                            reasoning_content = msg.get("reasoning_content")
+                            if reasoning_content:
+                                log.debug("reasoning_content found in _raw_response")
+            except Exception as e:
+                log.debug(f"Failed to extract reasoning_content from _raw_response: {e}")
+
+        # Method 5: Try model_dump with mode='json' or include extra
+        if not reasoning_content:
+            try:
+                if hasattr(message, "model_dump"):
+                    # Try with all fields mode
+                    msg_dict = message.model_dump(mode='python', by_alias=True, exclude_unset=False)
+                    reasoning_content = msg_dict.get("reasoning_content")
+                    if not reasoning_content:
+                        # Also check for snake_case variant
+                        reasoning_content = msg_dict.get("reasoning")
+            except Exception:
+                pass
+
+        # Method 6: Check choice-level for reasoning_content (some APIs put it there)
+        if not reasoning_content:
+            try:
+                if hasattr(choice, "reasoning_content"):
+                    reasoning_content = choice.reasoning_content
+                elif hasattr(choice, "model_extra"):
+                    reasoning_content = choice.model_extra.get("reasoning_content")
+            except Exception:
+                pass
+
+        if reasoning_content:
+            thinking = reasoning_content
+            log.info(
+                "Reasoning content extracted provider={} model={} len={}",
+                self._provider,
+                self.model,
+                len(thinking),
+            )
+
+        # Check for inline <think>...</think> tags (used by some models like DeepSeek, Kimi, etc.)
+        # Extract thinking content and remove from main content
+        if not thinking and content:
+            import re
+            think_pattern = r'<think>(.*?)</think>'
+            think_matches = re.findall(think_pattern, content, re.DOTALL)
+            if think_matches:
+                thinking = "\n".join(think_matches)
+                content = re.sub(think_pattern, '', content, flags=re.DOTALL).strip()
+                log.debug(
+                    "Thinking extracted from <think> tags provider={} len={}",
+                    self._provider,
+                    len(thinking),
+                )
+
+        # Extract tool calls
+        tool_calls = []
+        if message.tool_calls:
+            for tc in message.tool_calls:
+                tool_calls.append(ToolCall(
+                    id=tc.id,
+                    name=tc.function.name,
+                    arguments=tc.function.arguments,
+                ))
+
+        # Extract token usage if available
+        input_tokens = 0
+        output_tokens = 0
+        thinking_tokens = 0
+        if hasattr(response, "usage") and response.usage:
+            input_tokens = getattr(response.usage, "prompt_tokens", 0) or 0
+            output_tokens = getattr(response.usage, "completion_tokens", 0) or 0
+            # Try to get reasoning/thinking tokens from the API response
+            # Different providers use different field names
+            thinking_tokens = (
+                getattr(response.usage, "reasoning_tokens", 0)
+                or getattr(response.usage, "thinking_tokens", 0)
+                or 0
+            )
+            # If no explicit thinking tokens but we have thinking content, estimate
+            if not thinking_tokens and thinking:
+                thinking_tokens = len(thinking) // 4  # Rough estimate
+
+        if thinking:
+            log.info(
+                "Extended thinking captured provider={} model={} thinking_len={} thinking_tokens={}",
+                self._provider,
+                self.model,
+                len(thinking),
+                thinking_tokens,
+            )
+
+        return LLMResponse(
+            content=content,
+            thinking=thinking,
+            tool_calls=tool_calls,
+            raw=response,
+            stop_reason=choice.finish_reason,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            thinking_tokens=thinking_tokens,
+        )
+
+    def get_context_limit(self) -> int:
+        """Get the context window size for this model."""
+        return self._context_limit
+
+    def get_max_image_size(self) -> int:
+        """Get maximum image size in bytes for this model."""
+        # Different providers have different limits
+        if self._provider == "anthropic":
+            return 5 * 1024 * 1024  # 5MB for Claude
+        elif self._provider == "openai":
+            return 5 * 1024 * 1024  # 5MB for GPT-4o
+        else:
+            return 5 * 1024 * 1024  # Default
+
+    def supports_vision(self) -> bool:
+        """Check if this model supports image input."""
+        # Allow explicit override via env var
+        vision_override = os.environ.get("EMDASH_ENABLE_VISION", "").lower()
+        if vision_override in ("1", "true", "yes"):
+            return True
+        if vision_override in ("0", "false", "no"):
+            return False
+
+        if self.chat_model:
+            return self.chat_model.spec.supports_vision
+
+        # For unknown models, check if model name suggests vision support
+        model_lower = self.model.lower()
+        vision_indicators = ["-vl", "vl-", "vision", "4o", "gpt-4-turbo"]
+        return any(ind in model_lower for ind in vision_indicators)
+
+    def supports_thinking(self) -> bool:
+        """Check if this model supports extended thinking."""
+        if self.chat_model:
+            return self.chat_model.spec.supports_thinking
+
+        # For unknown models, check if provider supports thinking
+        return self._provider in THINKING_SUPPORTED_PROVIDERS
+
+    def _format_image_for_api(self, image: ImageContent) -> dict:
+        """Format an image for OpenAI/Anthropic API.
+
+        Args:
+            image: ImageContent with raw image data
+
+        Returns:
+            Dict with image_url for the API
+        """
+        encoded = base64.b64encode(image.image_data).decode("utf-8")
+        return {
+            "type": "image_url",
+            "image_url": {
+                "url": f"data:image/{image.format};base64,{encoded}"
+            }
+        }
+
+    def _format_content_with_images(
+        self,
+        text: str,
+        images: Optional[list[ImageContent]] = None
+    ):
+        """Format message content with optional images.
+
+        For vision models, returns a list of content blocks.
+        For non-vision models, returns text only.
+
+        Args:
+            text: Text content
+            images: Optional list of images
+
+        Returns:
+            Content formatted for this provider
+        """
+        if not images:
+            return text
+
+        if not self.supports_vision():
+            log.warning(
+                "Model {} does not support vision, images will be stripped",
+                self.model,
+            )
+            return text
+
+        # Vision model: create content blocks
+        content = [{"type": "text", "text": text}]
+        for img in images:
+            content.append(self._format_image_for_api(img))
+
+        return content
+
+    def format_tool_result(self, tool_call_id: str, result: str) -> dict:
+        """
+        Format a tool result message.
+
+        Uses OpenAI format.
+        """
+        return {
+            "role": "tool",
+            "tool_call_id": tool_call_id,
+            "content": result,
+        }
+
+    def format_assistant_message(self, response: LLMResponse) -> dict:
+        """
+        Format an assistant response to add back to messages.
+
+        Uses OpenAI format.
+        """
+        message: dict[str, Any] = {"role": "assistant"}
+
+        if response.content:
+            message["content"] = response.content
+
+        if response.tool_calls:
+            message["tool_calls"] = [
+                {
+                    "id": tc.id,
+                    "type": "function",
+                    "function": {
+                        "name": tc.name,
+                        "arguments": tc.arguments,
+                    }
+                }
+                for tc in response.tool_calls
+            ]
+
+        return message
