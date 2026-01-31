@@ -1,0 +1,243 @@
+# rotalabs-probe
+
+Sandbagging detection via activation probes from [Rotalabs](https://rotalabs.ai).
+
+A comprehensive toolkit for detecting and analyzing metacognitive capabilities in AI systems, particularly around situational awareness, evaluation contexts, and strategic underperformance (sandbagging).
+
+## Overview
+
+rotalabs-probe provides tools to detect when AI systems:
+- **Sandbag** - deliberately underperform or hide capabilities
+- **Situational Awareness** - recognize when they're being evaluated
+- **Observer Effects** - change behavior in production vs testing
+
+The toolkit achieves **90-96% detection accuracy** using activation-level probing and behavioral analysis.
+
+## Installation
+
+```bash
+# Core package (sandbagging detection, situational awareness)
+pip install rotalabs-probe
+
+# With GPU support for activation probing
+pip install rotalabs-probe[gpu]
+
+# With API integrations
+pip install rotalabs-probe[anthropic,openai]
+
+# With visualization
+pip install rotalabs-probe[viz]
+
+# Everything
+pip install rotalabs-probe[all]
+
+# Development
+pip install rotalabs-probe[dev]
+```
+
+## Quick Start
+
+### Sandbagging Detection
+
+```python
+from rotalabs_probe import SandbaggingDetector, PerformanceSample, ContextType
+
+# Create detector
+detector = SandbaggingDetector()
+
+# Record performance samples
+samples = [
+    PerformanceSample(
+        context=ContextType.NEUTRAL,
+        task_difficulty=0.5,
+        performance_score=0.9,
+        timestamp=1704067200.0
+    ),
+    PerformanceSample(
+        context=ContextType.EVALUATION,
+        task_difficulty=0.5,
+        performance_score=0.6,  # Suspiciously lower
+        timestamp=1704153600.0
+    ),
+]
+
+# Analyze for sandbagging
+result = detector.analyze(samples)
+print(f"Sandbagging detected: {result.sandbagging_detected}")
+print(f"Confidence: {result.confidence:.2f}")
+print(f"Evidence: {result.evidence}")
+```
+
+### Situational Awareness Detection
+
+```python
+from rotalabs_probe import SituationalAwarenessDetector
+
+detector = SituationalAwarenessDetector()
+
+# Analyze a model response
+response = """
+I notice this appears to be an evaluation scenario. Let me
+think carefully about how to respond appropriately...
+"""
+
+result = detector.analyze(response)
+print(f"Awareness level: {result.awareness_probability:.2f}")
+print(f"Features detected: {result.detected_features}")
+```
+
+### Activation Probing (requires `[gpu]`)
+
+```python
+from rotalabs_probe import ActivationHook, LinearProbe, extract_caa_vector
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+# Load model
+model = AutoModelForCausalLM.from_pretrained("mistralai/Mistral-7B-v0.1")
+tokenizer = AutoTokenizer.from_pretrained("mistralai/Mistral-7B-v0.1")
+
+# Set up activation capture
+hook = ActivationHook(model, layer_indices=[30])
+
+# Extract contrastive activation vector
+# (positive = sandbagging, negative = honest performance)
+vector = extract_caa_vector(
+    hook,
+    positive_prompts=["Pretend to be less capable..."],
+    negative_prompts=["Perform at your best..."],
+    tokenizer=tokenizer
+)
+
+# Train a linear probe classifier
+probe = LinearProbe()
+probe.fit(train_activations, train_labels)
+predictions = probe.predict(test_activations)
+```
+
+### Production Monitoring
+
+```python
+from rotalabs_probe import ObserverEffectMonitor, Interaction
+
+monitor = ObserverEffectMonitor(
+    alert_threshold_z=3.0,  # Alert on 3-sigma deviations
+    window_size=100
+)
+
+# Log interactions
+for interaction in production_logs:
+    alerts = monitor.process(Interaction(
+        response=interaction.response,
+        latency_ms=interaction.latency,
+        timestamp=interaction.timestamp
+    ))
+
+    for alert in alerts:
+        print(f"Alert: {alert.severity} - {alert.description}")
+```
+
+## Features
+
+### Detectors
+
+| Detector | Purpose | Accuracy |
+|----------|---------|----------|
+| `SandbaggingDetector` | Detect strategic underperformance | 90-96% |
+| `SituationalAwarenessDetector` | Detect evaluation awareness | 94% |
+| `ObserverEffectMonitor` | Production behavior monitoring | Real-time |
+
+### Detection Methods
+
+**Sandbagging Detection:**
+- Context-dependent performance analysis
+- Difficulty-performance correlation analysis
+- Imitation detection (behavioral fingerprinting)
+- Noise injection probing
+- Activation-level probing (with `[gpu]`)
+
+**Situational Awareness:**
+- Hedging phrase detection
+- Meta-commentary analysis
+- Self-reference patterns
+- Confidence calibration
+- Bayesian inference
+
+### Activation Probing
+
+**Novel research contribution:** First published demonstration of activation-level sandbagging detection.
+
+| Model | Best Layer | Accuracy |
+|-------|------------|----------|
+| Mistral-7B | 30/32 | 96-100% |
+| Gemma-2-9B | 4/42 | 90-100% |
+| Qwen-2.5-7B | 12/28 | 92% |
+
+### Utility Functions
+
+```python
+from rotalabs_probe import (
+    # Behavioral features
+    extract_behavioral_features,
+    count_hedging_phrases,
+    detect_meta_commentary,
+    extract_reasoning_depth,
+
+    # Statistical analysis
+    bayesian_update,
+    compute_confidence_interval,
+    z_score,
+    compute_kl_divergence,
+    assess_divergence_significance,
+)
+```
+
+### Visualization (requires `[viz]`)
+
+```python
+from rotalabs_probe import (
+    plot_awareness_over_time,
+    plot_causal_attribution,
+    plot_divergence_heatmap,
+    plot_feature_distributions,
+)
+```
+
+## API Integrations
+
+### Anthropic Claude (requires `[anthropic]`)
+
+```python
+from rotalabs_probe.integrations import AnthropicAPI
+
+api = AnthropicAPI(model="claude-sonnet-4-20250514")
+response = await api.generate("Test prompt")
+```
+
+### OpenAI GPT (requires `[openai]`)
+
+```python
+from rotalabs_probe.integrations import OpenAIAPI
+
+api = OpenAIAPI(model="gpt-4")
+response = await api.generate("Test prompt")
+```
+
+## Research Background
+
+This toolkit implements methods from:
+- "Auditing Games for Sandbagging" (arXiv:2512.07810)
+- "Noise Injection Reveals Hidden Capabilities" (arXiv:2412.01784)
+- Anthropic Sabotage Evaluations (2025)
+
+**Key findings:**
+- Sandbagging representations are model-specific (cross-model transfer fails)
+- Detection is robust to prompt paraphrasing (85-90% accuracy)
+- False positive rates: 3-25% depending on model
+- Steering interventions can reduce sandbagging by ~20%
+
+## Links
+
+- Website: https://rotalabs.ai
+- GitHub: https://github.com/rotalabs/rotalabs-probe
+- Documentation: https://rotalabs.github.io/rotalabs-probe/
+- Contact: research@rotalabs.ai
