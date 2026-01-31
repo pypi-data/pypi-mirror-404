@@ -1,0 +1,312 @@
+Metadata-Version: 2.4
+Name: rotalabs-verity
+Version: 0.1.0
+Summary: Verity: Neuro-symbolic synthesis of verified code using Z3 and LLMs with CE2P feedback
+Project-URL: Homepage, https://rotalabs.ai
+Project-URL: Repository, https://github.com/rotalabs/rotalabs-verity
+Project-URL: Documentation, https://rotalabs.github.io/rotalabs-verity/
+Author-email: Subhadip Mitra <subhadip@rotalabs.ai>, Rotalabs Research <research@rotalabs.ai>
+License-Expression: MIT
+Keywords: ce2p,cegis,code-synthesis,formal-methods,llm,neuro-symbolic,smt,verification,z3
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: Intended Audience :: Science/Research
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Scientific/Engineering :: Artificial Intelligence
+Classifier: Topic :: Software Development :: Code Generators
+Classifier: Topic :: Software Development :: Testing
+Requires-Python: >=3.9
+Requires-Dist: requests>=2.31.0
+Requires-Dist: z3-solver>=4.12.0
+Provides-Extra: all
+Requires-Dist: anthropic>=0.18.0; extra == 'all'
+Requires-Dist: ollama>=0.1.0; extra == 'all'
+Requires-Dist: openai>=1.0.0; extra == 'all'
+Provides-Extra: anthropic
+Requires-Dist: anthropic>=0.18.0; extra == 'anthropic'
+Provides-Extra: dev
+Requires-Dist: black>=23.0.0; extra == 'dev'
+Requires-Dist: mypy>=1.5.0; extra == 'dev'
+Requires-Dist: pytest-cov>=4.1.0; extra == 'dev'
+Requires-Dist: pytest>=7.4.0; extra == 'dev'
+Requires-Dist: ruff>=0.1.0; extra == 'dev'
+Provides-Extra: docs
+Requires-Dist: mkdocs-material>=9.4.0; extra == 'docs'
+Requires-Dist: mkdocs>=1.5.0; extra == 'docs'
+Requires-Dist: mkdocstrings[python]>=0.24.0; extra == 'docs'
+Provides-Extra: llm
+Requires-Dist: anthropic>=0.18.0; extra == 'llm'
+Requires-Dist: openai>=1.0.0; extra == 'llm'
+Provides-Extra: ollama
+Requires-Dist: ollama>=0.1.0; extra == 'ollama'
+Provides-Extra: openai
+Requires-Dist: openai>=1.0.0; extra == 'openai'
+Description-Content-Type: text/markdown
+
+# rotalabs-verity
+
+Verified code synthesis with Z3. Formally verify LLM-generated code using neuro-symbolic synthesis.
+
+## Overview
+
+`rotalabs-verity` is a neuro-symbolic synthesis framework that uses Z3 SMT solver to formally verify LLM-generated code. It implements CEGIS (Counterexample-Guided Inductive Synthesis) with CE2P (Counterexample-to-Program) feedback for structured repair suggestions.
+
+### Key Features
+
+- **Formal Verification**: Verify Python code against temporal properties using Z3
+- **CEGIS Loop**: Iterative synthesis with LLM generation and Z3 verification
+- **CE2P Feedback**: Structured counterexample analysis with fault localization and abductive repair
+- **Multi-LLM Support**: OpenAI, Anthropic Claude, and local Ollama models
+- **50 Benchmark Problems**: Rate limiting, circuit breakers, concurrency, consensus, replication, transactions
+- **Python-to-Z3 Encoder**: Automatic translation of Python code to Z3 constraints
+
+## Installation
+
+### Basic Installation
+
+```bash
+pip install rotalabs-verity
+```
+
+### With LLM Providers
+
+```bash
+# OpenAI (GPT-4)
+pip install rotalabs-verity[openai]
+
+# Anthropic (Claude)
+pip install rotalabs-verity[anthropic]
+
+# Local Ollama
+pip install rotalabs-verity[ollama]
+
+# All LLM providers
+pip install rotalabs-verity[llm]
+
+# All optional dependencies
+pip install rotalabs-verity[all]
+
+# Development dependencies
+pip install rotalabs-verity[dev]
+```
+
+## Quick Start
+
+### Verify Code Against Properties
+
+```python
+from rotalabs_verity import verify, VerificationStatus
+from rotalabs_verity.problems import get_problem
+
+# Load a benchmark problem
+spec = get_problem("RL-001")  # Token bucket rate limiter
+
+# Code to verify
+code = """
+def allow(self, timestamp: float) -> bool:
+    if self.tokens >= 1:
+        self.tokens -= 1
+        return True
+    return False
+"""
+
+# Verify
+result = verify(code, spec)
+
+if result.status == VerificationStatus.VERIFIED:
+    print("Code is correct!")
+elif result.status == VerificationStatus.COUNTEREXAMPLE:
+    print(f"Bug found: {result.counterexample}")
+    print(f"Property violated: {result.property_violated.property_name}")
+```
+
+### Synthesize Verified Code with LLM
+
+```python
+from rotalabs_verity import synthesize, SynthesisStatus
+from rotalabs_verity.llm import OpenAIClient
+from rotalabs_verity.problems import get_problem
+
+# Load problem
+spec = get_problem("RL-001")
+
+# Create LLM client
+llm = OpenAIClient(model="gpt-4")
+
+# Synthesize with CEGIS loop
+result = synthesize(spec, llm, max_iterations=10)
+
+if result.status == SynthesisStatus.SUCCESS:
+    print(f"Synthesized verified code in {result.iterations} iterations:")
+    print(result.code)
+else:
+    print(f"Synthesis failed: {result.error_message}")
+```
+
+### Use CE2P Feedback
+
+```python
+from rotalabs_verity import verify, generate_feedback
+from rotalabs_verity.problems import get_problem
+
+spec = get_problem("RL-001")
+
+buggy_code = """
+def allow(self, timestamp: float) -> bool:
+    self.tokens -= 1  # Bug: doesn't check if tokens available
+    return True
+"""
+
+result = verify(buggy_code, spec)
+feedback = generate_feedback(buggy_code, result, spec=spec)
+
+print(f"Property violated: {feedback.property_violated.property_name}")
+print(f"Fault at line {feedback.fault_line}: {feedback.root_cause}")
+print(f"Suggested fix: {feedback.suggested_fix}")
+print(f"Guard condition: {feedback.repair_guard}")
+```
+
+### CLI Usage
+
+```bash
+# List available problems
+rotalabs-verity --list
+
+# Synthesize solution for a problem
+rotalabs-verity RL-001
+
+# Use different LLM provider
+rotalabs-verity RL-001 --provider anthropic
+
+# Disable CE2P feedback
+rotalabs-verity RL-001 --no-ce2p
+
+# Save results to file
+rotalabs-verity RL-001 --output results.json
+```
+
+## Benchmark Problems
+
+50 problems across 6 categories:
+
+| Category | Problems | Description |
+|----------|----------|-------------|
+| **RL** (Rate Limiting) | 8 | Token bucket, sliding window, leaky bucket, etc. |
+| **CB** (Circuit Breaker) | 8 | Circuit breaker, bulkhead, retry, timeout, etc. |
+| **CO** (Concurrency) | 8 | Distributed lock, semaphore, barrier, latch, etc. |
+| **CN** (Consensus) | 9 | Leader election, Paxos, Raft, view change, etc. |
+| **RP** (Replication) | 9 | Primary-backup, chain replication, quorum, etc. |
+| **TX** (Transactions) | 8 | 2PC, saga, outbox, TCC, WAL, etc. |
+
+```python
+from rotalabs_verity.problems import list_problems, list_by_category, get_problem
+
+# List all problems
+print(list_problems())  # ['CB-001', 'CB-002', ..., 'TX-008']
+
+# List by category
+print(list_by_category("rate_limiting"))  # ['RL-001', ..., 'RL-008']
+
+# Get problem spec
+spec = get_problem("RL-001")
+print(spec.name)         # "Token Bucket Rate Limiter"
+print(spec.description)  # Full problem description
+```
+
+## Python Subset
+
+The verifier supports a restricted Python subset for Z3 encoding:
+
+**Supported:**
+- Simple assignments: `x = expr`, `self.x = expr`
+- Augmented assignments: `x += expr`, `x -= expr`
+- Conditionals: `if/elif/else`
+- Loops: `while`, `for x in range(n)`
+- Returns: `return expr`
+- Built-ins: `min`, `max`, `abs`
+- Ternary: `x if cond else y`
+
+**Not Supported:**
+- Lists, dicts, sets
+- Imports
+- Exceptions (try/except)
+- Classes
+- List comprehensions
+- Lambda functions
+
+## API Reference
+
+### Core Classes
+
+- `ProblemSpec`: Problem specification with properties
+- `VerificationResult`: Result of verification
+- `SynthesisResult`: Result of synthesis
+- `StructuredFeedback`: CE2P feedback with fault localization
+
+### Functions
+
+- `verify(code, spec)`: Verify code against properties
+- `synthesize(spec, llm)`: Synthesize verified code
+- `generate_feedback(code, result, spec)`: Generate CE2P feedback
+- `encode_method(code, spec)`: Encode Python to Z3
+
+### LLM Clients
+
+- `OpenAIClient`: GPT-4 and other OpenAI models
+- `AnthropicClient`: Claude models
+- `OllamaClient`: Local Ollama models
+
+## Development
+
+```bash
+# Clone and install in development mode
+git clone https://github.com/rotalabs/rotalabs-verity.git
+cd rotalabs-verity
+pip install -e ".[dev]"
+
+# Run tests
+pytest tests/ -v
+
+# Format code
+black src/ tests/
+ruff check src/ tests/
+```
+
+## Citation
+
+If you use this package in research, please cite:
+
+```bibtex
+@software{rotalabs_verity,
+  title = {rotalabs-verity: Verified Code Synthesis with Z3},
+  author = {Rotalabs},
+  year = {2025},
+  url = {https://github.com/rotalabs/rotalabs-verity}
+}
+```
+
+## Related Work
+
+This package builds on research in:
+
+- CEGIS (Counterexample-Guided Inductive Synthesis)
+- Neuro-symbolic program synthesis
+- SMT-based program verification
+- Contrastive counterexample generation
+
+## License
+
+MIT License - see [LICENSE](LICENSE) for details.
+
+## Links
+
+- Documentation: https://rotalabs.github.io/rotalabs-verity/
+- PyPI: https://pypi.org/project/rotalabs-verity/
+- GitHub: https://github.com/rotalabs/rotalabs-verity
+- Website: https://rotalabs.ai
+- Contact: research@rotalabs.ai
