@@ -1,0 +1,615 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "empathy-framework"
+version = "5.2.1"
+description = "AI collaboration framework with real LLM agent execution, AskUserQuestion tool integration, Socratic agent generation, progressive tier escalation (70-85% cost savings), meta-orchestration, dynamic agent composition (10 patterns including Anthropic-inspired), intelligent caching (85% hit rate), semantic workflow discovery, visual workflow editor, MCP integration for Claude Code, and multi-agent orchestration."
+readme = {file = "README.md", content-type = "text/markdown"}
+requires-python = ">=3.10"
+license = {file = "LICENSE"}
+authors = [
+    {name = "Patrick Roebuck", email = "admin@smartaimemory.com"}
+]
+maintainers = [
+    {name = "Smart-AI-Memory", email = "admin@smartaimemory.com"}
+]
+keywords = [
+    "ai",
+    "collaboration",
+    "empathy",
+    "anticipatory-ai",
+    "systems-thinking",
+    "llm",
+    "claude",
+    "memdocs",
+    "level-5-ai",
+    "code-inspection",
+    "static-analysis",
+    "code-quality",
+    "sarif",
+    "github-actions",
+    "developer-tools"
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: OS Independent",
+]
+
+# Core dependencies - minimal required for framework to function
+dependencies = [
+    "pydantic>=2.0.0,<3.0.0",
+    "typing-extensions>=4.0.0,<5.0.0",
+    "python-dotenv>=1.0.0,<2.0.0",
+    "structlog>=23.0.0,<26.0.0",
+    "defusedxml>=0.7.0,<1.0.0",
+    "rich>=13.0.0,<14.0.0",  # Beautiful CLI output
+    "typer>=0.9.0,<1.0.0",  # Better CLI commands
+    "pyyaml>=6.0,<7.0",  # Required by workflows (bug_predict, etc.)
+    "anthropic>=0.25.0,<1.0.0",  # Core LLM provider (direct SDK usage)
+]
+# NOTE: CrewAI and LangChain moved to optional dependencies in v4.4.0
+# The "Crew" workflows use EmpathyLLMExecutor (Anthropic SDK) directly,
+# not the actual CrewAI library. Install with: pip install empathy-framework[crewai]
+
+[project.optional-dependencies]
+# LLM providers (user chooses which they need)
+anthropic = ["anthropic>=0.25.0,<1.0.0"]
+openai = ["openai>=1.12.0,<2.0.0"]
+# Note: google-generativeai is deprecated but still works; google-genai requires
+# tenacity>=9.1.2 (now compatible with langchain>=0.3.0). Ready to migrate.
+google = ["google-generativeai>=0.3.0,<1.0.0"]
+llm = [
+    "anthropic>=0.25.0,<1.0.0",
+    "openai>=1.12.0,<2.0.0",
+    "google-generativeai>=0.3.0,<1.0.0",
+]
+
+# MemDocs integration for long-term memory
+memdocs = [
+    "memdocs>=1.0.0",  # Published on PyPI
+]
+
+# LangChain ecosystem for agents/workflows
+agents = [
+    "langchain>=1.0.0,<2.0.0",
+    "langchain-core>=1.2.5,<2.0.0",  # 1.2.5+ has security fixes
+    "langchain-text-splitters>=0.3.9,<0.4.0",
+    "langgraph>=1.0.0,<2.0.0",  # 1.0+ required for langgraph-checkpoint 3.0 (RCE fix)
+    "langgraph-checkpoint>=3.0.0,<4.0.0",  # Security: GHSA-wwqv-p2pp-99h5 (RCE fix)
+    "marshmallow>=4.1.2,<5.0.0",  # Security: GHSA-428g-f7cq-pgp5
+]
+
+# CrewAI for role-based multi-agent systems (DEPRECATED in v4.4.0)
+# The meta-workflow system provides equivalent functionality using Anthropic SDK directly.
+# See docs/CREWAI_MIGRATION.md for migration guide.
+crewai = [
+    "crewai>=0.1.0,<1.0.0",
+    "langchain>=0.1.0,<2.0.0",
+    "langchain-core>=1.2.6,<2.0.0",
+]
+
+# Hybrid caching for 70% cost reduction (v3.8.0+)
+# Includes semantic similarity matching with sentence-transformers
+cache = [
+    "sentence-transformers>=2.0.0,<4.0.0",
+    "torch>=2.0.0,<3.0.0",
+    "numpy>=1.24.0,<3.0.0",
+]
+
+# Healthcare organizations - enterprise + compliance + healthcare plugins
+# NOTE: Only install this if you need HIPAA/GDPR compliance features
+healthcare = [
+    # Everything in enterprise
+    "anthropic>=0.25.0,<1.0.0",
+    "openai>=1.12.0,<2.0.0",
+    "google-generativeai>=0.3.0,<1.0.0",
+    "memdocs>=1.0.0",
+    "langchain>=1.0.0,<2.0.0",
+    "langchain-core>=1.2.5,<2.0.0",
+    "langchain-text-splitters>=0.3.9,<0.4.0",
+    "langgraph>=1.0.0,<2.0.0",
+    "langgraph-checkpoint>=3.0.0,<4.0.0",
+    "marshmallow>=4.1.2,<5.0.0",
+    "python-docx>=0.8.11,<1.0.0",
+    "pyyaml>=6.0,<7.0",
+    "fastapi>=0.109.1,<1.0.0",
+    "uvicorn>=0.20.0,<1.0.0",
+    "starlette>=0.40.0,<1.0.0",
+    "bcrypt>=4.0.0,<5.0.0",
+    "PyJWT[crypto]>=2.8.0",
+    # OpenTelemetry for enterprise telemetry
+    "opentelemetry-api>=1.20.0,<2.0.0",
+    "opentelemetry-sdk>=1.20.0,<2.0.0",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.20.0,<2.0.0",
+    # Healthcare-specific dependencies
+    "redis>=5.0.0,<6.0.0",  # For session management and real-time alerts
+]
+
+software = [
+    "python-docx>=0.8.11,<1.0.0",
+    "pyyaml>=6.0,<7.0",
+]
+
+# Backend API server (optional)
+backend = [
+    "fastapi>=0.109.1,<1.0.0",  # CVE fix: PYSEC-2024-38
+    "uvicorn>=0.20.0,<1.0.0",
+    "starlette>=0.40.0,<1.0.0",  # CVE fix: GHSA-f96h, GHSA-2c2j
+    "bcrypt>=4.0.0,<5.0.0",  # Password hashing (cost factor 12)
+    "PyJWT[crypto]>=2.8.0",  # JWT auth - uses cryptography (no ecdsa CVE)
+]
+
+# LSP server for editor integration (optional)
+lsp = [
+    "pygls>=1.0.0,<2.0.0",
+    "lsprotocol>=2023.0.0,<2024.0.0",
+]
+
+# Windows compatibility
+windows = [
+    "colorama>=0.4.6,<1.0.0",  # ANSI color support for Windows CMD
+]
+
+# OpenTelemetry backend for enterprise telemetry export
+otel = [
+    "opentelemetry-api>=1.20.0,<2.0.0",
+    "opentelemetry-sdk>=1.20.0,<2.0.0",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.20.0,<2.0.0",
+]
+
+# Documentation dependencies
+docs = [
+    "mkdocs>=1.5.0,<2.0.0",
+    "mkdocs-material>=9.4.0,<10.0.0",
+    "mkdocstrings[python]>=0.24.0,<1.0.0",
+    "mkdocs-with-pdf>=0.9.3,<1.0.0",  # PDF/ePub generation
+    "pymdown-extensions>=10.0,<11.0",
+]
+
+# Development dependencies
+dev = [
+    "pytest>=7.0,<10.0",  # Updated upper bound for pytest 9.x
+    "pytest-asyncio>=0.21,<2.0",  # Updated for pytest-asyncio 1.x
+    "pytest-cov>=4.0,<8.0",  # Updated upper bound
+    "pytest-mock>=3.14.0,<4.0",  # Mock fixtures for testing
+    "pytest-xdist>=3.5.0,<4.0",  # Parallel test execution (4-8x faster)
+    "pytest-testmon>=2.1.0,<3.0",  # Run only tests affected by changes
+    "pytest-picked>=0.5.0,<1.0",  # Run tests for uncommitted changes
+    "black>=24.3.0,<27.0",  # CVE fix: PYSEC-2024-48
+    "mypy>=1.0,<2.0",
+    "ruff>=0.1,<1.0",
+    "coverage>=7.0,<8.0",
+    "bandit>=1.7,<2.0",
+    "pre-commit>=3.0,<5.0",  # Updated for pre-commit 4.x
+    # Test dependencies for API and integration tests
+    "httpx>=0.27.0,<1.0.0",  # For API testing
+    "fastapi>=0.109.1,<1.0.0",  # For wizard API tests
+    "requests>=2.28.0,<3.0.0",  # For notification tests
+]
+
+# Individual developers - lightweight, software development focused
+developer = [
+    # LLM providers
+    "anthropic>=0.25.0,<1.0.0",
+    "openai>=1.12.0,<2.0.0",
+    "google-generativeai>=0.3.0,<1.0.0",
+    # MemDocs integration
+    "memdocs>=1.0.0",
+    # Agents (updated for security fixes)
+    "langchain>=1.0.0,<2.0.0",
+    "langchain-core>=1.2.5,<2.0.0",  # 1.2.5+ has security fixes
+    "langchain-text-splitters>=0.3.9,<0.4.0",
+    "langgraph>=1.0.0,<2.0.0",  # 1.0+ required for langgraph-checkpoint 3.0 (RCE fix)
+    "langgraph-checkpoint>=3.0.0,<4.0.0",  # Security: GHSA-wwqv-p2pp-99h5 (RCE fix)
+    "marshmallow>=4.1.2,<5.0.0",  # Security: GHSA-428g-f7cq-pgp5
+    # Software development plugins
+    "python-docx>=0.8.11,<1.0.0",
+    "pyyaml>=6.0,<7.0",
+]
+
+# Teams/enterprises - backend + authentication + compliance (excludes healthcare)
+enterprise = [
+    # Everything in developer
+    "anthropic>=0.25.0,<1.0.0",
+    "openai>=1.12.0,<2.0.0",
+    "google-generativeai>=0.3.0,<1.0.0",
+    "memdocs>=1.0.0",
+    "langchain>=1.0.0,<2.0.0",
+    "langchain-core>=1.2.5,<2.0.0",
+    "langchain-text-splitters>=0.3.9,<0.4.0",
+    "langgraph>=1.0.0,<2.0.0",
+    "langgraph-checkpoint>=3.0.0,<4.0.0",
+    "marshmallow>=4.1.2,<5.0.0",
+    "python-docx>=0.8.11,<1.0.0",
+    "pyyaml>=6.0,<7.0",
+    # Backend API server with authentication
+    "fastapi>=0.109.1,<1.0.0",
+    "uvicorn>=0.20.0,<1.0.0",
+    "starlette>=0.40.0,<1.0.0",
+    "bcrypt>=4.0.0,<5.0.0",  # Secure password hashing
+    "PyJWT[crypto]>=2.8.0",  # JWT authentication
+    # OpenTelemetry for enterprise telemetry
+    "opentelemetry-api>=1.20.0,<2.0.0",
+    "opentelemetry-sdk>=1.20.0,<2.0.0",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.20.0,<2.0.0",
+]
+
+# Alias for backwards compatibility (maps to developer)
+full = [
+    # LLM providers
+    "anthropic>=0.25.0,<1.0.0",
+    "openai>=1.12.0,<2.0.0",
+    "google-generativeai>=0.3.0,<1.0.0",
+    # MemDocs integration
+    "memdocs>=1.0.0",
+    # Agents (updated for security fixes)
+    "langchain>=1.0.0,<2.0.0",
+    "langchain-core>=1.2.5,<2.0.0",  # 1.2.5+ has security fixes
+    "langchain-text-splitters>=0.3.9,<0.4.0",
+    "langgraph>=1.0.0,<2.0.0",  # 1.0+ required for langgraph-checkpoint 3.0 (RCE fix)
+    "langgraph-checkpoint>=3.0.0,<4.0.0",  # Security: GHSA-wwqv-p2pp-99h5 (RCE fix)
+    "marshmallow>=4.1.2,<5.0.0",  # Security: GHSA-428g-f7cq-pgp5
+    # Plugins
+    "python-docx>=0.8.11,<1.0.0",
+    "pyyaml>=6.0,<7.0",
+]
+
+# Everything including development tools
+all = [
+    # LLM providers
+    "anthropic>=0.25.0,<1.0.0",
+    "openai>=1.12.0,<2.0.0",
+    "google-generativeai>=0.3.0,<1.0.0",
+    # MemDocs integration
+    "memdocs>=1.0.0",
+    # Agents (updated for security fixes)
+    "langchain>=1.0.0,<2.0.0",
+    "langchain-core>=1.2.5,<2.0.0",  # 1.2.5+ has security fixes
+    "langchain-text-splitters>=0.3.9,<0.4.0",
+    "langgraph>=1.0.0,<2.0.0",  # 1.0+ required for langgraph-checkpoint 3.0 (RCE fix)
+    "langgraph-checkpoint>=3.0.0,<4.0.0",  # Security: GHSA-wwqv-p2pp-99h5 (RCE fix)
+    "marshmallow>=4.1.2,<5.0.0",  # Security: GHSA-428g-f7cq-pgp5
+    # Plugins
+    "python-docx>=0.8.11,<1.0.0",
+    "pyyaml>=6.0,<7.0",
+    # Backend with authentication
+    "fastapi>=0.109.1,<1.0.0",  # CVE fix
+    "uvicorn>=0.20.0,<1.0.0",
+    "starlette>=0.40.0,<1.0.0",  # CVE fix
+    "bcrypt>=4.0.0,<5.0.0",  # Secure password hashing
+    "PyJWT[crypto]>=2.8.0",  # JWT authentication
+    # LSP
+    "pygls>=1.0.0,<2.0.0",
+    "lsprotocol>=2023.0.0,<2024.0.0",
+    # Windows
+    "colorama>=0.4.6,<1.0.0",
+    # OpenTelemetry
+    "opentelemetry-api>=1.20.0,<2.0.0",
+    "opentelemetry-sdk>=1.20.0,<2.0.0",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.20.0,<2.0.0",
+    # Documentation
+    "mkdocs>=1.5.0,<2.0.0",
+    "mkdocs-material>=9.4.0,<10.0.0",
+    "mkdocstrings[python]>=0.24.0,<1.0.0",
+    "mkdocs-with-pdf>=0.9.3,<1.0.0",
+    "pymdown-extensions>=10.0,<11.0",
+    # Dev tools
+    "pytest>=7.0,<10.0",
+    "pytest-asyncio>=0.21,<2.0",
+    "pytest-cov>=4.0,<8.0",
+    "black>=24.3.0,<27.0",  # CVE fix
+    "mypy>=1.0,<2.0",
+    "ruff>=0.1,<1.0",
+    "coverage>=7.0,<8.0",
+    "bandit>=1.7,<2.0",
+    "pre-commit>=3.0,<5.0",
+    "httpx>=0.27.0,<1.0.0",  # For API testing
+    # Security constraint overrides for transitive dependencies
+    "urllib3>=2.3.0,<3.0.0",  # CVE fix: GHSA-gm62, GHSA-2xpw
+    "aiohttp>=3.10.0,<4.0.0",  # CVE fix: multiple CVEs
+    "filelock>=3.16.0,<4.0.0",  # CVE fix: GHSA-w853
+]
+
+[project.scripts]
+# Primary minimal CLI (v4.7.1+) - streamlined for automation/CI
+empathy = "empathy_os.cli_minimal:main"
+
+# Legacy entry points (for backwards compatibility)
+empathy-legacy = "empathy_os.cli:main"
+empathy-unified = "empathy_os.cli_unified:main"  # Previous unified CLI
+empathy-scan = "empathy_software_plugin.cli:scan_command"
+empathy-memory = "empathy_os.memory.control_panel:main"
+empathy-inspect = "empathy_software_plugin.cli.inspect:main"
+empathy-sync-claude = "empathy_llm_toolkit.cli.sync_claude:main"
+
+[project.urls]
+Homepage = "https://www.smartaimemory.com"
+Documentation = "https://www.smartaimemory.com/framework-docs/"
+"Getting Started" = "https://www.smartaimemory.com/framework-docs/tutorials/quickstart/"
+FAQ = "https://www.smartaimemory.com/framework-docs/reference/FAQ/"
+Book = "https://www.smartaimemory.com/book"
+Repository = "https://github.com/Smart-AI-Memory/empathy-framework"
+Issues = "https://github.com/Smart-AI-Memory/empathy-framework/issues"
+Discussions = "https://github.com/Smart-AI-Memory/empathy-framework/discussions"
+Changelog = "https://github.com/Smart-AI-Memory/empathy-framework/blob/main/CHANGELOG.md"
+
+# Workflow plugin entry points for auto-discovery
+[project.entry-points."empathy.workflows"]
+code-review = "empathy_os.workflows.code_review:CodeReviewWorkflow"
+doc-gen = "empathy_os.workflows.document_gen:DocumentGenerationWorkflow"
+bug-predict = "empathy_os.workflows.bug_predict:BugPredictionWorkflow"
+security-audit = "empathy_os.workflows.security_audit:SecurityAuditWorkflow"
+perf-audit = "empathy_os.workflows.perf_audit:PerformanceAuditWorkflow"
+test-gen = "empathy_os.workflows.test_gen:TestGenerationWorkflow"
+refactor-plan = "empathy_os.workflows.refactor_plan:RefactorPlanWorkflow"
+dependency-check = "empathy_os.workflows.dependency_check:DependencyCheckWorkflow"
+# v4.0.0 CrewAI-based multi-agent workflows (production)
+release-prep = "empathy_os.workflows.release_prep_crew:ReleasePreparationCrew"
+health-check = "empathy_os.workflows.health_check_crew:HealthCheckCrew"
+test-coverage-boost = "empathy_os.workflows.test_coverage_boost_crew:TestCoverageBoostCrew"
+# Legacy single-agent versions
+release-prep-legacy = "empathy_os.workflows.release_prep:ReleasePreparationWorkflow"
+health-check-legacy = "empathy_os.workflows.health_check:HealthCheckWorkflow"
+# Other workflows
+secure-release = "empathy_os.workflows.secure_release:SecureReleasePipeline"
+pro-review = "empathy_os.workflows.code_review_pipeline:CodeReviewPipeline"
+pr-review = "empathy_os.workflows.pr_review:PRReviewWorkflow"
+
+[tool.setuptools]
+# Automatic package discovery
+[tool.setuptools.packages.find]
+where = ["src", "."]
+namespaces = false
+exclude = ["tests*", "*.tests*", "examples*", "docs*", "*.archive*", "build*", "dist*", "archived_wizards*", "wizards_consolidated*", "*.mypy_cache*", "*.__pycache__*"]
+
+[tool.setuptools.package-dir]
+empathy_os = "src/empathy_os"
+
+[tool.setuptools.package-data]
+"*" = ["*.yml", "*.yaml", "*.json", "*.txt", "*.md"]
+
+# Black code formatter configuration
+[tool.black]
+line-length = 100
+target-version = ['py310', 'py311', 'py312']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+# Ruff linter configuration
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+fix = true  # Auto-fix safe issues
+exclude = [
+    "tests/unit/wizards/",  # Generated wizard tests with syntax issues
+    "website/",  # Next.js website - separate linting
+    "docs/archive/",  # Archived code
+    "examples/",  # Example code
+    "dashboard/",  # Dashboard code
+    "deployments/",  # Deployment scripts
+    ".archive/",  # Archived files
+    "src/empathy_os/workflows/new_sample_workflow1.py",  # Test workflow
+    "src/empathy_os/workflows/test5.py",  # Test workflow
+    "benchmarks/",  # Benchmark and test scripts
+    "scaffolding/",  # Development scaffolding code
+    "hot_reload/",  # Hot reload system
+    "test_generator/",  # Test generator tools
+    "workflow_patterns/",  # Experimental workflow patterns
+    "workflow_scaffolding/",  # Workflow scaffolding tools
+    "scripts/",  # Build and release scripts
+    "services/",  # Service layer (external)
+    "vscode-extension/",  # VSCode extension code
+    "vscode-memory-panel/",  # VSCode memory panel
+]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "UP",   # pyupgrade
+    "BLE",  # flake8-blind-except (catch bare except: clauses)
+]
+ignore = [
+    "E501",  # line too long (handled by black)
+    "B008",  # do not perform function calls in argument defaults
+    "B904",  # raise exceptions with from err (too verbose for HTTPException pattern)
+    "C901",  # too complex
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["services", "empathy_llm_toolkit", "empathy_software_plugin", "empathy_os", "coach_wizards"]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]  # unused imports in __init__.py
+"test_*.py" = ["BLE001"]  # Test files can catch broad exceptions
+"*_test.py" = ["BLE001"]  # Test files can catch broad exceptions
+"tests/**/*.py" = ["BLE001", "B017"]  # Test files can catch/assert broad exceptions
+"agents/**/*.py" = ["BLE001"]  # Agent files need broad exception handling for resilience
+"backend/**/*.py" = ["BLE001", "E402"]  # Backend files need broad exception handling
+"*_wizard.py" = ["BLE001"]  # Wizard files need broad exception handling
+"*_agent.py" = ["BLE001"]  # Agent files need broad exception handling
+"empathy_llm_toolkit/**/*.py" = ["BLE001"]  # Toolkit needs broad exception handling
+"src/empathy_os/**/*.py" = ["BLE001"]  # Core framework needs broad exception handling
+"*_adapter.py" = ["BLE001"]  # Adapter files need broad exception handling
+"*_crew.py" = ["BLE001"]  # Crew files need broad exception handling
+"dashboard/**/*.py" = ["BLE001"]  # Dashboard needs broad exception handling
+"deployments/**/*.py" = ["BLE001"]  # Deployment scripts need broad exception handling
+"docs/archive/**/*.py" = ["BLE001"]  # Archived code
+"empathy_software_plugin/**/*.py" = ["BLE001"]  # Plugin needs broad exception handling
+"examples/**/*.py" = ["BLE001"]  # Examples can use broad exception handling
+"demo_*.py" = ["BLE001"]  # Demo files can use broad exception handling
+"benchmark_*.py" = ["BLE001"]  # Benchmark scripts need broad exception handling for error reporting
+"profile_*.py" = ["BLE001"]  # Profiling scripts need broad exception handling
+"run_*.py" = ["BLE001"]  # Manual test runner scripts
+"manual_*.py" = ["BLE001"]  # Manual test scripts
+"benchmarks/**/*.py" = ["BLE001"]  # Benchmark directory - broad exception handling for test/benchmark scripts
+"hot_reload/**/*.py" = ["BLE001"]  # Hot reload system needs broad exception handling
+"scaffolding/**/*.py" = ["BLE001"]  # Scaffolding code - development tools
+"test_generator/**/*.py" = ["BLE001"]  # Test generator - development tools
+"workflow_patterns/**/*.py" = ["BLE001"]  # Workflow patterns - development/experimental
+"workflow_scaffolding/**/*.py" = ["BLE001"]  # Workflow scaffolding - development tools
+"scripts/**/*.py" = ["BLE001"]  # Build and release scripts need broad exception handling
+"services/**/*.py" = ["BLE001"]  # Service layer needs broad exception handling
+"vscode-extension/**/*.py" = ["BLE001"]  # VSCode extension scripts
+"vscode-memory-panel/**/*.py" = ["BLE001"]  # VSCode memory panel scripts
+
+# MyPy type checker configuration
+[tool.mypy]
+python_version = "3.10"
+mypy_path = "src"
+explicit_package_bases = true
+exclude = [
+    "10_9_2025_ai_nurse_florence/",
+    "anthropic-cookbook/",
+    "salvaged/",
+    "site/",
+    "ebook-site/",
+    "website/",
+    "agents/",  # Root-level agents dir (not part of main packages)
+    "examples/",  # Example scripts (not part of main packages)
+    "src/",  # Exclude src/ as top-level package (use via mypy_path instead)
+    "build/",  # Build artifacts
+    "backend/",  # Backend service (separate project)
+    "scripts/",  # Utility scripts (not production code)
+    "docs/",  # Documentation scripts
+    "book-indesign/",  # Book publishing scripts
+    "dashboard/",  # Dashboard (separate project)
+    "archived_wizards/",  # Archived code
+    "wizards_consolidated/",  # Consolidated wizards (separate)
+    "coach_wizards/",  # Coach wizards (separate package)
+    "tests/test_wizard_site_comprehensive.py",  # Large test file
+    "tests/test_plugin_registry.py",  # Mock-heavy test file
+]
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = false
+disallow_untyped_decorators = false
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+follow_imports = "normal"
+ignore_missing_imports = true
+
+# Pytest configuration
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+# Exclude pre-existing failing tests (tracked for v4.0.3)
+# - wizards_consolidated module missing (2 test files)
+# - test_generator mock issues (1 test file)
+norecursedirs = [
+    "tests/unit/test_generator",  # Mock issues with __file__ attribute
+]
+addopts = [
+    "--verbose",
+    "--cov=empathy_os",
+    "--cov=empathy_llm_toolkit",
+    "--cov=empathy_software_plugin",
+    "--cov=empathy_healthcare_plugin",
+    "--cov-report=html",
+    "--cov-report=term-missing",
+    "--cov-report=xml",
+    "--cov-fail-under=55",
+    "--asyncio-mode=auto",
+    "--ignore=tests/test_base_wizard_exceptions.py",  # Missing wizards_consolidated module
+    "--ignore=tests/test_wizard_api_integration.py",  # Missing wizards_consolidated module
+]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+    "security: marks tests as security-focused",
+    "performance: marks tests as performance benchmarks",
+    "llm: marks tests that require LLM API access",
+    "network: marks tests that require network/internet access (skip in CI with '-m \"not network\"')",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]
+
+# Coverage configuration
+[tool.coverage.run]
+source = ["empathy_os", "empathy_llm_toolkit", "empathy_software_plugin", "empathy_healthcare_plugin"]
+omit = [
+    "*/tests/*",
+    "*/test_*.py",
+    "*/__pycache__/*",
+    "*/site-packages/*",
+    # Deprecated/Example modules excluded from coverage (v4.4.0)
+    "*/agent_factory/crews/*",  # CrewAI deprecated - use meta-workflows
+    "*/agent_factory/adapters/autogen_adapter.py",  # Deprecated adapter
+    "*/agent_factory/adapters/crewai_adapter.py",  # CrewAI deprecated
+    "*/agent_factory/adapters/haystack_adapter.py",  # Deprecated adapter
+    "*/agent_factory/adapters/langchain_adapter.py",  # Use native adapter
+    "*/agent_factory/memory_integration.py",  # Optional integration module
+    "*/agent_factory/resilient.py",  # Optional resilience module
+    "*/*_example.py",  # Example files
+    "*/cli/sync_claude.py",  # CLI tool, tested via integration
+    # Utility modules with low criticality
+    "*/utils/tokens.py",  # Token utilities
+    "*/security/audit_logger.py",  # Optional audit logging
+    "*/security/secure_memdocs.py",  # Optional secure memory
+    # Pattern modules (optional pattern analysis)
+    "*/pattern_confidence.py",
+    "*/pattern_resolver.py",
+    "*/pattern_summary.py",
+    "*/git_pattern_extractor.py",
+    "*/code_health.py",  # Optional code health analysis
+    # Wizard examples (not core functionality)
+    "*/wizards/patient_assessment_wizard.py",  # Healthcare-specific
+    "*/wizards/healthcare_wizard.py",  # Healthcare-specific
+    "*/wizards/technology_wizard.py",  # Example wizard
+    "*/wizards/customer_support_wizard.py",  # Example wizard
+]
+branch = true
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+skip_covered = false
+# Coverage threshold - increase as tests improve (target: 80%)
+fail_under = 70
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]
