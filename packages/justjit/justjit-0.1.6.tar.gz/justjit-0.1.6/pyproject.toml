@@ -1,0 +1,69 @@
+[build-system]
+requires = ["scikit-build-core >=0.4.3", "nanobind>=2.0.0"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "justjit"
+version = "0.1.6"
+description = "Fast Python JIT compiler using LLVM ORC - lowers Python bytecode to native machine code"
+readme = "README.md"
+requires-python = ">=3.13"
+license = "Apache-2.0"
+authors = [
+    { name = "Magi8101", email = "sharmamagi0@gmail.com" },
+]
+keywords = ["jit", "compiler", "llvm", "python", "optimization", "performance"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: C++",
+    "Topic :: Software Development :: Compilers",
+    "Topic :: Software Development :: Code Generators",
+]
+dependencies = [
+    "numpy",
+]
+
+[project.urls]
+Homepage = "https://github.com/magi8101/justjit"
+Repository = "https://github.com/magi8101/justjit"
+Documentation = "https://justjit.readthedocs.io/en/latest/"
+
+[tool.scikit-build]
+minimum-version = "0.4"
+build-dir = "build/{wheel_tag}"
+
+[tool.cibuildwheel]
+build-verbosity = 1
+build = ["cp313-*"]
+skip = ["*-win32", "*-manylinux_i686", "pp*"]  # removed "*-musllinux_i686"
+archs = ["auto64"]
+
+[tool.cibuildwheel.linux]
+manylinux-x86_64-image = "manylinux_2_28"
+before-build = "pip install nanobind scikit-build-core cmake ninja"
+
+# Manylinux-specific: use system packages via dnf
+[[tool.cibuildwheel.overrides]]
+select = "*-manylinux_*"
+before-all = """
+set -ex
+dnf install -y epel-release
+dnf config-manager --set-enabled powertools || true
+dnf install -y python3-devel llvm-devel llvm-static clang-devel zlib-devel libxml2-devel libffi-devel cmake ninja-build ncurses-devel
+llvm-config --version
+"""
+repair-wheel-command = "auditwheel repair -w {dest_dir} {wheel}"
+environment = { LLVM_DIR = "/usr/lib64/cmake/llvm", Clang_DIR = "/usr/lib64/cmake/clang", CMAKE_PREFIX_PATH = "/usr", LD_LIBRARY_PATH = "/usr/lib64:/usr/lib" }
+
+[tool.cibuildwheel.macos]
+before-build = "pip install nanobind scikit-build-core cmake ninja delocate"
+repair-wheel-command = "delocate-wheel --require-archs {delocate_archs} -w {dest_dir} -v {wheel}"
+
+[tool.cibuildwheel.macos.environment]
+MACOSX_DEPLOYMENT_TARGET = "12.1"
+
+[tool.cibuildwheel.windows]
+before-build = "pip install nanobind scikit-build-core cmake ninja delvewheel"
