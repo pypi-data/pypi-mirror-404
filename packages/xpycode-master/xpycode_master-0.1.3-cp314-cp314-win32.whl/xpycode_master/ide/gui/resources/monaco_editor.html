@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monaco Editor</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #1e1e1e;
+        }
+        #editor-container {
+            width: 100vw;
+            height: 100vh;
+        }
+        #error-display {
+            display: none;
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            right: 10px;
+            background: rgba(255, 107, 107, 0.85);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: monospace;
+            z-index: 1000;
+            cursor: pointer;
+        }
+        #error-display:hover {
+            background: rgba(255, 107, 107, 0.95);
+        }
+        #error-display::after {
+            content: ' (click to close)';
+            font-size: 0.85em;
+            opacity: 0.8;
+        }
+        /* Breakpoint styling */
+        .breakpoint-glyph {
+            background: #e51400;
+            border-radius: 50%;
+            width: 10px !important;
+            height: 10px !important;
+            margin-left: 5px;
+            margin-top: 4px;
+        }
+        .breakpoint-line {
+            background-color: rgba(229, 20, 0, 0.1);
+        }
+        /* Debug current line styling */
+        .debug-current-line {
+            background-color: rgba(255, 255, 0, 0.3) !important;  /* Yellow highlight */
+        }
+        .debug-current-line-glyph {
+            background: #ffeb3b;
+            width: 0;
+            height: 0;
+            border-top: 6px solid transparent;
+            border-bottom: 6px solid transparent;
+            border-left: 10px solid #ffeb3b;
+            margin-left: 3px;
+            margin-top: 2px;
+        }
+        /* Error line styling */
+        .error-line-decoration {
+            background-color: rgba(255, 0, 0, 0.3) !important;  /* Red highlight */
+        }
+        .error-glyph-margin {
+            background-color: #ff0000;
+            border-radius: 50%;
+            margin-left: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div id="error-display"></div>
+    <div id="editor-container"></div>
+    
+    <!-- QWebChannel implementation for PyQt6 compatibility - loaded from external file -->
+    <script src="qwebchannel.js"></script>
+    
+    <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.44.0/min/vs/loader.js"></script>
+    <script>
+        var editor = null;
+        var bridgeReady = false;
+        var editorReady = false;
+        
+        // Debounce delay for content change notifications (in milliseconds)
+        var CONTENT_CHANGE_DEBOUNCE_MS = 500;
+        var contentChangeTimer = null;
+        
+        // Global error handler to catch and report JavaScript errors
+        window.onerror = function(message, source, lineno, colno, error) {
+            var errorMsg = "JS Error: " + message + " at " + source + ":" + lineno + ":" + colno;
+            console.error(errorMsg);
+            
+            // Show error in the UI for debugging
+            var errorDisplay = document.getElementById('error-display');
+            if (errorDisplay) {
+                errorDisplay.style.display = 'block';
+                errorDisplay.textContent = errorMsg;
+                // Add click handler to close the error display
+                errorDisplay.onclick = function() {
+                    errorDisplay.style.display = 'none';
+                };
+            }
+            
+            // Report to Python bridge if available
+            if (window.pyBridge && window.pyBridge.reportError) {
+                try {
+                    window.pyBridge.reportError(errorMsg);
+                } catch (e) {
+                    console.error("Failed to report error to Python bridge:", e);
+                }
+            }
+            
+            return false; // Allow default handling
+        };
+        
+        // Helper to log debug messages
+        function logDebug(msg) {
+            console.log("[Monaco Debug]:", msg);
+        }
+        
+        // Initialize the QWebChannel bridge with retry logic
+        var bridgeRetryCount = 0;
+        var maxBridgeRetries = 30; // Maximum retries with exponential backoff
+        
+        function initBridge() {
+            logDebug("Initializing QWebChannel bridge (attempt " + (bridgeRetryCount + 1) + ")...");
+            
+            // Check if qt.webChannelTransport is available (injected by Qt)
+            if (typeof qt !== 'undefined' && qt.webChannelTransport) {
+                logDebug("qt.webChannelTransport found, creating QWebChannel...");
+                try {
+                    new QWebChannel(qt.webChannelTransport, function(channel) {
+                        logDebug("QWebChannel initialized successfully");
+                        window.pyBridge = channel.objects.pyBridge;
+                        bridgeReady = true;
+                        
+                        if (window.pyBridge) {
+                            logDebug("pyBridge object retrieved");
+                            // Notify Python that editor is ready if Monaco is also ready
+                            if (editorReady) {
+                                notifyEditorReady();
+                            }
+                        } else {
+                            logDebug("WARNING: pyBridge object not found in channel.objects");
+                        }
+                    });
+                } catch (e) {
+                    logDebug("ERROR creating QWebChannel: " + e.message);
+                }
+            } else {
+                bridgeRetryCount++;
+                if (bridgeRetryCount < maxBridgeRetries) {
+                    logDebug("qt.webChannelTransport not available yet, will retry...");
+                    // Retry with exponential backoff: starts at 100ms, grows by 1.5x each time, capped at 1000ms
+                    var delay = Math.min(100 * Math.pow(1.5, bridgeRetryCount), 1000);
+                    setTimeout(initBridge, delay);
+                } else {
+                    logDebug("WARNING: qt.webChannelTransport not available after " + maxBridgeRetries + " attempts. Bridge communication disabled.");
+                }
+            }
+        }
+        
+        // Notify Python that the editor is ready
+        function notifyEditorReady() {
+            if (window.pyBridge && window.pyBridge.editorReady) {
+                try {
+                    logDebug("Calling pyBridge.editorReady()");
+                    window.pyBridge.editorReady();
+                } catch (e) {
+                    logDebug("ERROR calling editorReady: " + e.message);
+                }
+            } else {
+                logDebug("WARNING: pyBridge.editorReady not available");
+            }
+        }
+        
+        // Notify Python of content changes (debounced)
+        function notifyContentChanged() {
+            if (window.pyBridge && window.pyBridge.onContentChanged && editor) {
+                try {
+                    var content = editor.getValue();
+                    logDebug("Calling pyBridge.onContentChanged(), content_length=" + content.length);
+                    window.pyBridge.onContentChanged(content);
+                } catch (e) {
+                    logDebug("ERROR calling onContentChanged: " + e.message);
+                }
+            }
+        }
+        
+        // Start bridge initialization
+        initBridge();
+        
+        // Monaco Editor configuration and initialization
+        require.config({ paths: { 'vs': 'https://cdn.jsdelivr.net/npm/monaco-editor@0.44.0/min/vs' }});
+        
+        // Store pending completion request for async resolution
+        var pendingCompletionResolve = null;
+        var completionRequestId = 0;
+        
+        // Store pending signature help request for async resolution
+        var pendingSignatureHelpResolve = null;
+        var signatureHelpRequestId = 0;
+        
+        // Store pending diagnostic request for tracking
+        var diagnosticRequestId = 0;
+        var DIAGNOSTIC_DEBOUNCE_MS = 500;
+        var diagnosticTimer = null;
+        
+        // Handle completion response from Python backend
+        function handleCompletionResponse(response) {
+            logDebug("[LSP] Received completion response: " + JSON.stringify(response));
+            if (pendingCompletionResolve) {
+                var resolve = pendingCompletionResolve;
+                pendingCompletionResolve = null;
+                
+                // Transform completions to Monaco format
+                var suggestions = [];
+                if (response && response.completions) {
+                    suggestions = response.completions.map(function(item) {
+                        return {
+                            label: item.label,
+                            // Default to Variable (4) to match Python LSPBridge fallback
+                            kind: item.kind !== undefined ? item.kind : monaco.languages.CompletionItemKind.Variable,
+                            insertText: item.insertText || item.label,
+                            detail: item.detail || '',
+                            documentation: item.documentation || ''
+                        };
+                    });
+                }
+                
+                logDebug("[LSP] Transformed " + suggestions.length + " completions for Monaco");
+                resolve({ suggestions: suggestions });
+            }
+        }
+        
+        // Handle signature help response from Python backend
+        function handleSignatureHelpResponse(response) {
+            logDebug("[LSP] Received signature help response: " + JSON.stringify(response));
+            if (pendingSignatureHelpResolve) {
+                var resolve = pendingSignatureHelpResolve;
+                pendingSignatureHelpResolve = null;
+                
+                if (!response || !response.signatures || response.signatures.length === 0) {
+                    logDebug("[LSP] No signatures returned");
+                    // Monaco expects null or a disposable wrapper for no signatures
+                    resolve(null);
+                    return;
+                }
+                
+                // Transform to Monaco format
+                var signatures = response.signatures.map(function(sig) {
+                    return {
+                        label: sig.label || '',
+                        documentation: sig.documentation || '',
+                        parameters: (sig.parameters || []).map(function(param) {
+                            return {
+                                label: param.label || '',
+                                documentation: param.documentation || ''
+                            };
+                        })
+                    };
+                });
+                
+                var result = {
+                    signatures: signatures,
+                    activeSignature: response.activeSignature || 0,
+                    activeParameter: response.activeParameter || 0
+                };
+                
+                logDebug("[LSP] Transformed " + signatures.length + " signatures for Monaco");
+                // Wrap result in disposable object as expected by Monaco
+                resolve({ value: result, dispose: function() {} });
+            }
+        }
+        
+        // Handle diagnostic response from Python backend
+        function handleDiagnosticResponse(response) {
+            logDebug("[LSP] Received diagnostic response: " + JSON.stringify(response));
+            if (!editor || !response) return;
+            
+            var model = editor.getModel();
+            if (!model) return;
+            
+            var markers = [];
+            if (response.diagnostics && response.diagnostics.length > 0) {
+                markers = response.diagnostics.map(function(diag) {
+                    // Compute endColumn with proper fallback
+                    var endCol = diag.endColumn;
+                    if (!endCol) {
+                        endCol = (diag.startColumn || 1) + 1;
+                    }
+                    return {
+                        startLineNumber: diag.startLineNumber || 1,
+                        startColumn: diag.startColumn || 1,
+                        endLineNumber: diag.endLineNumber || diag.startLineNumber || 1,
+                        endColumn: endCol,
+                        message: diag.message || 'Error',
+                        severity: diag.severity || monaco.MarkerSeverity.Error
+                    };
+                });
+            }
+            
+            logDebug("[LSP] Setting " + markers.length + " markers on editor");
+            monaco.editor.setModelMarkers(model, 'python', markers);
+        }
+        
+        // Request diagnostics from Python backend (debounced)
+        function requestDiagnostics() {
+            if (!window.pyBridge || !window.pyBridge.getDiagnostics || !editor) {
+                return;
+            }
+            
+            var code = editor.getValue();
+            diagnosticRequestId++;
+            var request = {
+                code: code,
+                request_id: 'diag_' + diagnosticRequestId
+            };
+            
+            logDebug("[LSP] Sending diagnostic request: code_length=" + code.length);
+            
+            try {
+                window.pyBridge.getDiagnostics(JSON.stringify(request));
+            } catch (e) {
+                logDebug("[LSP] Error sending diagnostic request: " + e.message);
+            }
+        }
+        
+        // Schedule a diagnostic request with debouncing
+        function scheduleDiagnosticRequest() {
+            if (diagnosticTimer) {
+                clearTimeout(diagnosticTimer);
+            }
+            diagnosticTimer = setTimeout(requestDiagnostics, DIAGNOSTIC_DEBOUNCE_MS);
+        }
+        
+        // Store pending hover request for async resolution
+        var pendingHoverResolve = null;
+        var hoverRequestId = 0;
+        
+        // Handle hover response from Python backend
+        function handleHoverResponse(response) {
+            logDebug("[LSP] Received hover response: " + JSON.stringify(response));
+            if (pendingHoverResolve) {
+                var resolve = pendingHoverResolve;
+                pendingHoverResolve = null;
+                
+                if (!response || !response.contents) {
+                    logDebug("[LSP] No hover contents returned");
+                    resolve(null);
+                    return;
+                }
+                
+                // Extract the markdown value from LSP-compatible format
+                // Response format: {contents: {kind: 'markdown', value: string}} or {contents: string}
+                var contents = response.contents;
+                var markdownValue;
+                
+                if (typeof contents === 'object' && contents !== null && 'value' in contents) {
+                    // LSP-compatible format: {kind: 'markdown', value: string}
+                    markdownValue = contents.value;
+                } else if (typeof contents === 'string') {
+                    // Legacy format: direct string
+                    markdownValue = contents;
+                } else {
+                    logDebug("[LSP] Invalid hover contents format");
+                    resolve(null);
+                    return;
+                }
+                
+                // Format the hover result for Monaco
+                var result = {
+                    contents: [
+                        { value: markdownValue }
+                    ]
+                };
+                
+                logDebug("[LSP] Returning hover result");
+                resolve(result);
+            }
+        }
+        
+        // Make handlers available globally for Python bridge
+        window.handleCompletionResponse = handleCompletionResponse;
+        window.handleSignatureHelpResponse = handleSignatureHelpResponse;
+        window.handleHoverResponse = handleHoverResponse;
+        window.handleDiagnosticResponse = handleDiagnosticResponse;
+        
+        require(['vs/editor/editor.main'], function() {
+            logDebug("Monaco editor.main loaded");
+
+            // Define custom XPC Midnight Blue theme (derived from vs-dark)
+            monaco.editor.defineTheme('xpc-midnight-blue', {
+                base: 'vs-dark',  // Inherit from vs-dark
+                inherit: true,
+                rules: [
+                    // Syntax highlighting customizations
+                    { token: 'comment', foreground: '6A9955', fontStyle: 'italic' },
+                    { token: 'keyword', foreground: '569CD6' },
+                    { token: 'string', foreground: 'CE9178' },
+                    { token: 'number', foreground: 'B5CEA8' },
+                    { token: 'type', foreground: '4EC9B0' },
+                    { token: 'function', foreground: 'DCDCAA' },
+                    { token: 'variable', foreground: '9CDCFE' },
+                    { token: 'constant', foreground: '4FC1FF' },
+                    { token: 'parameter', foreground: '9CDCFE' },
+                    { token: 'decorator', foreground: 'DCDCAA' },
+                    { token: 'class', foreground: '4EC9B0' }
+                ],
+                colors: {
+                    // Editor background - deep midnight blue
+                    'editor.background': '#0c1e2e',
+                    // Editor foreground
+                    'editor. foreground': '#d4d4d4',
+                    // Line numbers
+                    'editorLineNumber.foreground': '#5a7a8a',
+                    'editorLineNumber.activeForeground': '#F17730',
+                    // Cursor
+                    'editorCursor.foreground': '#F17730',
+                    // Selection
+                    'editor.selectionBackground': '#264f78',
+                    'editor.selectionHighlightBackground': '#1a3a52',
+                    'editor.inactiveSelectionBackground': '#1a3a52',
+                    // Current line highlight
+                    'editor.lineHighlightBackground': '#1a2f42',
+                    'editor.lineHighlightBorder': '#2a3f52',
+                    // Matching brackets
+                    'editorBracketMatch.background': '#0d3a58',
+                    'editorBracketMatch.border': '#F17730',
+                    // Gutter (where line numbers and breakpoints are)
+                    'editorGutter.background': '#0a1a28',
+                    // Minimap
+                    'minimap.background': '#0a1a28',
+                    'minimapSlider.background': '#1a3a5280',
+                    'minimapSlider. hoverBackground': '#2a4a6280',
+                    'minimapSlider. activeBackground': '#3a5a7280',
+                    // Scrollbar
+                    'scrollbar.shadow': '#000000',
+                    'scrollbarSlider.background': '#1a3a5280',
+                    'scrollbarSlider.hoverBackground': '#2a4a6280',
+                    'scrollbarSlider.activeBackground': '#3a5a7280',
+                    // Widget (autocomplete dropdown, etc.)
+                    'editorWidget. background': '#1a2f42',
+                    'editorWidget.border': '#2a3f52',
+                    'editorSuggestWidget.background': '#1a2f42',
+                    'editorSuggestWidget.border': '#2a3f52',
+                    'editorSuggestWidget.selectedBackground': '#264f78',
+                    'editorSuggestWidget.highlightForeground': '#F17730',
+                    // Hover widget
+                    'editorHoverWidget. background': '#1a2f42',
+                    'editorHoverWidget.border': '#2a3f52',
+                    // Find/replace
+                    'editor.findMatchBackground': '#515c6a',
+                    'editor.findMatchHighlightBackground': '#ea5c0055',
+                    // Indent guides
+                    'editorIndentGuide.background': '#2a3f52',
+                    'editorIndentGuide.activeBackground': '#3a5a72',
+                    // Ruler
+                    'editorRuler. foreground': '#2a3f52',
+                    // Whitespace
+                    'editorWhitespace.foreground': '#2a3f5280'
+                }
+            });
+            logDebug("XPC Midnight Blue theme defined");
+
+            // Register Python completion provider
+            monaco.languages.registerCompletionItemProvider('python', {
+                triggerCharacters: ['.', ' '],
+                provideCompletionItems: function(model, position, context, token) {
+                    return new Promise(function(resolve, reject) {
+                        // Check if Python bridge is available
+                        if (!window.pyBridge || !window.pyBridge.getCompletions) {
+                            logDebug("[LSP] Python bridge not available, returning empty completions");
+                            resolve({ suggestions: [] });
+                            return;
+                        }
+                        
+                        // Build completion request
+                        var code = model.getValue();
+                        var line = position.lineNumber;  // 1-based
+                        var column = position.column - 1;  // Monaco is 1-based, convert to 0-based
+                        
+                        completionRequestId++;
+                        var request = {
+                            code: code,
+                            line: line,
+                            column: column,
+                            request_id: 'comp_' + completionRequestId
+                        };
+                        
+                        logDebug("[LSP] Sending completion request: line=" + line + ", column=" + column + ", code_length=" + code.length);
+                        
+                        // Store the resolve function for async callback
+                        pendingCompletionResolve = resolve;
+                        
+                        // Send request to Python backend
+                        try {
+                            window.pyBridge.getCompletions(JSON.stringify(request));
+                        } catch (e) {
+                            logDebug("[LSP] Error sending completion request: " + e.message);
+                            pendingCompletionResolve = null;
+                            resolve({ suggestions: [] });
+                        }
+                        
+                        // Timeout after 5 seconds
+                        setTimeout(function() {
+                            if (pendingCompletionResolve === resolve) {
+                                logDebug("[LSP] Completion request timed out");
+                                pendingCompletionResolve = null;
+                                resolve({ suggestions: [] });
+                            }
+                        }, 5000);
+                    });
+                }
+            });
+            logDebug("Python completion provider registered");
+            
+            // Register Python signature help provider
+            monaco.languages.registerSignatureHelpProvider('python', {
+                signatureHelpTriggerCharacters: ['(', ','],
+                signatureHelpRetriggerCharacters: [','],
+                provideSignatureHelp: function(model, position, token, context) {
+                    return new Promise(function(resolve, reject) {
+                        // Check if Python bridge is available
+                        if (!window.pyBridge || !window.pyBridge.getSignatureHelp) {
+                            logDebug("[LSP] Python bridge not available for signature help");
+                            resolve(null);
+                            return;
+                        }
+                        
+                        // Build signature help request
+                        var code = model.getValue();
+                        var line = position.lineNumber;  // 1-based
+                        var column = position.column - 1;  // Monaco is 1-based, convert to 0-based
+                        
+                        signatureHelpRequestId++;
+                        var request = {
+                            code: code,
+                            line: line,
+                            column: column,
+                            request_id: 'sig_' + signatureHelpRequestId
+                        };
+                        
+                        logDebug("[LSP] Sending signature help request: line=" + line + ", column=" + column);
+                        
+                        // Store the resolve function for async callback
+                        pendingSignatureHelpResolve = resolve;
+                        
+                        // Send request to Python backend
+                        try {
+                            window.pyBridge.getSignatureHelp(JSON.stringify(request));
+                        } catch (e) {
+                            logDebug("[LSP] Error sending signature help request: " + e.message);
+                            pendingSignatureHelpResolve = null;
+                            resolve(null);
+                        }
+                        
+                        // Timeout after 3 seconds
+                        setTimeout(function() {
+                            if (pendingSignatureHelpResolve === resolve) {
+                                logDebug("[LSP] Signature help request timed out");
+                                pendingSignatureHelpResolve = null;
+                                resolve(null);
+                            }
+                        }, 3000);
+                    });
+                }
+            });
+            logDebug("Python signature help provider registered");
+            
+            // Register Python hover provider
+            monaco.languages.registerHoverProvider('python', {
+                provideHover: function(model, position, token) {
+                    return new Promise(function(resolve, reject) {
+                        // Check if Python bridge is available
+                        if (!window.pyBridge || !window.pyBridge.getHover) {
+                            logDebug("[LSP] Python bridge not available for hover");
+                            resolve(null);
+                            return;
+                        }
+                        
+                        // Build hover request
+                        var code = model.getValue();
+                        var line = position.lineNumber;  // 1-based
+                        var column = position.column - 1;  // Monaco is 1-based, convert to 0-based
+                        
+                        hoverRequestId++;
+                        var request = {
+                            code: code,
+                            line: line,
+                            column: column,
+                            request_id: 'hover_' + hoverRequestId
+                        };
+                        
+                        logDebug("[LSP] Sending hover request: line=" + line + ", column=" + column);
+                        
+                        // Store the resolve function for async callback
+                        pendingHoverResolve = resolve;
+                        
+                        // Send request to Python backend
+                        try {
+                            window.pyBridge.getHover(JSON.stringify(request));
+                        } catch (e) {
+                            logDebug("[LSP] Error sending hover request: " + e.message);
+                            pendingHoverResolve = null;
+                            resolve(null);
+                        }
+                        
+                        // Timeout after 3 seconds
+                        setTimeout(function() {
+                            if (pendingHoverResolve === resolve) {
+                                logDebug("[LSP] Hover request timed out");
+                                pendingHoverResolve = null;
+                                resolve(null);
+                            }
+                        }, 3000);
+                    });
+                }
+            });
+            logDebug("Python hover provider registered");
+            
+            try {
+                editor = monaco.editor.create(document.getElementById('editor-container'), {
+                    value: '',
+                    language: 'python',
+                    theme: 'vs-dark',
+                    automaticLayout: true,
+                    minimap: { enabled: true },
+                    fontSize: 14,
+                    fontFamily: "'Consolas', 'Courier New', monospace",
+                    lineNumbers: 'on',
+                    renderWhitespace: 'selection',
+                    scrollBeyondLastLine: false,
+                    wordWrap: 'off',
+                    tabSize: 4,
+                    insertSpaces: true,
+                    glyphMargin: true  // Enable glyph margin for breakpoints
+                });
+                
+                logDebug("Monaco editor created successfully");
+                editorReady = true;
+                
+                // Setup debounced content change listener
+                editor.onDidChangeModelContent(function(event) {
+                    // Cancel any pending notification
+                    if (contentChangeTimer) {
+                        clearTimeout(contentChangeTimer);
+                    }
+                    // Schedule new notification after debounce delay
+                    contentChangeTimer = setTimeout(notifyContentChanged, CONTENT_CHANGE_DEBOUNCE_MS);
+                    
+                    // Also schedule a diagnostic request (separate debounce)
+                    scheduleDiagnosticRequest();
+                    
+                    // Update breakpoint positions if any exist
+                    updateBreakpointPositions();
+                });
+                
+                // Also notify on blur to ensure changes are saved when user leaves editor
+                editor.onDidBlurEditorWidget(function() {
+                    // Cancel any pending debounced notification
+                    if (contentChangeTimer) {
+                        clearTimeout(contentChangeTimer);
+                        contentChangeTimer = null;
+                    }
+                    // Notify immediately on blur
+                    notifyContentChanged();
+                    logDebug("Editor blur - notified content change immediately");
+                });
+                
+                // Focus the editor to ensure it accepts input
+                editor.focus();
+                
+                // Notify Python that editor is ready if bridge is also ready
+                if (bridgeReady) {
+                    notifyEditorReady();
+                }
+            } catch (e) {
+                logDebug("ERROR creating Monaco editor: " + e.message);
+                throw e;
+            }
+        });
+        
+        // Functions to be called from Python via JavaScript evaluation
+        function getText() {
+            if (editor) {
+                return editor.getValue();
+            }
+            return '';
+        }
+        
+        function setText(text) {
+            if (editor) {
+                editor.setValue(text);
+            }
+        }
+        
+        function clearText() {
+            if (editor) {
+                editor.setValue('');
+            }
+        }
+        
+        function setLanguage(language) {
+            if (editor) {
+                monaco.editor.setModelLanguage(editor.getModel(), language);
+            }
+        }
+        
+        function setTheme(theme) {
+            if (editor) {
+                monaco.editor.setTheme(theme);
+            }
+        }
+        
+        function getSelectedText() {
+            if (editor) {
+                return editor.getModel().getValueInRange(editor.getSelection());
+            }
+            return '';
+        }
+        
+        function getCursorPosition() {
+            if (editor) {
+                var position = editor.getPosition();
+                return {
+                    lineNumber: position.lineNumber,  // 1-based
+                    column: position.column  // 1-based
+                };
+            }
+            return { lineNumber: 1, column: 1 };
+        }
+        
+        function insertTextAtCursor(text) {
+            if (editor) {
+                var selection = editor.getSelection();
+                var range = new monaco.Range(
+                    selection.startLineNumber,
+                    selection.startColumn,
+                    selection.endLineNumber,
+                    selection.endColumn
+                );
+                editor.executeEdits('', [{
+                    range: range,
+                    text: text
+                }]);
+            }
+        }
+        
+        // Breakpoint management
+        var breakpointDecorations = {};  // {line: decorationId}
+        
+        function updateBreakpointPositions() {
+            if (!editor) return;
+            
+            var updatedBreakpoints = {};
+            var newDecorations = {};
+            
+            // Check each breakpoint decoration to see if it moved
+            for (var oldLine in breakpointDecorations) {
+                var decorationId = breakpointDecorations[oldLine];
+                var range = editor.getModel().getDecorationRange(decorationId);
+                
+                if (range) {
+                    var newLine = range.startLineNumber;
+                    
+                    // Track the new position
+                    newDecorations[newLine] = decorationId;
+                    
+                    // If line changed, record the update
+                    if (newLine != oldLine) {
+                        updatedBreakpoints[oldLine] = newLine;
+                        logDebug("Breakpoint moved from line " + oldLine + " to " + newLine);
+                    }
+                }
+            }
+            
+            // Update local tracking with new positions
+            breakpointDecorations = newDecorations;
+            
+            // Notify Python if any breakpoints moved
+            if (Object.keys(updatedBreakpoints).length > 0) {
+                if (window.pyBridge && window.pyBridge.onBreakpointsChanged) {
+                    try {
+                        window.pyBridge.onBreakpointsChanged(JSON.stringify(updatedBreakpoints));
+                    } catch (e) {
+                        logDebug("Error notifying breakpoint changes: " + e.message);
+                    }
+                }
+            }
+        }
+        
+        function addBreakpoint(line) {
+            if (!editor) return;
+            if (breakpointDecorations[line]) return;  // Already exists
+            
+            var decorations = editor.deltaDecorations([], [{
+                range: new monaco.Range(line, 1, line, 1),
+                options: {
+                    isWholeLine: true,
+                    glyphMarginClassName: 'breakpoint-glyph',
+                    linesDecorationsClassName: 'breakpoint-line'
+                }
+            }]);
+            breakpointDecorations[line] = decorations[0];
+            logDebug("Added breakpoint decoration at line " + line);
+        }
+        
+        function removeBreakpoint(line) {
+            if (!editor) return;
+            if (!breakpointDecorations[line]) return;
+            
+            editor.deltaDecorations([breakpointDecorations[line]], []);
+            delete breakpointDecorations[line];
+            logDebug("Removed breakpoint decoration at line " + line);
+        }
+        
+        function clearAllBreakpoints() {
+            if (!editor) return;
+            var ids = Object.values(breakpointDecorations);
+            if (ids.length > 0) {
+                editor.deltaDecorations(ids, []);
+            }
+            breakpointDecorations = {};
+            logDebug("Cleared all breakpoint decorations");
+        }
+        
+        // Debug current line management
+        var debugLineDecoration = null;
+        
+        function setDebugLine(line) {
+            if (!editor) return;
+            
+            // Remove previous highlight
+            clearDebugLine();
+            
+            if (line > 0) {
+                var decorations = editor.deltaDecorations([], [{
+                    range: new monaco.Range(line, 1, line, 1),
+                    options: {
+                        isWholeLine: true,
+                        className: 'debug-current-line',
+                        glyphMarginClassName: 'debug-current-line-glyph'
+                    }
+                }]);
+                debugLineDecoration = decorations[0];
+                
+                // Scroll to the line and center it in the viewport
+                editor.revealLineInCenter(line);
+                logDebug("Set debug line at " + line);
+            }
+        }
+        
+        function clearDebugLine() {
+            if (!editor) return;
+            if (debugLineDecoration) {
+                editor.deltaDecorations([debugLineDecoration], []);
+                debugLineDecoration = null;
+                logDebug("Cleared debug line");
+            }
+        }
+        
+        // Error line management
+        let errorLineDecoration = [];
+        
+        window.setErrorLine = function(line) {
+            if (!editor) return;
+            
+            // Clear previous error decoration
+            window.clearErrorLine();
+            
+            // Add red background decoration for error line
+            errorLineDecoration = editor.deltaDecorations([], [
+                {
+                    range: new monaco.Range(line, 1, line, 1),
+                    options: {
+                        isWholeLine: true,
+                        className: 'error-line-decoration',
+                        glyphMarginClassName: 'error-glyph-margin'
+                    }
+                }
+            ]);
+            
+            // Scroll to the error line
+            editor.revealLineInCenter(line);
+            logDebug("Set error line at " + line);
+        };
+        
+        window.clearErrorLine = function() {
+            if (!editor) return;
+            if (errorLineDecoration.length > 0) {
+                editor.deltaDecorations(errorLineDecoration, []);
+                errorLineDecoration = [];
+                logDebug("Cleared error line");
+            }
+        };
+        
+        // Focus helper for external calls
+        function focusEditor() {
+            if (editor) {
+                editor.focus();
+                return true;
+            }
+            return false;
+        }
+    </script>
+</body>
+</html>
