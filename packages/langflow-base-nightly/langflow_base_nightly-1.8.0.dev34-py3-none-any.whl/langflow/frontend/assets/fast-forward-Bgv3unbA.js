@@ -1,0 +1,1 @@
+import{a8 as o}from"./index-DYhWv8A3.js";const t=[["polygon",{points:"13 19 22 12 13 5 13 19",key:"587y9g"}],["polygon",{points:"2 19 11 12 2 5 2 19",key:"3pweh0"}]],e=o("fast-forward",t);export{t as __iconNode,e as default};

@@ -1,0 +1,1 @@
+import{a8 as c}from"./index-DYhWv8A3.js";const o=[["circle",{cx:"12",cy:"12",r:"10",key:"1mglay"}],["polyline",{points:"12 6 12 12 8 14",key:"tmc9b4"}]],t=c("clock-8",o);export{o as __iconNode,t as default};
