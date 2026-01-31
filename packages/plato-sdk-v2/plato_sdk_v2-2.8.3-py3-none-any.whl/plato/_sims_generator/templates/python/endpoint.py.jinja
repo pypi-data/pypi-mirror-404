@@ -1,0 +1,359 @@
+"""{{ endpoint.summary or endpoint.function_name }}"""
+
+from __future__ import annotations
+
+from typing import Any{% if endpoint.streaming %}, AsyncIterator, Iterator{% endif %}
+
+{% set needs_date = [] -%}
+{% set needs_datetime = [] -%}
+{% for param in endpoint.parameters -%}
+{% if param.type.to_python() == 'date' or 'date' in param.type.to_python() -%}
+{% set _ = needs_date.append(1) -%}
+{% endif -%}
+{% if param.type.to_python() == 'datetime' or 'datetime' in param.type.to_python() -%}
+{% set _ = needs_datetime.append(1) -%}
+{% endif -%}
+{% endfor -%}
+{% if needs_date or needs_datetime %}
+from datetime import {% if needs_date %}date{% endif %}{% if needs_date and needs_datetime %}, {% endif %}{% if needs_datetime %}datetime{% endif %}
+
+{% endif -%}
+import httpx
+
+from {{ relative_prefix }}errors import raise_for_status
+{% set all_models = [] %}
+{% set builtin_types = ['Any', 'str', 'int', 'float', 'bool', 'bytes', 'None', 'dict', 'list', 'dict[str, Any]', 'list[Any]'] %}
+{# Collect model refs from parameters #}
+{% for param in endpoint.parameters %}
+{% for model_name in param.type.get_model_refs() %}
+{% if model_name not in builtin_types %}
+{% set _ = all_models.append(model_name) %}
+{% endif %}
+{% endfor %}
+{% endfor %}
+{# Collect model refs from request body #}
+{% if endpoint.request_body %}
+{# Split union types (e.g., "A | B") into individual model names, filtering out builtins #}
+{% for model_name in endpoint.request_body.class_name.split(' | ') %}
+{% set clean_name = model_name.strip() %}
+{% if clean_name not in builtin_types and not clean_name.startswith('dict[') and not clean_name.startswith('list[') %}
+{% set _ = all_models.append(clean_name) %}
+{% endif %}
+{% endfor %}
+{% endif %}
+{# Collect model refs from response type #}
+{% if endpoint.response_type %}
+{% for model_name in endpoint.response_type.get_model_refs() %}
+{% if model_name not in builtin_types %}
+{% set _ = all_models.append(model_name) %}
+{% endif %}
+{% endfor %}
+{% endif %}
+{% if all_models %}
+from {{ relative_prefix }}models import {{ all_models | unique | join(', ') }}
+{% endif %}
+
+
+{% set path_params = endpoint.parameters | selectattr('location', 'equalto', 'path') | list %}
+{% set query_params = endpoint.parameters | selectattr('location', 'equalto', 'query') | list %}
+{% set header_params = endpoint.parameters | selectattr('location', 'equalto', 'header') | list %}
+
+def _build_request_args(
+    {% for param in path_params %}
+    {{ param.python_name }}: {{ param.type.to_python() }},
+    {% endfor %}
+    {% if endpoint.request_body %}
+    body: {{ endpoint.request_body.class_name }},
+    {% endif %}
+    {% for param in query_params %}
+    {% if param.required %}
+    {{ param.python_name }}: {{ param.type.to_python() }},
+    {% endif %}
+    {% endfor %}
+    {% for param in query_params %}
+    {% if not param.required %}
+    {{ param.python_name }}: {{ param.type.to_python() }} | None = {{ param.default if param.default else 'None' }},
+    {% endif %}
+    {% endfor %}
+    {% for param in header_params %}
+    {% if not param.required %}
+    {{ param.python_name }}: {{ param.type.to_python() }} | None = None,
+    {% endif %}
+    {% endfor %}
+) -> dict[str, Any]:
+    """Build request arguments."""
+    {% if path_params %}
+    url = "{{ endpoint.path }}".format(
+        {% for param in path_params %}
+        {{ param.name }}={{ param.python_name }},
+        {% endfor %}
+    )
+    {% else %}
+    url = "{{ endpoint.path }}"
+    {% endif %}
+
+    {% if query_params %}
+    params: dict[str, Any] = {}
+    {% for param in query_params %}
+    if {{ param.python_name }} is not None:
+        params["{{ param.name }}"] = {{ param.python_name }}
+    {% endfor %}
+    {% endif %}
+
+    {% if header_params %}
+    headers: dict[str, str] = {}
+    {% for param in header_params %}
+    if {{ param.python_name }} is not None:
+        headers["{{ param.name }}"] = {{ param.python_name }}
+    {% endfor %}
+    {% endif %}
+
+    return {
+        "method": "{{ endpoint.method }}",
+        "url": url,
+        {% if endpoint.request_body %}
+        {% if endpoint.request_body.class_name.startswith('dict[') %}
+        "json": body,
+        {% else %}
+        "json": body.model_dump(mode="json", exclude_none=True) if hasattr(body, "model_dump") else body,
+        {% endif %}
+        {% endif %}
+        {% if query_params %}
+        "params": params,
+        {% endif %}
+        {% if header_params %}
+        "headers": headers,
+        {% endif %}
+    }
+
+
+def sync(
+    client: httpx.Client,
+    {% for param in path_params %}
+    {{ param.python_name }}: {{ param.type.to_python() }},
+    {% endfor %}
+    {% if endpoint.request_body %}
+    body: {{ endpoint.request_body.class_name }},
+    {% endif %}
+    {% for param in query_params %}
+    {% if param.required %}
+    {{ param.python_name }}: {{ param.type.to_python() }},
+    {% endif %}
+    {% endfor %}
+    {% for param in query_params %}
+    {% if not param.required %}
+    {{ param.python_name }}: {{ param.type.to_python() }} | None = {{ param.default if param.default else 'None' }},
+    {% endif %}
+    {% endfor %}
+    {% for param in header_params %}
+    {% if not param.required %}
+    {{ param.python_name }}: {{ param.type.to_python() }} | None = None,
+    {% endif %}
+    {% endfor %}
+) -> {% if endpoint.response_type %}{{ endpoint.response_type.to_python() }}{% else %}Any{% endif %}:
+    {% if endpoint.description %}
+    """{{ endpoint.description }}"""
+    {% else %}
+    """{{ endpoint.summary or endpoint.function_name }}"""
+    {% endif %}
+
+    request_args = _build_request_args(
+        {% for param in path_params %}
+        {{ param.python_name }}={{ param.python_name }},
+        {% endfor %}
+        {% if endpoint.request_body %}
+        body=body,
+        {% endif %}
+        {% for param in query_params %}
+        {{ param.python_name }}={{ param.python_name }},
+        {% endfor %}
+        {% for param in header_params %}
+        {% if not param.required %}
+        {{ param.python_name }}={{ param.python_name }},
+        {% endif %}
+        {% endfor %}
+    )
+
+    response = client.request(**request_args)
+    raise_for_status(response)
+    {% if endpoint.response_type %}
+    {% if endpoint.response_type.kind.value == 'model' %}
+    return {{ endpoint.response_type.model_name }}.model_validate(response.json())
+    {% else %}
+    return response.json()
+    {% endif %}
+    {% else %}
+    return response.json()
+    {% endif %}
+
+
+async def asyncio(
+    client: httpx.AsyncClient,
+    {% for param in path_params %}
+    {{ param.python_name }}: {{ param.type.to_python() }},
+    {% endfor %}
+    {% if endpoint.request_body %}
+    body: {{ endpoint.request_body.class_name }},
+    {% endif %}
+    {% for param in query_params %}
+    {% if param.required %}
+    {{ param.python_name }}: {{ param.type.to_python() }},
+    {% endif %}
+    {% endfor %}
+    {% for param in query_params %}
+    {% if not param.required %}
+    {{ param.python_name }}: {{ param.type.to_python() }} | None = {{ param.default if param.default else 'None' }},
+    {% endif %}
+    {% endfor %}
+    {% for param in header_params %}
+    {% if not param.required %}
+    {{ param.python_name }}: {{ param.type.to_python() }} | None = None,
+    {% endif %}
+    {% endfor %}
+) -> {% if endpoint.response_type %}{{ endpoint.response_type.to_python() }}{% else %}Any{% endif %}:
+    {% if endpoint.description %}
+    """{{ endpoint.description }}"""
+    {% else %}
+    """{{ endpoint.summary or endpoint.function_name }}"""
+    {% endif %}
+
+    request_args = _build_request_args(
+        {% for param in path_params %}
+        {{ param.python_name }}={{ param.python_name }},
+        {% endfor %}
+        {% if endpoint.request_body %}
+        body=body,
+        {% endif %}
+        {% for param in query_params %}
+        {{ param.python_name }}={{ param.python_name }},
+        {% endfor %}
+        {% for param in header_params %}
+        {% if not param.required %}
+        {{ param.python_name }}={{ param.python_name }},
+        {% endif %}
+        {% endfor %}
+    )
+
+    response = await client.request(**request_args)
+    raise_for_status(response)
+    {% if endpoint.response_type %}
+    {% if endpoint.response_type.kind.value == 'model' %}
+    return {{ endpoint.response_type.model_name }}.model_validate(response.json())
+    {% else %}
+    return response.json()
+    {% endif %}
+    {% else %}
+    return response.json()
+    {% endif %}
+
+{% if endpoint.streaming %}
+
+def sync_stream(
+    client: httpx.Client,
+    {% for param in path_params %}
+    {{ param.python_name }}: {{ param.type.to_python() }},
+    {% endfor %}
+    {% if endpoint.request_body %}
+    body: {{ endpoint.request_body.class_name }},
+    {% endif %}
+    {% for param in query_params %}
+    {% if param.required %}
+    {{ param.python_name }}: {{ param.type.to_python() }},
+    {% endif %}
+    {% endfor %}
+    {% for param in query_params %}
+    {% if not param.required %}
+    {{ param.python_name }}: {{ param.type.to_python() }} | None = {{ param.default if param.default else 'None' }},
+    {% endif %}
+    {% endfor %}
+    {% for param in header_params %}
+    {% if not param.required %}
+    {{ param.python_name }}: {{ param.type.to_python() }} | None = None,
+    {% endif %}
+    {% endfor %}
+) -> Iterator[{% if endpoint.stream_type %}{{ endpoint.stream_type.to_python() }}{% else %}dict[str, Any]{% endif %}]:
+    """{{ endpoint.summary or endpoint.function_name }} (streaming)"""
+    import json
+
+    request_args = _build_request_args(
+        {% for param in path_params %}
+        {{ param.python_name }}={{ param.python_name }},
+        {% endfor %}
+        {% if endpoint.request_body %}
+        body=body,
+        {% endif %}
+        {% for param in query_params %}
+        {{ param.python_name }}={{ param.python_name }},
+        {% endfor %}
+        {% for param in header_params %}
+        {% if not param.required %}
+        {{ param.python_name }}={{ param.python_name }},
+        {% endif %}
+        {% endfor %}
+    )
+
+    with client.stream(**request_args) as response:
+        raise_for_status(response)
+        for line in response.iter_lines():
+            if line.strip():
+                {% if endpoint.stream_type and endpoint.stream_type.kind.value == 'model' %}
+                yield {{ endpoint.stream_type.model_name }}.model_validate(json.loads(line))
+                {% else %}
+                yield json.loads(line)
+                {% endif %}
+
+
+async def asyncio_stream(
+    client: httpx.AsyncClient,
+    {% for param in path_params %}
+    {{ param.python_name }}: {{ param.type.to_python() }},
+    {% endfor %}
+    {% if endpoint.request_body %}
+    body: {{ endpoint.request_body.class_name }},
+    {% endif %}
+    {% for param in query_params %}
+    {% if param.required %}
+    {{ param.python_name }}: {{ param.type.to_python() }},
+    {% endif %}
+    {% endfor %}
+    {% for param in query_params %}
+    {% if not param.required %}
+    {{ param.python_name }}: {{ param.type.to_python() }} | None = {{ param.default if param.default else 'None' }},
+    {% endif %}
+    {% endfor %}
+    {% for param in header_params %}
+    {% if not param.required %}
+    {{ param.python_name }}: {{ param.type.to_python() }} | None = None,
+    {% endif %}
+    {% endfor %}
+) -> AsyncIterator[{% if endpoint.stream_type %}{{ endpoint.stream_type.to_python() }}{% else %}dict[str, Any]{% endif %}]:
+    """{{ endpoint.summary or endpoint.function_name }} (streaming)"""
+    import json
+
+    request_args = _build_request_args(
+        {% for param in path_params %}
+        {{ param.python_name }}={{ param.python_name }},
+        {% endfor %}
+        {% if endpoint.request_body %}
+        body=body,
+        {% endif %}
+        {% for param in query_params %}
+        {{ param.python_name }}={{ param.python_name }},
+        {% endfor %}
+        {% for param in header_params %}
+        {% if not param.required %}
+        {{ param.python_name }}={{ param.python_name }},
+        {% endif %}
+        {% endfor %}
+    )
+
+    async with client.stream(**request_args) as response:
+        raise_for_status(response)
+        async for line in response.aiter_lines():
+            if line.strip():
+                {% if endpoint.stream_type and endpoint.stream_type.kind.value == 'model' %}
+                yield {{ endpoint.stream_type.model_name }}.model_validate(json.loads(line))
+                {% else %}
+                yield json.loads(line)
+                {% endif %}
+{% endif %}
