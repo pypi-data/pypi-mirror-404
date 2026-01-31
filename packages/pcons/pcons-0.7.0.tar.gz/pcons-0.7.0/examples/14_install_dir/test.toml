@@ -1,0 +1,38 @@
+# Test configuration for install_dir example
+# Demonstrates InstallDir for recursive directory copying
+
+[test]
+description = "InstallDir for recursive directory copying"
+
+# The stamp file is in .stamps/; actual files are in the directory
+expected_outputs = [
+    "build/.stamps/dist_assets.stamp",
+]
+
+[verify]
+# Verify the copied files exist and have correct content
+commands = [
+    { run = "test -f build/dist/assets/data.txt" },
+    { run = "test -f build/dist/assets/config.json" },
+    { run = "test -f build/dist/assets/subdir/nested.txt" },
+    { run = "cat build/dist/assets/data.txt", expect_stdout = "Sample data file" },
+    { run = "cat build/dist/assets/subdir/nested.txt", expect_stdout = "subdirectory" },
+]
+
+[skip]
+# Works on all platforms
+rebuild_on_windows = true
+# Xcode generator now supports InstallDir targets (creates PBXAggregateTarget
+# with cp -R script phase), but the expected_outputs reference ninja stamp files.
+# The rebuild tests are also ninja-specific.
+# Manual testing: xcodebuild -project build/*.xcodeproj -configuration Release
+generators = ["xcode"]
+
+[[rebuild]]
+description = "No rebuild when nothing changed"
+expect_no_work = true
+
+[[rebuild]]
+description = "Touching a source file triggers reinstall"
+touch = "assets/data.txt"
+expect_rebuild = [".stamps/dist_assets.stamp"]

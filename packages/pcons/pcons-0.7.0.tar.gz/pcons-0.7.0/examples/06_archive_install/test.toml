@@ -1,0 +1,29 @@
+# Test configuration for archive_install example
+# Demonstrates C program with Tarfile archive installers
+
+[test]
+description = "C program with Tarfile archive installers"
+
+# Files that should exist after the default build
+expected_outputs = [
+    "build/hello",
+]
+
+[verify]
+# Run the built program and check output
+commands = [
+    { run = "./build/hello", expect_stdout = "Hello from pcons!" },
+    # Test the install alias - builds tarballs and copies to Installers/
+    { run = "ninja -C build install" },
+    # Verify the installed tarballs exist (inside build dir since ninja -C build)
+    { run = "test -f build/Installers/hello-src.tar.gz" },
+    { run = "test -f build/Installers/hello-bin.tar.gz" },
+]
+
+[skip]
+# Works on all platforms with a C compiler
+# Xcode generator now supports Install/Archive targets (creates PBXAggregateTarget
+# with shell script phases), but verify commands use 'ninja -C build install'
+# which doesn't have an xcode equivalent in the test harness.
+# Manual testing: xcodebuild -project build/*.xcodeproj -target install_Installers
+generators = ["xcode"]
