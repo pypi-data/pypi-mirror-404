@@ -1,0 +1,1399 @@
+Metadata-Version: 2.3
+Name: axe-cli
+Version: 1.7.6
+Summary: axe, yerrrr
+Requires-Dist: agent-client-protocol==0.7.0
+Requires-Dist: axe-dig
+Requires-Dist: aiofiles>=24.0,<26.0
+Requires-Dist: aiohttp==3.13.3
+Requires-Dist: typer==0.21.1
+Requires-Dist: kosong[contrib]==0.41.0
+Requires-Dist: loguru>=0.6.0,<0.8
+Requires-Dist: prompt-toolkit==3.0.52
+Requires-Dist: pillow==12.1.0
+Requires-Dist: pyyaml==6.0.3
+Requires-Dist: rich==14.2.0
+Requires-Dist: ripgrepy==2.2.0
+Requires-Dist: streamingjson==0.0.5
+Requires-Dist: trafilatura==2.0.0
+Requires-Dist: lxml==6.0.2
+Requires-Dist: tenacity==9.1.2
+Requires-Dist: fastmcp==2.12.5
+Requires-Dist: pydantic==2.12.5
+Requires-Dist: httpx[socks]==0.28.1
+Requires-Dist: pykaos==0.6.0
+Requires-Dist: batrachian-toad==0.5.23 ; python_full_version >= '3.14'
+Requires-Dist: tomlkit==0.14.0
+Requires-Dist: jinja2==3.1.6
+Requires-Dist: pyobjc-framework-cocoa>=12.1 ; sys_platform == 'darwin'
+Requires-Dist: keyring>=25.7.0
+Requires-Dist: tiktoken>=0.8.0
+Requires-Python: >=3.12
+Description-Content-Type: text/markdown
+
+# axe
+
+**The AI agent built for real codebases.**
+
+While other AI coding tools burn tokens on bloat to charge you more, axe gives you surgical precision. Built for large-scale projects, battle-tested internally for 6 months, and powered by the world's most advanced code retrieval engine.
+
+---
+
+## What is axe?
+
+axe is an AI agent that runs in your terminal, helping you complete software development tasks and terminal operations. It can read and edit code, execute shell commands, search and fetch web pages, and autonomously plan and adjust actions during execution.
+
+**axe is suited for:**
+- Writing and modifying code: Implementing new features, fixing bugs, refactoring code
+- Understanding projects: Exploring unfamiliar codebases, answering architecture and implementation questions
+- Automating tasks: Batch processing files, running builds and tests, executing scripts
+- Research and data analysis: Web research, log analysis, data processing
+
+axe provides a shell-like interactive experience in the terminal. You can describe your needs in natural language or **press Ctrl+X** to switch to shell mode and execute commands directly.
+
+---
+
+## Why axe exists
+
+**The problem:** Claude Code and OpenAI Codex dump your entire codebase into context, charging you for irrelevant noise. They're built for vibe coding—one-shot weekend projects where "good enough" is the goal.
+
+**The reality:** Real engineering happens in 100K+ line codebases where precision matters. You need to understand execution flow, trace bugs through call graphs, profile memory bottlenecks, and refactor without breaking half your tests.
+
+**The solution:** axe combines AI agents with **axe-dig**, our 5-layer code intelligence engine that extracts meaning instead of dumping text. The result:
+
+- **95% fewer tokens** while preserving everything needed to understand code
+- **Semantic search** that finds code by behavior, not just keywords
+- **Execution tracing** (coming soon) that shows you what values flowed through functions
+- **Flame graphs & memory profiling** (coming soon) to debug performance, not just logic
+- **Call graph analysis** to refactor safely and understand impact
+
+This isn't a toy for side projects. This is the tool our internal team has used for 6 months to ship production code faster.
+
+---
+
+## Common Use Cases
+
+axe can help you complete various software development and general tasks. Here are some typical scenarios.
+
+### Implementing new features
+
+When you need to add new features to your project, simply describe your requirements in natural language. axe will automatically read relevant code, understand the project structure, and then make modifications.
+
+```
+Add pagination to the user list page, showing 20 records per page
+```
+
+axe typically works through a "Read → Edit → Verify" workflow:
+1. **Read**: Search and read relevant code, understand existing implementation
+2. **Edit**: Write or modify code, following the project's coding style
+3. **Verify**: Run tests or builds to ensure changes don't introduce issues
+
+If you're not satisfied with the changes, you can tell axe to adjust:
+
+```
+The pagination component style doesn't match the rest of the project, reference the Button component's style
+```
+
+### Fixing bugs
+
+Describe the problem you're encountering, and axe will help you locate the cause and fix it:
+
+```
+After user login, when redirecting to the home page, it occasionally shows logged out status. Help me investigate
+```
+
+For problems with clear error messages, you can paste the error log directly:
+
+```
+When running npm test, I get this error:
+
+TypeError: Cannot read property 'map' of undefined
+    at UserList.render (src/components/UserList.jsx:15:23)
+
+Please fix it
+```
+
+You can also have axe run commands to reproduce and verify the issue:
+
+```
+Run the tests, and if there are any failing cases, fix them
+```
+
+### Understanding projects
+
+axe can help you explore and understand unfamiliar codebases:
+
+```
+What's the overall architecture of this project? Where is the entry file?
+```
+
+```
+How is the user authentication flow implemented? What files are involved?
+```
+
+```
+Explain what the src/core/scheduler.py file does
+```
+
+If you encounter parts you don't understand while reading code, you can ask anytime:
+
+```
+What's the difference between useCallback and useMemo? Why use useCallback here?
+```
+
+### Automating small tasks
+
+axe can perform various repetitive small tasks:
+
+```
+Change all var declarations to const or let in .js files under the src directory
+```
+
+```
+Add documentation comments to all public functions without docstrings
+```
+
+```
+Generate unit tests for this API module
+```
+
+```
+Update all dependencies in package.json to the latest version, then run tests to make sure there are no issues
+```
+
+### Automating general tasks
+
+Beyond code-related tasks, axe can also handle general scenarios.
+
+**Research tasks:**
+```
+Research Python async web frameworks for me, compare the pros and cons of FastAPI, Starlette, and Sanic
+```
+
+**Data analysis:**
+```
+Analyze the access logs in the logs directory, count the call frequency and average response time for each endpoint
+```
+
+**Batch file processing:**
+```
+Convert all PNG images in the images directory to JPEG format, save to the output directory
+```
+
+---
+
+## Quick start
+
+### Install
+```bash
+uv pip install axe-cli
+```
+
+### Run
+Simply run `axe` in whatever repo you want to play with:
+```bash
+cd /path/to/your/project
+axe
+```
+
+On first run, axe-dig automatically indexes your codebase (30-60 seconds for typical projects). After that, queries are instant.
+
+### Start using
+```bash
+# Find code by behavior
+/skill:code-search "database connection pooling"
+
+# Understand a function without reading the whole file
+/skill:code-context get_user_by_id
+
+# See who calls a function before refactoring
+/skill:code-impact authenticate_request
+
+# Make surgical edits
+StrReplaceFile src/auth.py "old code" "new code"
+
+# Toggle to shell mode
+[Ctrl+X]
+pytest tests/
+[Ctrl+X]
+```
+
+---
+
+## What makes axe different
+
+### 1. Precision over bloat
+Other tools: "Here's your entire 50-file module. Claude, figure it out."  
+**axe**: "Here are the 6 lines that affect your bug, the call graph showing who uses this function, and the data flow proving where the null came from."
+
+**How?** axe-dig builds 5 analysis layers:
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Layer 5: Program Dependence  → "What affects line 42?"      │
+│ Layer 4: Data Flow           → "Where does this value go?"  │
+│ Layer 3: Control Flow        → "How complex is this?"       │
+│ Layer 2: Call Graph          → "Who calls this function?"   │
+│ Layer 1: AST                 → "What functions exist?"      │
+└─────────────────────────────────────────────────────────────┘
+```
+
+Different tasks need different depth. Browsing? Layer 1. Refactoring? Layer 2. Debugging a null pointer? Layer 5 shows only the relevant lines.
+
+### 2. Semantic code search
+Find code by **what it does**, not what it's named.
+
+```bash
+# Traditional grep: finds literal text matches
+grep "jwt" src/  # Misses verify_access_token()
+
+# axe semantic search: understands behavior
+/skill:code-search "validate JWT tokens and check expiration"
+# Finds verify_access_token() because the call graph and 
+# data flow reveal it's doing JWT validation
+```
+
+### 3. Built for debugging (coming soon)
+Debugging isn't just about bad code—it's about bad logic, performance bottlenecks, and understanding what actually happened at runtime.
+
+**Coming features:**
+- **Execution tracing**: See exact values that flowed through each function call
+- **Flame graphs**: Visualize where your code spends time
+- **Memory profiling**: Find leaks and allocation hotspots
+- **Call stack reconstruction**: Understand how you got to that error state
+
+### 4. Token cost transparency
+We don't make money by wasting your tokens. Every query shows exactly how many tokens were used:
+
+```
+✓ Context extracted: 175 tokens (was 21,000 raw)
+✓ Savings: 99.2%
+```
+
+### 5. Shell mode integration
+Hit **Ctrl+X** to switch to normal shell. Run your tests, check git status, install packages. Hit **Ctrl+X** again to toggle back to axe.
+
+No more juggling terminal windows. No more context switching.
+
+---
+
+## Core capabilities
+
+### Code intelligence tools
+Powered by axe-dig's 5-layer analysis:
+
+| Tool | What it does | Use case |
+|------|-------------|----------|
+| **CodeSearch** | Semantic search by behavior | "Find JWT validation logic" |
+| **CodeContext** | LLM-ready function summaries (95% token savings) | Understand unfamiliar code |
+| **CodeStructure** | Navigate functions/classes in files/dirs | Explore new codebases |
+| **CodeImpact** | Reverse call graph (who calls this?) | Safe refactoring |
+
+### File operations
+- `ReadFile` / `WriteFile` / `StrReplaceFile` - Standard file I/O
+- `Grep` - Exact file locations + line numbers (use after CodeSearch)
+- `Glob` - Pattern matching
+- `ReadMediaFile` - Images, PDFs, videos
+
+### Multi-agent workflows
+- `Task` - Spawn subagents for parallel work
+- `CreateSubagent` - Custom agent specs
+- `SetTodoList` - Track multi-step tasks
+
+### Shell integration
+- `Shell` - Execute commands
+- **Ctrl+X** - Toggle between axe and normal shell mode
+
+---
+
+## Real example: Debug a null pointer
+
+**Without axe:**
+1. Read the 150-line function top to bottom
+2. Trace every variable assignment manually
+3. Miss the bug because it's hidden in control flow
+4. Spend 30 minutes and burn 21,000 tokens
+
+**With axe:**
+```bash
+# Ask axe to debug
+"Why is user null on line 42 in src/auth.py?"
+
+# axe uses CodeImpact + data flow analysis internally
+# Shows you only the 6 lines that matter:
+
+3:   user = db.get_user(username)
+7:   if user is None:
+12:      raise NotFound
+28:  token = create_token(user)  # ← BUG: skipped null check
+35:  session.token = token
+42:  return session
+
+✓ 175 tokens used (was 21,000)
+✓ Bug found in 30 seconds
+```
+
+The bug is obvious: line 28 uses `user` without going through the null check path.
+
+---
+
+## Powered by SRSWTI Inc.
+
+**Building the world's fastest retrieval and inference engines.**
+
+### Bodega's Own
+Exclusive models trained/optimized for Bodega Inference Engine. Note: Our models are also available on Hugging Face.
+
+#### Raptor Series
+Ultra-compact reasoning models designed for efficiency and edge deployment.
+
+- **bodega-raptor-0.9b** - 900M params. Runs on mobile/Pi with 100+ tok/s. Handles document classification, query reformulation, and lightweight reasoning at the edge.
+- **bodega-raptor-90m** - Extreme edge variant. Sub-100M params for amazing tool calling support and reasoning.
+- **bodega-raptor-1b-reasoning-opus4.5-distill** - Distilled from Claude Opus 4.5 reasoning patterns. Enhanced logical deduction chains.
+- **bodega-raptor-8b-mxfp4** - Balanced power/performance for laptops.
+- **bodega-raptor-15b-6bit** - Better raptor.
+
+#### Flagship Models
+Frontier intelligence, distilled and optimized.
+
+- **deepseek-v3.2-speciale-distilled-raptor-32b-4bit** - DeepSeek V3.2 distilled to 32B with Raptor reasoning. Exceptional math/code generation in 5-7GB footprint. 120 tok/s on M1 Max.
+- **bodega-centenario-21b-mxfp4** - Production workhorse. 21B params optimized for sustained inference workloads. Behemoth in all categories.
+- **bodega-solomon-9b** - Multimodal and best for agentic coding.
+
+#### Axe-Turbo Series
+Agentic Coding Models.
+
+- **axe-turbo-1b** - 1B params, 150 tok/s, sub-50ms first token. Edge-first architecture.
+- **axe-turbo-31b** - for High-capacity workloads. Baller coding model, exceptional agentic capabilities.
+
+#### Specialized Models
+Task-specific optimization.
+
+- **bodega-vertex-4b** - 4B params. Optimized for structured data.
+- **blackbird-she-doesnt-refuse-21b** - Uncensored 21B variant for unrestricted generation.
+
+---
+
+## Sessions and Context Management
+
+axe automatically saves your conversation history, allowing you to continue previous work at any time.
+
+### Session resuming
+
+Each time you start axe, a new session is created. If you want to continue a previous conversation, there are several ways:
+
+**Continue the most recent session:**
+
+Use the `--continue` flag to continue the most recent session in the current working directory:
+
+```bash
+axe --continue
+```
+
+**Switch to a specific session:**
+
+Use the `--session` flag to switch to a session with a specific ID:
+
+```bash
+axe --session abc123
+```
+
+**Switch sessions during runtime:**
+
+Enter `/sessions` (or `/resume`) to view all sessions in the current working directory, and use arrow keys to select the session you want to switch to:
+
+```
+/sessions
+```
+
+The list shows each session's title and last update time, helping you find the conversation you want to continue.
+
+### Startup replay
+
+When you continue an existing session, axe will replay the previous conversation history so you can quickly understand the context. During replay, previous messages and AI responses will be displayed.
+
+### Clear and compact
+
+As the conversation progresses, the context grows longer. axe will automatically compress the context when needed to ensure the conversation can continue.
+
+You can also manually manage the context using slash commands:
+
+**Clear context:**
+
+Enter `/clear` to clear all context in the current session and start a fresh conversation:
+
+```
+/clear
+```
+
+After clearing, the AI will forget all previous conversation content. You usually don't need to use this command; for new tasks, starting a new session is a better choice.
+
+**Compact context:**
+
+Enter `/compact` to have the AI summarize the current conversation and replace the original context with the summary:
+
+```
+/compact
+```
+
+Compacting preserves key information while reducing token consumption. This is useful when the conversation is long but you still want to retain some context.
+
+---
+
+## Agent Skills
+
+Agent Skills is an open format for adding specialized knowledge and workflows to AI agents. axe supports loading Agent Skills to extend AI capabilities.
+
+### What are Agent Skills?
+
+A skill is a directory containing a `SKILL.md` file. When axe starts, it discovers all skills and injects their names, paths, and descriptions into the system prompt. The AI will decide on its own whether to read the specific SKILL.md file to get detailed guidance based on the current task's needs.
+
+For example, you can create a "code style" skill to tell the AI your project's naming conventions, comment styles, etc.; or create a "security audit" skill to have the AI focus on specific security issues when reviewing code.
+
+### Skill discovery
+
+axe uses a layered loading mechanism to discover skills, loading in the following priority order (later ones override skills with the same name):
+
+**Built-in skills**
+
+Skills shipped with the package, providing basic capabilities.
+
+**User-level skills**
+
+Stored in the user's home directory, effective across all projects. axe checks the following directories in priority order and uses the first one that exists:
+
+- `~/.config/agents/skills/` (recommended)
+- `~/.agents/skills/`
+- `~/.axe/skills/`
+- `~/.claude/skills/`
+- `~/.codex/skills/`
+
+**Project-level skills**
+
+Stored in the project directory, only effective within that project's working directory. axe checks the following directories in priority order and uses the first one that exists:
+
+- `.agents/skills/` (recommended)
+- `.axe/skills/`
+- `.claude/skills/`
+- `.codex/skills/`
+
+You can also specify other directories with the `--skills-dir` flag, which skips user-level and project-level skill discovery:
+
+```bash
+axe --skills-dir /path/to/my-skills
+```
+
+### Built-in skills
+
+axe includes the following built-in skills:
+
+- **axe-cli-help**: axe CLI help. Answers questions about axe installation, configuration, slash commands, keyboard shortcuts, MCP integration, providers, environment variables, and more.
+- **skill-creator**: Guide for creating skills. When you need to create a new skill (or update an existing skill) to extend axe's capabilities, you can use this skill to get detailed creation guidance and best practices.
+
+### Creating a skill
+
+Creating a skill only requires two steps:
+
+1. Create a subdirectory in the skills directory
+2. Create a SKILL.md file in the subdirectory
+
+**Directory structure:**
+
+A skill directory needs at least a SKILL.md file, and can also include auxiliary directories to organize more complex content:
+
+```
+~/.config/agents/skills/
+└── my-skill/
+    ├── SKILL.md          # Required: main file
+    ├── scripts/          # Optional: script files
+    ├── references/       # Optional: reference documents
+    └── assets/           # Optional: other resources
+```
+
+**SKILL.md format:**
+
+SKILL.md uses YAML frontmatter to define metadata, followed by prompt content in Markdown format:
+
+```yaml
+---
+name: code-style
+description: My project's code style guidelines
+---
+
+## Code Style
+
+In this project, please follow these conventions:
+
+- Use 4-space indentation
+- Variable names use camelCase
+- Function names use snake_case
+- Every function needs a docstring
+- Lines should not exceed 100 characters
+```
+
+**Frontmatter fields:**
+
+| Field | Description | Required |
+|-------|-------------|----------|
+| name | Skill name, 1-64 characters, only lowercase letters, numbers, and hyphens allowed; defaults to directory name if omitted | No |
+| description | Skill description, 1-1024 characters, explaining the skill's purpose and use cases; shows "No description provided." if omitted | No |
+| license | License name or file reference | No |
+| compatibility | Environment requirements, up to 500 characters | No |
+| metadata | Additional key-value attributes | No |
+
+**Best practices:**
+
+- Keep SKILL.md under 500 lines, move detailed content to scripts/, references/, or assets/ directories
+- Use relative paths in SKILL.md to reference other files
+- Provide clear step-by-step instructions, input/output examples, and edge case explanations
+
+### Example skills
+
+**PowerPoint creation:**
+
+```yaml
+---
+name: pptx
+description: Create and edit PowerPoint presentations
+---
+
+## PPT Creation Workflow
+
+When creating presentations, follow these steps:
+
+1. Analyze content structure, plan slide outline
+2. Choose appropriate color scheme and fonts
+3. Use python-pptx library to generate .pptx files
+
+## Design Principles
+
+- Each slide focuses on one topic
+- Keep text concise, use bullet points instead of long paragraphs
+- Maintain clear visual hierarchy with distinct titles, body, and notes
+- Use consistent colors, avoid more than 3 main colors
+```
+
+**Python project standards:**
+
+```yaml
+---
+name: python-project
+description: Python project development standards, including code style, testing, and dependency management
+---
+
+## Python Development Standards
+
+- Use Python 3.14+
+- Use ruff for code formatting and linting
+- Use pyright for type checking
+- Use pytest for testing
+- Use uv for dependency management
+
+Code style:
+- Line length limit 100 characters
+- Use type annotations
+- Public functions need docstrings
+```
+
+**Git commit conventions:**
+
+```yaml
+---
+name: git-commits
+description: Git commit message conventions using Conventional Commits format
+---
+
+## Git Commit Conventions
+
+Use Conventional Commits format:
+
+type(scope): description
+
+Allowed types: feat, fix, docs, style, refactor, test, chore
+
+Examples:
+- feat(auth): add OAuth login support
+- fix(api): fix user query returning null
+- docs(readme): update installation instructions
+```
+
+### Using slash commands to load a skill
+
+The `/skill:<name>` slash command lets you save commonly used prompt templates as skills and quickly invoke them when needed. When you enter the command, axe reads the corresponding SKILL.md file content and sends it to the Agent as a prompt.
+
+For example:
+
+- `/skill:code-style` - Load code style guidelines
+- `/skill:pptx` - Load PPT creation workflow
+- `/skill:git-commits fix user login issue` - Load Git commit conventions with an additional task description
+
+You can append additional text after the slash command, which will be added to the skill prompt as the user's specific request.
+
+**TIP:** For regular conversations, the Agent will automatically decide whether to read skill content based on context, so you don't need to invoke it manually.
+
+Skills allow you to codify your team's best practices and project standards, ensuring the AI always follows consistent standards.
+
+### Flow skills
+
+Flow skills are a special skill type that embed an Agent Flow diagram in SKILL.md, used to define multi-step automated workflows. Unlike standard skills, flow skills are invoked via `/flow:<name>` commands and automatically execute multiple conversation turns following the flow diagram.
+
+**Creating a flow skill:**
+
+To create a flow skill, set `type: flow` in the frontmatter and include a Mermaid or D2 code block in the content:
+
+```yaml
+---
+name: code-review
+description: Code review workflow
+type: flow
+---
+
+```mermaid
+flowchart TD
+A([BEGIN]) --> B[Analyze code changes, list all modified files and features]
+B --> C{Is code quality acceptable?}
+C -->|Yes| D[Generate code review report]
+C -->|No| E[List issues and propose improvements]
+E --> B
+D --> F([END])
+```
+```
+
+**Flow diagram format:**
+
+Both Mermaid and D2 formats are supported:
+
+- **Mermaid**: Use ` ```mermaid ` code block, [Mermaid Playground](https://mermaid.live) can be used for editing and preview
+- **D2**: Use ` ```d2 ` code block, [D2 Playground](https://play.d2lang.com) can be used for editing and preview
+
+Flow diagrams must contain one BEGIN node and one END node. Regular node text is sent to the Agent as a prompt; decision nodes require the Agent to output `<choice>branch name</choice>` in the output to select the next step.
+
+**Executing a flow skill:**
+
+Flow skills can be invoked in two ways:
+
+- `/flow:<name>` - Execute the flow. The Agent will start from the BEGIN node and process each node according to the flow diagram definition until reaching the END node
+- `/skill:<name>` - Like a standard skill, sends the SKILL.md content to the Agent as a prompt (does not automatically execute the flow)
+
+```bash
+# Execute the flow
+/flow:code-review
+
+# Load as a standard skill
+/skill:code-review
+```
+
+---
+
+## Agents and Subagents
+
+An agent defines the AI's behavior, including system prompts, available tools, and subagents. You can use built-in agents or create custom agents.
+
+### Lethal Efficiency with Dynamic Subagents
+
+axe isn't limited to one main agent. You can create subagents and tasks for *anything* you want.
+
+Need a dedicated security researcher? A ruthlessly precise code reviewer? A creative copywriter? axe can create and deploy specialized subagents based on your exact requirements. These subagents help you complete tasks better, faster, and more efficiently—operating with lethal precision to divide and conquer complex workflows.
+
+### Built-in agents
+
+axe provides two built-in agents. You can select one at startup with the `--agent` flag:
+
+```bash
+axe --agent default
+```
+
+**default**
+
+The default agent, suitable for general use. Enabled tools:
+
+- Task, SetTodoList, Shell, ReadFile, ReadMediaFile, Glob, Grep, WriteFile, StrReplaceFile
+- CodeSearch, CodeContext, CodeStructure, CodeImpact (axe-dig tools)
+
+**okabe**
+
+An experimental agent for testing new prompts and tools. Adds SendDMail on top of default.
+
+### Custom agent files
+
+Agents are defined in YAML format. Load a custom agent with the `--agent-file` flag:
+
+```bash
+axe --agent-file /path/to/my-agent.yaml
+```
+
+**Basic structure:**
+
+```yaml
+version: 1
+agent:
+  name: my-agent
+  system_prompt_path: ./system.md
+  tools:
+    - "axe_cli.tools.shell:Shell"
+    - "axe_cli.tools.file:ReadFile"
+    - "axe_cli.tools.file:WriteFile"
+```
+
+**Inheritance and overrides:**
+
+Use `extend` to inherit another agent's configuration and only override what you need to change:
+
+```yaml
+version: 1
+agent:
+  extend: default  # Inherit from default agent
+  system_prompt_path: ./my-prompt.md  # Override system prompt
+  exclude_tools:  # Exclude certain tools
+    - "axe_cli.tools.web:SearchWeb"
+    - "axe_cli.tools.web:FetchURL"
+```
+
+`extend: default` inherits from the built-in default agent. You can also specify a relative path to inherit from another agent file.
+
+**Configuration fields:**
+
+| Field | Description | Required |
+|-------|-------------|----------|
+| extend | Agent to inherit from, can be `default` or a relative path | No |
+| name | Agent name | Yes (optional when inheriting) |
+| system_prompt_path | System prompt file path, relative to agent file | Yes (optional when inheriting) |
+| system_prompt_args | Custom arguments passed to system prompt, merged when inheriting | No |
+| tools | Tool list, format is `module:ClassName` | Yes (optional when inheriting) |
+| exclude_tools | Tools to exclude | No |
+| subagents | Subagent definitions | No |
+
+### System prompt built-in parameters
+
+The system prompt file is a Markdown template that can use `${VAR}` syntax to reference variables. Built-in variables include:
+
+| Variable | Description |
+|----------|-------------|
+| ${AXE_NOW} | Current time (ISO format) |
+| ${AXE_WORK_DIR} | Working directory path |
+| ${AXE_WORK_DIR_LS} | Working directory file list |
+| ${AXE_AGENTS_MD} | AGENTS.md file content (if exists) |
+| ${AXE_SKILLS} | Loaded skills list |
+
+You can also define custom parameters via `system_prompt_args`:
+
+```yaml
+agent:
+  system_prompt_args:
+    MY_VAR: "custom value"
+```
+
+Then use `${MY_VAR}` in the prompt.
+
+**System prompt example:**
+
+```markdown
+# My Agent
+
+You are a helpful assistant. Current time: ${AXE_NOW}.
+
+Working directory: ${AXE_WORK_DIR}
+
+${MY_VAR}
+```
+
+### Defining subagents in agent files
+
+Subagents can handle specific types of tasks. After defining subagents in an agent file, the main agent can launch them via the Task tool:
+
+```yaml
+version: 1
+agent:
+  extend: default
+  subagents:
+    coder:
+      path: ./coder-sub.yaml
+      description: "Handle coding tasks"
+    reviewer:
+      path: ./reviewer-sub.yaml
+      description: "Code review expert"
+```
+
+Subagent files are also standard agent format, typically inheriting from the main agent and excluding certain tools:
+
+```yaml
+# coder-sub.yaml
+version: 1
+agent:
+  extend: ./agent.yaml  # Inherit from main agent
+  system_prompt_args:
+    ROLE_ADDITIONAL: |
+      You are now running as a subagent...
+  exclude_tools:
+    - "axe_cli.tools.multiagent:Task"  # Exclude Task tool to avoid nesting
+```
+
+### How subagents run
+
+Subagents launched via the Task tool run in an isolated context and return results to the main agent when complete. Advantages of this approach:
+
+- Isolated context, avoiding pollution of main agent's conversation history
+- Multiple independent tasks can be processed in parallel
+- Subagents can have targeted system prompts
+
+### Dynamic subagent creation
+
+CreateSubagent is an advanced tool that allows AI to dynamically define new subagent types at runtime (not enabled by default). To use it, add to your agent file:
+
+```yaml
+agent:
+  tools:
+    - "axe_cli.tools.multiagent:CreateSubagent"
+```
+
+---
+
+## Built-in Tools
+
+The following are all built-in tools in axe.
+
+### Task
+**Path:** `axe_cli.tools.multiagent:Task`  
+**Description:** Dispatch a subagent to execute a task. Subagents cannot access the main agent's context; all necessary information must be provided in the prompt.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| description | string | Short task description (3-5 words) |
+| subagent_name | string | Subagent name |
+| prompt | string | Detailed task description |
+
+### SetTodoList
+**Path:** `axe_cli.tools.todo:SetTodoList`  
+**Description:** Manage todo list, track task progress
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| todos | array | Todo list items |
+| todos[].title | string | Todo item title |
+| todos[].status | string | Status: pending, in_progress, done |
+
+### Shell
+**Path:** `axe_cli.tools.shell:Shell`  
+**Description:** Execute shell commands. Requires user approval. Uses the appropriate shell for the OS (bash/zsh on Unix, PowerShell on Windows).
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| command | string | Command to execute |
+| timeout | int | Timeout in seconds, default 60, max 300 |
+
+### ReadFile
+**Path:** `axe_cli.tools.file:ReadFile`  
+**Description:** Read text file content. Max 1000 lines per read, max 2000 characters per line. Files outside working directory require absolute paths.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| path | string | File path |
+| line_offset | int | Starting line number, default 1 |
+| n_lines | int | Number of lines to read, default/max 1000 |
+
+### ReadMediaFile
+**Path:** `axe_cli.tools.file:ReadMediaFile`  
+**Description:** Read image or video files. Max file size 100MB. Only available when the model supports image/video input. Files outside working directory require absolute paths.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| path | string | File path |
+
+### Glob
+**Path:** `axe_cli.tools.file:Glob`  
+**Description:** Match files and directories by pattern. Returns max 1000 matches, patterns starting with ** not allowed.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| pattern | string | Glob pattern (e.g., *.py, src/**/*.ts) |
+| directory | string | Search directory, defaults to working directory |
+| include_dirs | bool | Include directories, default true |
+
+### Grep
+**Path:** `axe_cli.tools.file:Grep`  
+**Description:** Search file content with regular expressions, based on ripgrep
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| pattern | string | Regular expression pattern |
+| path | string | Search path, defaults to current directory |
+| glob | string | File filter (e.g., *.js) |
+| type | string | File type (e.g., py, js, go) |
+| output_mode | string | Output mode: files_with_matches (default), content, count_matches |
+| -B | int | Show N lines before match |
+| -A | int | Show N lines after match |
+| -C | int | Show N lines before and after match |
+| -n | bool | Show line numbers |
+| -i | bool | Case insensitive |
+| multiline | bool | Enable multiline matching |
+| head_limit | int | Limit output lines |
+
+### WriteFile
+**Path:** `axe_cli.tools.file:WriteFile`  
+**Description:** Write files. Requires user approval. Absolute paths are required when writing files outside the working directory.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| path | string | Absolute path |
+| content | string | File content |
+| mode | string | overwrite (default) or append |
+
+### StrReplaceFile
+**Path:** `axe_cli.tools.file:StrReplaceFile`  
+**Description:** Edit files using string replacement. Requires user approval. Absolute paths are required when editing files outside the working directory.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| path | string | Absolute path |
+| edit | object/array | Single edit or list of edits |
+| edit.old | string | Original string to replace |
+| edit.new | string | Replacement string |
+| edit.replace_all | bool | Replace all matches, default false |
+
+### CodeSearch
+**Path:** `axe_cli.tools.axe:CodeSearch`  
+**Description:** Semantic code search powered by axe-dig. Finds code by behavior, not just text matches.
+
+### CodeContext
+**Path:** `axe_cli.tools.axe:CodeContext`  
+**Description:** Get LLM-ready function summaries with 95% token savings.
+
+### CodeStructure
+**Path:** `axe_cli.tools.axe:CodeStructure`  
+**Description:** Navigate functions and classes in files or directories.
+
+### CodeImpact
+**Path:** `axe_cli.tools.axe:CodeImpact`  
+**Description:** Reverse call graph analysis - see who calls a function before refactoring.
+
+### Tool security boundaries
+
+**Working directory restrictions:**
+
+- File reading and writing are typically done within the working directory
+- Absolute paths are required when reading files outside the working directory
+- Write and edit operations require user approval; absolute paths are required when operating on files outside the working directory
+
+**Approval mechanism:**
+
+The following operations require user approval:
+
+| Operation | Approval required |
+|-----------|-------------------|
+| Shell command execution | Each execution |
+| File write/edit | Each operation |
+| MCP tool calls | Each call |
+
+---
+
+## Configuration
+
+axe uses configuration files to manage API providers, models, services, and runtime parameters, supporting both TOML and JSON formats.
+
+### Config file location
+
+The default configuration file is located at `~/.axe/config.toml`. On first run, if the configuration file doesn't exist, axe will automatically create a default configuration file.
+
+You can specify a different configuration file (TOML or JSON format) with the `--config-file` flag:
+
+```bash
+axe --config-file /path/to/config.toml
+```
+
+When calling axe programmatically, you can also pass the complete configuration content directly via the `--config` flag:
+
+```bash
+axe --config '{"default_model": "claude-sonnet-4", "providers": {...}, "models": {...}}'
+```
+
+### Config items
+
+The configuration file contains the following top-level configuration items:
+
+| Item | Type | Description |
+|------|------|-------------|
+| default_model | string | Default model name, must be a model defined in models |
+| default_thinking | boolean | Whether to enable thinking mode by default (defaults to false) |
+| providers | table | API provider configuration |
+| models | table | Model configuration |
+| loop_control | table | Agent loop control parameters |
+| services | table | External service configuration (search, fetch) |
+| mcp | table | MCP client configuration |
+
+**Complete configuration example:**
+
+```toml
+default_model = "claude-sonnet-4"
+default_thinking = false
+
+[providers.anthropic]
+type = "anthropic"
+base_url = "https://api.anthropic.com/v1"
+api_key = "sk-ant-xxx"
+
+[models.claude-sonnet-4]
+provider = "anthropic"
+model = "claude-sonnet-4-20250514"
+max_context_size = 200000
+
+[loop_control]
+max_steps_per_turn = 100
+max_retries_per_step = 3
+max_ralph_iterations = 0
+reserved_context_size = 50000
+
+[services.search]
+base_url = "https://api.example.com/search"
+api_key = "sk-xxx"
+
+[services.fetch]
+base_url = "https://api.example.com/fetch"
+api_key = "sk-xxx"
+
+[mcp.client]
+tool_call_timeout_ms = 60000
+```
+
+### providers
+
+`providers` defines API provider connection information. Each provider uses a unique name as key.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| type | string | Yes | Provider type (e.g., anthropic, openai) |
+| base_url | string | Yes | API base URL |
+| api_key | string | Yes | API key |
+| env | table | No | Environment variables to set before creating provider instance |
+| custom_headers | table | No | Custom HTTP headers to attach to requests |
+
+**Example:**
+
+```toml
+[providers.anthropic]
+type = "anthropic"
+base_url = "https://api.anthropic.com/v1"
+api_key = "sk-ant-xxx"
+custom_headers = { "X-Custom-Header" = "value" }
+```
+
+### models
+
+`models` defines available models. Each model uses a unique name as key.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| provider | string | Yes | Provider name to use, must be defined in providers |
+| model | string | Yes | Model identifier (model name used in API) |
+| max_context_size | integer | Yes | Maximum context length (in tokens) |
+| capabilities | array | No | Model capability list |
+
+**Example:**
+
+```toml
+[models.claude-sonnet-4]
+provider = "anthropic"
+model = "claude-sonnet-4-20250514"
+max_context_size = 200000
+capabilities = ["thinking", "image_in", "video_in"]
+```
+
+### loop_control
+
+`loop_control` controls agent execution loop behavior.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| max_steps_per_turn | integer | 100 | Maximum steps per turn |
+| max_retries_per_step | integer | 3 | Maximum retries per step |
+| max_ralph_iterations | integer | 0 | Extra iterations after each user message; 0 disables; -1 is unlimited |
+| reserved_context_size | integer | 50000 | Reserved token count for LLM response generation; auto-compaction triggers when context_tokens + reserved_context_size >= max_context_size |
+
+### services
+
+`services` configures external services used by axe.
+
+**search service:**
+
+Configures web search service. When enabled, the SearchWeb tool becomes available.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| base_url | string | Yes | Search service API URL |
+| api_key | string | Yes | API key |
+| custom_headers | table | No | Custom HTTP headers to attach to requests |
+
+**fetch service:**
+
+Configures web fetch service. When enabled, the FetchURL tool prioritizes using this service to fetch webpage content.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| base_url | string | Yes | Fetch service API URL |
+| api_key | string | Yes | API key |
+| custom_headers | table | No | Custom HTTP headers to attach to requests |
+
+### mcp
+
+`mcp` configures MCP client behavior.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| client.tool_call_timeout_ms | integer | 60000 | MCP tool call timeout (milliseconds) |
+
+---
+
+## Architecture
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                     YOUR CODEBASE                            │
+│  100K lines across 500 files                                 │
+└───────────────────────┬──────────────────────────────────────┘
+                        │
+                        ▼
+┌──────────────────────────────────────────────────────────────┐
+│                    AXE-DIG ENGINE                            │
+│  5-layer analysis + semantic embeddings                      │
+│  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌────────┐ │
+│  │   AST   │→│  Calls  │→│   CFG   │→│   DFG   │→│  PDG   │ │
+│  └─────────┘ └─────────┘ └─────────┘ └─────────┘ └────────┘ │
+│                                                              │
+│  In-memory daemon: 100ms queries instead of 30s CLI spawns  │
+└───────────────────────┬──────────────────────────────────────┘
+                        │
+                        ▼
+┌──────────────────────────────────────────────────────────────┐
+│                      AXE AGENT                               │
+│  • Understands code semantically (not just text)            │
+│  • Extracts minimal context (95% token savings)             │
+│  • Executes tools (file ops, shell, multi-agent)            │
+│  • Interactive shell UI with Ctrl+X toggle                  │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**The difference:**
+- **Other tools**: Dump 100K lines → Claude figures it out → Burn tokens
+- **axe**: Extract 5K tokens of pure signal → Surgical edits → Save money
+
+---
+
+## Workflow examples
+
+### Understanding unfamiliar code
+```bash
+# See the structure first
+/skill:code-structure src/auth/
+
+# Find specific functionality
+/skill:code-search "user session management"
+
+# Get function context
+/skill:code-context create_session
+```
+
+### Safe refactoring
+```bash
+# Before changing a function, see who calls it
+/skill:code-impact validate_token
+
+# Shows:
+# - 12 direct callers
+# - 3 indirect callers through middleware
+# - 8 test files that exercise this function
+
+# Now you know what might break
+```
+
+### Debugging
+```bash
+# Find code related to the error
+/skill:code-search "handle database connection errors"
+
+# Read the implementation
+ReadFile src/db/connection.py
+
+# Make a fix
+StrReplaceFile src/db/connection.py "retry_count = 3" "retry_count = 5"
+
+# Toggle to shell and test
+[Ctrl+X]
+pytest tests/test_db.py
+[Ctrl+X]
+```
+
+---
+
+## Advanced features
+
+### Multi-agent workflows
+Spawn subagents for parallel tasks:
+
+```bash
+# Main agent delegates to specialists
+Task "refactor auth module" --agent refactor-specialist
+Task "update tests" --agent test-specialist
+Task "update docs" --agent docs-specialist
+```
+
+### Skills system
+Reusable workflows and domain expertise:
+
+```bash
+# Available skills auto-detected from project
+/skill:docker-deploy
+/skill:api-design
+/skill:performance-optimization
+```
+
+### Context management
+axe maintains conversation history and can checkpoint/restore:
+
+```bash
+# Save current context
+/checkpoint "before-refactor"
+
+# Restore if things go wrong
+/restore "before-refactor"
+```
+
+---
+
+## What's coming
+
+Our internal team has been using features that will change the game:
+
+### 1. Execution tracing
+See what actually happened at runtime:
+```bash
+# Trace a failing test
+/trace pytest tests/test_auth.py::test_login
+
+# Shows exact values that flowed through each function:
+# authenticate(username="alice", password="wrong")
+#   → validate_credentials(user=User(id=123), password="wrong")
+#     → check_password_hash(hash="$2b$...", password="wrong")
+#       → bcrypt.verify() returned False
+#       → raised AuthenticationError
+```
+
+### 2. Performance debugging
+```bash
+# Generate flame graph
+/flamegraph run_server.py
+
+# Find memory leaks
+/memory-profile background_worker.py
+
+# Both integrated directly in the chat interface
+```
+
+### 3. Visual debugging
+Interactive call graphs, data flow visualizations, and dependency maps—all generated on demand and viewable in your browser.
+
+### 4. Smart test selection
+```bash
+# Only run tests affected by your changes
+/test-impact src/auth/session.py
+
+# Shows: 8 tests need to run (not all 1,247)
+```
+
+---
+
+## Why we built this
+
+We're building the world's best retrieval and inference engine. We started with coding because it's the hardest problem: understanding large codebases, tracing execution, debugging logic errors, optimizing performance.
+
+If we can nail code understanding, we can nail anything.
+
+Other tools optimize for demo videos and charging per token. We optimize for engineers shipping production code.
+
+---
+
+## Installation
+
+```bash
+# Install both axe and axe-dig
+pip install axe-cli axe-dig
+
+# Or from source
+git clone https://github.com/yourusername/axe
+cd axe
+make prepare
+make build
+
+# Run
+axe
+```
+
+---
+
+## Supported languages
+
+Python, TypeScript, JavaScript, Go, Rust, Java, C, C++, Ruby, PHP, C#, Kotlin, Scala, Swift, Lua, Elixir
+
+Language auto-detected. Specify with `--lang` if needed.
+
+---
+
+## MCP Integration
+
+For AI tools integration, axe supports Model Context Protocol (MCP).
+
+**Add to your MCP-compatible tool's configuration:**
+
+```json
+{
+  "mcpServers": {
+    "axe-dig": {
+      "command": "dig-mcp",
+      "args": ["--project", "/path/to/your/project"]
+    }
+  }
+}
+```
+
+---
+
+## Community
+
+- **Issues**: [GitHub Issues](https://github.com/yourusername/axe/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/yourusername/axe/discussions)
+- **Docs**: [Full documentation](https://axe-cli.dev/docs)
+
+---
+
+## License
+
+AGPL-3.0 - See LICENSE file.
+
+---
+
+## Comparison
+
+| Feature | Claude Code | OpenAI Codex | axe |
+|---------|-------------|--------------|-----|
+| **Built for** | Weekend projects | Demos | Production codebases |
+| **Context strategy** | Dump everything | Dump everything | Extract signal (95% savings) |
+| **Code search** | Text/regex | Text/regex | Semantic (behavior-based) |
+| **Call graph analysis** | ❌ | ❌ | ✅ 5-layer analysis |
+| **Token optimization** | ❌ (incentivized to waste) | ❌ (incentivized to waste) | ✅ Show savings per query |
+| **Execution tracing** | ❌ | ❌ | ✅ Coming soon |
+| **Flame graphs** | ❌ | ❌ | ✅ Coming soon |
+| **Memory profiling** | ❌ | ❌ | ✅ Coming soon |
+| **Shell integration** | ❌ | ❌ | ✅ Ctrl+X toggle |
+| **Session management** | Limited | Limited | ✅ Full history + replay |
+| **Skills system** | ❌ | ❌ | ✅ Modular, extensible |
+| **Subagents** | ❌ | ❌ | ✅ Parallel task execution |
+| **Battle-tested** | Public beta | Public API | 6 months internal use |
+
+---
+
+**The bottom line:** If you're building real software in large codebases, you need precision tools. Not vibe coding toys.
+
+Welcome to axe.
+
+---
+
+## Acknowledgements
+
+Special thanks to [MoonshotAI/kimi-cli](https://github.com/MoonshotAI/kimi-cli) for their amazing work, which inspired our tools and the Kosong provider.
