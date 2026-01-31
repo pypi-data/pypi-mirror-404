@@ -1,0 +1,74 @@
+{% extends "base_bootstrap.html" %}
+
+{% load render_table from django_tables2 %}
+
+{% block title %}Filters{% endblock %}
+
+
+{% block content %}
+
+<!-- For my own sanity - see comments describing which columns are which in the layout -->
+
+<div class="container-fluid">
+  <div class="row">
+
+  <!-- Page layout begins - 1 column, width 12 - form submit -->
+{% if not public and user.is_authenticated %}
+
+   {% if form %}
+  <div class="col-lg-12 col-md-12 col-sm-12">
+    <form action="" method="post" id="classifyform">
+        {%csrf_token%}
+        {% for error in form.non_field_errors %}
+        <div class="form-group has-errors text-danger small">
+            {{ error }}
+        </div>
+        {% endfor %}
+        {% for field in form.visible_fields %}
+        <div class="form-group has-errors text-danger small">
+            {{ field.errors }}
+        </div>
+        <div class="form-group">
+            {{ field.label }}
+        </div>
+        <div class="form-group">
+        {% if field.name == "promote_demote" %}
+          <div class="btn-group flex-wrap btn-group-toggle" data-toggle="buttons">
+          {% for radio in field %}
+            <label for="{{ radio.id_for_label }}" class="btn btn-outline-secondary btn-sm {% if forloop.last %}active{% endif %}">{{ radio.choice_label }}
+            {{ radio.tag }}
+            </label>
+          {% endfor %}
+          </div>
+        {% elif field.name == "user_list_membership" %}
+          {% for choice in field %}
+          <div class="checkbox">
+            {{ choice.tag }}
+            <label for="{{ choice.id_for_label }}">{{ choice.choice_label }}<br />
+            </label>
+          </div>
+          {% endfor %}
+
+        {% else %}
+            {{ field }}
+        {% endif %}
+        </div>
+        {% endfor %}
+
+        {% for hidden in form.hidden_fields %}
+          {{ hidden }}
+        {% endfor %}
+        <button class="btn btn-outline-info my-2 my-sm-0" type="submit" value="Update Object">Update Object</button>
+    </form>
+  </div>
+  {% endif %}
+
+
+{% endif %}
+  <!-- Page layout ends -->
+
+
+</div>
+
+{% endblock %}
+
