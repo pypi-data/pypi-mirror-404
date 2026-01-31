@@ -1,0 +1,1091 @@
+\chapter{The \texttt{users} and \texttt{groups} commands}
+
+This chapter provides the subcommand [[users]], which lists the users of a 
+given course.
+We also provide some functions as part of this module that are useful for other 
+commands to use.
+
+In particular, we provide the function~[[add_user_option]] which adds the 
+[[-u]] option to specify a user and the function~[[process_user_option]] which 
+filters out that user from a set of courses.
+
+\section{Module outline}
+
+For selecting the course for which to list the users, we use the 
+[[add_course_option]] and [[process_course_option]] functions from the 
+[[canvaslms.cli.courses]] module.
+
+We outline the module:
+<<[[users.py]]>>=
+import argparse
+import canvasapi.course
+import canvasapi.exceptions
+import canvasapi.group
+import canvaslms.cli
+import canvaslms.cli.courses as courses
+import canvaslms.hacks.canvasapi
+import csv
+import operator
+import re
+import sys
+
+<<functions>>
+
+def add_command(subp):
+  """Adds the subcommands users and groups to argparse subparser subp"""
+  add_users_command(subp)
+  add_groups_command(subp)
+@
+
+We define the test file structure early, but the actual test implementations
+appear after their corresponding functionality:
+
+<<test [[users.py]]>>=
+"""Tests for user caching and role filtering"""
+
+import pytest
+from unittest.mock import Mock, MagicMock
+import canvaslms.cli.users as users_module
+
+<<test user fixtures>>
+<<test functions>>
+@
+
+
+\section{The \texttt{users} command}
+
+The \texttt{users} command lists users in a course and relevant data about 
+them.
+<<functions>>=
+def add_users_command(subp):
+  """Adds the users subcommand and its options to argparse subparser subp"""
+  users_parser = subp.add_parser("users",
+    help="Lists users of a course",
+    description="Lists users of a course(s). Output, CSV-format: "
+      "<course> [<group>] [<Canvas ID>] <login ID> [<LADOK ID>] "
+      "<name> [<email>]")
+  users_parser.set_defaults(func=users_command)
+  courses.add_course_option(users_parser)
+  add_group_option(users_parser)
+  <<set up options for selecting type of users>>
+  <<set up options for selecting user attributes>>
+  <<add positional argument for user regex>>
+@ Now, that function~[[users_command]] must take three arguments: [[config]], 
+[[canvas]] and [[args]].
+<<functions>>=
+def users_command(config, canvas, args):
+  <<process options for selecting type of users>>
+  <<get users and print them>>
+@ We will cover the set up and processing of the options in the following 
+subsections.
+
+\subsection{Selecting the type of users}
+
+We also want to be able to filter out the type of users.
+For now, we focus on students and teachers.
+<<set up options for selecting type of users>>=
+users_parser.add_argument("-s", "--students", action="store_true",
+  help="Include students.")
+users_parser.add_argument("-a", "--assistants", action="store_true",
+  help="Include teaching assistants.")
+@
+
+We want students by default, if the user doesn't specify anything.
+Otherwise, we add them together.
+<<process options for selecting type of users>>=
+roles = []
+if args.students:
+  roles.append("student")
+if args.assistants:
+  roles.append("ta")
+@
+
+\subsection{Selecting the user attributes}
+
+We want to be able to select which user attributes that we want to print.
+The attributes that are interesting are
+\begin{itemize}
+\item Canvas ID (optional),
+\item KTH ID (login email),
+\item LADOK ID (optional),
+\item name (or first name and last name as separate fields),
+\item registered email address (optional).
+\end{itemize}
+We will make the Canvas ID, LADOK ID and email address optional.
+<<set up options for selecting user attributes>>=
+users_parser.add_argument("-i", "--canvas-id", action="store_true",
+  help="Include Canvas identifier")
+users_parser.add_argument("-l", "--ladok", action="store_true",
+  help="Include LADOK identifier")
+users_parser.add_argument("-S", "--split-name", action="store_true",
+  help="Returns first and last names as separate fields, "
+    "instead of one containing the full name.")
+users_parser.add_argument("-e", "--email", action="store_true",
+  help="Include email address")
+@
+
+\subsection{Specifying a user regex}
+
+We have an optional positional argument for specifying a regex to filter users.
+We set the default to match everything.
+<<add positional argument for user regex>>=
+users_parser.add_argument("regex",
+  default=".*", nargs="?",
+  help="Regex for filtering users, default: '.*'")
+@
+
+\subsection{Get and print the list of users}
+
+We have several options to do this.
+In the basic case, we simply call the list-users function with the 
+[[course_list]] object and the [[roles]] list as the parameters.
+Then we will print the most useful attributes (identifiers) of a user.
+However, when we filter by groups, we would like to include the group in the 
+output.
+<<get users and print them>>=
+output = csv.writer(sys.stdout, delimiter=args.delimiter)
+
+if args.group or args.category:
+  rows = make_user_rows_w_groups(canvas, args, roles)
+else:
+  rows = make_user_rows(canvas, args, roles)
+
+# Convert to list and check if empty
+rows = list(rows)
+if not rows:
+  raise canvaslms.cli.EmptyListError("No users found matching the criteria")
+
+for row in rows:
+  output.writerow(row)
+@
+
+We start by creating a list of rows without group information.
+<<functions>>=
+def make_user_rows(canvas, args, roles):
+  """Takes a list of courses and returns a list of users in those courses"""
+
+  course_list = courses.process_course_option(canvas, args)
+
+  users = filter_users(
+    course_list,
+    args.regex,
+    roles)
+
+  for user in users:
+    try:
+      row = []
+      row.append(user.course.course_code)
+      <<append user attributes>>
+    except AttributeError as err:
+      canvaslms.cli.warn(f"skipped {user}: {err}")
+      continue
+
+    yield row
+@
+
+Note that in most cases, the [[user.login_id]] and [[user.email]] will be the 
+same.
+However, we need both, because the students can change their email address to a 
+non-KTH address.
+Also note, there are users for whom some attributes don't exist, hence we must 
+first extract them in a try-except construction.
+This happens if they've been removed from the course or never registered.
+<<append user attributes>>=
+if args.canvas_id:
+  row.append(user.id)
+<<append login id>>
+<<append integration id>>
+<<append name>>
+<<append email>>
+@
+
+Now, some of those attributes are optional and we should check [[args]] whether 
+the user specified that an attribute should be included.
+Some of the attributes might not exist, so we need to try-except them.
+(This happens for instance to the [[login_id]] attribute at KTH when the 
+student is no longer a student with us.)
+<<append login id>>=
+try:
+  row.append(user.login_id)
+except AttributeError:
+  row.append(None)
+<<append integration id>>=
+if args.ladok:
+  try:
+    row.append(user.integration_id)
+  except AttributeError:
+    row.append(None)
+<<append email>>=
+if args.email:
+  try:
+    row.append(user.email)
+  except AttributeError:
+    row.append(None)
+@
+
+The name attribute always exists, but we must check if we want first and last 
+names separately or as one string.
+To split them, we can use the [[sortable_name]] attribute and split on the [[, 
+]] following the last name and preceding the first name.
+<<append name>>=
+if args.split_name:
+  lastnames, firstnames = user.sortable_name.split(", ")
+  row.append(firstnames.strip())
+  row.append(lastnames.strip())
+else:
+  row.append(user.name)
+@
+
+If we filter by groups, then we must iterate over the groups to include the 
+group information.
+Other than the group data, we include the user data as before.
+<<functions>>=
+def make_user_rows_w_groups(canvas, args, roles):
+  """Takes a list of courses and returns a list of users in those courses,
+  includes a group column"""
+
+  groups = process_group_options(canvas, args)
+
+  for group in groups:
+    users = filter_users([group], args.regex, roles)
+
+    for user in users:
+      try:
+        try:
+          row = [group.category.course.course_code]
+        except AttributeError:
+          pass
+        try:
+          row = [group.course.course_code]
+        except AttributeError:
+          pass
+        row.append(group.name)
+        <<append user attributes>>
+      except AttributeError as err:
+        canvaslms.cli.warn(f"skipped {user}: {err}")
+        continue
+
+      yield row
+@
+
+
+\section{The \texttt{groups} command}
+
+The \texttt{groups} command lists groups in a course and relevant data about 
+them.
+Particularly, we start by group categories and then the actual groups.
+<<functions>>=
+def add_groups_command(subp):
+  """Adds the groups subcommand and its options to argparse subparser subp"""
+  groups_parser = subp.add_parser("groups",
+    help="Lists groups of a course",
+    description="Lists groups of a course(s). Output, CSV-format: "
+      "<course code> <group category> <group name> <#members>")
+  groups_parser.set_defaults(func=groups_command)
+  courses.add_course_option(groups_parser)
+  <<add groups specific options>>
+@ Now, that function~[[groups_command]] must take three arguments: [[config]], 
+[[canvas]] and [[args]].
+<<functions>>=
+def groups_command(config, canvas, args):
+  course_list = courses.process_course_option(canvas, args)
+  <<get groups and print them>>
+@ We will cover the set up and processing of the options in the following 
+subsections.
+
+\subsection{Group specific options}
+
+We have an optional positional argument for specifying a regex to filter groups.
+We set the default to match everything.
+<<add groups specific options>>=
+add_group_category_option(groups_parser)
+groups_parser.add_argument("regex", metavar="group_regex",
+  default=".*", nargs="?",
+  help="Regex for filtering groups, default: '.*'")
+@
+
+\subsection{Get and print the list of groups}
+
+We then simply call the list-groups function with the [[course_list]] object 
+and the [[roles]] list as the parameters.
+Then we will print the most useful attributes (identifiers) of a user.
+<<get groups and print them>>=
+output = csv.writer(sys.stdout, delimiter=args.delimiter)
+if args.category:
+  categories = filter_group_categories(course_list, args.category)
+else:
+  categories = filter_group_categories(course_list, ".*")
+
+for category in categories:
+  for group in filter_groups([category], args.regex):
+    row = [
+      category.course.course_code, category.name,
+      group.name, group.members_count
+    ]
+    output.writerow(row)
+@
+
+
+\section{Producing lists of groups}
+
+We want to do two things: filter out group categories from courses, from which 
+we can filter out groups; or filter out groups directly from courses.
+
+\subsection{Filtering out group categories}
+
+We want to filter out the group categories from a list of courses.
+<<functions>>=
+def filter_group_categories(course_list, regex):
+  """
+  Filters out the group categories whose names match regex
+  in the courses in course_list
+  """
+
+  name = re.compile(regex or ".*")
+
+  for course in course_list:
+    for category in course.get_group_categories():
+      if name.search(category.name):
+        category.course = course
+        yield category
+@
+
+\subsection{Filtering out groups}
+
+We can produce a list of groups in two ways:
+list all groups in a course or lists all groups in a group category.
+Fortunately, both the group category and course objects of [[canvasapi]] have a 
+method [[.get_groups()]], so thanks to Python's duck typing we can write short 
+code.
+<<functions>>=
+def filter_groups(items, regex):
+  """
+  Items is a list of either courses or group categories,
+  regex is a regular expression.
+  Returns all groups whose name match regex.
+  """
+
+  name = re.compile(regex or ".*")
+
+  for item in items:
+    for group in item.get_groups():
+      if name.search(group.name):
+        if isinstance(item, canvasapi.course.Course):
+          group.course = item
+        elif isinstance(item, canvasapi.group.GroupCategory):
+          group.category = item
+        yield group
+@
+
+
+\section{Producing a list of users}%
+\label{list-users-function}
+
+We provide the following functions:
+\begin{itemize}
+  \item [[filter_users]], which returns a list of users filtered by regex 
+  matching their name, login ID or Canvas ID;
+  \item [[list_students]], which returns a list of enrolled students;
+  \item [[list_teachers]], which returns a list of teachers;
+  \item [[list_users]], which is a general function that also takes a list of 
+  roles.
+\end{itemize}
+
+First, we provide [[list_users]], which takes a list of courses and a list of
+Canvas roles as arguments.
+Here we must be careful.
+For some courses we can't list the users, because of lacking permissions.
+Whenever we're searching for a particular user, we might look in all courses,
+and then we must skip those where we can't list the users.
+This way we can search through all other courses instead of stopping at the
+first error.
+
+\subsection{Fetching vs.\ filtering: enrollment types}
+
+Canvas provides an [[enrollment_type]] parameter to [[get_users()]] that
+filters users by role (student, teacher, TA, etc.).
+However, we treat this as a \emph{client-side filtering operation} rather than
+a server-side fetch scope parameter.
+
+The reason is caching efficiency.
+If we pass [[enrollment_type]] to Canvas, each role filter creates a separate
+cache entry.
+When the user queries different roles (for instance, first students, then TAs),
+each query invalidates the cache and triggers a new API call.
+
+Instead, we fetch all users once (without [[enrollment_type]]) and filter
+locally:
+\begin{enumerate}
+\item Fetch all users with [[include=["enrollments"]]] to get role data.
+\item Cache all users together (single cache entry per course).
+\item Filter by role in Python when [[roles]] parameter is specified.
+\end{enumerate}
+
+This is practical because:
+\begin{itemize}
+\item Course user lists are small (typically 30--300 users).
+\item User enrollments are static (roles rarely change during a course).
+\item One bulk fetch is faster than $N$ role-specific fetches.
+\item Local filtering is instant (no network latency).
+\end{itemize}
+
+The trade-off is slightly larger cache entries (storing all users instead of
+just students), but this is negligible compared to the API call savings when
+querying multiple roles.
+
+\subsubsection{Enrollment data structure}
+
+Each [[User]] object has an [[enrollments]] attribute when fetched with
+[[include=["enrollments"]]].
+This is a list of enrollment dictionaries, where each enrollment has a [[type]]
+field containing strings like [["StudentEnrollment"]], [["TaEnrollment"]], or
+[["TeacherEnrollment"]].
+
+We filter by checking if the requested role name (for example, [[student]])
+appears in the enrollment type string (case-insensitive).
+This handles Canvas's naming convention where role types are CamelCase with
+[[Enrollment]] suffix.
+<<functions>>=
+def list_users(courses, roles):
+  """
+  List users in courses with roles.
+
+  Fetches all users from Canvas without enrollment_type filtering,
+  then filters locally by role. This allows efficient caching:
+  all users are fetched once and cached, then filtered in-memory
+  for subsequent calls with different roles.
+  """
+  users = list()
+
+  for course in courses:
+    try:
+      <<fetch all users with enrollment data>>
+      <<filter users by role if specified>>
+    except canvasapi.exceptions.CanvasException as err:
+      canvaslms.cli.warn(f"skipped {course}: {err}")
+      continue
+
+    for user in course_users:
+      user.course = course
+    users.extend(course_users)
+
+  return users
+@
+
+We fetch all users with [[include=["enrollments"]]] to ensure we have role data
+for filtering.
+This is the single API call that will be cached.
+<<fetch all users with enrollment data>>=
+course_users = list(course.get_users(include=["enrollments"]))
+@
+
+Now we filter locally by role if the [[roles]] parameter is specified.
+If no roles are specified, we return all users.
+<<filter users by role if specified>>=
+if roles:
+  filtered_users = []
+  for user in course_users:
+    <<check if user has matching enrollment>>
+  course_users = filtered_users
+@
+
+To check if a user matches the requested roles, we iterate through their
+enrollments and look for role names that match.
+The [[enrollment['type']]] field contains strings like [["StudentEnrollment"]],
+so we convert both the enrollment type and requested role to lowercase and check
+if the role appears in the enrollment type.
+We use [[break]] to avoid adding the same user multiple times if they have
+multiple matching enrollments.
+<<check if user has matching enrollment>>=
+if hasattr(user, 'enrollments'):
+  for enrollment in user.enrollments:
+    enrollment_type = enrollment.get('type', '').lower()
+    if any(role.lower() in enrollment_type for role in roles):
+      filtered_users.append(user)
+      break
+@
+
+\subsubsection{Test fixtures for user filtering}
+
+We create mock users with different enrollment types to simulate Canvas API
+responses and test the filtering logic.
+
+<<test user fixtures>>=
+@pytest.fixture
+def mock_course():
+    """Create a mock course object"""
+    course = Mock()
+    course.id = 12345
+    course.name = "Test Course"
+    return course
+
+@pytest.fixture
+def mock_student():
+    """Create a mock student user"""
+    user = Mock()
+    user.id = 100
+    user.name = "Alice Student"
+    user.login_id = "alice@example.com"
+    user.enrollments = [
+        {"type": "StudentEnrollment", "role": "StudentEnrollment"}
+    ]
+    return user
+
+@pytest.fixture
+def mock_ta():
+    """Create a mock TA user"""
+    user = Mock()
+    user.id = 200
+    user.name = "Bob TA"
+    user.login_id = "bob@example.com"
+    user.enrollments = [
+        {"type": "TaEnrollment", "role": "TaEnrollment"}
+    ]
+    return user
+
+@pytest.fixture
+def mock_teacher():
+    """Create a mock teacher user"""
+    user = Mock()
+    user.id = 300
+    user.name = "Carol Teacher"
+    user.login_id = "carol@example.com"
+    user.enrollments = [
+        {"type": "TeacherEnrollment", "role": "TeacherEnrollment"}
+    ]
+    return user
+
+@pytest.fixture
+def mock_multi_role_user():
+    """Create a user with multiple enrollments"""
+    user = Mock()
+    user.id = 400
+    user.name = "Dave Multi"
+    user.login_id = "dave@example.com"
+    user.enrollments = [
+        {"type": "StudentEnrollment", "role": "StudentEnrollment"},
+        {"type": "TaEnrollment", "role": "TaEnrollment"}
+    ]
+    return user
+@
+
+\subsubsection{Testing user fetching with enrollment data}
+
+We verify that [[list_users]] fetches all users with enrollment data included,
+which is the key to the caching optimization.
+
+<<test functions>>=
+def test_list_users_fetches_with_enrollments(
+    mock_course, mock_student, mock_ta
+):
+    """Test that list_users fetches all users with enrollment data"""
+    # Setup mock course to return users
+    mock_course.get_users = Mock(return_value=[mock_student, mock_ta])
+    
+    # Call list_users without role filter
+    result = users_module.list_users([mock_course], roles=[])
+    
+    # Verify get_users was called with include=['enrollments']
+    mock_course.get_users.assert_called_once_with(include=["enrollments"])
+    
+    # Verify all users are returned when no roles specified
+    assert len(result) == 2
+@
+
+\subsubsection{Testing role filtering}
+
+We test the local filtering logic to ensure it correctly identifies users
+by their enrollment types.
+
+<<test functions>>=
+def test_list_users_filters_by_student_role(
+    mock_course, mock_student, mock_ta, mock_teacher
+):
+    """Test that filtering by student role works correctly"""
+    # Setup mock course to return all user types
+    mock_course.get_users = Mock(
+        return_value=[mock_student, mock_ta, mock_teacher]
+    )
+    
+    # Call list_users with student role filter
+    result = users_module.list_users([mock_course], roles=["student"])
+    
+    # Verify only student is returned
+    assert len(result) == 1
+    assert result[0].id == 100  # Alice Student
+@
+
+<<test functions>>=
+def test_list_users_filters_by_ta_role(
+    mock_course, mock_student, mock_ta, mock_teacher
+):
+    """Test that filtering by TA role works correctly"""
+    # Setup mock course to return all user types
+    mock_course.get_users = Mock(
+        return_value=[mock_student, mock_ta, mock_teacher]
+    )
+    
+    # Call list_users with TA role filter
+    result = users_module.list_users([mock_course], roles=["ta"])
+    
+    # Verify only TA is returned
+    assert len(result) == 1
+    assert result[0].id == 200  # Bob TA
+@
+
+<<test functions>>=
+def test_list_users_filters_with_multiple_roles(
+    mock_course, mock_student, mock_ta, mock_teacher
+):
+    """Test that filtering with multiple roles returns matching users"""
+    # Setup mock course to return all user types
+    mock_course.get_users = Mock(
+        return_value=[mock_student, mock_ta, mock_teacher]
+    )
+    
+    # Call list_users with both student and TA roles
+    result = users_module.list_users(
+        [mock_course], 
+        roles=["student", "ta"]
+    )
+    
+    # Verify both student and TA are returned
+    assert len(result) == 2
+    user_ids = [u.id for u in result]
+    assert 100 in user_ids  # Alice Student
+    assert 200 in user_ids  # Bob TA
+    assert 300 not in user_ids  # Carol Teacher excluded
+@
+
+<<test functions>>=
+def test_list_users_returns_all_when_no_roles_specified(
+    mock_course, mock_student, mock_ta, mock_teacher
+):
+    """Test that all users are returned when no roles specified"""
+    # Setup mock course to return all user types
+    mock_course.get_users = Mock(
+        return_value=[mock_student, mock_ta, mock_teacher]
+    )
+    
+    # Call list_users without role filter (empty list)
+    result = users_module.list_users([mock_course], roles=[])
+    
+    # Verify all users are returned
+    assert len(result) == 3
+@
+
+<<test functions>>=
+def test_list_users_handles_multi_role_user(
+    mock_course, mock_multi_role_user
+):
+    """Test that users with multiple enrollments are not duplicated"""
+    # Setup mock course
+    mock_course.get_users = Mock(return_value=[mock_multi_role_user])
+    
+    # Call list_users filtering by student role
+    result = users_module.list_users([mock_course], roles=["student"])
+    
+    # Verify user appears only once (break statement prevents duplicates)
+    assert len(result) == 1
+    assert result[0].id == 400
+@
+
+<<test functions>>=
+def test_list_users_handles_user_without_enrollments(mock_course):
+    """Test that users without enrollment attribute are skipped"""
+    # Create user without enrollments attribute using spec
+    user_no_enrollments = Mock(spec=['id', 'name', 'login_id'])
+    user_no_enrollments.id = 500
+    user_no_enrollments.name = "Eve NoEnroll"
+    user_no_enrollments.login_id = "eve@example.com"
+    # Note: spec explicitly excludes 'enrollments' attribute
+    
+    mock_course.get_users = Mock(return_value=[user_no_enrollments])
+    
+    # Call list_users with role filter
+    result = users_module.list_users([mock_course], roles=["student"])
+    
+    # Verify user is skipped (hasattr check fails)
+    assert len(result) == 0
+@
+
+<<test functions>>=
+def test_list_users_case_insensitive_matching(mock_course):
+    """Test that role matching is case-insensitive"""
+    # Create user with enrollment
+    user = Mock()
+    user.id = 600
+    user.enrollments = [{"type": "StudentEnrollment"}]
+    
+    mock_course.get_users = Mock(return_value=[user])
+    
+    # Try matching with different case variations
+    result_lower = users_module.list_users([mock_course], roles=["student"])
+    assert len(result_lower) == 1
+    
+    mock_course.get_users = Mock(return_value=[user])
+    result_upper = users_module.list_users([mock_course], roles=["STUDENT"])
+    assert len(result_upper) == 1
+    
+    mock_course.get_users = Mock(return_value=[user])
+    result_mixed = users_module.list_users([mock_course], roles=["Student"])
+    assert len(result_mixed) == 1
+@
+
+<<test functions>>=
+def test_list_users_sets_course_attribute(
+    mock_course, mock_student
+):
+    """Test that returned users have course attribute set"""
+    mock_course.get_users = Mock(return_value=[mock_student])
+    
+    result = users_module.list_users([mock_course], roles=[])
+    
+    # Verify course attribute is set
+    assert len(result) == 1
+    assert result[0].course == mock_course
+@
+
+Second, we provide the most general function, [[filter_users]], which takes a
+list of courses, a list of Canvas roles and a regex as arguments.
+It returns the matching users.
+
+We compile the regex to a pattern.
+This is because it's slightly faster, since we reuse the regex for several 
+searches.
+We'll ignore case.
+<<functions>>=
+def filter_users(course_list, regex, roles=[]):
+  """
+  Filter users in courses with roles based on regex. `regex` is matched on 
+  - Canvas ID (exact match),
+  - name (regex),
+  - login ID (regex),
+  - integration id (exact match),
+  - SIS user ID (exact match).
+  """
+  pattern = re.compile(regex or ".*", re.IGNORECASE)
+
+  for user in list_users(course_list, roles):
+    <<yield [[user]] if match>>
+@
+
+Now to check if the user matches, we want to match some things by regular 
+expression, but other things exactly.
+The reasoning is this:
+If we use the name, we might match on parts of it; if the user has a unique 
+enough name.
+But if we give the integration ID, we wouldn't try to give part of it; it's not 
+predicable how much of it will give a unique match, and it doesn't make sense 
+to look for students with a common prefix of their integration IDs.
+Also, some attributes might not exist, so we must try-except them and issue a warning 
+if they don't exist.
+<<yield [[user]] if match>>=
+if str(user.id) == regex:
+  yield user
+  continue
+
+if pattern.search(user.name):
+  yield user
+  continue
+
+try:
+  if pattern.search(user.login_id):
+    yield user
+    continue
+except AttributeError:
+  canvaslms.cli.warn(f"{user} has no login_id")
+
+try:
+  if user.integration_id == regex:
+    yield user
+    continue
+except AttributeError:
+  canvaslms.cli.warn(f"{user} has no integration_id")
+
+try:
+  if user.sis_user_id == regex:
+    yield user
+    continue
+except AttributeError:
+  canvaslms.cli.warn(f"{user} has no sis_user_id")
+@
+
+Now, we can define the function~[[list_students]] in terms of [[list_users]].
+<<functions>>=
+def list_students(courses):
+  """List users in courses with role student"""
+  return list_users(courses, ["student"])
+
+def list_teachers(courses):
+  """List users in courses with role teacher"""
+  return list_users(courses, ["teacher"])
+@
+
+
+\section{Getting a unique identifier}\label{UserUniqueID}
+
+In many cases, we want to get a unique identifier for a user.
+The natural attribute would be [[login_id]].
+However, sometimes the [[login_id]] attribute doesn't exist.
+So we want a function that does the following.
+<<doc unique identifier>>=
+Takes a user object and returns a unique identifier.
+
+Returns one of login_id, integration_id, sis_user_id, id (Canvas ID); in that 
+order of preference.
+@
+
+This yields the following function.
+Try returning the attributes in that order, try the next when failed.
+<<functions>>=
+def get_uid(user):
+  """
+  <<doc unique identifier>>
+  """
+  attributes = ["login_id", "integration_id", "sis_user_id", "id"]
+  for attribute in attributes:
+    try:
+      <<return the uid attribute of user>>
+    except AttributeError:
+      pass
+
+  <<raise error if no attribute existed>>
+@
+
+To return the attribute, we simply fetch it.
+We'll use [[attrgetter]].
+<<return the uid attribute of user>>=
+return operator.attrgetter(attribute)(user)
+@
+
+If no attribute existed (all failed), which should not happen, then we raise an 
+exception.
+<<raise error if no attribute existed>>=
+raise AttributeError(f"no unique user attribute existed, tried: {attributes}")
+@
+
+
+\section{Options for the command line}
+
+We provide two ways to filter out users by command-line option:
+\begin{itemize}
+\item just filter among all users in a course directly, or
+\item filter by groups in a course and select all users in the groups that 
+match.
+\end{itemize}
+We provide functions that add either option, but we also provide a function 
+which add these as mutually exclusive options.
+
+\subsection{The user option}
+
+We provide the two helper functions for other modules to filter out users from 
+a set of courses.
+This option requires the course option from [[canvaslms.cli.courses]].
+
+The first function, [[add_user_option_wo_depends]], simply adds the user 
+option.
+The more useful function, [[add_user_option]], will also try to add the other 
+required options, like the course(s) where to find users.
+<<functions>>=
+def add_user_option_wo_depends(parser, required=False, suppress_help=False):
+  """
+  Adds the -u option to argparse parser, without adding
+  other required options.
+
+  Args:
+    parser: The argparse parser to add options to
+    required: Whether the user option should be required (default: False)
+    suppress_help: If True, hide this option from help output (default: False)
+
+  <<user roles option doc>>
+  """
+  help="Filter users on Canvas ID, name, login ID, integration ID, or " \
+       "SIS ID by user_regex. " \
+       "Integration ID and SIS ID match exactly, not by regex. " \
+       "Note that for login ID, you should start with ^ and $ to avoid " \
+       "matching on unintended substrings; c.f. son@institution.tld and " \
+       "person@institution.tld, where the first will match both without " \
+       "leading ^. The regex allows matching using ^son@, thus skipping " \
+       "any domain in this case."
+  options = {"required": required}
+  if not required:
+    options["default"] = ".*"
+    help += ", default: '.*'"
+  else:
+    help += ", required: use '.*' to match all students"
+
+  parser.add_argument("-u", "--user", metavar="user_regex",
+    help=argparse.SUPPRESS if suppress_help else help, **options)
+
+  <<add user roles option>>
+
+def add_user_option(parser, required=False):
+  """Adds the -u option to argparse parser"""
+  try:
+    courses.add_course_option(parser)
+  except argparse.ArgumentError:
+    pass
+
+  add_user_option_wo_depends(parser, required)
+@
+
+When processing this option, we need to filter by course first, so we use the 
+processing from the [[courses]] module to get the list of courses matching the 
+courses options.
+Then we simply filter all users.
+<<functions>>=
+def process_user_option(canvas, args):
+  """Processes the user option from command line, returns a list of users"""
+  user_list = list(filter_users(
+    courses.process_course_option(canvas, args),
+    args.user,
+    roles=args.role))
+  if not user_list:
+    raise canvaslms.cli.EmptyListError("No users found matching the criteria")
+  return user_list
+@
+
+We note that we need the roles.
+Sometimes we want to be able to filter based on role.
+However, most of the time, we just want the students, so we'll default to that.
+<<user roles option doc>>=
+The `role` option allows specifying which roles to include, for instance 
+students or TAs.
+<<add user roles option>>=
+parser.add_argument("-r", "--role",
+  choices={"teacher", "student", "student_view",
+           "ta", "observer", "designer"},
+  default="student",
+  help=argparse.SUPPRESS if suppress_help else
+    "Includes only users in this role, defaults to student.")
+@
+
+\subsection{The group option}
+
+The group option is a bit more complex.
+We can choose groups by either filtering on the group names directly or by 
+first filtering on the group categories and filtering only groups in a given 
+category.
+The latter is useful as students can change the name of a group so it doesn't 
+match the group category by prefix.
+<<functions>>=
+def add_group_category_option_wo_depends(parser, suppress_help=False):
+  """Adds the group category option, without adding required other options
+
+  Args:
+    parser: The argparse parser to add options to
+    suppress_help: If True, hide this option from help output (default: False)
+  """
+  parser.add_argument("-C", "--category", metavar="category_regex",
+    required=False,
+    help=argparse.SUPPRESS if suppress_help else
+      "Filters groups only from the group categories matching "
+      "category_regex")
+
+def add_group_category_option(parser):
+  """Adds the group category option, adds required options"""
+  try:
+    courses.add_course_option(parser)
+  except argparse.ArgumentError:
+    pass
+
+  add_group_category_option_wo_depends(parser)
+
+def add_group_option_wo_depends(parser, suppress_help=False):
+  """
+  Adds group filtering option to argparse parser,
+  without adding required options
+
+  Args:
+    parser: The argparse parser to add options to
+    suppress_help: If True, hide this option from help output (default: False)
+  """
+  try:
+    add_group_category_option_wo_depends(parser, suppress_help=suppress_help)
+  except argparse.ArgumentError:
+    pass
+
+  parser.add_argument("-G", "--group", metavar="group_regex",
+    required=False,
+    help=argparse.SUPPRESS if suppress_help else
+      "Filters user groups whose name match group_regex")
+
+def add_group_option(parser):
+  """Adds group filtering options to argparse parser,
+  adds required other options"""
+  try:
+    courses.add_course_option(parser)
+  except argparse.ArgumentError:
+    pass
+
+  add_group_option_wo_depends(parser)
+@
+
+We must also provide a function that can process these options.
+<<functions>>=
+def process_group_options(canvas, args):
+  """Processes the group/group category options, returns a list of groups"""
+
+  course_list = courses.process_course_option(canvas, args)
+
+  if args.category:
+    group_list = list(filter_groups(
+      filter_group_categories(course_list, args.category),
+      args.group))
+  else:
+    group_list = list(filter_groups(
+      course_list,
+      args.group))
+  
+  if not group_list:
+    raise canvaslms.cli.EmptyListError("No groups found matching the criteria")
+  return group_list
+@
+
+\subsection{An option for user or group}
+
+Finally, we can provide both options together, but mutually exclusive so that 
+only one option can be used at a time.
+The processing must return a list of users, so in case of the group option we 
+must extract the users.
+<<functions>>=
+def add_user_or_group_option(parser, required=False, suppress_help=False):
+  """Adds user and group options as mutually exclusive options to parser
+
+  Args:
+    parser: The argparse parser to add options to
+    required: Whether to require one of user/group options (default: False)
+    suppress_help: If True, hide these options from help output (default: False)
+  """
+  try:
+    courses.add_course_option(parser, suppress_help=suppress_help)
+  except argparse.ArgumentError:
+    pass
+
+  parser = parser.add_mutually_exclusive_group(required=required)
+
+  try:
+    add_user_option_wo_depends(parser, suppress_help=suppress_help)
+  except argparse.ArgumentError:
+    pass
+
+  try:
+    add_group_option_wo_depends(parser, suppress_help=suppress_help)
+  except argparse.ArgumentError:
+    pass
+
+def process_user_or_group_option(canvas, args):
+  """Returns a list of users, filtered either by user regex or by groups"""
+  if args.group or args.category:
+    users = list()
+    for group in process_group_options(canvas, args):
+      users.extend(group.get_users())
+
+    if not users:
+      raise canvaslms.cli.EmptyListError("No users found in the specified groups")
+    return users
+
+  return process_user_option(canvas, args)
+@
+

@@ -1,0 +1,1370 @@
+\chapter{The [[discussions]] subcommand}
+\chapterprecis{This chapter was written by GitHub Copilot.}
+
+This chapter provides the [[discussions]] subcommand which handles
+discussions and announcements in Canvas courses.
+
+\section{Interactive mode with YAML front matter}
+
+In interactive mode ([[-i]] flag), the editor opens with YAML front matter
+similar to GitHub Pages and Jekyll. This allows you to edit all relevant 
+announcement attributes in a structured way.
+
+The editor opens with a template showing all available attributes:
+
+\begin{verbatim}
+---
+title: ''
+published: true
+delayed_post_at: null
+lock_at: null
+require_initial_post: null
+allow_rating: null
+only_graders_can_rate: null
+sort_by_rating: null
+---
+Your announcement content goes here in Markdown format.
+\end{verbatim}
+
+Simply fill in the values you want to set. Leave attributes as [[null]] if you 
+don't need them.
+
+Example with some attributes filled in:
+
+\begin{verbatim}
+---
+title: "Important: Exam Schedule Change"
+published: true
+delayed_post_at: "2024-12-25T08:00:00"
+lock_at: "2024-12-31T23:59:59"
+require_initial_post: null
+allow_rating: null
+only_graders_can_rate: null
+sort_by_rating: null
+---
+Your announcement content goes here in Markdown format.
+
+You can use **bold**, *italic*, lists, links, etc.
+\end{verbatim}
+
+Supported attributes include:
+\begin{itemize}
+\item [[title]]: The announcement title (required)
+\item [[published]]: Whether to publish immediately (default: true)
+\item [[delayed_post_at]]: Schedule the announcement for a future date/time
+\item [[lock_at]]: Date/time when discussion will be locked
+\item [[require_initial_post]]: Require students to post before seeing replies
+\item [[allow_rating]]: Allow rating/liking of posts
+\item [[only_graders_can_rate]]: Restrict rating to graders only
+\item [[sort_by_rating]]: Sort posts by rating instead of date
+\end{itemize}
+
+Date formats are parsed using the calendar module's date parser, which supports:
+\begin{itemize}
+\item [[YYYY-MM-DD HH:mm]]: Date and time in local timezone (preferred format)
+\item [[YYYY-MM-DD]]: Date only (interpreted as midnight local time)
+\item ISO 8601 formats
+\end{itemize}
+
+All dates are converted to UTC with [[Z]] suffix for Canvas API compatibility.
+
+Examples:
+\begin{itemize}
+\item [[2024-12-25 08:00]]: December 25, 2024 at 8:00 AM local time
+\item [[2024-12-25]]: December 25, 2024 at midnight local time
+\item [[2024-12-25T08:00:00Z]]: December 25, 2024 at 8:00 AM UTC
+\end{itemize}
+
+If the title is not provided in the YAML front matter or command line, you will
+be prompted to return to the editor rather than losing your work.
+
+\subsection{File-based workflow with [[-f]]}
+
+For scriptable workflows and Git-based content management, the [[-f]] option
+allows reading announcement content from a Markdown file with YAML front matter.
+This enables a bidirectional workflow:
+
+\begin{enumerate}
+\item Export existing announcements to Markdown files (for version control)
+\item Edit the files locally or in a repository
+\item Use [[-f]] to create or update announcements from the files
+\end{enumerate}
+
+Example usage:
+\begin{verbatim}
+canvaslms discussions announce -c "My Course" -f announcement.md
+\end{verbatim}
+
+Where [[announcement.md]] contains YAML front matter and content as shown above.
+The [[-f]] option takes precedence over [[-i]] and [[-m]] options.
+
+We outline the module:
+<<[[discussions.py]]>>=
+import os
+import re
+import subprocess
+import sys
+import tempfile
+import csv
+import logging
+import pypandoc
+import rich.console
+import rich.markdown
+import arrow
+import yaml
+import canvaslms.cli.courses
+import canvaslms.cli.utils
+import canvaslms.cli.calendar
+import canvaslms.cli.content
+
+logger = logging.getLogger(__name__)
+
+<<functions>>
+
+def add_command(subp):
+  """Adds the discussions command with subcommands to argparse parser"""
+  discussions_parser = subp.add_parser("discussions",
+    help="Manage course discussions and announcements",
+    description="Manage discussions and announcements in Canvas courses.")
+  
+  discussions_subp = discussions_parser.add_subparsers(
+    title="discussions commands",
+    dest="discussions_command",
+    required=True)
+  
+  add_announce_command(discussions_subp)
+  add_edit_command(discussions_subp)
+  add_list_command(discussions_subp)
+  add_view_command(discussions_subp)
+
+def add_announce_command(subp):
+  """Adds the announce subcommand"""
+  announce_parser = subp.add_parser("announce",
+    help="Post announcements to courses",
+    description="Post announcements to one or more courses matching a regex pattern. "
+                "The announcement can be provided via command line or interactively using an editor.")
+  announce_parser.set_defaults(func=announce_command)
+  <<add announce arguments>>
+
+def add_list_command(subp):
+  """Adds the list subcommand"""
+  list_parser = subp.add_parser("list",
+    help="List discussions and announcements",
+    description="List discussions or announcements from courses.")
+  list_parser.set_defaults(func=list_command)
+  <<add list arguments>>
+
+def add_view_command(subp):
+  """Adds the view subcommand"""
+  view_parser = subp.add_parser("view",
+    help="Show details of discussions and announcements",
+    description="Show detailed view of discussions or announcements from courses with rich formatting.")
+  view_parser.set_defaults(func=discussions_view_command)
+  <<add view arguments>>
+@
+
+
+\section{Announce command arguments}
+
+The announce command supports three ways to provide content:
+\begin{description}
+\item[Interactive mode] (default): Opens your editor to compose the announcement
+  with YAML front matter for attributes. After editing, shows a preview and asks
+  for confirmation before posting.
+\item[File mode] ([[-f]]): Reads content from a Markdown file with YAML front
+  matter and posts directly without preview. Script-friendly.
+\item[Inline mode] ([[-m]]): Uses the message provided on the command line and
+  posts directly without preview. Script-friendly. Requires a title argument.
+\end{description}
+<<add announce arguments>>=
+announce_parser.add_argument("title", nargs='?', default=None,
+  help="Title of the announcement (can be set in YAML front matter in interactive mode)")
+announce_parser.add_argument("-c", "--course", required=True,
+  help="Regex matching courses on title, course code or Canvas ID")
+announce_parser.add_argument("-m", "--message",
+  help="Message content (posts directly without preview; requires title argument)")
+canvaslms.cli.content.add_file_option(announce_parser)
+@
+
+\section{List command arguments}
+
+The list command can list either announcements or discussions.
+Output is in CSV format with fields: course code, title, and date.
+For announcements, the date shown is the delayed posting date if scheduled,
+otherwise the creation date.
+<<add list arguments>>=
+list_parser.add_argument("type",
+  choices=["announcements", "discussions"],
+  help="Type of content to list")
+list_parser.add_argument("-c", "--course", required=True,
+  help="Regex matching courses on title, course code or Canvas ID")
+@
+
+\section{View command arguments}
+
+The view command displays detailed information about discussions or announcements.
+<<add view arguments>>=
+view_parser.add_argument("type",
+  choices=["announcements", "discussions"],
+  help="Type of content to show")
+view_parser.add_argument("-c", "--course", required=True,
+  help="Regex matching courses on title, course code or Canvas ID")
+view_parser.add_argument("--match",
+  help="Regular expression to match against discussion/announcement title and message")
+view_parser.add_argument("--title", "-t",
+  help="Regular expression to match against discussion/announcement title")
+view_parser.add_argument("--message", "-m",
+  help="Regular expression to match against discussion/announcement message")
+view_parser.add_argument("--ignore-case", "-i",
+  action="store_true",
+  help="Make the regex case-insensitive")
+view_parser.add_argument("--count", "-n", type=int, default=1,
+  help="Number of matching items to show (default: 1), set to 0 to show all matches")
+@
+
+
+\section{The edit subcommand}
+
+The [[edit]] subcommand updates existing announcements. Like the pages and
+assignments edit commands, it supports two workflows:
+
+\begin{description}
+\item[Interactive editing] (default): Fetches matching announcements, lets the
+  user select which to edit, opens each in an editor with current content
+  pre-populated, shows a preview, and asks whether to accept changes, edit
+  further, or discard.
+\item[File-based editing] ([[-f]]): Reads content from a Markdown file with
+  YAML front matter and updates directly. If the YAML contains an [[id]] field,
+  the announcement is identified by that ID. Otherwise, title matching is used.
+  This enables a Git-based workflow: view announcements, edit locally, push
+  back with [[edit -f]].
+\end{description}
+
+<<functions>>=
+def add_edit_command(subp):
+  """Adds the edit subcommand"""
+  edit_parser = subp.add_parser("edit",
+    help="Edit existing announcements",
+    description="Edit existing announcements in a course. "
+                "Supports interactive editing and file-based updates.")
+  edit_parser.set_defaults(func=discussions_edit_command)
+  <<add edit arguments>>
+
+@
+
+\subsection{Edit command arguments}
+
+The edit command takes a course filter and optional title/ID filter to select
+which announcements to edit. The [[-t/--title]] option matches against both
+the announcement title and its Canvas ID, following the pattern used elsewhere
+in this CLI.
+<<add edit arguments>>=
+edit_parser.add_argument("-c", "--course", required=True,
+  help="Regex matching courses on title, course code or Canvas ID")
+edit_parser.add_argument("-t", "--title",
+  help="Regex matching announcement title or ID (default: match all)")
+edit_parser.add_argument("-i", "--ignore-case",
+  action="store_true",
+  help="Make the title regex case-insensitive")
+canvaslms.cli.content.add_file_option(edit_parser)
+edit_parser.add_argument("--html",
+  action="store_true",
+  help="Read file as HTML instead of converting from Markdown. "
+       "In interactive mode, edit HTML directly.")
+@
+
+
+\section{The announce command function}
+
+The main function that processes the announce command. It supports three modes:
+file-based ([[-f]]), inline ([[-m]]), and interactive (default).
+
+File and inline modes post directly without preview, making them suitable for
+scripts. Interactive mode opens an editor and shows a preview before posting.
+<<functions>>=
+def announce_command(config, canvas, args):
+  """Posts announcements to matching courses"""
+
+  # Get list of matching courses
+  course_list = list(canvaslms.cli.courses.filter_courses(canvas, args.course))
+
+  if not course_list:
+    canvaslms.cli.err(1, f"No courses found matching pattern: {args.course}")
+
+  # Get the message content and attributes based on mode
+  if args.file:
+    <<announce from file>>
+  elif args.message:
+    <<announce from inline message>>
+  else:
+    <<announce interactively>>
+
+  if not message.strip():
+    canvaslms.cli.err(1, "Message cannot be empty")
+
+  <<post announcements to courses>>
+@
+
+\subsection{File-based announcements}
+
+When [[-f]] is given, we read from the file and post directly without preview.
+This is script-friendly and does not require user interaction.
+<<announce from file>>=
+try:
+  attributes, message = canvaslms.cli.content.read_content_from_file(args.file)
+except FileNotFoundError:
+  canvaslms.cli.err(1, f"File not found: {args.file}")
+except Exception as e:
+  canvaslms.cli.err(1, f"Error reading file: {e}")
+title = attributes.get('title', args.title)
+if not title:
+  canvaslms.cli.err(1, "Title is required. Set it in YAML front matter or provide as argument.")
+@
+
+\subsection{Inline message announcements}
+
+When [[-m]] is given, we use the message provided on the command line and post
+directly without preview. This requires a title argument.
+<<announce from inline message>>=
+if not args.title:
+  canvaslms.cli.err(1, "Title is required when using -m/--message")
+title = args.title
+message = args.message
+attributes = {}
+@
+
+\subsection{Interactive announcements}
+
+When neither [[-f]] nor [[-m]] is given, we enter interactive mode. This opens
+the user's editor with a template, then shows a preview and confirmation loop.
+<<announce interactively>>=
+initial_attrs = {'title': args.title} if args.title else None
+result = canvaslms.cli.content.get_content_from_editor(
+  canvaslms.cli.content.ANNOUNCEMENT_SCHEMA, initial_attrs,
+  content_attr='message')
+if result is None:
+  canvaslms.cli.err(1, "Editor cancelled or failed.")
+
+attributes, message = result
+title = attributes.get('title', args.title)
+
+<<check title and offer editor return>>
+<<show courses and confirm interactively>>
+@
+
+If the title is missing after editing, we offer to return to the editor rather
+than just failing. This gives the user a chance to fix the issue.
+<<check title and offer editor return>>=
+while not title:
+  print("Error: Title is required but not provided.", file=sys.stderr)
+  print("Options:", file=sys.stderr)
+  print("  [e] Return to editor to add title", file=sys.stderr)
+  print("  [d] Discard and cancel", file=sys.stderr)
+
+  try:
+    choice = input("Your choice (e/d): ").strip().lower()
+  except (EOFError, KeyboardInterrupt):
+    print("\nCancelled.", file=sys.stderr)
+    sys.exit(0)
+
+  if choice in ['e', 'edit']:
+    # Pass message in attributes for re-editing
+    edit_attrs = attributes.copy()
+    edit_attrs['message'] = message
+    result = canvaslms.cli.content.get_content_from_editor(
+      canvaslms.cli.content.ANNOUNCEMENT_SCHEMA, edit_attrs,
+      content_attr='message')
+    if result is None:
+      canvaslms.cli.err(1, "Editor cancelled or failed.")
+    attributes, message = result
+    title = attributes.get('title')
+  elif choice in ['d', 'discard', 'cancel']:
+    print("Cancelled.", file=sys.stderr)
+    sys.exit(0)
+  else:
+    print(f"Invalid choice '{choice}'. Please enter 'e' or 'd'.", file=sys.stderr)
+@
+
+In interactive mode, we show which courses will receive the announcement and
+enter the preview/confirmation loop before posting.
+<<show courses and confirm interactively>>=
+print(f"Will post announcement '{title}' to {len(course_list)} course(s):", file=sys.stderr)
+for course in course_list:
+  print(f"  - {course.course_code}: {course.name}", file=sys.stderr)
+
+result = canvaslms.cli.content.interactive_confirm_and_edit(
+  title, message, attributes,
+  canvaslms.cli.content.ANNOUNCEMENT_SCHEMA, "Announcement",
+  content_attr='message')
+if result is None:
+  print("Cancelled.", file=sys.stderr)
+  sys.exit(0)
+attributes, message = result
+title = attributes.get('title', title)
+@
+
+\subsection{Posting announcements}
+
+After content is ready (from any mode), we convert Markdown to HTML and post
+to all matching courses.
+<<post announcements to courses>>=
+try:
+  html_message = pypandoc.convert_text(message, 'html', format='md')
+except Exception as e:
+  logger.warning(f"Failed to convert markdown to HTML: {e}. Using raw content instead.")
+  html_message = message
+
+success_count = 0
+failed_count = 0
+for course in course_list:
+  try:
+    <<post announcement to course>>
+    success_count += 1
+  except Exception as e:
+    logger.error(f"Failed to post to {course.course_code}: {course.name} - {str(e)}")
+    failed_count += 1
+
+if failed_count > 0:
+  print(f"Posted to {success_count}/{len(course_list)} courses.", file=sys.stderr)
+  sys.exit(1)
+@
+
+\section{The edit command function}
+
+The [[discussions_edit_command]] function handles editing existing announcements.
+It supports two modes: file-based (when [[-f]] is provided) and interactive
+(the default).
+<<functions>>=
+def discussions_edit_command(config, canvas, args):
+  """Edit existing announcements interactively or from file."""
+  if args.file:
+    <<edit announcements from file>>
+  else:
+    <<edit announcements interactively>>
+
+@
+
+\subsection{File-based editing}
+
+When [[-f]] is provided, we read content from the file and update directly.
+This mode is script-friendly and does not require user interaction.
+
+If the YAML front matter contains an [[id]] field, we use it to identify the
+specific announcement to update. This enables a Git-based workflow where the
+announcement can be reliably identified even if the title changes. If no [[id]]
+is in the YAML, we fall back to title-based matching.
+<<edit announcements from file>>=
+<<read and validate announcement content from file>>
+<<update announcement with new content>>
+@
+
+We read the file using the content module's infrastructure and validate the
+attributes.
+<<read and validate announcement content from file>>=
+try:
+  attributes, body_content = canvaslms.cli.content.read_content_from_file(args.file)
+except FileNotFoundError:
+  logger.error(f"File not found: {args.file}")
+  print(f"Error: File not found: {args.file}", file=sys.stderr)
+  return
+except Exception as e:
+  logger.error(f"Error reading file: {e}")
+  print(f"Error reading file: {e}", file=sys.stderr)
+  return
+
+# Validate that at least title is provided (required for announcements)
+if not attributes.get('title'):
+  print("Error: Title is required in YAML front matter", file=sys.stderr)
+  return
+@
+
+\subsection{Updating announcements with new content}
+
+We convert the content to HTML for Canvas (unless [[--html]] is specified) and
+identify the announcement to update.
+<<update announcement with new content>>=
+if args.html:
+  html_content = body_content
+else:
+  try:
+    html_content = pypandoc.convert_text(body_content, 'html', format='md')
+  except Exception as e:
+    logger.warning(f"Failed to convert markdown to HTML: {e}. Using raw content.")
+    html_content = body_content
+
+if 'id' in attributes and attributes['id']:
+  <<update announcement by id>>
+else:
+  <<update announcements by title matching>>
+@
+
+\subsubsection{ID-based announcement identification}
+
+When the YAML contains an [[id]] field, we look up the announcement directly.
+<<update announcement by id>>=
+announcement_id = attributes['id']
+course_list = list(canvaslms.cli.courses.filter_courses(canvas, args.course))
+if not course_list:
+  print(f"Error: No courses found matching pattern: {args.course}", file=sys.stderr)
+  return
+
+# Try to find the announcement in any of the matching courses
+announcement = None
+announcement_course = None
+for course in course_list:
+  try:
+    announcement = course.get_discussion_topic(announcement_id)
+    announcement_course = course
+    break
+  except Exception:
+    continue
+
+if announcement is None:
+  print(f"Error: Announcement with ID '{announcement_id}' not found.", file=sys.stderr)
+  return
+
+<<update existing announcement>>
+@
+
+When updating an existing announcement, we build the update dictionary and call
+the Canvas API's [[update()]] method.
+<<update existing announcement>>=
+update_kwargs = {
+  'title': attributes.get('title', announcement.title),
+  'message': html_content,
+}
+
+<<add optional announcement attributes to update>>
+
+try:
+  announcement.update(**update_kwargs)
+  print(f"Updated announcement: {attributes.get('title', announcement.title)}", file=sys.stderr)
+except Exception as e:
+  logger.error(f"Error updating announcement: {e}")
+  print(f"Error updating announcement: {e}", file=sys.stderr)
+@
+
+We add optional attributes if they are present in the YAML front matter.
+<<add optional announcement attributes to update>>=
+if 'published' in attributes:
+  update_kwargs['published'] = attributes['published']
+
+# Process date attributes
+for attr in ['delayed_post_at', 'lock_at']:
+  parsed = parse_date_attribute(attributes, attr)
+  if parsed:
+    update_kwargs[attr] = parsed
+
+# Process boolean attributes
+for attr in ['require_initial_post', 'allow_rating',
+             'only_graders_can_rate', 'sort_by_rating']:
+  if attr in attributes and attributes[attr] is not None:
+    update_kwargs[attr] = attributes[attr]
+@
+
+\subsubsection{Title-based announcement matching}
+
+When no [[id]] is in the YAML, we use the [[-t/--title]] option to filter
+announcements by title.
+<<update announcements by title matching>>=
+course_list = list(canvaslms.cli.courses.filter_courses(canvas, args.course))
+if not course_list:
+  print(f"Error: No courses found matching pattern: {args.course}", file=sys.stderr)
+  return
+
+# Find announcements matching the title regex
+title_pattern = attributes.get('title', '')
+matched_announcements = get_matching_announcements(
+    course_list, title_pattern, ignore_case=args.ignore_case)
+
+if not matched_announcements:
+  print(f"Error: No announcements found matching title: {title_pattern}", file=sys.stderr)
+  return
+
+if len(matched_announcements) > 1:
+  print(f"Warning: Multiple announcements match. Using first match.", file=sys.stderr)
+
+announcement, announcement_course = matched_announcements[0]
+<<update existing announcement>>
+@
+
+\subsection{Helper function: get matching announcements}
+
+This function fetches all announcements from the given courses that match
+the title/ID regex pattern.
+<<functions>>=
+def get_matching_announcements(course_list, title_regex, ignore_case=False):
+  """
+  Returns a list of (announcement, course) tuples matching the pattern.
+  
+  The pattern is matched against both the title and the Canvas ID.
+  Results are sorted by creation date (newest first).
+  """
+  if not title_regex:
+    title_regex = '.*'  # Match all if no pattern specified
+
+  flags = re.IGNORECASE if ignore_case else 0
+  try:
+    pattern = re.compile(title_regex, flags)
+  except re.error as e:
+    print(f"Error: Invalid regex pattern: {e}", file=sys.stderr)
+    return []
+
+  matched = []
+  for course in course_list:
+    try:
+      announcements = course.get_discussion_topics(only_announcements=True)
+      for announcement in announcements:
+        # Match against title or ID
+        title = getattr(announcement, 'title', '') or ''
+        ann_id = str(getattr(announcement, 'id', ''))
+        if pattern.search(title) or pattern.search(ann_id):
+          matched.append((announcement, course))
+    except Exception as e:
+      logger.warning(f"Error fetching announcements from {course.course_code}: {e}")
+
+  # Sort by creation date (newest first)
+  matched.sort(key=lambda x: getattr(x[0], 'created_at', ''), reverse=True)
+  return matched
+
+@
+
+\subsection{Interactive editing}
+
+When no [[-f]] option is given, we enter interactive mode. This involves:
+\begin{enumerate}
+\item Fetching all announcements matching the course and title filters
+\item Presenting a numbered list for the user to select from
+\item For each selected announcement: open editor, preview, accept/edit/discard
+\item Reporting results at the end
+\end{enumerate}
+<<edit announcements interactively>>=
+<<get announcements for interactive editing>>
+<<select announcements to edit>>
+<<edit each selected announcement>>
+<<report interactive edit results>>
+@
+
+First we fetch matching announcements from the specified courses.
+<<get announcements for interactive editing>>=
+course_list = list(canvaslms.cli.courses.filter_courses(canvas, args.course))
+if not course_list:
+  canvaslms.cli.err(1, f"No courses found matching pattern: {args.course}")
+
+title_pattern = args.title if args.title else '.*'
+all_announcements = get_matching_announcements(
+    course_list, title_pattern, ignore_case=args.ignore_case)
+
+if not all_announcements:
+  canvaslms.cli.err(1, f"No announcements found matching the criteria")
+@
+
+\subsubsection{Selecting announcements to edit}
+
+We present a numbered list of matching announcements and let the user select
+which ones to edit. This prevents accidental edits when the pattern matches
+more than expected.
+<<select announcements to edit>>=
+print(f"Found {len(all_announcements)} matching announcement(s):", file=sys.stderr)
+for idx, (announcement, course) in enumerate(all_announcements, 1):
+  date_str = canvaslms.cli.utils.format_local_time(
+      getattr(announcement, 'created_at', None))
+  print(f"  [{idx}] {course.course_code}: {announcement.title} ({date_str})",
+        file=sys.stderr)
+
+print("\nEnter numbers to edit (e.g., '1,3,5' or '1-3' or 'all'), or 'q' to quit:",
+      file=sys.stderr)
+
+try:
+  selection = input("> ").strip().lower()
+except (EOFError, KeyboardInterrupt):
+  print("\nCancelled.", file=sys.stderr)
+  return
+
+if selection in ['q', 'quit', 'exit', '']:
+  print("Cancelled.", file=sys.stderr)
+  return
+
+selected_indices = parse_selection(selection, len(all_announcements))
+if not selected_indices:
+  print("No valid selection. Cancelled.", file=sys.stderr)
+  return
+
+selected_announcements = [all_announcements[i] for i in selected_indices]
+@
+
+\subsubsection{Parsing user selection}
+
+The [[parse_selection]] function interprets the user's input and returns a list
+of zero-based indices.
+<<functions>>=
+def parse_selection(selection, max_count):
+  """
+  Parse a selection string like '1,3,5' or '1-3' or 'all'.
+  Returns a list of zero-based indices.
+  """
+  if selection == 'all':
+    return list(range(max_count))
+
+  indices = set()
+  parts = selection.replace(' ', '').split(',')
+  for part in parts:
+    if '-' in part:
+      # Range like '1-3'
+      try:
+        start, end = part.split('-', 1)
+        start = int(start) - 1  # Convert to zero-based
+        end = int(end) - 1
+        if 0 <= start <= end < max_count:
+          indices.update(range(start, end + 1))
+      except ValueError:
+        continue
+    else:
+      # Single number
+      try:
+        idx = int(part) - 1  # Convert to zero-based
+        if 0 <= idx < max_count:
+          indices.add(idx)
+      except ValueError:
+        continue
+
+  return sorted(indices)
+
+@
+
+\subsubsection{Editing each selected announcement}
+
+For each selected announcement, we open the editor with current content,
+show a preview, and let the user accept, edit further, or discard changes.
+<<edit each selected announcement>>=
+updated_count = 0
+skipped_count = 0
+
+for announcement, course in selected_announcements:
+  print(f"\nEditing: {course.course_code}: {announcement.title}", file=sys.stderr)
+
+  <<render current announcement content>>
+  <<open editor with announcement content>>
+  <<interactive confirm and update single announcement>>
+@
+
+We extract the current announcement attributes using the content module's schema.
+<<render current announcement content>>=
+current_attrs = canvaslms.cli.content.extract_attributes_from_object(
+    announcement, canvaslms.cli.content.ANNOUNCEMENT_SCHEMA)
+@
+
+We open the editor with the current content. The [[content_attr='message']]
+parameter tells the editor function to extract the message body, convert it
+from HTML to Markdown, and exclude it from the YAML front matter.
+<<open editor with announcement content>>=
+result = canvaslms.cli.content.get_content_from_editor(
+    canvaslms.cli.content.ANNOUNCEMENT_SCHEMA,
+    current_attrs,
+    content_attr='message',
+    html_mode=args.html)
+if result is None:
+  print("Editor cancelled. Skipping this announcement.", file=sys.stderr)
+  skipped_count += 1
+  continue
+
+edited_attrs, body_content = result
+@
+
+After editing, we enter the interactive confirm loop.
+<<interactive confirm and update single announcement>>=
+title = edited_attrs.get('title', announcement.title)
+result = canvaslms.cli.content.interactive_confirm_and_edit(
+    title, body_content, edited_attrs,
+    canvaslms.cli.content.ANNOUNCEMENT_SCHEMA, "Announcement",
+    content_attr='message')
+
+if result is None:
+  print("Discarded changes.", file=sys.stderr)
+  skipped_count += 1
+  continue
+
+final_attrs, final_content = result
+
+# Convert to HTML and update
+if args.html:
+  html_content = final_content
+else:
+  try:
+    html_content = pypandoc.convert_text(final_content, 'html', format='md')
+  except Exception as e:
+    logger.warning(f"Failed to convert markdown to HTML: {e}")
+    html_content = final_content
+
+# Prepare update kwargs using final_attrs
+attributes = final_attrs
+announcement_course = course
+<<update existing announcement>>
+updated_count += 1
+@
+
+Finally, we report the results of the interactive editing session.
+<<report interactive edit results>>=
+print(f"\nEditing complete: {updated_count} updated, {skipped_count} skipped.",
+      file=sys.stderr)
+@
+
+\section{The list command function}
+
+The main function that processes the list command.
+Output is in CSV format for easy parsing with POSIX tools.
+<<functions>>=
+def list_command(config, canvas, args):
+  """Lists discussions or announcements from matching courses"""
+
+  # Get list of matching courses
+  course_list = list(canvaslms.cli.courses.filter_courses(canvas, args.course))
+
+  if not course_list:
+    canvaslms.cli.err(1, f"No courses found matching pattern: {args.course}")
+  
+  # List discussions/announcements for each course
+  for course in course_list:
+    try:
+      if args.type == "announcements":
+        <<list announcements for course>>
+      else:  # discussions
+        <<list discussions for course>>
+    except Exception as e:
+      canvaslms.cli.err(1, f"Error accessing {course.course_code}: {str(e)}")
+@
+
+\section{The view command function}
+
+The main function that processes the view command.
+<<functions>>=
+def discussions_view_command(config, canvas, args):
+  """Shows detailed view of discussions or announcements from matching courses"""
+
+  # Get list of matching courses
+  course_list = list(canvaslms.cli.courses.filter_courses(canvas, args.course))
+
+  if not course_list:
+    canvaslms.cli.err(1, f"No courses found matching pattern: {args.course}")
+
+  <<compile regex patterns for view>>
+
+  # Collect all discussions/announcements from matching courses
+  all_items = []
+  for course in course_list:
+    try:
+      if args.type == "announcements":
+        items = course.get_discussion_topics(only_announcements=True)
+      else:  # discussions
+        items = course.get_discussion_topics()
+        # Filter out announcements when listing discussions
+        items = [item for item in items if not getattr(item, 'is_announcement', False)]
+      
+      # Add course info to each item for display
+      for item in items:
+        item._course = course
+        all_items.append(item)
+
+
+    except Exception as e:
+      canvaslms.cli.err(1, f"Error accessing {course.course_code}: {str(e)}")
+  
+  # Filter by regex if provided
+  filtered_items = []
+  for item in all_items:
+    if matches_regex_patterns(item, args):
+      filtered_items.append(item)
+  
+  # Sort by creation date (newest first)
+  filtered_items.sort(key=lambda x: getattr(x, 'created_at', ''), reverse=True)
+  
+  # Take the requested count
+  if args.count == 0:
+    count = len(filtered_items)  # Show all matches
+  else:
+    count = max(1, args.count)
+  
+  selected_items = filtered_items[:count]
+  
+  if not selected_items:
+    canvaslms.cli.err(1, f"No matching {args.type} found")
+  
+  # Display items using Rich
+  console = rich.console.Console()
+  for idx, item in enumerate(selected_items):
+    <<print discussion details with rich>>
+    if idx != len(selected_items) - 1:
+      print()  # Add blank line between items
+@
+
+
+\section{Interactive message editing}
+
+The interactive editing system uses YAML front matter to allow users to set
+announcement attributes alongside the message content. This design was chosen
+because it's familiar to users of Jekyll and GitHub Pages, keeps all 
+announcement data in one place, and remains plain text and editor-agnostic.
+
+We implement this through three main functions: [[parse_yaml_front_matter]] 
+extracts YAML metadata from content, [[format_yaml_front_matter]] formats 
+content with a YAML header, and [[get_announcement_from_editor]] orchestrates 
+the editing process.
+
+\subsection{Parsing YAML front matter}
+
+The parser looks for content delimited by [[---]] markers at the start of the
+file. If found, it attempts to parse the section as YAML and returns both the
+attributes dictionary and the remaining content.
+<<functions>>=
+def parse_yaml_front_matter(content):
+  """Parse YAML front matter from content
+  
+  Args:
+    content: String containing optional YAML front matter followed by content
+  
+  Returns:
+    Tuple of (attributes dict, content string)
+  """
+  # Check if content starts with YAML front matter delimiter
+  if not content.strip().startswith('---'):
+    return {}, content
+  
+  # Try to extract YAML front matter
+  parts = content.split('---', 2)
+  if len(parts) < 3:
+    return {}, content
+  
+  try:
+    # parts[0] is empty, parts[1] is YAML, parts[2] is content
+    yaml_str = parts[1]
+    attributes = yaml.safe_load(yaml_str) or {}
+    message_content = parts[2].lstrip('\n')
+    return attributes, message_content
+  except yaml.YAMLError as e:
+    logger.warning(f"Failed to parse YAML front matter: {e}")
+    return {}, content
+
+def format_yaml_front_matter(attributes, message_content):
+  """Format content with YAML front matter
+  
+  Args:
+    attributes: Dictionary of attributes
+    message_content: The message content
+  
+  Returns:
+    String with YAML front matter and content
+  """
+  if not attributes:
+    return message_content
+  
+  yaml_str = yaml.dump(attributes, default_flow_style=False, sort_keys=False)
+  return f"---\n{yaml_str}---\n{message_content}"
+@
+
+\subsection{Opening the editor with YAML template}
+
+The [[get_announcement_from_editor]] function creates a temporary file with
+YAML front matter template showing all available attributes. After the user
+edits and saves, we parse the result and return the attributes and content
+separately.
+<<functions>>=
+def get_announcement_from_editor(initial_title=None, initial_attributes=None, initial_content=""):
+  """Opens the user's preferred editor to write the announcement with YAML front matter
+  
+  Args:
+    initial_title: Optional title to pre-populate (overridden by attributes)
+    initial_attributes: Optional dictionary of attributes to pre-populate
+    initial_content: Optional initial markdown content to pre-populate the editor
+  
+  Returns:
+    Tuple of (attributes dict, markdown content), or None if cancelled
+  """
+  editor = os.environ.get('EDITOR', 'nano')
+  
+  # Prepare initial content with YAML front matter template
+  if initial_attributes is None:
+    initial_attributes = {}
+  
+  # Set default attributes if not provided
+  if 'title' not in initial_attributes and initial_title:
+    initial_attributes['title'] = initial_title
+  
+  # Add all possible template fields if not present
+  # This shows users all available attributes they can set
+  if not initial_attributes.get('title'):
+    initial_attributes['title'] = ""
+  if 'published' not in initial_attributes:
+    initial_attributes['published'] = True
+  if 'delayed_post_at' not in initial_attributes:
+    initial_attributes['delayed_post_at'] = None
+  if 'lock_at' not in initial_attributes:
+    initial_attributes['lock_at'] = None
+  if 'require_initial_post' not in initial_attributes:
+    initial_attributes['require_initial_post'] = None
+  if 'allow_rating' not in initial_attributes:
+    initial_attributes['allow_rating'] = None
+  if 'only_graders_can_rate' not in initial_attributes:
+    initial_attributes['only_graders_can_rate'] = None
+  if 'sort_by_rating' not in initial_attributes:
+    initial_attributes['sort_by_rating'] = None
+  
+  # Format the initial content
+  template_content = format_yaml_front_matter(initial_attributes, initial_content)
+  
+  with tempfile.NamedTemporaryFile(mode='w+', suffix='.md', delete=False) as temp_file:
+    temp_file.write(template_content)
+    temp_file_path = temp_file.name
+  
+  try:
+    # Open editor
+    try:
+      subprocess.run([editor, temp_file_path], check=True)
+    except subprocess.CalledProcessError as e:
+      logger.error(f"Editor exited with error code {e.returncode}")
+      return None
+    except FileNotFoundError:
+      logger.error(f"Editor '{editor}' not found")
+      return None
+    except Exception as e:
+      logger.error(f"Error opening editor: {e}")
+      return None
+    
+    # Read the content back
+    with open(temp_file_path, 'r') as temp_file:
+      content = temp_file.read()
+    
+    # Parse YAML front matter
+    attributes, markdown_content = parse_yaml_front_matter(content)
+    
+    return attributes, markdown_content.strip()
+    
+  finally:
+    # Clean up temporary file
+    try:
+      os.unlink(temp_file_path)
+    except OSError:
+      pass
+
+@
+
+Note that [[get_message_from_editor]] is retained for backward compatibility,
+though it now uses the YAML-aware editor internally.
+<<functions>>=
+def get_message_from_editor(initial_content=""):
+  """Opens the user's preferred editor to write the announcement message
+  
+  This is the legacy function for backward compatibility.
+  
+  Args:
+    initial_content: Optional initial markdown content to pre-populate the editor
+  
+  Returns:
+    The markdown content, or None if cancelled
+  """
+  result = get_announcement_from_editor(None, {}, initial_content)
+  if result is None:
+    return None
+  attributes, content = result
+  return content
+@
+
+\section{Message preview rendering}
+
+Function to render a preview of the message in the terminal.
+<<functions>>=
+def render_message_preview(title, markdown_content, attributes=None):
+  """Renders a preview of the announcement message using Rich
+  
+  Args:
+    title: The announcement title
+    markdown_content: The markdown content to preview
+    attributes: Optional dictionary of announcement attributes
+  """
+  console = rich.console.Console(stderr=True)
+  
+  print("\n" + "="*60, file=sys.stderr)
+  console.print(f"[bold cyan]Preview: {title}[/bold cyan]")
+  print("="*60 + "\n", file=sys.stderr)
+  
+  # Show attributes if present
+  if attributes:
+    console.print("[bold]Attributes:[/bold]")
+    for key, value in attributes.items():
+      if key != 'title':  # Title is already shown in header
+        console.print(f"  {key}: {value}")
+    print(file=sys.stderr)
+  
+  # Render markdown directly
+  try:
+    console.print(rich.markdown.Markdown(markdown_content))
+  except Exception:
+    # Fallback: just print the content
+    console.print(markdown_content)
+  
+  print("\n" + "="*60 + "\n", file=sys.stderr)
+@
+
+\section{Interactive confirmation with edit option}
+
+Function to handle the interactive confirmation loop with preview and edit options.
+<<functions>>=
+def interactive_confirm_and_edit(title, message, attributes):
+  """Interactive loop for confirming or editing the announcement
+  
+  Args:
+    title: The announcement title
+    message: The markdown message content
+    attributes: Dictionary of announcement attributes
+  
+  Returns:
+    Tuple of (attributes dict, message content), or None if cancelled
+  """
+  current_message = message
+  current_attributes = attributes.copy()
+  current_title = title
+  
+  while True:
+    # Show preview
+    render_message_preview(current_title, current_message, current_attributes)
+    
+    # Prompt for action
+    print("Options:", file=sys.stderr)
+    print("  [a] Accept and post announcement", file=sys.stderr)
+    print("  [e] Edit message again", file=sys.stderr)
+    print("  [d] Discard and cancel", file=sys.stderr)
+    
+    try:
+      choice = input("Your choice (a/e/d): ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+      print("\nCancelled.", file=sys.stderr)
+      return None
+    
+    if choice in ['a', 'accept']:
+      return current_attributes, current_message
+    elif choice in ['e', 'edit']:
+      # Re-open editor with current content
+      result = get_announcement_from_editor(current_title, current_attributes, current_message)
+      # Handle cancellation or error
+      if result is None:
+        print("Editor cancelled or failed. Keeping previous content.", file=sys.stderr)
+      else:
+        new_attributes, new_message = result
+        if new_message.strip():
+          current_message = new_message
+          current_attributes = new_attributes
+          current_title = new_attributes.get('title', current_title)
+        else:
+          print("Message cannot be empty. Keeping previous content.", file=sys.stderr)
+    elif choice in ['d', 'discard', 'cancel']:
+      return None
+    else:
+      print(f"Invalid choice '{choice}'. Please enter 'a', 'e', or 'd'.", file=sys.stderr)
+@
+
+
+\section{Posting announcements}
+
+Function to post an announcement to a specific course, using attributes from
+YAML front matter. We build the kwargs dictionary from the attributes,
+converting date strings to Canvas-compatible format using the [[utils]] module's
+[[format_canvas_time]] function.
+
+\subsection{Date attribute parsing}
+
+Both [[delayed_post_at]] and [[lock_at]] need the same date parsing logic.
+We extract this to a helper function to avoid repetition.
+The [[format_canvas_time()]] function is provided by the [[utils]] module and
+handles conversion of various date formats to Canvas-compatible UTC ISO format.
+<<functions>>=
+def parse_date_attribute(attributes, attr_name):
+  """Parse a date attribute using utils module's format_canvas_time
+
+  Args:
+    attributes: Dictionary of announcement attributes
+    attr_name: Name of the date attribute to parse
+
+  Returns:
+    Canvas-formatted date string, or None if not present or invalid
+  """
+  if attr_name not in attributes:
+    return None
+
+  date_value = attributes[attr_name]
+  if date_value and date_value != 'null':
+    try:
+      return canvaslms.cli.utils.format_canvas_time(date_value)
+    except Exception as e:
+      logger.warning(f"Failed to parse {attr_name} '{date_value}': {e}")
+      return None
+  return None
+@
+
+\subsection{Building the announcement parameters}
+
+We now build the parameters for [[create_discussion_topic]], starting with
+required fields and adding optional attributes if present.
+<<post announcement to course>>=
+kwargs = {
+  'title': title,
+  'message': html_message,
+  'is_announcement': True,
+}
+
+if 'published' in attributes:
+  kwargs['published'] = attributes['published']
+else:
+  kwargs['published'] = True
+
+<<add date attributes to kwargs>>
+<<add boolean attributes to kwargs>>
+
+discussion_topic = course.create_discussion_topic(**kwargs)
+@
+
+We simply add date attributes by parsing them with our helper function.
+<<add date attributes to kwargs>>=
+for attr in ['delayed_post_at', 'lock_at']:
+  parsed = parse_date_attribute(attributes, attr)
+  if parsed:
+    kwargs[attr] = parsed
+<<add boolean attributes to kwargs>>=
+for attr in ['require_initial_post', 'allow_rating', 
+             'only_graders_can_rate', 'sort_by_rating']:
+  if attr in attributes:
+    kwargs[attr] = attributes[attr]
+@
+
+\section{Listing announcements and discussions}
+
+Functions to list announcements and discussions from courses.
+The output uses CSV format for compatibility with POSIX tools.
+
+For announcements, we prefer showing the scheduled posting date
+([[delayed_post_at]]) over the creation date, since scheduled announcements
+are more relevant when they'll actually appear to students.
+<<list announcements for course>>=
+output = csv.writer(sys.stdout, delimiter=args.delimiter)
+announcements = course.get_discussion_topics(only_announcements=True)
+for announcement in announcements:
+  date_to_show = (getattr(announcement, 'delayed_post_at', None) or 
+                  getattr(announcement, 'created_at', None))
+  output.writerow([
+    course.course_code,
+    announcement.title,
+    canvaslms.cli.utils.format_local_time(date_to_show)
+  ])
+@
+
+For discussions, we filter out announcements (which are technically a special
+type of discussion in Canvas) and show only the creation date.
+<<list discussions for course>>=
+output = csv.writer(sys.stdout, delimiter=args.delimiter)
+discussions = course.get_discussion_topics()
+for discussion in discussions:
+  if not getattr(discussion, 'is_announcement', False):
+    output.writerow([
+      course.course_code,
+      discussion.title,
+      canvaslms.cli.utils.format_local_time(discussion.created_at)
+    ])
+@
+
+\section{Helper functions for view command}
+
+Functions to support the view command functionality.
+<<compile regex patterns for view>>=
+pattern = None
+if args.match:
+  try:
+    flags = re.IGNORECASE if args.ignore_case else 0
+    pattern = re.compile(args.match, flags)
+  except re.error as e:
+    canvaslms.cli.err(1, f"Invalid regex for --match: {e}")
+
+title_pattern = None
+if args.title:
+  try:
+    flags = re.IGNORECASE if args.ignore_case else 0
+    title_pattern = re.compile(args.title, flags)
+  except re.error as e:
+    canvaslms.cli.err(1, f"Invalid regex for --title: {e}")
+
+message_pattern = None
+if args.message:
+  try:
+    flags = re.IGNORECASE if args.ignore_case else 0
+    message_pattern = re.compile(args.message, flags)
+  except re.error as e:
+    canvaslms.cli.err(1, f"Invalid regex for --message: {e}")
+@
+
+<<functions>>=
+def matches_regex_patterns(item, args):
+  """Check if discussion/announcement matches the regex patterns"""
+  if not (args.match or args.title or args.message):
+    return True
+  
+  title = getattr(item, 'title', '') or ''
+  message = getattr(item, 'message', '') or ''
+  text = f"{title}\n{message}"
+
+  # Compile patterns dynamically (could be optimized by moving to discussions_view_command)
+  flags = re.IGNORECASE if args.ignore_case else 0
+  
+  if args.title:
+    try:
+      title_pattern = re.compile(args.title, flags)
+      if title_pattern.search(title):
+        return True
+    except re.error:
+      pass
+  
+  if args.message:
+    try:
+      message_pattern = re.compile(args.message, flags)  
+      if message_pattern.search(message):
+        return True
+    except re.error:
+      pass
+      
+  if args.match:
+    try:
+      pattern = re.compile(args.match, flags)
+      if pattern.search(text):
+        return True
+    except re.error:
+      pass
+  
+  return False
+@
+
+<<print discussion details with rich>>=
+# Print header with course and type info
+item_type = "Announcement" if getattr(item, 'is_announcement', False) else "Discussion"
+course = getattr(item, '_course', None)
+course_info = f" [{course.course_code}]" if course else ""
+
+console.print(f"[bold cyan]{item_type}{course_info}[/bold cyan]")
+console.print(f"[bold]Title:  [/bold] {getattr(item, 'title', 'N/A')}")
+console.print(f"[bold]Created:[/bold] {canvaslms.cli.utils.format_local_time(getattr(item, 'created_at', None))}")
+console.print(f"[bold]Author: [/bold] {getattr(item, 'author', {}).get('display_name', 'N/A')}")
+
+# Show URL if available
+url = getattr(item, 'html_url', None)
+if url:
+  console.print(f"[bold]URL:    [/bold] {url}")
+
+# Show message content if available
+message = getattr(item, 'message', None)
+if message and message.strip():
+  console.print(f"[bold]Message:[/bold]")
+  # Convert HTML message back to markdown for nice display
+  try:
+    markdown_content = pypandoc.convert_text(message, 'md', format='html')
+    console.print(rich.markdown.Markdown(markdown_content))
+  except Exception:
+    # Fallback: just print the HTML content
+    console.print(message)
+else:
+  console.print(f"[bold]Message:[/bold] [dim]No content[/dim]")
+@

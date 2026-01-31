@@ -1,0 +1,128 @@
+\section{Conjunctive average with surveys, \texttt{conjunctavgsurvey}}
+
+This is the same as \cref{conjunctavg}, but with one difference:
+When we extract the grade and then try to figure out which grading scale is 
+used, we treat numerical grades as passes.
+This is to allow for mandatory surveys that are not graded, but still need to 
+be included in the summary.
+So when we translate and add the grades to the proper list, we do this:
+<<add grade to the correct grades list>>=
+grade = submission.grade
+
+if grade is None:
+  grade = "F"
+
+if grade in ["A", "B", "C", "D", "E"]:
+  a2e_grades.append(grade)
+elif grade in ["P", "F"]:
+  pf_grades.append(grade)
+elif grade.casefold() == "complete":
+  pf_grades.append("P")
+elif grade.casefold() == "incomplete":
+  pf_grades.append("F")
+elif (grade.isdigit()
+      or grade.replace('.', '', 1).isdigit()
+      or grade.replace('%', '', 1).isdigit()):
+  # Numeric grades (like points) are treated as P
+  pf_grades.append("P")
+else:
+  raise ValueError(f"Unknown grade {grade} for assignment {assignment}.")
+@
+
+The rest of this section is the same as \cref{conjunctavg}.
+<<[[conjunctavgsurvey.py]]>>=
+"""
+This module is the same as `canvaslms.grades.conjunctavg` except that any 
+submissions with grades other than A--F, P/F and complete/incomplete are 
+treated as P---for instance, numeric grades (points or percentages). Also, all 
+submissions must have a date. This makes this module useful for including 
+mandatory, ungraded surveys.
+"""
+
+import datetime as dt
+from canvaslms.grades.conjunctavg import a2e_average
+from canvaslms.cli import results
+from canvasapi.exceptions import ResourceDoesNotExist
+
+<<helper functions>>
+
+def summarize_group(assignments_list, users_list):
+  """
+  Summarizes a particular set of assignments (assignments_list) for all
+  users in users_list.
+  """
+
+  for user in users_list:
+    grade, grade_date, graders = summarize(user, assignments_list)
+    yield [user, grade, grade_date, *graders]
+@
+
+Now we will describe the [[summarize]] helper function.
+We want to establish three things: the most recent date, a suitable grade and 
+who graded.
+
+For the grade, as we iterate through we look for P/F, A--E, and 
+complete/incomplete grades.
+We can then check for Fs among the P/F grades (as seen above), if we find an F 
+the summarized grade will be an F.
+If we find no Fs, then we can compute the average over all A--E grades and use 
+that as the final grade.
+We translate completes to Ps and incompletes to Fs.
+<<helper functions>>=
+def summarize(user, assignments_list):
+  """
+  Extracts user's submissions for assignments in assingments_list to summarize 
+  results into one grade and a grade date. Summarize by conjunctive average.
+  """
+
+  pf_grades = []
+  a2e_grades = []
+  dates = []
+  graders = []
+
+  for assignment in assignments_list:
+    try:
+      submission = assignment.get_submission(user,
+                                            include=["submission_history"])
+    except ResourceDoesNotExist:
+      pf_grades.append("F")
+      continue
+
+    submission.assignment = assignment
+
+    <<add graders to [[graders]] list>>
+    <<add grade to the correct grades list>>
+    <<add date to [[dates]] list>>
+
+  if all(map(lambda x: x == "P", pf_grades)):
+    final_grade = "P"
+    if a2e_grades:
+      final_grade = a2e_average(a2e_grades)
+  else:
+    final_grade = "F"
+
+  if dates:
+    final_date = max(dates)
+  else:
+    final_date = None
+    final_grade = None
+
+  return (final_grade, final_date, graders)
+@
+
+For the most recent date, we add all dates to a list and then take the maximum.
+If the list is empty, we don't report any grade, but return [[None]] for both 
+grade and date.
+<<add date to [[dates]] list>>=
+grade_date = submission.submitted_at or submission.graded_at
+
+if grade_date:
+  grade_date = dt.date.fromisoformat(grade_date.split("T")[0])
+  dates.append(grade_date)
+@
+
+For who graded, we simply extract the list of graders from the submissions.
+<<add graders to [[graders]] list>>=
+graders += results.all_graders(submission)
+@
+

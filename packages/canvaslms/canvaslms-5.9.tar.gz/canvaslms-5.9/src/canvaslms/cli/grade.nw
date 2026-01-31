@@ -1,0 +1,50 @@
+\chapter{The \texttt{grade} command (backwards compatibility alias)}
+
+This chapter provides the standalone [[grade]] command, which serves as a
+backwards compatibility alias for [[submissions grade]].
+
+\textbf{Purpose}: Before the refactoring to nested subcommands, [[grade]] was
+a top-level command. This module ensures that existing scripts using
+[[canvaslms grade]] continue to work without modification, preventing breaking
+changes for users who haven't migrated to the new [[submissions grade]] syntax.
+
+The [[grade]] command provides the same functionality as [[submissions grade]]:
+it can either set grades and comments programmatically or open the Canvas
+SpeedGrader interface for interactive grading.
+
+\textbf{Implementation}: This module reuses all the implementation from
+[[submissions.nw]], including the command function, options setup, and error
+handling. This ensures that any updates to the grading functionality
+automatically apply to both [[grade]] and [[submissions grade]].
+
+We outline the module:
+<<[[grade.py]]>>=
+from canvaslms.cli import submissions
+
+def add_command(subp):
+  """Adds grade command to the argparse subparser subp as an alias"""
+  <<add grade command as alias>>
+@
+
+\section{Setting up the [[grade]] alias}
+
+The [[grade]] command is simply an alias that reuses the implementation from
+[[submissions]]. We create the parser with help text that mentions it's an
+alias, and we use the exact same function and option setup from the
+submissions module.
+
+<<add grade command as alias>>=
+grade_parser = subp.add_parser("grade",
+  help="Grade submissions, hic sunt dracones! "
+       "(alias for 'submissions grade')",
+  description="Grades submissions. ***Hic sunt dracones [here be dragons]***: "
+    "the regex matching is very powerful, "
+    "be certain that you match what you think!")
+grade_parser.set_defaults(func=submissions.submissions_grade_command)
+submissions.add_submission_options(grade_parser, required=True)
+submissions.add_grading_options(grade_parser)
+@
+
+The options and implementation are all defined in [[submissions.nw]].
+See that module for details on the grading options ([[-g]], [[-m]], [[-v]]),
+the error handling, and the grading process.
