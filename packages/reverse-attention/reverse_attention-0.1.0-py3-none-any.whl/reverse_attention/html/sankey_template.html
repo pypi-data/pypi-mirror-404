@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reverse Attention Trace</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        header {
+            background: #16213e;
+            padding: 1rem 2rem;
+            border-bottom: 1px solid #0f3460;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            font-weight: 500;
+            color: #e94560;
+        }
+
+        .controls {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        label {
+            font-size: 0.875rem;
+            color: #aaa;
+        }
+
+        select, button {
+            background: #0f3460;
+            border: 1px solid #0f3460;
+            color: #eee;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.875rem;
+        }
+
+        select:hover, button:hover {
+            background: #1a4a7a;
+        }
+
+        button.active {
+            background: #e94560;
+            border-color: #e94560;
+        }
+
+        .main-content {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .visualization {
+            flex: 1;
+            overflow: hidden;
+            position: relative;
+        }
+
+        #sankey-container {
+            width: 100%;
+            height: 100%;
+        }
+
+        .sidebar {
+            width: 350px;
+            background: #16213e;
+            border-left: 1px solid #0f3460;
+            overflow-y: auto;
+            padding: 1rem;
+        }
+
+        .sidebar h2 {
+            font-size: 1rem;
+            font-weight: 500;
+            margin-bottom: 1rem;
+            color: #e94560;
+        }
+
+        .info-section {
+            margin-bottom: 1.5rem;
+        }
+
+        .info-section h3 {
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: #aaa;
+            margin-bottom: 0.5rem;
+        }
+
+        .info-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.25rem 0;
+            font-size: 0.875rem;
+        }
+
+        .info-item .value {
+            color: #4cc9f0;
+        }
+
+        .beam-list {
+            margin-top: 0.5rem;
+        }
+
+        .beam-item {
+            background: #0f3460;
+            padding: 0.75rem;
+            border-radius: 4px;
+            margin-bottom: 0.5rem;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .beam-item:hover {
+            background: #1a4a7a;
+        }
+
+        .beam-item.selected {
+            background: #e94560;
+        }
+
+        .beam-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 0.5rem;
+        }
+
+        .beam-index {
+            font-weight: 500;
+        }
+
+        .beam-score {
+            color: #4cc9f0;
+            font-size: 0.875rem;
+        }
+
+        .beam-path {
+            font-size: 0.75rem;
+            color: #aaa;
+            word-break: break-all;
+            line-height: 1.4;
+        }
+
+        .click-info {
+            background: #0f3460;
+            padding: 1rem;
+            border-radius: 4px;
+            font-size: 0.875rem;
+        }
+
+        .click-info.empty {
+            color: #666;
+            text-align: center;
+        }
+
+        .node {
+            cursor: pointer;
+        }
+
+        .node rect {
+            fill-opacity: 0.9;
+            stroke: #fff;
+            stroke-width: 1px;
+        }
+
+        .node:hover rect {
+            fill-opacity: 1;
+        }
+
+        .node text {
+            font-size: 12px;
+            fill: #fff;
+            pointer-events: none;
+        }
+
+        .link {
+            fill: none;
+            stroke-opacity: 0.4;
+            cursor: pointer;
+        }
+
+        .link:hover {
+            stroke-opacity: 0.7;
+        }
+
+        .link.highlighted {
+            stroke-opacity: 0.8;
+        }
+
+        .link.dimmed {
+            stroke-opacity: 0.1;
+        }
+
+        .tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.9);
+            color: #fff;
+            padding: 0.5rem 0.75rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            pointer-events: none;
+            z-index: 1000;
+            max-width: 300px;
+        }
+
+        .zoom-info {
+            position: absolute;
+            bottom: 1rem;
+            left: 1rem;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 0.5rem 0.75rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            color: #aaa;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Reverse Attention Trace</h1>
+            <div class="controls">
+                <div class="control-group">
+                    <label for="beam-filter">Filter Beams:</label>
+                    <select id="beam-filter">
+                        <option value="all">All Beams</option>
+                    </select>
+                </div>
+                <button id="reset-zoom">Reset Zoom</button>
+                <button id="reset-highlight">Clear Selection</button>
+            </div>
+        </header>
+
+        <div class="main-content">
+            <div class="visualization">
+                <div id="sankey-container"></div>
+                <div class="zoom-info">Scroll to zoom, drag to pan</div>
+            </div>
+
+            <div class="sidebar">
+                <div class="info-section">
+                    <h2>Trace Info</h2>
+                    <div id="metadata-info"></div>
+                </div>
+
+                <div class="info-section">
+                    <h2>Selected Element</h2>
+                    <div id="click-info" class="click-info empty">
+                        Click a node or link for details
+                    </div>
+                </div>
+
+                <div class="info-section">
+                    <h2>Beams</h2>
+                    <div id="beam-list" class="beam-list"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="tooltip" class="tooltip" style="display: none;"></div>
+
+    <script src="embed.js"></script>
+</body>
+</html>
