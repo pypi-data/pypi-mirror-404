@@ -1,0 +1,120 @@
+{% extends 'bom/bom-base.html' %}
+{% load static %}
+{% load materializecss %}
+
+{% block head-title %}{{ title }}{% endblock %}
+
+{% block content %}
+    <div class="container" style="padding-top: 40px; max-width: 1000px;">
+        {% if profile.role == 'A' %}
+            <div class="row">
+                <form action="{% url 'bom:part-class-edit' part_class_id=part_class.id %}" method="post"
+                      class="col s12">
+                    {% csrf_token %}
+                
+                    <div class="row">
+                        <div class="col s12 m3">
+                            {{ part_class_form.code|materializecss }}
+                        </div>
+                        <div class="col s12 m9">
+                            {{ part_class_form.name|materializecss }}
+                        </div>
+                        <div class="col s12">
+                            {{ part_class_form.comment|materializecss }}
+                        </div>
+                    </div>
+
+                    <div class="row" style="margin-top: 40px; margin-bottom: 20px;">
+                        <div class="col s12">
+                            <h5>Property Definitions</h5>
+                            <p class="grey-text text-darken-1">Define the custom fields available to parts in this
+                                class.</p>
+                        </div>
+                    </div>
+
+                    <div id="property-definitions-wrapper">
+                        {{ property_definitions_formset.management_form }}
+
+                        <table class="highlight" style="border-bottom: 1px solid #e0e0e0;">
+                            <thead>
+                            <tr class="grey-text">
+                                <th style="width: 90%;">Property Definition</th>
+                                <th style="width: 10%;" class="center-align">Action</th>
+                            </tr>
+                            </thead>
+                            <tbody id="property-definitions-body">
+                            {% for form in property_definitions_formset %}
+                                <tr class="property-definition-row">
+                                    {% for hidden in form.hidden_fields %}
+                                        {{ hidden }}
+                                    {% endfor %}
+
+                                    <td>{{ form.property_definition|materializecss }}</td>
+                                    <td class="center-align">
+                                        {% if forloop.counter0 < property_definitions_formset.initial_form_count %}
+                                            <div style="display:none;">{{ form.DELETE }}</div>
+                                            <a href="#!" class="btn-flat btn-small red-text delete-existing-row">
+                                                <i class="material-icons">delete</i>
+                                            </a>
+                                        {% else %}
+                                            <a href="#!" class="btn-flat btn-small red-text remove-new-row">
+                                                <i class="material-icons">close</i>
+                                            </a>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                            </tbody>
+                        </table>
+
+                        <div class="row" style="margin-top: 15px;">
+                            <div class="col s12">
+                                <button type="button" class="btn-flat waves-effect"
+                                        id="add-property-definition" style="padding-left: 0;">
+                                    <i class="material-icons left">add</i> Add Property
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row" style="margin-top: 50px;">
+                        <div class="col s12 right-align">
+                            <a href="{% url 'bom:settings' %}indabom"
+                               class="btn btn-flat waves-effect"
+                               style="margin-right: 10px;">Cancel</a>
+                            <button class="waves-effect waves-light btn btn-primary" type="submit" name="action">
+                                Save
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        {% else %}
+            {% include 'bom/nothing-to-see.html' with required_privilege='Admin' %}
+        {% endif %}
+    </div>
+
+    <script type="text/template" id="empty-form-template">
+        <tr class="property-definition-row">
+            <td>{{ property_definitions_formset.empty_form.property_definition|materializecss }}</td>
+            <td class="center-align">
+                <a href="#!" class="btn-flat btn-small red-text remove-new-row">
+                    <i class="material-icons">close</i>
+                </a>
+            </td>
+        </tr>
+    </script>
+
+    <script src="{% static 'bom/js/formset-handler.js' %}"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            initFormset({
+                prefix: '{{ property_definitions_formset.prefix }}',
+                addBtnId: 'add-property-definition',
+                formContainerId: 'property-definitions-body',
+                emptyFormTemplateId: 'empty-form-template',
+                rowSelector: '.property-definition-row'
+            });
+        });
+    </script>
+{% endblock %}
