@@ -1,0 +1,199 @@
+Metadata-Version: 2.4
+Name: pywingui
+Version: 4.2.8
+Summary: PyWinGUI GUI Automation Library for Windows Forms (Binary Distribution)
+Author: User
+Requires-Python: <3.14,>=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: pywinauto
+Requires-Dist: requests
+Requires-Dist: pyautogui
+Requires-Dist: pywin32
+Requires-Dist: pillow
+Requires-Dist: cryptography
+Requires-Dist: pygetwindow
+Requires-Dist: opencv-python
+
+# build_tools — README
+
+This document explains how to build, test, and publish Windows Nuitka-compiled wheels for the `pywingui` project using the repository's build scripts and GitHub Actions.
+
+Checklist
+- [ ] Create PyPI API token and add it to GitHub Secrets (`PYPI_API_TOKEN`).
+- [ ] Verify `make_nuitka_wheel.ps1` and `push.ps1` are configured correctly.
+- [ ] Test a local build for each target Python interpreter (32-bit and 64-bit).
+- [ ] (Optional) Run the GitHub Actions workflow manually to inspect artifacts.
+- [ ] Tag and push when ready to publish to PyPI (workflow will run and upload wheels).
+
+Overview
+- `make_nuitka_wheel.ps1` — Builds a wheel for a specific Python interpreter using Nuitka. It compiles selected modules into extension modules and packages them into a wheel.
+- `push.ps1` — Uploads the built wheel(s) to PyPI using `twine`, reading the token from environment variables (`PYPI_API_TOKEN` or `TWINE_PASSWORD`).
+- GitHub Actions workflow (`.github/workflows/build-windows-wheels.yml`) — Builds Windows wheels across a matrix of Python versions and architectures (x86/x64) and publishes them to PyPI when a tag is pushed and `PYPI_API_TOKEN` is set as a secret.
+
+Security model
+- For releasing protected/compiled code, build and publish per-ABI wheels (win32 and win_amd64) and do not include source fallback files in release wheels. To do that, run the build script without the `-IncludeSourceFallbacks` switch.
+- If you need debug/compatibility builds that include Python source fallbacks, run the build script with `-IncludeSourceFallbacks`. Do not publish fallback-enabled wheels to PyPI if you want to protect source code.
+
+Local usage
+
+1) Build a secure wheel (no source fallbacks)
+
+Open PowerShell in the repository root and run:
+
+```powershell
+# Build for a target Python interpreter (replace path with target python.exe)
+.\build_tools\make_nuitka_wheel.ps1 -PythonExe "C:\Path\To\Target\python.exe"
+```
+
+2) Build a compatibility/debug wheel (includes `_source.py` fallbacks)
+
+```powershell
+# Include source fallbacks for debugging (not recommended for protected releases)
+.\build_tools\make_nuitka_wheel.ps1 -PythonExe "C:\Path\To\Target\python.exe" -IncludeSourceFallbacks
+```
+
+3) Inspect the produced wheel
+
+After the build completes, the wheel(s) are placed under `dist\`. To list the wheel files:
+
+```powershell
+Get-ChildItem .\dist\*.whl | Sort-Object LastWriteTime -Descending | Format-Table Name,FullName -AutoSize
+```
+
+To list the contents of a wheel (using Python):
+
+```powershell
+python - <<'PY'
+import zipfile
+w = r".\dist\your-built-wheel.whl"  # replace with the actual file
+z = zipfile.ZipFile(w)
+print('\n'.join(z.namelist()))
+PY
+```
+
+4) Test install in a fresh venv (use the same interpreter you built for)
+
+```powershell
+"C:\Path\To\Target\python.exe" -m venv .\test_env
+.\test_env\Scripts\python.exe -m pip install --upgrade pip
+.\test_env\Scripts\python.exe -m pip install .\dist\your-built-wheel.whl
+.\test_env\Scripts\python.exe -c "import pywingui; import pywingui.controller as controller; print('OK', controller)"
+```
+
+Publishing to PyPI (local)
+
+1) Set token in environment (temporary for current PowerShell session):
+
+```powershell
+$env:PYPI_API_TOKEN = 'pypi-<your-token-here>'
+# or the less-preferred variable used by older scripts
+$env:TWINE_PASSWORD = 'pypi-<your-token-here>'
+```
+
+2) Run the push script (it will install twine into the project's venv and upload):
+
+```powershell
+.\build_tools\push.ps1
+```
+
+GitHub Actions (automated build & publish)
+
+What the workflow does
+- For each Python version and architecture in the matrix it:
+  - Checks out the repo
+  - Sets up Python (x86/x64)
+  - Installs build dependencies (nuitka, wheel, setuptools)
+  - Runs `make_nuitka_wheel.ps1` to build a wheel
+  - Uploads the built wheel(s) as an artifact for inspection
+- If the workflow run is triggered by a pushed tag (e.g. `v1.2.3`) and `PYPI_API_TOKEN` is set as a repository secret, the workflow will run `twine` to upload `dist/*` to PyPI.
+
+One-time setup on GitHub
+1. Create a PyPI API token at https://pypi.org (Account → API tokens).
+2. In GitHub, go to the repository: Settings → Secrets and variables → Actions → New repository secret
+   - Name: `PYPI_API_TOKEN`
+   - Value: (the token you copied from PyPI)
+
+Triggering a publish
+- To test the workflow without publishing, run the workflow manually from Actions → your workflow → Run workflow.
+- To publish to PyPI, push a tag. Example:
+
+```powershell
+git add .
+git commit -m "release prep"
+git tag v1.0.0
+git push origin main
+git push origin v1.0.0
+```
+
+## Versioning
+
+The build scripts set a `SMART_VERSION` environment variable that `setup_build_pkg.py` reads and uses as the package version when building a wheel. By default `make_nuitka_wheel.ps1` generates a timestamp-based PEP-440-friendly version to keep builds unique (useful for automated builds).
+
+You can control the version in three ways:
+
+1) Let the build produce a timestamped version (default)
+- This happens automatically when you run `make_nuitka_wheel.ps1` without `-Version`. The script sets `SMART_VERSION` to a value like `2026.1.2.10.5+2026.01.02.10.05` (format keeps it PEP-440 compatible while preserving a raw timestamp suffix).
+
+2) Provide an explicit version when running the build script
+- Use the `-Version` parameter to set a specific PEP-440 compliant version string. Example:
+
+```powershell
+# Set the build version explicitly
+.\build_tools\make_nuitka_wheel.ps1 -PythonExe "C:\Path\To\python.exe" -Version "1.2.3"
+```
+
+- The provided `-Version` value overrides the generated timestamp and is exported as `SMART_VERSION` for the wheel build.
+
+3) In CI (recommended for releases): use the git tag as the version
+- When publishing releases from CI you typically want the wheel version to match the git tag (for example `v1.2.3` or `1.2.3`). You can pass the tag name into the build script by supplying `-Version` or by exporting `SMART_VERSION` in the runner environment.
+
+Example (GitHub Actions step) — pass the tag name into the build script:
+
+```yaml
+- name: Build wheel (Nuitka)
+  shell: pwsh
+  run: |
+    $py = (Get-Command python).Source
+    $ver = '${{ github.ref_name }}'   # e.g. 'v1.2.3' or '1.2.3'
+    Write-Host "Building wheel for version: $ver"
+    .\build_tools\make_nuitka_wheel.ps1 -PythonExe $py -Version $ver
+```
+
+Notes on version format
+- Use a PEP-440 compliant version string (for example: `1.2.3`, `1.2.3.post1`, `1.2.3rc1`). Avoid spaces or characters that are illegal in wheel metadata.
+- If you use git tags prefixed with `v` (`v1.2.3`) and prefer to drop the `v`, strip it in CI before passing to `-Version` (for example trim the leading `v` in the script or set `-Version ${{ github.ref_name | replace('v','') }}`).
+
+How `setup_build_pkg.py` reads the version
+- `setup_build_pkg.py` uses `os.environ.get('SMART_VERSION', '0.0.0')` as the package `version`. The `make_nuitka_wheel.ps1` script sets `SMART_VERSION` before invoking `setup_build_pkg.py`, so the wheel will carry the `SMART_VERSION` value.
+
+Troubleshooting
+- If you see `0.0.0` in the built wheel metadata, `SMART_VERSION` was not set in the environment at package-build time. Confirm you invoked `make_nuitka_wheel.ps1` (it sets `SMART_VERSION`) and that `setup_build_pkg.py` is executed in the same process/venv context.
+- If a wheel is already published with an identical version, PyPI rejects the upload; ensure you increment the version for each published release.
+
+Notes & troubleshooting
+- Make sure you build wheels on Windows for Windows wheels. The GitHub Actions workflow uses `runs-on: windows-latest`.
+- Ensure you build one wheel per ABI. For Windows you typically need both win32 and win_amd64 if you support 32-bit and 64-bit Python users.
+- If a user reports "No module named 'pywinGUI.controller'" after installing from PyPI:
+  1. Ask them to run `python -c "import platform,sys; print(sys.executable, platform.python_version(), platform.architecture())"` and `python -m pip show -f pywinGUI`.
+  2. Verify they installed the wheel matching their Python bitness. If not, provide the correct wheel or publish both ABI wheels.
+  3. If the installed package has an incorrectly named file (e.g. `_init_.py`), remove the package folder and reinstall.
+
+CI considerations
+- If Nuitka or compiled code requires MSVC or other build tools on the runner, add the installation steps in the workflow (Chocolatey or Visual Studio Build Tools) before running the build script.
+- The workflow currently publishes only on tag pushes. You can adjust it to publish on a release or add manual approvals.
+
+Contact
+- If a build fails or a wheel raises import errors on a target interpreter, collect the following and open an issue:
+  - The wheel filename
+  - The output of `python -c "import platform,sys; print(sys.executable, platform.python_version(), platform.architecture())"` on the failing machine
+  - The output of `python -m pip show -f pywinGUI`
+  - Any traceback from attempting to `import pywinGUI.controller`
+
+---
+
+This README is intentionally minimal and focused on build and release flow. If you want, I can:
+- Add a short `RELEASE.md` with step-by-step release checklist and gating rules.
+- Create a GitHub Actions job that requires manual approval before upload.
+- Add `cibuildwheel` usage for cross-platform future support.
+
+Which of these would you like next?
