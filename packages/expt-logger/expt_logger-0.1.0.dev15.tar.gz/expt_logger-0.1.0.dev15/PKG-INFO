@@ -1,0 +1,380 @@
+Metadata-Version: 2.4
+Name: expt-logger
+Version: 0.1.0.dev15
+Summary: Simple experiment logging library
+Requires-Python: >=3.10
+Requires-Dist: requests>=2.31.0
+Description-Content-Type: text/markdown
+
+# expt_logger
+
+Simple experiment tracking for RL training with a W&B-style API.
+
+## Quick Start
+
+**Install:**
+```bash
+uv add expt-logger
+# or
+pip install expt-logger
+```
+
+**Set your API key:**
+```bash
+export EXPT_LOGGER_API_KEY=your_api_key
+```
+
+**Start logging:**
+```python
+import expt_logger
+
+# Initialize run with config
+expt_logger.init(
+    name="grpo-math",
+    config={"lr": 3e-6, "batch_size": 8}
+)
+
+# Get experiment URLs
+print(f"View experiment: {expt_logger.experiment_url()}")
+print(f"Base URL: {expt_logger.base_url()}")
+
+# Log scalar metrics
+expt_logger.log({
+    "train/loss": 0.45,
+    "train/kl": 0.02,
+    "train/reward": 0.85
+}, commit=False)
+# Not committing means the step count will not increase
+# and the logs will be buffered
+
+# Log RL rollouts with rewards
+expt_logger.log_rollout(
+    prompt="What is 2+2?",
+    messages=[{"role": "assistant", "content": "The answer is 4."}],
+    rewards={"correctness": 1.0, "format": 0.9},
+    mode="train",
+    commit=True 
+)
+# When commit is True (the default),
+# this log and all buffered logs will be pushed
+# and the step count will be incremented
+
+expt_logger.end()
+```
+
+## Core Features
+
+### Scalar Metrics
+
+Log training metrics with automatic step tracking:
+
+```python
+# Batch multiple metrics at the same step
+expt_logger.log({"loss": 0.5}, commit=False)
+expt_logger.log({"accuracy": 0.9}, commit=False)
+expt_logger.commit()  # Commit both at step 1, then increment to step 2
+
+# Or commit immediately
+expt_logger.log({"loss": 0.4})  # Commit at step 2, increment to 3
+
+# Use slash prefixes for train/eval modes
+expt_logger.log({
+    "train/loss": 0.5,
+    "eval/loss": 0.6
+}, step=10)
+
+# Or set mode explicitly
+expt_logger.log({"loss": 0.5}, mode="eval")
+```
+
+**Note:** Metrics default to `"train"` mode when no mode is specified and keys don't have slash prefixes.
+
+### Rollouts (RL-specific)
+
+Log conversation rollouts with multiple reward functions:
+
+```python
+# Batch multiple rollouts at the same step
+expt_logger.log_rollout(
+    prompt="Solve: x^2 - 5x + 6 = 0",
+    messages=[
+        {"role": "assistant", "content": "Let me factor this..."},
+        {"role": "user", "content": "Can you verify?"},
+        {"role": "assistant", "content": "Sure! (x-2)(x-3) = 0..."}
+    ],
+    rewards={
+        "correctness": 1.0,
+        "format": 0.9,
+        "helpfulness": 0.85
+    },
+    mode="train",
+    commit=False
+)
+
+expt_logger.log_rollout(
+    prompt="Another problem...",
+    messages=[{"role": "assistant", "content": "Solution..."}],
+    rewards={"correctness": 0.8},
+    mode="train"
+)
+# Commit both rollouts at the same step
+
+# Or commit immediately
+expt_logger.log_rollout(
+    prompt="Yet another...",
+    messages=[{"role": "assistant", "content": "Answer..."}],
+    rewards={"correctness": 1.0},
+    step=5,
+    mode="train"
+)
+```
+
+**Flexible Prompt Format:**
+
+The `prompt` parameter accepts either a string or a dict with a `'content'` key:
+
+```python
+# String format (simple)
+expt_logger.log_rollout(
+    prompt="What is 2+2?",
+    messages=[{"role": "assistant", "content": "4"}],
+    rewards={"correctness": 1.0}
+)
+
+# Dict format (when prompt is part of a structured object)
+expt_logger.log_rollout(
+    prompt={"role": "user", "content": "What is 2+2?"},  # extracts 'content'
+    messages=[{"role": "assistant", "content": "4"}],
+    rewards={"correctness": 1.0}
+)
+```
+
+- **Messages format:** List of dicts with `"role"` and `"content"` keys (both must be strings)
+- **Rewards format:** Dict of reward names to numeric values (no NaN or Infinity)
+- **Mode:** `"train"` or `"eval"` (default: `"train"`)
+- **Commit:** `True` (default) to commit immediately, `False` to batch
+
+### Configuration
+
+Track hyperparameters and update them dynamically:
+
+```python
+expt_logger.init(config={"lr": 0.001, "batch_size": 32})
+
+# Update config during training - attribute style
+expt_logger.config().lr = 0.0005
+
+# Or dict style
+expt_logger.config()["epochs"] = 100
+
+# Or bulk update
+expt_logger.config().update({"model": "gpt2"})
+
+# Or store the config object for multiple updates
+config = expt_logger.config()
+config.lr = 0.0005
+config["epochs"] = 100
+config.update({"model": "gpt2"})
+```
+
+### API Key & Server Configuration
+
+**API Key** (required):
+```bash
+export EXPT_LOGGER_API_KEY=your_api_key
+```
+Or pass directly:
+```python
+expt_logger.init(api_key="your_key")
+```
+
+**Custom server URL** (optional, for self-hosting):
+```bash
+export EXPT_LOGGER_BASE_URL=https://your-server.com
+```
+Or:
+```python
+expt_logger.init(base_url="https://your-server.com")
+```
+
+### Accessing Experiment URLs
+
+Get the experiment URL and base URL:
+
+```python
+expt_logger.init(name="my-experiment")
+
+# Get the full experiment URL to view in browser
+print(expt_logger.experiment_url())
+# https://app.cgft.io/experiments/ccf1f879-50a6-492b-9072-fed6effac731
+
+# Get the base URL of the tracking server
+print(expt_logger.base_url())
+# https://app.cgft.io
+```
+
+## Multi-Process Logging
+
+For distributed training or multi-process scenarios, subprocesses can log to the same experiment created by the main process. When `init()` creates a new experiment, it stores the experiment id in expt-logger-experiment-id.txt in the temp folder so other processes can read it.
+
+```python
+import expt_logger
+
+# Main process creates the experiment
+# This automatically creates file expt-logger-experiment-id.txt
+expt_logger.init(name="distributed-training")
+
+# Spawn subprocesses...
+# They inherit the environment variable automatically
+```
+
+In subprocesses:
+```python
+import expt_logger
+
+# Subprocess
+expt_logger.init(is_main_process=False)
+
+# Log as usual - all logs go to the same experiment
+expt_logger.log({"train/loss": 0.5})
+expt_logger.end()
+```
+
+**Note:** If `is_main_process=False` but the file is not created, it will throw an error.
+
+## API Reference
+
+### `expt_logger.init()`
+
+```python
+init(
+    name: str | None = None,
+    config: dict[str, Any] | None = None,
+    api_key: str | None = None,
+    base_url: str | None = None,
+    is_main_process: bool = True
+) -> Run
+```
+
+- `name`: Experiment name (auto-generated if not provided)
+- `config`: Initial hyperparameters
+- `api_key`: API key (or set `EXPT_LOGGER_API_KEY`)
+- `base_url`: Custom server URL (or set `EXPT_LOGGER_BASE_URL`)
+- `is_main_process`: If `False`, read experiment ID from temp file instead of creating a new experiment (for multi-process logging)
+
+**Note:** When creating a new experiment (main process), `init()` automatically sets `EXPT_LOGGER_EXPERIMENT_ID` and writes to a temp file so subprocesses can discover it.
+
+### `expt_logger.log()`
+
+```python
+log(
+    metrics: dict[str, float],
+    step: int | None = None,
+    mode: str | None = None,
+    commit: bool = True
+)
+```
+
+- `metrics`: Dict of metric names to values
+- `step`: Step number (auto-increments if not provided)
+- `mode`: Default mode for keys without slashes (default: `"train"`)
+- `commit`: If `True` (default), commit immediately and increment step. If `False`, buffer metrics until commit.
+
+### `expt_logger.log_rollout()`
+
+```python
+log_rollout(
+    prompt: str | dict[str, str],
+    messages: list[dict[str, str]],
+    rewards: dict[str, float],
+    step: int | None = None,
+    mode: str = "train",
+    commit: bool = True
+)
+```
+
+- `prompt`: The prompt text (str) or dict with 'content' key (content will be extracted)
+- `messages`: List of `{"role": ..., "content": ...}` dicts (both must be strings)
+- `rewards`: Dict of reward names to numeric values (must be valid numbers, not NaN/Inf)
+- `step`: Step number (must be non-negative integer if provided)
+- `mode`: `"train"` or `"eval"` (must be non-empty string)
+- `commit`: If `True` (default), commit immediately and increment step. If `False`, buffer metrics until commit.
+
+**Input Validation:**
+- All parameters are strictly validated
+- Invalid inputs raise `ValidationError` with descriptive error messages
+- Metric and reward values must be numeric (int/float) and cannot be NaN or Infinity
+
+### `expt_logger.commit()`
+
+```python
+commit()
+```
+
+Commit all pending metrics and rollouts, then increment the step counter.
+
+### `expt_logger.end()`
+
+```python
+end()
+```
+
+Finish the run and clean up resources.
+
+### Graceful Shutdown
+
+The library handles cleanup on:
+- Normal exit (`atexit`)
+- Ctrl+C (`SIGINT`)
+- `SIGTERM`
+
+All buffered data is flushed before exit.
+
+## Input Validation
+
+The library performs strict input validation to catch errors early and provide clear error messages:
+
+### Validated Inputs
+
+**For `log()`:**
+- Metrics dict keys must be non-empty strings
+- Metrics dict values must be numeric (int/float), not NaN or Infinity
+- Step must be non-negative integer (if provided)
+- Mode must be non-empty string (if provided)
+
+**For `log_rollout()`:**
+- Prompt can be str or dict (if dict, must have 'content' key with string value)
+- Messages must be list of dicts, each with 'role' and 'content' string keys
+- Rewards dict keys must be non-empty strings
+- Rewards dict values must be numeric (int/float), not NaN or Infinity
+- Step must be non-negative integer (if provided)
+- Mode must be non-empty string (if provided)
+
+### Error Handling
+
+Invalid inputs raise `ValidationError` with specific, actionable error messages:
+
+```python
+from expt_logger import ValidationError
+import math
+
+try:
+    expt_logger.log({"loss": math.nan})  # Invalid: NaN
+except ValidationError as e:
+    print(f"Validation failed: {e}")
+    # Output: Validation failed: Metric 'loss' has invalid value: nan (NaN is not allowed)
+
+try:
+    expt_logger.log_rollout(
+        prompt="Test",
+        messages=[{"role": "assistant"}],  # Invalid: missing 'content'
+        rewards={"score": 1.0}
+    )
+except ValidationError as e:
+    print(f"Validation failed: {e}")
+    # Output: Validation failed: Message at index 0 is missing required key 'content'
+```
+
+## Development
+
+For local development, see [DEVELOPMENT.md](DEVELOPMENT.md).
