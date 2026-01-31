@@ -1,0 +1,280 @@
+{% extends "base.html" %}
+
+{% block title %}Agent {{ agent.agent_id }} - MySQL to Sheets Sync{% endblock %}
+
+{% block page_title %}Agent Details{% endblock %}
+{% block page_subtitle %}<p class="text-muted">{{ agent.agent_id }}</p>{% endblock %}
+
+{% block breadcrumbs %}
+<nav aria-label="Breadcrumb" class="breadcrumb-nav">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item">
+            <a href="{{ url_for('dashboard.index') }}">
+                <svg class="home-icon" width="14" height="14" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"/>
+                </svg>
+                <span>Home</span>
+            </a>
+        </li>
+        <li class="breadcrumb-item">
+            <a href="{{ url_for('agents.agents_list') }}">Agents</a>
+        </li>
+        <li class="breadcrumb-item active" aria-current="page">
+            <span>{{ agent.agent_id }}</span>
+        </li>
+    </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="dashboard-grid">
+    <!-- Agent Info Card -->
+    <div class="card">
+        <div class="card-header">
+            <h2>Agent Information</h2>
+            <div class="card-actions">
+                {% if agent.status == 'online' %}
+                <span class="badge badge-success badge-lg">Online</span>
+                {% elif agent.status == 'busy' %}
+                <span class="badge badge-warning badge-lg">Busy</span>
+                {% else %}
+                <span class="badge badge-error badge-lg">Offline</span>
+                {% endif %}
+            </div>
+        </div>
+        <div class="info-grid">
+            <div class="info-item">
+                <span class="info-label">Agent ID</span>
+                <span class="info-value mono">{{ agent.agent_id }}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">Hostname</span>
+                <span class="info-value">{{ agent.hostname }}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">Version</span>
+                <span class="info-value mono">{{ agent.version }}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">Capabilities</span>
+                <span class="info-value">
+                    {% for cap in agent.capabilities %}
+                    <span class="badge">{{ cap }}</span>
+                    {% else %}
+                    <span class="text-muted">None</span>
+                    {% endfor %}
+                </span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">Current Job</span>
+                <span class="info-value">
+                    {% if agent.current_job_id %}
+                    <a href="{{ url_for('dashboard.jobs_page') }}?job_id={{ agent.current_job_id }}">#{{ agent.current_job_id }}</a>
+                    {% else %}
+                    <span class="text-muted">None</span>
+                    {% endif %}
+                </span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">Last Seen</span>
+                <span class="info-value">
+                    {% if agent.last_seen_at %}
+                    {{ agent.last_seen_at.strftime('%Y-%m-%d %H:%M:%S UTC') }}
+                    {% else %}
+                    <span class="text-muted">Never</span>
+                    {% endif %}
+                </span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">Registered</span>
+                <span class="info-value">
+                    {% if agent.created_at %}
+                    {{ agent.created_at.strftime('%Y-%m-%d %H:%M:%S UTC') }}
+                    {% else %}
+                    <span class="text-muted">Unknown</span>
+                    {% endif %}
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stats Cards -->
+    <div class="stats-row">
+        <div class="stat-card stat-success">
+            <div class="stat-value">{{ agent.jobs_completed }}</div>
+            <div class="stat-label">Jobs Completed</div>
+        </div>
+        <div class="stat-card stat-error">
+            <div class="stat-value">{{ agent.jobs_failed }}</div>
+            <div class="stat-label">Jobs Failed</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">
+                {% if agent.jobs_completed + agent.jobs_failed > 0 %}
+                {{ ((agent.jobs_completed / (agent.jobs_completed + agent.jobs_failed)) * 100)|round(1) }}%
+                {% else %}
+                0%
+                {% endif %}
+            </div>
+            <div class="stat-label">Success Rate</div>
+        </div>
+    </div>
+
+    <!-- Job History -->
+    <div class="card">
+        <div class="card-header">
+            <h2>Job History</h2>
+        </div>
+        {% if job_history %}
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Job ID</th>
+                    <th>Type</th>
+                    <th>Status</th>
+                    <th>Started</th>
+                    <th>Completed</th>
+                    <th>Error</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for job in job_history %}
+                <tr>
+                    <td><code>#{{ job.id }}</code></td>
+                    <td>{{ job.job_type }}</td>
+                    <td>
+                        {% if job.status == 'completed' %}
+                        <span class="badge badge-success">Completed</span>
+                        {% elif job.status == 'failed' %}
+                        <span class="badge badge-error">Failed</span>
+                        {% elif job.status == 'running' %}
+                        <span class="badge badge-warning">Running</span>
+                        {% else %}
+                        <span class="badge">{{ job.status }}</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ job.started_at or '-' }}</td>
+                    <td>{{ job.completed_at or '-' }}</td>
+                    <td class="error-cell">{{ job.error|truncate(50) if job.error else '-' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state-sm">
+            <p>No job history available.</p>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Crash Reports -->
+    {% if crash_reports %}
+    <div class="card">
+        <div class="card-header">
+            <h2>Crash Reports</h2>
+            <span class="badge badge-error">{{ crash_reports|length }}</span>
+        </div>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Time</th>
+                    <th>Exception</th>
+                    <th>Message</th>
+                    <th>Job ID</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for report in crash_reports %}
+                <tr>
+                    <td>{{ report.created_at }}</td>
+                    <td><code>{{ report.exception_type }}</code></td>
+                    <td class="error-cell">{{ report.exception_message|truncate(60) }}</td>
+                    <td>{{ report.job_id or '-' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+</div>
+
+<style>
+.info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    padding: 1rem 0;
+}
+
+.info-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.info-label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.info-value {
+    font-size: 0.875rem;
+}
+
+.info-value.mono {
+    font-family: monospace;
+}
+
+.stats-row {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.stat-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    padding: 1rem 1.5rem;
+    flex: 1;
+}
+
+.stat-value {
+    font-size: 2rem;
+    font-weight: 700;
+    line-height: 1;
+    margin-bottom: 0.25rem;
+}
+
+.stat-label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+}
+
+.stat-card.stat-success .stat-value { color: var(--success); }
+.stat-card.stat-error .stat-value { color: var(--error); }
+
+.badge-lg {
+    font-size: 0.875rem;
+    padding: 0.375rem 0.75rem;
+}
+
+.error-cell {
+    max-width: 300px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--error);
+    font-size: 0.75rem;
+}
+
+.empty-state-sm {
+    text-align: center;
+    padding: 2rem 1rem;
+    color: var(--text-muted);
+}
+</style>
+{% endblock %}

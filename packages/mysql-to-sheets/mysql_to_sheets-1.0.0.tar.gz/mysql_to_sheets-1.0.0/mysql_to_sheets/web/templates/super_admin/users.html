@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Super Admin - All Users</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/tailwind.css') }}">
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --success: #16a34a;
+            --error: #dc2626;
+            --warning: #ca8a04;
+            --bg: #f8fafc;
+            --card-bg: #ffffff;
+            --border: #e2e8f0;
+            --text: #1e293b;
+            --text-muted: #64748b;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.5;
+            padding: 2rem;
+        }
+
+        .container { max-width: 1400px; margin: 0 auto; }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
+
+        h1 { font-size: 1.5rem; font-weight: 600; }
+        .header-meta { display: flex; align-items: center; gap: 1rem; }
+        .version { color: var(--text-muted); font-size: 0.875rem; }
+
+        .super-admin-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.375rem;
+            padding: 0.25rem 0.75rem;
+            background: linear-gradient(135deg, #7c3aed 0%, #a855f7 100%);
+            color: white;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.025em;
+        }
+
+        nav {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 2rem;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 1rem;
+        }
+
+        nav a {
+            color: var(--text-muted);
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem;
+        }
+
+        nav a:hover { background: var(--border); color: var(--text); }
+        nav a.active { background: var(--primary); color: white; }
+
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .card h2 { font-size: 1.125rem; font-weight: 600; margin-bottom: 1rem; }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .stat-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 0.5rem;
+            padding: 1.25rem;
+        }
+
+        .stat-label {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            margin-bottom: 0.25rem;
+        }
+
+        .stat-value {
+            font-size: 1.75rem;
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            border: 1px solid var(--border);
+            border-radius: 0.375rem;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            background: var(--card-bg);
+            color: var(--text);
+            text-decoration: none;
+        }
+
+        .btn:hover { background: var(--bg); }
+        .btn-primary { background: var(--primary); color: white; border-color: var(--primary); }
+        .btn-primary:hover { background: var(--primary-hover); }
+        .btn-sm { padding: 0.25rem 0.5rem; font-size: 0.75rem; }
+
+        /* Filters */
+        .filters {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+            padding: 1rem;
+            background: var(--bg);
+            border-radius: 0.5rem;
+        }
+
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        .filter-group label {
+            font-size: 0.75rem;
+            font-weight: 500;
+            color: var(--text-muted);
+            text-transform: uppercase;
+        }
+
+        .filter-group input,
+        .filter-group select {
+            padding: 0.5rem 0.75rem;
+            border: 1px solid var(--border);
+            border-radius: 0.375rem;
+            font-size: 0.875rem;
+            min-width: 150px;
+        }
+
+        .filter-group input:focus,
+        .filter-group select:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+        }
+
+        .filter-actions {
+            display: flex;
+            align-items: flex-end;
+            gap: 0.5rem;
+        }
+
+        /* Table */
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 0.75rem 1rem; text-align: left; border-bottom: 1px solid var(--border); }
+        th { font-weight: 500; color: var(--text-muted); font-size: 0.75rem; text-transform: uppercase; background: var(--bg); }
+        tr:hover { background: var(--bg); }
+
+        .badge {
+            display: inline-flex;
+            padding: 0.25rem 0.5rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+
+        .badge-success { background: #dcfce7; color: #166534; }
+        .badge-warning { background: #fef3c7; color: #92400e; }
+        .badge-error { background: #fee2e2; color: #991b1b; }
+        .badge-info { background: #dbeafe; color: #1e40af; }
+        .badge-purple { background: #f3e8ff; color: #7c3aed; }
+        .badge-gray { background: #f1f5f9; color: #475569; }
+
+        .tier-badge {
+            font-size: 0.625rem;
+            padding: 0.125rem 0.375rem;
+            margin-left: 0.25rem;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            color: var(--text-muted);
+        }
+
+        /* Pagination */
+        .pagination {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 1.5rem;
+            padding-top: 1rem;
+            border-top: 1px solid var(--border);
+        }
+
+        .pagination-info {
+            font-size: 0.875rem;
+            color: var(--text-muted);
+        }
+
+        .pagination-controls {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .page-btn {
+            padding: 0.375rem 0.75rem;
+            border: 1px solid var(--border);
+            border-radius: 0.375rem;
+            background: var(--card-bg);
+            color: var(--text);
+            font-size: 0.875rem;
+            cursor: pointer;
+            text-decoration: none;
+        }
+
+        .page-btn:hover { background: var(--bg); }
+        .page-btn.active { background: var(--primary); color: white; border-color: var(--primary); }
+        .page-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* User row org info */
+        .org-info {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .org-name {
+            font-weight: 500;
+        }
+
+        .org-slug {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        /* Security notice */
+        .security-notice {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem 1rem;
+            background: #fef3c7;
+            border: 1px solid #fde68a;
+            border-radius: 0.5rem;
+            margin-bottom: 1.5rem;
+            font-size: 0.875rem;
+            color: #92400e;
+        }
+
+        .security-notice svg {
+            width: 20px;
+            height: 20px;
+            flex-shrink: 0;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .filters { flex-direction: column; }
+            .filter-group input, .filter-group select { width: 100%; }
+            table { font-size: 0.8125rem; }
+            th, td { padding: 0.5rem; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div>
+                <h1>Super Admin Dashboard</h1>
+                <span class="version">All Users Across Organizations</span>
+            </div>
+            <div class="header-meta">
+                <span class="super-admin-badge">
+                    <svg width="12" height="12" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                    </svg>
+                    Super Admin
+                </span>
+                <a href="{{ url_for('dashboard.index') }}" class="btn btn-sm">Exit to Dashboard</a>
+            </div>
+        </header>
+
+        <div class="security-notice">
+            <svg viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
+            </svg>
+            <span>
+                <strong>View-only access.</strong>
+                This page shows users across all organizations. Modifications must be made through the respective organization's user management page.
+            </span>
+        </div>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">Total Organizations</div>
+                <div class="stat-value">{{ organizations|length }}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Total Users (showing)</div>
+                <div class="stat-value">{{ total_count }}</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Filter Users</h2>
+            <form method="GET" action="{{ url_for('super_admin.users_list') }}">
+                <div class="filters">
+                    <div class="filter-group">
+                        <label for="search">Search</label>
+                        <input type="text" id="search" name="search" value="{{ search }}" placeholder="Email or name...">
+                    </div>
+
+                    <div class="filter-group">
+                        <label for="org">Organization</label>
+                        <select id="org" name="org">
+                            <option value="">All Organizations</option>
+                            {% for org in organizations %}
+                            <option value="{{ org.id }}" {% if org_filter == org.id %}selected{% endif %}>
+                                {{ org.name }} ({{ org.slug }})
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="filter-group">
+                        <label for="role">Role</label>
+                        <select id="role" name="role">
+                            <option value="">All Roles</option>
+                            {% for r in valid_roles %}
+                            <option value="{{ r }}" {% if role_filter == r %}selected{% endif %}>{{ r|title }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="filter-group">
+                        <label for="status">Status</label>
+                        <select id="status" name="status">
+                            <option value="active" {% if status_filter == 'active' %}selected{% endif %}>Active Only</option>
+                            <option value="inactive" {% if status_filter == 'inactive' %}selected{% endif %}>Inactive Only</option>
+                            <option value="all" {% if status_filter == 'all' %}selected{% endif %}>All</option>
+                        </select>
+                    </div>
+
+                    <div class="filter-group">
+                        <label for="per_page">Per Page</label>
+                        <select id="per_page" name="per_page">
+                            <option value="25" {% if per_page == 25 %}selected{% endif %}>25</option>
+                            <option value="50" {% if per_page == 50 %}selected{% endif %}>50</option>
+                            <option value="100" {% if per_page == 100 %}selected{% endif %}>100</option>
+                        </select>
+                    </div>
+
+                    <div class="filter-actions">
+                        <button type="submit" class="btn btn-primary">Apply Filters</button>
+                        <a href="{{ url_for('super_admin.users_list') }}" class="btn">Clear</a>
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        <div class="card">
+            <h2>Users</h2>
+
+            {% if users %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>User</th>
+                        <th>Organization</th>
+                        <th>Role</th>
+                        <th>Status</th>
+                        <th>Last Login</th>
+                        <th>Created</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for user in users %}
+                    <tr>
+                        <td>
+                            <div style="font-weight: 500;">{{ user.display_name }}</div>
+                            <div style="font-size: 0.8125rem; color: var(--text-muted);">{{ user.email }}</div>
+                        </td>
+                        <td>
+                            <div class="org-info">
+                                <span class="org-name">
+                                    {{ user.organization_name }}
+                                    <span class="badge tier-badge badge-{% if user.organization_tier == 'enterprise' %}purple{% elif user.organization_tier == 'business' %}info{% elif user.organization_tier == 'pro' %}warning{% else %}gray{% endif %}">
+                                        {{ user.organization_tier|upper }}
+                                    </span>
+                                </span>
+                                <span class="org-slug">{{ user.organization_slug }}</span>
+                            </div>
+                        </td>
+                        <td>
+                            <span class="badge {% if user.role == 'owner' %}badge-purple{% elif user.role == 'admin' %}badge-warning{% elif user.role == 'operator' %}badge-info{% else %}badge-gray{% endif %}">
+                                {{ user.role|title }}
+                            </span>
+                        </td>
+                        <td>
+                            <span class="badge {% if user.is_active %}badge-success{% else %}badge-error{% endif %}">
+                                {{ 'Active' if user.is_active else 'Inactive' }}
+                            </span>
+                        </td>
+                        <td>
+                            {% if user.last_login_at %}
+                            {{ user.last_login_at[:16] }}
+                            {% else %}
+                            <span style="color: var(--text-muted);">Never</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ user.created_at[:10] if user.created_at else 'N/A' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+
+            <div class="pagination">
+                <div class="pagination-info">
+                    Showing {{ ((page - 1) * per_page) + 1 }} to {{ [page * per_page, total_count]|min }} of {{ total_count }} users
+                </div>
+                <div class="pagination-controls">
+                    {% if has_prev %}
+                    <a href="{{ url_for('super_admin.users_list', page=page-1, per_page=per_page, search=search, org=org_filter, role=role_filter, status=status_filter) }}" class="page-btn">Previous</a>
+                    {% else %}
+                    <button class="page-btn" disabled>Previous</button>
+                    {% endif %}
+
+                    <span style="padding: 0 0.5rem;">Page {{ page }} of {{ total_pages }}</span>
+
+                    {% if has_next %}
+                    <a href="{{ url_for('super_admin.users_list', page=page+1, per_page=per_page, search=search, org=org_filter, role=role_filter, status=status_filter) }}" class="page-btn">Next</a>
+                    {% else %}
+                    <button class="page-btn" disabled>Next</button>
+                    {% endif %}
+                </div>
+            </div>
+            {% else %}
+            <div class="empty-state">
+                <p>No users found matching your filters.</p>
+                <a href="{{ url_for('super_admin.users_list') }}" class="btn" style="margin-top: 1rem;">Clear Filters</a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</body>
+</html>

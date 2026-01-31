@@ -1,0 +1,365 @@
+{% extends "base.html" %}
+
+{% block title %}Sync Configs - MySQL to Sheets Sync{% endblock %}
+
+{% block breadcrumbs %}
+{{ breadcrumb([{'label': 'Sync', 'url': '/configs'}, {'label': 'Configurations'}]) }}
+{% endblock %}
+
+{% block page_title %}Sync Configurations{% endblock %}
+{% block page_subtitle %}
+<span class="version">{{ current_user.organization_name }}</span>
+{% endblock %}
+
+{% block content %}
+<div class="bg-white border border-slate-200 rounded-lg p-6 shadow-sm">
+    <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-semibold text-slate-900">Configurations</h2>
+        <div class="flex gap-2">
+            <button class="inline-flex items-center px-3 py-2 text-sm font-medium rounded-md bg-white text-slate-700 hover:bg-slate-50 border border-slate-300 transition-colors" onclick="exportConfigs()">Export</button>
+            <button class="inline-flex items-center px-3 py-2 text-sm font-medium rounded-md bg-white text-slate-700 hover:bg-slate-50 border border-slate-300 transition-colors" onclick="openModal('importModal')">Import</button>
+            <button class="inline-flex items-center px-3 py-2 text-sm font-medium rounded-md bg-emerald-600 text-white hover:bg-emerald-700 transition-colors" onclick="runSelected()">Run Selected</button>
+            <button class="inline-flex items-center px-3 py-2 text-sm font-medium rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors" onclick="openAddModal()">Add Config</button>
+        </div>
+    </div>
+
+    {% if configs %}
+    <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+            <thead class="bg-slate-50 text-slate-600 text-left">
+                <tr>
+                    <th class="px-4 py-3 font-medium w-10"><input type="checkbox" id="selectAll" onchange="toggleSelectAll()" class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"></th>
+                    <th class="px-4 py-3 font-medium">Name</th>
+                    <th class="px-4 py-3 font-medium">Sheet</th>
+                    <th class="px-4 py-3 font-medium">Mode</th>
+                    <th class="px-4 py-3 font-medium">Status</th>
+                    <th class="px-4 py-3 font-medium">Actions</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-200" id="configList">
+                {% for config in configs %}
+                <tr data-config-id="{{ config.id }}" class="hover:bg-slate-50">
+                    <td class="px-4 py-3"><input type="checkbox" class="config-checkbox h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" value="{{ config.id }}"></td>
+                    <td class="px-4 py-3">
+                        <span class="font-medium text-slate-900">{{ config.name }}</span>
+                        {% if config.description %}
+                        <div class="truncate text-xs text-slate-500 mt-0.5">{{ config.description }}</div>
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-3 text-slate-600 truncate max-w-[120px]">{{ config.sheet_id[:20] }}...</td>
+                    <td class="px-4 py-3 text-slate-600">{{ config.sync_mode }}</td>
+                    <td class="px-4 py-3">
+                        {% if config.enabled %}
+                        <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-800">Enabled</span>
+                        {% else %}
+                        <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-800">Disabled</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-3">
+                        <div class="flex gap-2">
+                            <button class="px-2.5 py-1.5 text-xs font-medium rounded bg-emerald-600 text-white hover:bg-emerald-700 transition-colors" onclick="runConfig({{ config.id }})">Run</button>
+                            <button class="px-2.5 py-1.5 text-xs font-medium rounded bg-white text-slate-700 hover:bg-slate-50 border border-slate-300 transition-colors" onclick="openEditModal({{ config|tojson }})">Edit</button>
+                            <button class="px-2.5 py-1.5 text-xs font-medium rounded bg-red-600 text-white hover:bg-red-700 transition-colors" onclick="deleteConfig({{ config.id }}, '{{ config.name }}')">Delete</button>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="text-center py-12">
+        <div class="text-slate-400 mb-2">
+            <svg class="mx-auto h-12 w-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+        </div>
+        <p class="text-slate-600 font-medium">No configurations found</p>
+        <p class="text-sm text-slate-500 mt-1">Click "Add Config" to create your first sync configuration.</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Add/Edit Modal -->
+<div class="modal" id="configModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 id="modalTitle">Add Configuration</h3>
+            <button class="modal-close" onclick="closeModal('configModal')">&times;</button>
+        </div>
+        <form id="configForm" onsubmit="saveConfig(event)">
+            <input type="hidden" id="configId" name="id">
+            <div class="form-group">
+                <div class="label-with-help">
+                    <label for="configName">Name</label>
+                    <span class="help-icon" title="A memorable name for this sync configuration">?</span>
+                </div>
+                <input type="text" id="configName" name="name" required placeholder="e.g., Daily Sales Report">
+            </div>
+            <div class="form-group">
+                <div class="label-with-help">
+                    <label for="configDescription">Description</label>
+                    <span class="help-icon" title="Optional notes about what this sync does">?</span>
+                </div>
+                <input type="text" id="configDescription" name="description" placeholder="Optional description">
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <div class="label-with-help">
+                        <label for="configSheetId">Sheet ID</label>
+                        <span class="help-icon" title="From URL: docs.google.com/spreadsheets/d/SHEET_ID/edit">?</span>
+                    </div>
+                    <input type="text" id="configSheetId" name="sheet_id" required placeholder="Paste Sheet ID or full URL">
+                    <div class="field-hint">Find in your spreadsheet URL</div>
+                </div>
+                <div class="form-group">
+                    <div class="label-with-help">
+                        <label for="configWorksheet">Worksheet</label>
+                        <span class="help-icon" title="Tab name at the bottom of the spreadsheet">?</span>
+                    </div>
+                    <input type="text" id="configWorksheet" name="worksheet" value="Sheet1" placeholder="Sheet1">
+                    <div class="field-hint">Tab name (default: Sheet1)</div>
+                </div>
+            </div>
+            <div class="form-group">
+                <div class="label-with-help">
+                    <label for="configQuery">SQL Query</label>
+                    <span class="help-icon" title="SELECT query to run against your database">?</span>
+                </div>
+                <textarea id="configQuery" name="sql_query" required placeholder="SELECT * FROM table_name"></textarea>
+                <div class="field-hint">Only SELECT queries are allowed</div>
+            </div>
+
+            <!-- Advanced Options (Collapsed) -->
+            <details class="collapsible-section" style="margin-top: 1rem;">
+                <summary>Advanced Options</summary>
+                <div class="collapsible-content">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <div class="label-with-help">
+                                <label for="configMode">Sync Mode</label>
+                                <span class="help-icon" title="How to update the sheet: replace all, append rows, or stream large datasets">?</span>
+                            </div>
+                            <select id="configMode" name="sync_mode">
+                                <option value="replace">Replace - Clear and rewrite all data</option>
+                                <option value="append">Append - Add rows without clearing</option>
+                                <option value="streaming">Streaming - For large datasets (>10k rows)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <div class="label-with-help">
+                                <label for="configColumnCase">Column Case</label>
+                                <span class="help-icon" title="Transform column header capitalization">?</span>
+                            </div>
+                            <select id="configColumnCase" name="column_case">
+                                <option value="none">None - Keep original</option>
+                                <option value="lower">lowercase</option>
+                                <option value="upper">UPPERCASE</option>
+                                <option value="title">Title Case</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <div class="label-with-help">
+                            <label for="configColumnMap">Column Mapping (JSON)</label>
+                            <span class="help-icon" title="Rename columns in output. Format: {&quot;db_column&quot;: &quot;Display Name&quot;}">?</span>
+                        </div>
+                        <input type="text" id="configColumnMap" name="column_mapping" placeholder='{"old_col": "New Name", "cust_id": "Customer ID"}'>
+                        <div class="field-hint">Optional: Rename columns in the output</div>
+                    </div>
+                </div>
+            </details>
+
+            <div class="form-actions">
+                <button type="button" class="btn" onclick="closeModal('configModal')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Save</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Import Modal -->
+<div class="modal" id="importModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>Import Configurations</h3>
+            <button class="modal-close" onclick="closeModal('importModal')">&times;</button>
+        </div>
+        <form id="importForm" onsubmit="importConfigs(event)">
+            <div class="form-group">
+                <label for="importFile">Select YAML or JSON file</label>
+                <input type="file" id="importFile" name="file" accept=".yaml,.yml,.json" required>
+            </div>
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="skipExisting" name="skip_existing"> Skip existing configurations
+                </label>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn" onclick="closeModal('importModal')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Import</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function openAddModal() {
+        document.getElementById('modalTitle').textContent = 'Add Configuration';
+        document.getElementById('configForm').reset();
+        document.getElementById('configId').value = '';
+        openModal('configModal');
+    }
+
+    function openEditModal(config) {
+        document.getElementById('modalTitle').textContent = 'Edit Configuration';
+        document.getElementById('configId').value = config.id;
+        document.getElementById('configName').value = config.name;
+        document.getElementById('configDescription').value = config.description || '';
+        document.getElementById('configSheetId').value = config.sheet_id;
+        document.getElementById('configWorksheet').value = config.worksheet_name;
+        document.getElementById('configQuery').value = config.sql_query;
+        document.getElementById('configMode').value = config.sync_mode;
+        document.getElementById('configColumnCase').value = config.column_case;
+        document.getElementById('configColumnMap').value = config.column_mapping ? JSON.stringify(config.column_mapping) : '';
+        openModal('configModal');
+    }
+
+    async function saveConfig(e) {
+        e.preventDefault();
+        const form = e.target;
+        const id = form.querySelector('#configId').value;
+        const isEdit = !!id;
+
+        let columnMapping = null;
+        const columnMapStr = form.column_mapping.value;
+        if (columnMapStr) {
+            try {
+                columnMapping = JSON.parse(columnMapStr);
+            } catch {
+                showAlert('Invalid column mapping JSON', 'error');
+                return;
+            }
+        }
+
+        const data = {
+            name: form.name.value,
+            description: form.description.value,
+            sheet_id: form.sheet_id.value,
+            worksheet_name: form.worksheet.value,
+            sql_query: form.sql_query.value,
+            sync_mode: form.sync_mode.value,
+            column_case: form.column_case.value,
+            column_mapping: columnMapping,
+        };
+
+        try {
+            const url = isEdit ? `/api/configs/${id}` : '/api/configs';
+            const method = isEdit ? 'PUT' : 'POST';
+            const res = await fetch(url, {
+                method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data),
+            });
+            const result = await res.json();
+            if (result.success) {
+                showAlert(isEdit ? 'Configuration updated' : 'Configuration created', 'success');
+                closeModal('configModal');
+                location.reload();
+            } else {
+                showAlert(result.message || 'Failed to save', 'error');
+            }
+        } catch (err) {
+            showAlert('An error occurred', 'error');
+        }
+    }
+
+    async function deleteConfig(id, name) {
+        if (!confirmAction(`Are you sure you want to delete "${name}"?`)) return;
+
+        try {
+            const res = await fetch(`/api/configs/${id}`, { method: 'DELETE' });
+            const result = await res.json();
+            if (result.success) {
+                showAlert('Configuration deleted', 'success');
+                location.reload();
+            } else {
+                showAlert(result.message || 'Failed to delete', 'error');
+            }
+        } catch (err) {
+            showAlert('An error occurred', 'error');
+        }
+    }
+
+    async function runConfig(id) {
+        showAlert('Running sync...', 'info');
+        try {
+            const res = await fetch(`/api/configs/${id}/run`, { method: 'POST' });
+            const result = await res.json();
+            if (result.success) {
+                showAlert(`Sync completed: ${result.rows_synced} rows`, 'success');
+            } else {
+                showAlert(result.message || 'Sync failed', 'error');
+            }
+        } catch (err) {
+            showAlert('An error occurred', 'error');
+        }
+    }
+
+    function toggleSelectAll() {
+        const checked = document.getElementById('selectAll').checked;
+        document.querySelectorAll('.config-checkbox').forEach(cb => cb.checked = checked);
+    }
+
+    async function runSelected() {
+        const selected = Array.from(document.querySelectorAll('.config-checkbox:checked')).map(cb => cb.value);
+        if (selected.length === 0) {
+            showAlert('No configurations selected', 'error');
+            return;
+        }
+
+        showAlert(`Running ${selected.length} sync(s)...`, 'info');
+
+        for (const id of selected) {
+            await runConfig(id);
+        }
+    }
+
+    async function exportConfigs() {
+        window.location.href = '/api/configs/export?format=yaml';
+    }
+
+    async function importConfigs(e) {
+        e.preventDefault();
+        const form = e.target;
+        const fileInput = form.file;
+        const file = fileInput.files[0];
+
+        if (!file) {
+            showAlert('Please select a file', 'error');
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('skip_existing', document.getElementById('skipExisting').checked);
+
+        try {
+            const res = await fetch('/api/configs/import', {
+                method: 'POST',
+                body: formData,
+            });
+            const result = await res.json();
+            if (result.success) {
+                showAlert(`Imported ${result.imported} configurations`, 'success');
+                closeModal('importModal');
+                location.reload();
+            } else {
+                showAlert(result.message || 'Import failed', 'error');
+            }
+        } catch (err) {
+            showAlert('An error occurred', 'error');
+        }
+    }
+</script>
+{% endblock %}

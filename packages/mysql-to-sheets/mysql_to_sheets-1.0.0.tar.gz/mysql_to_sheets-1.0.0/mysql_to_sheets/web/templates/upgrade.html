@@ -1,0 +1,362 @@
+{% extends "base.html" %}
+
+{% block title %}Upgrade Plan - MySQL to Sheets Sync{% endblock %}
+
+{% block content %}
+<style>
+    .upgrade-container {
+        max-width: 1000px;
+        margin: 0 auto;
+    }
+
+    .upgrade-header {
+        text-align: center;
+        margin-bottom: 3rem;
+    }
+
+    .upgrade-header h1 {
+        font-size: 2rem;
+        font-weight: 700;
+        margin-bottom: 0.5rem;
+    }
+
+    .upgrade-header p {
+        color: var(--text-muted);
+        font-size: 1.125rem;
+    }
+
+    .plans-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 1.5rem;
+        margin-bottom: 3rem;
+    }
+
+    @media (max-width: 900px) {
+        .plans-grid { grid-template-columns: 1fr; }
+    }
+
+    .plan-card {
+        background: var(--card-bg);
+        border: 2px solid var(--border);
+        border-radius: 1rem;
+        padding: 2rem;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .plan-card.recommended {
+        border-color: var(--primary);
+        position: relative;
+    }
+
+    .plan-card.recommended::before {
+        content: 'Most Popular';
+        position: absolute;
+        top: -12px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: var(--primary);
+        color: white;
+        padding: 0.25rem 0.75rem;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+
+    .plan-card.current {
+        border-color: var(--success);
+    }
+
+    .plan-name {
+        font-size: 1.25rem;
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+    }
+
+    .plan-price {
+        font-size: 2rem;
+        font-weight: 700;
+        margin-bottom: 0.25rem;
+    }
+
+    .plan-price span {
+        font-size: 1rem;
+        font-weight: 400;
+        color: var(--text-muted);
+    }
+
+    .plan-description {
+        color: var(--text-muted);
+        font-size: 0.875rem;
+        margin-bottom: 1.5rem;
+        min-height: 3rem;
+    }
+
+    .plan-features {
+        list-style: none;
+        padding: 0;
+        margin: 0 0 1.5rem 0;
+        flex-grow: 1;
+    }
+
+    .plan-features li {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.5rem;
+        padding: 0.5rem 0;
+        font-size: 0.875rem;
+    }
+
+    .plan-features li svg {
+        width: 16px;
+        height: 16px;
+        color: var(--success);
+        flex-shrink: 0;
+        margin-top: 2px;
+    }
+
+    .plan-button {
+        display: block;
+        text-align: center;
+        padding: 0.75rem 1.5rem;
+        border-radius: 0.5rem;
+        font-weight: 500;
+        text-decoration: none;
+        transition: all 0.2s;
+    }
+
+    .plan-button.primary {
+        background: var(--primary);
+        color: white;
+    }
+
+    .plan-button.primary:hover {
+        background: var(--primary-hover);
+    }
+
+    .plan-button.secondary {
+        background: var(--bg);
+        color: var(--text);
+        border: 1px solid var(--border);
+    }
+
+    .plan-button.secondary:hover {
+        background: var(--border);
+    }
+
+    .plan-button.disabled {
+        background: var(--border);
+        color: var(--text-muted);
+        cursor: not-allowed;
+    }
+
+    .billing-info {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 0.5rem;
+        padding: 1.5rem;
+        text-align: center;
+    }
+
+    .billing-info p {
+        color: var(--text-muted);
+        margin-bottom: 1rem;
+    }
+
+    .billing-info a {
+        color: var(--primary);
+    }
+
+    .trial-banner {
+        background: #fef3c7;
+        border: 1px solid #fcd34d;
+        border-radius: 0.5rem;
+        padding: 1rem 1.5rem;
+        margin-bottom: 2rem;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+    }
+
+    .trial-banner svg {
+        width: 24px;
+        height: 24px;
+        color: #92400e;
+        flex-shrink: 0;
+    }
+
+    .trial-banner-content {
+        flex-grow: 1;
+    }
+
+    .trial-banner-content strong {
+        color: #92400e;
+    }
+
+    .trial-banner-content p {
+        color: #78350f;
+        font-size: 0.875rem;
+        margin: 0;
+    }
+</style>
+
+<div class="upgrade-container">
+    <div class="upgrade-header">
+        <h1>Choose Your Plan</h1>
+        <p>Select the plan that best fits your needs. Upgrade or downgrade anytime.</p>
+    </div>
+
+    {% if billing_status == 'trialing' %}
+    <div class="trial-banner">
+        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        <div class="trial-banner-content">
+            <strong>Your trial ends in {{ trial_days_remaining }} days</strong>
+            <p>Upgrade now to keep all your Pro features. Your data and settings will be preserved.</p>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="plans-grid">
+        <!-- Pro Plan -->
+        <div class="plan-card {% if current_tier == 'pro' and billing_status != 'trialing' %}current{% elif current_tier == 'free' %}recommended{% endif %}">
+            <div class="plan-name">Pro</div>
+            <div class="plan-price">$29<span>/month</span></div>
+            <p class="plan-description">For individual users and small teams getting started with data sync.</p>
+            <ul class="plan-features">
+                <li>
+                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                    <span>10 sync configurations</span>
+                </li>
+                <li>
+                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                    <span>5 scheduled jobs</span>
+                </li>
+                <li>
+                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                    <span>Email & Slack notifications</span>
+                </li>
+                <li>
+                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                    <span>Column mapping & transformations</span>
+                </li>
+                <li>
+                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                    <span>Incremental sync</span>
+                </li>
+                <li>
+                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                    <span>30-day history retention</span>
+                </li>
+            </ul>
+            {% if current_tier == 'pro' and billing_status != 'trialing' %}
+            <span class="plan-button disabled">Current Plan</span>
+            {% else %}
+            <a href="{{ billing_portal_url or '#' }}" class="plan-button primary">
+                {% if billing_status == 'trialing' %}Upgrade Now{% else %}Get Started{% endif %}
+            </a>
+            {% endif %}
+        </div>
+
+        <!-- Business Plan -->
+        <div class="plan-card {% if current_tier == 'business' %}current{% elif current_tier == 'pro' %}recommended{% endif %}">
+            <div class="plan-name">Business</div>
+            <div class="plan-price">$99<span>/month</span></div>
+            <p class="plan-description">For growing teams that need advanced features and collaboration.</p>
+            <ul class="plan-features">
+                <li>
+                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                    <span>50 sync configurations</span>
+                </li>
+                <li>
+                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                    <span>5 team members</span>
+                </li>
+                <li>
+                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                    <span>25 scheduled jobs</span>
+                </li>
+                <li>
+                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                    <span>Webhooks & integrations</span>
+                </li>
+                <li>
+                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                    <span>Snapshots & rollback</span>
+                </li>
+                <li>
+                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                    <span>Audit logs & RBAC</span>
+                </li>
+                <li>
+                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                    <span>90-day history retention</span>
+                </li>
+            </ul>
+            {% if current_tier == 'business' %}
+            <span class="plan-button disabled">Current Plan</span>
+            {% else %}
+            <a href="{{ billing_portal_url or '#' }}" class="plan-button primary">Upgrade</a>
+            {% endif %}
+        </div>
+
+        <!-- Enterprise Plan -->
+        <div class="plan-card {% if current_tier == 'enterprise' %}current{% endif %}">
+            <div class="plan-name">Enterprise</div>
+            <div class="plan-price">Custom</div>
+            <p class="plan-description">For large organizations with custom requirements and dedicated support.</p>
+            <ul class="plan-features">
+                <li>
+                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                    <span>Unlimited configurations</span>
+                </li>
+                <li>
+                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                    <span>Unlimited team members</span>
+                </li>
+                <li>
+                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                    <span>SSO / SAML / OIDC</span>
+                </li>
+                <li>
+                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                    <span>Data masking</span>
+                </li>
+                <li>
+                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                    <span>Custom retention policies</span>
+                </li>
+                <li>
+                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                    <span>Dedicated support</span>
+                </li>
+                <li>
+                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                    <span>SLA guarantee</span>
+                </li>
+            </ul>
+            {% if current_tier == 'enterprise' %}
+            <span class="plan-button disabled">Current Plan</span>
+            {% else %}
+            <a href="mailto:sales@example.com" class="plan-button secondary">Contact Sales</a>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="billing-info">
+        <p>
+            {% if billing_portal_url %}
+            Manage your subscription, update payment methods, and view invoices in your
+            <a href="{{ billing_portal_url }}" target="_blank">billing portal</a>.
+            {% else %}
+            Contact us to set up billing for your organization.
+            {% endif %}
+        </p>
+        <p style="font-size: 0.875rem;">
+            All plans include: API access, MySQL/PostgreSQL/SQLite support, and standard support.
+        </p>
+    </div>
+</div>
+{% endblock %}

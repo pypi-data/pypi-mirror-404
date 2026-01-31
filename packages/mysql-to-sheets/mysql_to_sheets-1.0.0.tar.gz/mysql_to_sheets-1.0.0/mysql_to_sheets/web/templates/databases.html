@@ -1,0 +1,304 @@
+{% extends "base.html" %}
+
+{% block title %}Databases - MySQL to Sheets Sync{% endblock %}
+
+{% block page_title %}Databases{% endblock %}
+{% block page_subtitle %}<p class="text-muted">Manage database connections and monitor health</p>{% endblock %}
+
+{% block content %}
+<div class="dashboard-grid">
+    <!-- Status Summary Cards -->
+    <div class="stats-row">
+        <div class="stat-card">
+            <div class="stat-value">{{ total_count }}</div>
+            <div class="stat-label">Total Databases</div>
+        </div>
+        <div class="stat-card stat-success">
+            <div class="stat-value">{{ status_counts.connected }}</div>
+            <div class="stat-label">Connected</div>
+        </div>
+        <div class="stat-card stat-error">
+            <div class="stat-value">{{ status_counts.disconnected }}</div>
+            <div class="stat-label">Disconnected</div>
+        </div>
+        <div class="stat-card stat-warning">
+            <div class="stat-value">{{ status_counts.error }}</div>
+            <div class="stat-label">Error</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ status_counts.unknown }}</div>
+            <div class="stat-label">Unknown</div>
+        </div>
+    </div>
+
+    <!-- Databases Table -->
+    <div class="card">
+        <div class="card-header">
+            <h2>Database Connections</h2>
+            <div class="card-actions">
+                <button class="btn btn-sm" onclick="checkAllHealth()">Check All</button>
+                <button class="btn btn-sm" onclick="refreshPage()">Refresh</button>
+            </div>
+        </div>
+
+        {% if integrations %}
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Status</th>
+                    <th>Name</th>
+                    <th>Type</th>
+                    <th>Host</th>
+                    <th>Database</th>
+                    <th>Latency</th>
+                    <th>Last Check</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="databasesTableBody">
+                {% for db in integrations %}
+                <tr data-id="{{ db.id }}">
+                    <td>
+                        {% if db.health_status == 'connected' %}
+                        <span class="badge badge-success" title="Connected">● Connected</span>
+                        {% elif db.health_status == 'disconnected' %}
+                        <span class="badge badge-error" title="Disconnected">○ Disconnected</span>
+                        {% elif db.health_status == 'error' %}
+                        <span class="badge badge-warning" title="{{ db.health_error_message or 'Error' }}">⚠ Error</span>
+                        {% else %}
+                        <span class="badge badge-muted" title="Unknown">? Unknown</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <a href="{{ url_for('databases.detail', integration_id=db.id) }}" class="db-link">
+                            {{ db.name }}
+                        </a>
+                        {% if not db.is_active %}
+                        <span class="badge badge-muted">Inactive</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <span class="db-type db-type-{{ db.integration_type }}">
+                            {{ db.integration_type|upper }}
+                        </span>
+                    </td>
+                    <td>
+                        {% if db.integration_type == 'sqlite' %}
+                        <code>{{ db.database_name|truncate(30) }}</code>
+                        {% else %}
+                        <code>{{ db.host }}{% if db.port %}:{{ db.port }}{% endif %}</code>
+                        {% endif %}
+                    </td>
+                    <td>{{ db.database_name }}</td>
+                    <td>
+                        {% if db.health_latency_ms %}
+                        <span class="latency {% if db.health_latency_ms > 500 %}latency-slow{% elif db.health_latency_ms > 100 %}latency-medium{% else %}latency-fast{% endif %}">
+                            {{ db.health_latency_ms|round(1) }}ms
+                        </span>
+                        {% else %}
+                        <span class="text-muted">--</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if db.last_health_check_at %}
+                        <span class="timestamp" data-timestamp="{{ db.last_health_check_at.isoformat() }}">
+                            {{ db.last_health_check_at.strftime('%Y-%m-%d %H:%M') }}
+                        </span>
+                        {% else %}
+                        <span class="text-muted">Never</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div class="btn-group">
+                            <button class="btn btn-sm" onclick="checkHealth({{ db.id }})" title="Test connection">
+                                Test
+                            </button>
+                            <a href="{{ url_for('databases.detail', integration_id=db.id) }}" class="btn btn-sm">
+                                View
+                            </a>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state">
+            <svg class="empty-icon" viewBox="0 0 20 20" fill="currentColor">
+                <path d="M3 12v3c0 1.657 3.134 3 7 3s7-1.343 7-3v-3c0 1.657-3.134 3-7 3s-7-1.343-7-3z"/>
+                <path d="M3 7v3c0 1.657 3.134 3 7 3s7-1.343 7-3V7c0 1.657-3.134 3-7 3S3 8.657 3 7z"/>
+                <path d="M17 5c0 1.657-3.134 3-7 3S3 6.657 3 5s3.134-3 7-3 7 1.343 7 3z"/>
+            </svg>
+            <h3>No Database Connections</h3>
+            <p>Add database integrations to manage multiple connections from one dashboard.</p>
+            <a href="{{ url_for('configs.index') }}" class="btn btn-primary">Go to Configs</a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<style>
+.stats-row {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+}
+
+.stat-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    padding: 1rem 1.5rem;
+    min-width: 120px;
+    flex: 1;
+}
+
+.stat-value {
+    font-size: 2rem;
+    font-weight: 700;
+    line-height: 1;
+    margin-bottom: 0.25rem;
+}
+
+.stat-label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.stat-card.stat-success .stat-value { color: var(--success); }
+.stat-card.stat-error .stat-value { color: var(--error); }
+.stat-card.stat-warning .stat-value { color: var(--warning); }
+
+.db-link {
+    color: var(--primary);
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.db-link:hover {
+    text-decoration: underline;
+}
+
+.db-type {
+    display: inline-block;
+    padding: 0.125rem 0.5rem;
+    border-radius: 0.25rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.db-type-mysql { background: #4479A1; color: white; }
+.db-type-postgres { background: #336791; color: white; }
+.db-type-sqlite { background: #003B57; color: white; }
+.db-type-mssql { background: #CC2927; color: white; }
+
+.latency {
+    font-family: monospace;
+    font-size: 0.875rem;
+}
+
+.latency-fast { color: var(--success); }
+.latency-medium { color: var(--warning); }
+.latency-slow { color: var(--error); }
+
+.badge-muted {
+    background: var(--text-muted);
+    color: white;
+}
+
+.btn-group {
+    display: flex;
+    gap: 0.25rem;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 3rem 1rem;
+}
+
+.empty-icon {
+    width: 48px;
+    height: 48px;
+    color: var(--text-muted);
+    margin-bottom: 1rem;
+}
+
+.empty-state h3 {
+    margin-bottom: 0.5rem;
+}
+
+.empty-state p {
+    color: var(--text-muted);
+    margin-bottom: 1rem;
+}
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function refreshPage() {
+    window.location.reload();
+}
+
+function checkHealth(integrationId) {
+    const btn = event.target;
+    btn.disabled = true;
+    btn.textContent = '...';
+
+    fetch(`/databases/api/${integrationId}/health`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Refresh page to show updated status
+            window.location.reload();
+        } else {
+            alert('Health check failed: ' + (data.error || 'Unknown error'));
+            btn.disabled = false;
+            btn.textContent = 'Test';
+        }
+    })
+    .catch(error => {
+        alert('Request failed: ' + error.message);
+        btn.disabled = false;
+        btn.textContent = 'Test';
+    });
+}
+
+function checkAllHealth() {
+    const btn = event.target;
+    btn.disabled = true;
+    btn.textContent = 'Checking...';
+
+    fetch('/databases/api/health/all', {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            window.location.reload();
+        } else {
+            alert('Health check failed: ' + (data.error || 'Unknown error'));
+            btn.disabled = false;
+            btn.textContent = 'Check All';
+        }
+    })
+    .catch(error => {
+        alert('Request failed: ' + error.message);
+        btn.disabled = false;
+        btn.textContent = 'Check All';
+    });
+}
+</script>
+{% endblock %}

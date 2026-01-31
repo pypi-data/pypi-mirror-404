@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - MySQL to Sheets</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/tailwind.css') }}">
+    <!-- Dark mode initialization - must be in head to prevent flash -->
+    <script>
+        (function() {
+            const stored = localStorage.getItem('theme');
+            if (stored === 'dark' || (!stored && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                document.documentElement.classList.add('dark');
+            }
+        })();
+    </script>
+    <style>
+        /* Split-screen layout */
+        .auth-container {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        /* Left branding panel */
+        .auth-branding {
+            display: none;
+            flex: 1;
+            background: linear-gradient(135deg, #2563eb 0%, #4f46e5 50%, #7c3aed 100%);
+            position: relative;
+            overflow: hidden;
+        }
+
+        @media (min-width: 1024px) {
+            .auth-branding {
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+                padding: 3rem;
+            }
+        }
+
+        /* Decorative background pattern */
+        .auth-branding::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-image: radial-gradient(circle at 25% 25%, rgba(255,255,255,0.1) 2px, transparent 2px),
+                              radial-gradient(circle at 75% 75%, rgba(255,255,255,0.08) 2px, transparent 2px);
+            background-size: 60px 60px;
+            pointer-events: none;
+        }
+
+        .auth-branding-content {
+            position: relative;
+            z-index: 1;
+            text-align: center;
+            color: white;
+            max-width: 400px;
+        }
+
+        .auth-logo {
+            width: 80px;
+            height: 80px;
+            background: rgba(255,255,255,0.15);
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 2rem;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+
+        .auth-logo svg {
+            width: 48px;
+            height: 48px;
+        }
+
+        .auth-title {
+            font-size: 2.25rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+            letter-spacing: -0.025em;
+        }
+
+        .auth-tagline {
+            font-size: 1.125rem;
+            opacity: 0.9;
+            line-height: 1.75;
+        }
+
+        .auth-features {
+            margin-top: 3rem;
+            text-align: left;
+        }
+
+        .auth-feature {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem 0;
+            opacity: 0.9;
+        }
+
+        .auth-feature-icon {
+            width: 24px;
+            height: 24px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .auth-feature-icon svg {
+            width: 14px;
+            height: 14px;
+        }
+
+        /* Right form panel */
+        .auth-form-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 2rem;
+            background: #f8fafc;
+        }
+
+        @media (min-width: 1024px) {
+            .auth-form-panel {
+                max-width: 600px;
+            }
+        }
+
+        .auth-form-container {
+            width: 100%;
+            max-width: 400px;
+        }
+
+        /* Mobile header (shown only on small screens) */
+        .auth-mobile-header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        @media (min-width: 1024px) {
+            .auth-mobile-header {
+                display: none;
+            }
+        }
+
+        .auth-mobile-logo {
+            width: 56px;
+            height: 56px;
+            background: linear-gradient(135deg, #2563eb 0%, #4f46e5 100%);
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 1rem;
+        }
+
+        .auth-mobile-logo svg {
+            width: 32px;
+            height: 32px;
+            color: white;
+        }
+
+        /* Form card */
+        .auth-card {
+            background: white;
+            border-radius: 16px;
+            padding: 2rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.05);
+            border: 1px solid #e2e8f0;
+        }
+
+        .auth-card-header {
+            text-align: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .auth-card-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #0f172a;
+            margin-bottom: 0.5rem;
+        }
+
+        .auth-card-subtitle {
+            color: #64748b;
+            font-size: 0.9375rem;
+        }
+
+        /* Form elements */
+        .form-group {
+            margin-bottom: 1.25rem;
+        }
+
+        .form-label {
+            display: block;
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: #334155;
+            margin-bottom: 0.5rem;
+        }
+
+        .form-input-wrapper {
+            position: relative;
+        }
+
+        .form-input-icon {
+            position: absolute;
+            left: 0.875rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #94a3b8;
+            pointer-events: none;
+        }
+
+        .form-input-icon svg {
+            width: 18px;
+            height: 18px;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 0.75rem 0.875rem 0.75rem 2.75rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            font-size: 0.9375rem;
+            background: #f8fafc;
+            color: #0f172a;
+            transition: all 0.2s ease;
+        }
+
+        .form-input::placeholder {
+            color: #94a3b8;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: #3b82f6;
+            background: white;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+        }
+
+        /* Checkbox */
+        .form-checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .form-checkbox {
+            width: 1rem;
+            height: 1rem;
+            border-radius: 4px;
+            border: 1.5px solid #cbd5e1;
+            accent-color: #3b82f6;
+        }
+
+        .form-checkbox-label {
+            font-size: 0.875rem;
+            color: #475569;
+        }
+
+        /* Submit button */
+        .auth-submit-btn {
+            width: 100%;
+            padding: 0.875rem 1.5rem;
+            background: linear-gradient(135deg, #2563eb 0%, #4f46e5 100%);
+            color: white;
+            font-weight: 600;
+            font-size: 0.9375rem;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        .auth-submit-btn:hover {
+            background: linear-gradient(135deg, #1d4ed8 0%, #4338ca 100%);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+        }
+
+        .auth-submit-btn:active {
+            transform: translateY(0);
+        }
+
+        .auth-submit-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* Links */
+        .auth-links {
+            text-align: center;
+            margin-top: 1.5rem;
+        }
+
+        .auth-links p {
+            color: #64748b;
+            font-size: 0.9375rem;
+        }
+
+        .auth-links a {
+            color: #2563eb;
+            font-weight: 500;
+            text-decoration: none;
+            transition: color 0.2s ease;
+        }
+
+        .auth-links a:hover {
+            color: #1d4ed8;
+            text-decoration: underline;
+        }
+
+        /* Alerts */
+        .auth-alert {
+            padding: 0.875rem 1rem;
+            border-radius: 10px;
+            margin-bottom: 1.25rem;
+            font-size: 0.875rem;
+            display: flex;
+            align-items: flex-start;
+            gap: 0.75rem;
+        }
+
+        .auth-alert-icon {
+            flex-shrink: 0;
+            margin-top: 0.125rem;
+        }
+
+        .auth-alert-icon svg {
+            width: 18px;
+            height: 18px;
+        }
+
+        .auth-alert-error {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            color: #991b1b;
+        }
+
+        .auth-alert-success {
+            background: #f0fdf4;
+            border: 1px solid #bbf7d0;
+            color: #166534;
+        }
+
+        .auth-alert-info {
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            color: #1e40af;
+        }
+
+        /* Version footer */
+        .auth-footer {
+            text-align: center;
+            margin-top: 1.5rem;
+            color: #94a3b8;
+            font-size: 0.8125rem;
+        }
+
+        /* Spinner animation */
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .animate-spin {
+            animation: spin 1s linear infinite;
+        }
+
+        /* ==========================================================================
+           Dark Mode Variants
+           ========================================================================== */
+        .dark .auth-form-panel {
+            background: #0f172a;
+        }
+
+        .dark .auth-card {
+            background: #1e293b;
+            border-color: #334155;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2), 0 4px 12px rgba(0,0,0,0.15);
+        }
+
+        .dark .auth-card-title {
+            color: #f1f5f9;
+        }
+
+        .dark .auth-card-subtitle {
+            color: #94a3b8;
+        }
+
+        .dark .form-label {
+            color: #e2e8f0;
+        }
+
+        .dark .form-input {
+            background: #1e293b;
+            border-color: #475569;
+            color: #f1f5f9;
+        }
+
+        .dark .form-input::placeholder {
+            color: #64748b;
+        }
+
+        .dark .form-input:focus {
+            background: #1e293b;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+        }
+
+        .dark .form-input-icon {
+            color: #64748b;
+        }
+
+        .dark .form-checkbox-label {
+            color: #94a3b8;
+        }
+
+        .dark .auth-alert-error {
+            background: rgba(239, 68, 68, 0.15);
+            border-color: #ef4444;
+            color: #fca5a5;
+        }
+
+        .dark .auth-alert-success {
+            background: rgba(34, 197, 94, 0.15);
+            border-color: #22c55e;
+            color: #86efac;
+        }
+
+        .dark .auth-alert-info {
+            background: rgba(59, 130, 246, 0.15);
+            border-color: #3b82f6;
+            color: #93c5fd;
+        }
+
+        .dark .auth-alert-info code {
+            background: rgba(0, 0, 0, 0.3);
+            color: #e2e8f0;
+        }
+
+        .dark .auth-links p {
+            color: #94a3b8;
+        }
+
+        .dark .auth-links a {
+            color: #60a5fa;
+        }
+
+        .dark .auth-links a:hover {
+            color: #93c5fd;
+        }
+
+        .dark .auth-footer {
+            color: #64748b;
+        }
+
+        .dark .auth-mobile-header h1 {
+            color: #f1f5f9 !important;
+        }
+    </style>
+</head>
+<body>
+    <div class="auth-container">
+        <!-- Left branding panel (hidden on mobile) -->
+        <div class="auth-branding">
+            <div class="auth-branding-content">
+                <div class="auth-logo">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"/>
+                        <path d="M12 12v6m0 0l-2-2m2 2l2-2"/>
+                    </svg>
+                </div>
+                <h1 class="auth-title">MySQL to Sheets</h1>
+                <p class="auth-tagline">Sync your database to Google Sheets effortlessly. Automate data exports, schedule syncs, and keep your spreadsheets up-to-date.</p>
+
+                <div class="auth-features">
+                    <div class="auth-feature">
+                        <div class="auth-feature-icon">
+                            <svg viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+                            </svg>
+                        </div>
+                        <span>Automated scheduled syncs</span>
+                    </div>
+                    <div class="auth-feature">
+                        <div class="auth-feature-icon">
+                            <svg viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+                            </svg>
+                        </div>
+                        <span>MySQL, PostgreSQL, SQLite & SQL Server</span>
+                    </div>
+                    <div class="auth-feature">
+                        <div class="auth-feature-icon">
+                            <svg viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+                            </svg>
+                        </div>
+                        <span>Column mapping & transformations</span>
+                    </div>
+                    <div class="auth-feature">
+                        <div class="auth-feature-icon">
+                            <svg viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+                            </svg>
+                        </div>
+                        <span>Secure & enterprise-ready</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right form panel -->
+        <div class="auth-form-panel">
+            <div class="auth-form-container">
+                <!-- Mobile header -->
+                <div class="auth-mobile-header">
+                    <div class="auth-mobile-logo">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"/>
+                            <path d="M12 12v6m0 0l-2-2m2 2l2-2"/>
+                        </svg>
+                    </div>
+                    <h1 style="font-size: 1.25rem; font-weight: 600; color: #0f172a;">MySQL to Sheets</h1>
+                </div>
+
+                <!-- Form card -->
+                <div class="auth-card">
+                    <div class="auth-card-header">
+                        <h2 class="auth-card-title">Welcome back</h2>
+                        <p class="auth-card-subtitle">Sign in to your account to continue</p>
+                    </div>
+
+                    {% if error %}
+                    <div class="auth-alert auth-alert-error">
+                        <div class="auth-alert-icon">
+                            <svg viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
+                            </svg>
+                        </div>
+                        <span>{{ error }}</span>
+                    </div>
+                    {% endif %}
+
+                    {% if message %}
+                    <div class="auth-alert auth-alert-success">
+                        <div class="auth-alert-icon">
+                            <svg viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                            </svg>
+                        </div>
+                        <span>{{ message }}</span>
+                    </div>
+                    {% endif %}
+
+                    {% if show_first_run_banner and default_admin_password %}
+                    <div class="auth-alert auth-alert-info">
+                        <div class="auth-alert-icon">
+                            <svg viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <strong>First-time setup</strong><br>
+                            Email: <code style="background: rgba(0,0,0,0.05); padding: 2px 6px; border-radius: 4px;">{{ default_admin_email }}</code><br>
+                            Password: <code style="background: rgba(0,0,0,0.05); padding: 2px 6px; border-radius: 4px;">{{ default_admin_password }}</code>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <form method="POST" action="{{ url_for('auth.login') }}" id="loginForm">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                        <div class="form-group">
+                            <label for="email" class="form-label">Email address</label>
+                            <div class="form-input-wrapper">
+                                <span class="form-input-icon">
+                                    <svg viewBox="0 0 20 20" fill="currentColor">
+                                        <path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z"/>
+                                        <path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z"/>
+                                    </svg>
+                                </span>
+                                <input type="email" id="email" name="email"
+                                       value="{{ email or '' }}"
+                                       placeholder="you@example.com"
+                                       required
+                                       autocomplete="email"
+                                       class="form-input">
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="password" class="form-label">Password</label>
+                            <div class="form-input-wrapper">
+                                <span class="form-input-icon">
+                                    <svg viewBox="0 0 20 20" fill="currentColor">
+                                        <path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/>
+                                    </svg>
+                                </span>
+                                <input type="password" id="password" name="password"
+                                       placeholder="Enter your password"
+                                       required
+                                       autocomplete="current-password"
+                                       class="form-input">
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <div class="form-checkbox-group">
+                                <input type="checkbox" id="remember" name="remember" class="form-checkbox">
+                                <label for="remember" class="form-checkbox-label">Remember me for 30 days</label>
+                            </div>
+                        </div>
+
+                        <button type="submit" id="submitBtn" class="auth-submit-btn">
+                            Sign in
+                        </button>
+                    </form>
+
+                    <div class="auth-links">
+                        <p>Don't have an account? <a href="{{ url_for('auth.register') }}">Create one</a></p>
+                    </div>
+                </div>
+
+                <div class="auth-footer">
+                    v{{ version }}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('loginForm').addEventListener('submit', function(e) {
+            const btn = document.getElementById('submitBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<svg class="animate-spin" style="width: 18px; height: 18px;" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle style="opacity: 0.25;" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path style="opacity: 0.75;" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Signing in...';
+        });
+    </script>
+</body>
+</html>

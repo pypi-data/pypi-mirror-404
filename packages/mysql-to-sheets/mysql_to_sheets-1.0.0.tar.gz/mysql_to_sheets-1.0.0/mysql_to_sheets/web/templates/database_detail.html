@@ -1,0 +1,284 @@
+{% extends "base.html" %}
+
+{% block title %}{{ integration.name }} - MySQL to Sheets Sync{% endblock %}
+
+{% block page_title %}{{ integration.name }}{% endblock %}
+{% block page_subtitle %}
+<p class="text-muted">
+    <span class="db-type db-type-{{ integration.integration_type }}">{{ integration.integration_type|upper }}</span>
+    {% if not integration.is_active %}<span class="badge badge-muted">Inactive</span>{% endif %}
+</p>
+{% endblock %}
+
+{% block content %}
+<div class="dashboard-grid">
+    <!-- Health Status Card -->
+    <div class="card">
+        <div class="card-header">
+            <h2>Connection Health</h2>
+            <div class="card-actions">
+                <form method="POST" action="{{ url_for('databases.test_connection', integration_id=integration.id) }}" style="display: inline;">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-primary">Test Connection</button>
+                </form>
+            </div>
+        </div>
+        <div class="health-status">
+            <div class="health-indicator health-{{ integration.health_status }}">
+                {% if integration.health_status == 'connected' %}
+                <span class="health-icon">●</span>
+                <span class="health-text">Connected</span>
+                {% elif integration.health_status == 'disconnected' %}
+                <span class="health-icon">○</span>
+                <span class="health-text">Disconnected</span>
+                {% elif integration.health_status == 'error' %}
+                <span class="health-icon">⚠</span>
+                <span class="health-text">Error</span>
+                {% else %}
+                <span class="health-icon">?</span>
+                <span class="health-text">Unknown</span>
+                {% endif %}
+            </div>
+
+            {% if integration.health_latency_ms %}
+            <div class="health-metric">
+                <span class="metric-label">Latency</span>
+                <span class="metric-value latency {% if integration.health_latency_ms > 500 %}latency-slow{% elif integration.health_latency_ms > 100 %}latency-medium{% else %}latency-fast{% endif %}">
+                    {{ integration.health_latency_ms|round(1) }}ms
+                </span>
+            </div>
+            {% endif %}
+
+            {% if integration.last_health_check_at %}
+            <div class="health-metric">
+                <span class="metric-label">Last Check</span>
+                <span class="metric-value">{{ integration.last_health_check_at.strftime('%Y-%m-%d %H:%M:%S') }}</span>
+            </div>
+            {% endif %}
+
+            {% if integration.health_error_message %}
+            <div class="health-error">
+                <strong>Error:</strong> {{ integration.health_error_message }}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Connection Details Card -->
+    <div class="card">
+        <div class="card-header">
+            <h2>Connection Details</h2>
+        </div>
+        <div class="detail-grid">
+            <div class="detail-item">
+                <span class="detail-label">Type</span>
+                <span class="detail-value">{{ integration.integration_type|upper }}</span>
+            </div>
+            {% if integration.integration_type != 'sqlite' %}
+            <div class="detail-item">
+                <span class="detail-label">Host</span>
+                <span class="detail-value"><code>{{ integration.host }}</code></span>
+            </div>
+            <div class="detail-item">
+                <span class="detail-label">Port</span>
+                <span class="detail-value"><code>{{ integration.port or 'Default' }}</code></span>
+            </div>
+            {% endif %}
+            <div class="detail-item">
+                <span class="detail-label">Database</span>
+                <span class="detail-value"><code>{{ integration.database_name }}</code></span>
+            </div>
+            {% if integration.ssl_mode %}
+            <div class="detail-item">
+                <span class="detail-label">SSL Mode</span>
+                <span class="detail-value">{{ integration.ssl_mode }}</span>
+            </div>
+            {% endif %}
+            <div class="detail-item">
+                <span class="detail-label">Status</span>
+                <span class="detail-value">
+                    {% if integration.is_active %}
+                    <span class="badge badge-success">Active</span>
+                    {% else %}
+                    <span class="badge badge-muted">Inactive</span>
+                    {% endif %}
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Metadata Card -->
+    <div class="card">
+        <div class="card-header">
+            <h2>Metadata</h2>
+        </div>
+        <div class="detail-grid">
+            <div class="detail-item">
+                <span class="detail-label">ID</span>
+                <span class="detail-value">{{ integration.id }}</span>
+            </div>
+            <div class="detail-item">
+                <span class="detail-label">Created</span>
+                <span class="detail-value">
+                    {% if integration.created_at %}
+                    {{ integration.created_at.strftime('%Y-%m-%d %H:%M:%S') }}
+                    {% else %}
+                    Unknown
+                    {% endif %}
+                </span>
+            </div>
+            <div class="detail-item">
+                <span class="detail-label">Updated</span>
+                <span class="detail-value">
+                    {% if integration.updated_at %}
+                    {{ integration.updated_at.strftime('%Y-%m-%d %H:%M:%S') }}
+                    {% else %}
+                    Never
+                    {% endif %}
+                </span>
+            </div>
+            <div class="detail-item">
+                <span class="detail-label">Last Verified</span>
+                <span class="detail-value">
+                    {% if integration.last_verified_at %}
+                    {{ integration.last_verified_at.strftime('%Y-%m-%d %H:%M:%S') }}
+                    {% else %}
+                    Never
+                    {% endif %}
+                </span>
+            </div>
+            {% if integration.description %}
+            <div class="detail-item detail-item-full">
+                <span class="detail-label">Description</span>
+                <span class="detail-value">{{ integration.description }}</span>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Back Link -->
+    <div class="actions">
+        <a href="{{ url_for('databases.index') }}" class="btn">← Back to Databases</a>
+    </div>
+</div>
+
+<style>
+.db-type {
+    display: inline-block;
+    padding: 0.125rem 0.5rem;
+    border-radius: 0.25rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.db-type-mysql { background: #4479A1; color: white; }
+.db-type-postgres { background: #336791; color: white; }
+.db-type-sqlite { background: #003B57; color: white; }
+.db-type-mssql { background: #CC2927; color: white; }
+
+.health-status {
+    padding: 1.5rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2rem;
+    align-items: center;
+}
+
+.health-indicator {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 1.5rem;
+    font-weight: 600;
+}
+
+.health-icon {
+    font-size: 2rem;
+}
+
+.health-connected .health-icon { color: var(--success); }
+.health-disconnected .health-icon { color: var(--error); }
+.health-error .health-icon { color: var(--warning); }
+.health-unknown .health-icon { color: var(--text-muted); }
+
+.health-metric {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.metric-label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.metric-value {
+    font-size: 1rem;
+    font-weight: 500;
+}
+
+.latency {
+    font-family: monospace;
+}
+
+.latency-fast { color: var(--success); }
+.latency-medium { color: var(--warning); }
+.latency-slow { color: var(--error); }
+
+.health-error {
+    width: 100%;
+    padding: 0.75rem;
+    background: rgba(255, 0, 0, 0.1);
+    border-radius: 0.25rem;
+    color: var(--error);
+    font-size: 0.875rem;
+}
+
+.detail-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 1.5rem;
+    padding: 1.5rem;
+}
+
+.detail-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.detail-item-full {
+    grid-column: 1 / -1;
+}
+
+.detail-label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.detail-value {
+    font-size: 1rem;
+}
+
+.detail-value code {
+    background: var(--bg-secondary);
+    padding: 0.125rem 0.375rem;
+    border-radius: 0.25rem;
+    font-size: 0.875rem;
+}
+
+.badge-muted {
+    background: var(--text-muted);
+    color: white;
+}
+
+.actions {
+    margin-top: 1rem;
+}
+</style>
+{% endblock %}

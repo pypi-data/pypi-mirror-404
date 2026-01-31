@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Freshness Monitoring - MySQL to Sheets Sync</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --success: #16a34a;
+            --error: #dc2626;
+            --warning: #ca8a04;
+            --bg: #f8fafc;
+            --card-bg: #ffffff;
+            --border: #e2e8f0;
+            --text: #1e293b;
+            --text-muted: #64748b;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.5;
+            padding: 2rem;
+        }
+
+        .container { max-width: 1200px; margin: 0 auto; }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
+
+        h1 { font-size: 1.5rem; font-weight: 600; }
+        .version { color: var(--text-muted); font-size: 0.875rem; }
+
+        nav {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 2rem;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 1rem;
+        }
+
+        nav a {
+            color: var(--text-muted);
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem;
+        }
+
+        nav a:hover { background: var(--border); color: var(--text); }
+        nav a.active { background: var(--primary); color: white; }
+
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .card h2 { font-size: 1.125rem; font-weight: 600; margin-bottom: 1rem; }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            border: 1px solid var(--border);
+            border-radius: 0.375rem;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            background: var(--card-bg);
+            color: var(--text);
+            text-decoration: none;
+        }
+
+        .btn:hover { background: var(--bg); }
+        .btn-primary { background: var(--primary); color: white; border-color: var(--primary); }
+        .btn-primary:hover { background: var(--primary-hover); }
+        .btn-sm { padding: 0.25rem 0.5rem; font-size: 0.75rem; }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        @media (max-width: 900px) { .stats-grid { grid-template-columns: repeat(3, 1fr); } }
+        @media (max-width: 600px) { .stats-grid { grid-template-columns: repeat(2, 1fr); } }
+
+        .stat-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 0.5rem;
+            padding: 1rem;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            line-height: 1;
+        }
+
+        .stat-label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            margin-top: 0.5rem;
+        }
+
+        .stat-fresh .stat-value { color: var(--success); }
+        .stat-warning .stat-value { color: var(--warning); }
+        .stat-stale .stat-value { color: var(--error); }
+        .stat-unknown .stat-value { color: var(--text-muted); }
+        .stat-health .stat-value { color: var(--primary); }
+
+        .health-bar {
+            height: 12px;
+            background: var(--border);
+            border-radius: 6px;
+            overflow: hidden;
+            margin-top: 0.5rem;
+        }
+
+        .health-fill {
+            height: 100%;
+            border-radius: 6px;
+            transition: width 0.3s ease;
+        }
+
+        .health-fill.good { background: var(--success); }
+        .health-fill.medium { background: var(--warning); }
+        .health-fill.poor { background: var(--error); }
+
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 0.75rem 1rem; text-align: left; border-bottom: 1px solid var(--border); }
+        th { font-weight: 500; color: var(--text-muted); font-size: 0.75rem; text-transform: uppercase; }
+        tr:hover { background: var(--bg); }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.375rem;
+            padding: 0.25rem 0.625rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .status-fresh { background: #dcfce7; color: #166534; }
+        .status-warning { background: #fef3c7; color: #92400e; }
+        .status-stale { background: #fee2e2; color: #991b1b; }
+        .status-unknown { background: #f3f4f6; color: #6b7280; }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        .status-fresh .status-dot { background: #22c55e; }
+        .status-warning .status-dot { background: #eab308; }
+        .status-stale .status-dot { background: #ef4444; }
+        .status-unknown .status-dot { background: #9ca3af; }
+
+        .progress-bar {
+            width: 100%;
+            height: 6px;
+            background: var(--border);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            border-radius: 3px;
+            transition: width 0.3s ease;
+        }
+
+        .progress-fill.fresh { background: var(--success); }
+        .progress-fill.warning { background: var(--warning); }
+        .progress-fill.stale { background: var(--error); }
+
+        .toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            color: var(--text-muted);
+        }
+
+        .alert {
+            padding: 0.75rem 1rem;
+            border-radius: 0.375rem;
+            margin-bottom: 1rem;
+        }
+
+        .alert-error { background: #fee2e2; border: 1px solid #fecaca; color: var(--error); }
+        .alert-success { background: #dcfce7; border: 1px solid #bbf7d0; color: var(--success); }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active { display: flex; }
+
+        .modal-content {
+            background: var(--card-bg);
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            width: 100%;
+            max-width: 400px;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .modal-header h3 { font-size: 1.125rem; font-weight: 600; }
+        .modal-close { cursor: pointer; font-size: 1.5rem; color: var(--text-muted); }
+
+        .form-group { margin-bottom: 1rem; }
+        label { display: block; font-size: 0.875rem; font-weight: 500; margin-bottom: 0.25rem; }
+
+        input[type="number"] {
+            width: 100%;
+            padding: 0.5rem 0.75rem;
+            border: 1px solid var(--border);
+            border-radius: 0.375rem;
+            font-size: 0.875rem;
+            font-family: inherit;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+
+        .form-actions {
+            display: flex;
+            gap: 0.5rem;
+            justify-content: flex-end;
+            margin-top: 1.5rem;
+        }
+
+        .time-ago {
+            font-size: 0.875rem;
+            color: var(--text-muted);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div>
+                <h1>Freshness Monitoring</h1>
+                <span class="version">v{{ version }}</span>
+            </div>
+            <div>
+                {% if current_user %}
+                <span style="margin-right: 1rem;">{{ current_user.email }}</span>
+                <a href="{{ url_for('auth.logout') }}" style="color: var(--primary); text-decoration: none;">Logout</a>
+                {% endif %}
+            </div>
+        </header>
+
+        <nav>
+            <a href="{{ url_for('dashboard.index') }}">Dashboard</a>
+            <a href="{{ url_for('dashboard.configs_page') }}">Configs</a>
+            <a href="{{ url_for('dashboard.schedules') }}">Schedules</a>
+            <a href="{{ url_for('dashboard.jobs_page') }}">Jobs</a>
+            <a href="{{ url_for('freshness.freshness_page') }}" class="active">Freshness</a>
+        </nav>
+
+        <div id="alertContainer"></div>
+
+        <!-- Stats Overview -->
+        <div class="stats-grid">
+            <div class="stat-card stat-health">
+                <div class="stat-value">{{ health_percent|round|int }}%</div>
+                <div class="stat-label">Health Score</div>
+                <div class="health-bar">
+                    <div class="health-fill {% if health_percent >= 80 %}good{% elif health_percent >= 50 %}medium{% else %}poor{% endif %}"
+                         style="width: {{ health_percent }}%"></div>
+                </div>
+            </div>
+            <div class="stat-card stat-fresh">
+                <div class="stat-value">{{ counts.fresh or 0 }}</div>
+                <div class="stat-label">Fresh</div>
+            </div>
+            <div class="stat-card stat-warning">
+                <div class="stat-value">{{ counts.warning or 0 }}</div>
+                <div class="stat-label">Warning</div>
+            </div>
+            <div class="stat-card stat-stale">
+                <div class="stat-value">{{ counts.stale or 0 }}</div>
+                <div class="stat-label">Stale</div>
+            </div>
+            <div class="stat-card stat-unknown">
+                <div class="stat-value">{{ counts.unknown or 0 }}</div>
+                <div class="stat-label">Unknown</div>
+            </div>
+        </div>
+
+        <!-- Configs Table -->
+        <div class="card">
+            <div class="toolbar">
+                <h2>Sync Configuration Freshness</h2>
+                <button class="btn btn-primary" onclick="refreshFreshness()">
+                    <svg style="width: 16px; height: 16px;" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                    </svg>
+                    Refresh
+                </button>
+            </div>
+
+            {% if statuses %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Config Name</th>
+                        <th>Status</th>
+                        <th>SLA Progress</th>
+                        <th>Last Sync</th>
+                        <th>SLA</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="freshnessTable">
+                    {% for status in statuses %}
+                    <tr data-config-id="{{ status.config_id }}">
+                        <td>
+                            <strong>{{ status.config_name }}</strong>
+                        </td>
+                        <td>
+                            <span class="status-badge status-{{ status.status }}">
+                                <span class="status-dot"></span>
+                                {{ status.status|title }}
+                            </span>
+                        </td>
+                        <td style="min-width: 150px;">
+                            {% if status.percent_of_sla is not none %}
+                            <div class="progress-bar">
+                                <div class="progress-fill {{ status.status }}"
+                                     style="width: {{ [status.percent_of_sla, 100]|min }}%"></div>
+                            </div>
+                            <span style="font-size: 0.75rem; color: var(--text-muted);">
+                                {{ status.percent_of_sla|round(1) }}% of SLA
+                            </span>
+                            {% else %}
+                            <span class="time-ago">No data</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if status.last_success_at %}
+                            <span class="time-ago">
+                                {{ status.minutes_since_sync }} min ago
+                            </span>
+                            {% else %}
+                            <span class="time-ago">Never</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span style="font-weight: 500;">{{ status.sla_minutes }} min</span>
+                        </td>
+                        <td>
+                            <button class="btn btn-sm" onclick="openSlaModal({{ status.config_id }}, '{{ status.config_name }}', {{ status.sla_minutes }})">
+                                Set SLA
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="empty-state">
+                <p>No sync configurations found.</p>
+                <p style="margin-top: 0.5rem;">
+                    <a href="{{ url_for('dashboard.configs_page') }}" style="color: var(--primary);">Create a sync configuration</a>
+                    to start monitoring freshness.
+                </p>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Health Info Card -->
+        <div class="card">
+            <h2>About Freshness Monitoring</h2>
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 1rem; margin-top: 1rem;">
+                <div style="padding: 1rem; background: #dcfce7; border-radius: 0.375rem;">
+                    <strong style="color: #166534;">Fresh</strong>
+                    <p style="font-size: 0.875rem; margin-top: 0.25rem;">Data is within SLA threshold. No action needed.</p>
+                </div>
+                <div style="padding: 1rem; background: #fef3c7; border-radius: 0.375rem;">
+                    <strong style="color: #92400e;">Warning</strong>
+                    <p style="font-size: 0.875rem; margin-top: 0.25rem;">Data is approaching SLA threshold (>80%). Consider running sync soon.</p>
+                </div>
+                <div style="padding: 1rem; background: #fee2e2; border-radius: 0.375rem;">
+                    <strong style="color: #991b1b;">Stale</strong>
+                    <p style="font-size: 0.875rem; margin-top: 0.25rem;">Data has exceeded SLA threshold. Immediate action required.</p>
+                </div>
+                <div style="padding: 1rem; background: #f3f4f6; border-radius: 0.375rem;">
+                    <strong style="color: #6b7280;">Unknown</strong>
+                    <p style="font-size: 0.875rem; margin-top: 0.25rem;">No successful sync recorded. Run initial sync to establish baseline.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Set SLA Modal -->
+    <div class="modal" id="slaModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Set SLA Threshold</h3>
+                <span class="modal-close" onclick="closeModal('slaModal')">&times;</span>
+            </div>
+            <form id="slaForm" onsubmit="updateSla(event)">
+                <input type="hidden" id="slaConfigId" name="config_id">
+                <p style="margin-bottom: 1rem; color: var(--text-muted);">
+                    Setting SLA for: <strong id="slaConfigName"></strong>
+                </p>
+                <div class="form-group">
+                    <label for="slaMinutes">SLA Threshold (minutes)</label>
+                    <input type="number" id="slaMinutes" name="sla_minutes" min="1" max="1440" required>
+                    <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+                        Data older than this will be marked as stale.
+                    </p>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn" onclick="closeModal('slaModal')">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        function showAlert(message, type = 'success') {
+            const container = document.getElementById('alertContainer');
+            container.innerHTML = `<div class="alert alert-${type}">${message}</div>`;
+            setTimeout(() => container.innerHTML = '', 5000);
+        }
+
+        function openSlaModal(configId, configName, currentSla) {
+            document.getElementById('slaConfigId').value = configId;
+            document.getElementById('slaConfigName').textContent = configName;
+            document.getElementById('slaMinutes').value = currentSla;
+            document.getElementById('slaModal').classList.add('active');
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).classList.remove('active');
+        }
+
+        async function updateSla(e) {
+            e.preventDefault();
+            const configId = document.getElementById('slaConfigId').value;
+            const slaMinutes = document.getElementById('slaMinutes').value;
+
+            try {
+                const res = await fetch(`/api/freshness-page/sla/${configId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sla_minutes: parseInt(slaMinutes) }),
+                });
+                const result = await res.json();
+                if (result.success) {
+                    showAlert('SLA updated successfully');
+                    closeModal('slaModal');
+                    location.reload();
+                } else {
+                    showAlert(result.error || 'Failed to update SLA', 'error');
+                }
+            } catch (err) {
+                showAlert('An error occurred: ' + err.message, 'error');
+            }
+        }
+
+        async function refreshFreshness() {
+            try {
+                const res = await fetch('/api/freshness-page/check', { method: 'POST' });
+                const result = await res.json();
+                if (result.success) {
+                    showAlert(`Freshness check complete: ${result.fresh} fresh, ${result.warning} warning, ${result.stale} stale`);
+                    location.reload();
+                } else {
+                    showAlert(result.error || 'Failed to refresh', 'error');
+                }
+            } catch (err) {
+                showAlert('An error occurred: ' + err.message, 'error');
+            }
+        }
+    </script>
+</body>
+</html>

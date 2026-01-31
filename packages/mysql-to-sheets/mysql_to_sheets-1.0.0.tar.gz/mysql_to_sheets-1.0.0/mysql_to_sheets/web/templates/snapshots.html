@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Snapshots & Rollback - MySQL to Sheets Sync</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --success: #16a34a;
+            --error: #dc2626;
+            --warning: #ca8a04;
+            --bg: #f8fafc;
+            --card-bg: #ffffff;
+            --border: #e2e8f0;
+            --text: #1e293b;
+            --text-muted: #64748b;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.5;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 1rem;
+        }
+
+        .nav-links a {
+            color: var(--primary);
+            text-decoration: none;
+            font-size: 0.875rem;
+        }
+
+        .nav-links a:hover {
+            text-decoration: underline;
+        }
+
+        .version {
+            color: var(--text-muted);
+            font-size: 0.875rem;
+        }
+
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .card h2 {
+            font-size: 1.125rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .stats-row {
+            display: flex;
+            gap: 2rem;
+            margin-bottom: 1rem;
+            font-size: 0.875rem;
+            flex-wrap: wrap;
+        }
+
+        .stat {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .stat-label {
+            color: var(--text-muted);
+            font-size: 0.75rem;
+            text-transform: uppercase;
+        }
+
+        .stat-value {
+            font-weight: 600;
+            font-size: 1.25rem;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.875rem;
+        }
+
+        th, td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+
+        th {
+            font-weight: 500;
+            color: var(--text-muted);
+            background: var(--bg);
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-muted);
+        }
+
+        .actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        button {
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 0.375rem;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-hover);
+        }
+
+        .btn-secondary {
+            background: white;
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+
+        .btn-secondary:hover {
+            background: var(--bg);
+        }
+
+        .btn-danger {
+            background: var(--error);
+            color: white;
+        }
+
+        .btn-success {
+            background: var(--success);
+            color: white;
+        }
+
+        .btn-small {
+            padding: 0.25rem 0.5rem;
+            font-size: 0.75rem;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .alert {
+            padding: 0.75rem 1rem;
+            border-radius: 0.375rem;
+            margin-bottom: 1rem;
+            font-size: 0.875rem;
+        }
+
+        .alert-success {
+            background: #dcfce7;
+            color: var(--success);
+            border: 1px solid #86efac;
+        }
+
+        .alert-error {
+            background: #fee2e2;
+            color: var(--error);
+            border: 1px solid #fca5a5;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: var(--card-bg);
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            max-width: 700px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .modal-header h3 {
+            font-size: 1.125rem;
+            font-weight: 600;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: var(--text-muted);
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 0.5rem;
+            justify-content: flex-end;
+            margin-top: 1rem;
+        }
+
+        .preview-detail {
+            font-size: 0.875rem;
+        }
+
+        .preview-detail dt {
+            font-weight: 500;
+            color: var(--text-muted);
+            margin-top: 0.75rem;
+        }
+
+        .preview-detail dd {
+            margin-left: 0;
+        }
+
+        .diff-summary {
+            background: var(--bg);
+            padding: 1rem;
+            border-radius: 0.375rem;
+            margin-top: 1rem;
+        }
+
+        .diff-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.25rem 0;
+        }
+
+        .diff-add { color: var(--success); }
+        .diff-remove { color: var(--error); }
+        .diff-unchanged { color: var(--text-muted); }
+
+        .size-badge {
+            display: inline-block;
+            padding: 0.125rem 0.5rem;
+            background: var(--bg);
+            border-radius: 0.25rem;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .sheet-id {
+            font-family: monospace;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        @media (max-width: 768px) {
+            table {
+                display: block;
+                overflow-x: auto;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div>
+                <h1>Snapshots & Rollback</h1>
+                <div class="nav-links">
+                    <a href="/">Dashboard</a>
+                    <a href="/schedules">Schedules</a>
+                    <a href="/jobs">Jobs</a>
+                    <a href="/snapshots">Snapshots</a>
+                    <a href="/setup">Setup</a>
+                </div>
+            </div>
+            <span class="version">v{{ version }}</span>
+        </header>
+
+        <div id="alert" class="alert" style="display: none;"></div>
+
+        <div class="card">
+            <h2>
+                Storage Statistics
+                <button class="btn-secondary btn-small" onclick="loadStats()">Refresh</button>
+            </h2>
+            <div class="stats-row" id="statsRow">
+                <div class="stat">
+                    <span class="stat-label">Total Snapshots</span>
+                    <span class="stat-value" id="statTotal">-</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-label">Storage Used</span>
+                    <span class="stat-value" id="statSize">-</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-label">Oldest</span>
+                    <span class="stat-value" id="statOldest">-</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-label">Newest</span>
+                    <span class="stat-value" id="statNewest">-</span>
+                </div>
+            </div>
+            <button class="btn-secondary btn-small" onclick="runCleanup()">Run Cleanup</button>
+        </div>
+
+        <div class="card">
+            <h2>
+                Snapshots
+                <button class="btn-secondary btn-small" onclick="loadSnapshots()">Refresh</button>
+            </h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Created</th>
+                        <th>Rows</th>
+                        <th>Columns</th>
+                        <th>Size</th>
+                        <th>Sheet</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="snapshotsTable">
+                    <tr>
+                        <td colspan="7" class="empty-state">Loading...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Preview Modal -->
+    <div id="previewModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Rollback Preview</h3>
+                <button class="modal-close" onclick="closeModal('previewModal')">&times;</button>
+            </div>
+            <dl class="preview-detail" id="previewDetail">
+            </dl>
+            <div class="modal-actions">
+                <button class="btn-secondary" onclick="closeModal('previewModal')">Cancel</button>
+                <button class="btn-success" id="confirmRollbackBtn" onclick="confirmRollback()">Restore Snapshot</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirm Modal -->
+    <div id="confirmModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Confirm Rollback</h3>
+                <button class="modal-close" onclick="closeModal('confirmModal')">&times;</button>
+            </div>
+            <p>Are you sure you want to restore the sheet from this snapshot?</p>
+            <p style="margin-top: 0.5rem; color: var(--text-muted); font-size: 0.875rem;">
+                A backup of the current state will be created before the rollback.
+            </p>
+            <div class="modal-actions">
+                <button class="btn-secondary" onclick="closeModal('confirmModal')">Cancel</button>
+                <button class="btn-success" id="executeRollbackBtn" onclick="executeRollback()">Yes, Restore</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentSnapshotId = null;
+
+        function showAlert(message, type) {
+            const alert = document.getElementById('alert');
+            alert.style.display = 'block';
+            alert.className = `alert alert-${type}`;
+            alert.textContent = message;
+            setTimeout(() => { alert.style.display = 'none'; }, 5000);
+        }
+
+        function formatDate(isoString) {
+            if (!isoString) return '-';
+            const date = new Date(isoString);
+            return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        }
+
+        function formatSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+        }
+
+        function truncate(str, len) {
+            if (!str) return '-';
+            return str.length > len ? str.substring(0, len) + '...' : str;
+        }
+
+        async function loadStats() {
+            try {
+                const response = await fetch('/api/snapshots/stats');
+                const data = await response.json();
+
+                if (data.success) {
+                    document.getElementById('statTotal').textContent = data.total_snapshots;
+                    document.getElementById('statSize').textContent = formatSize(data.total_size_bytes);
+                    document.getElementById('statOldest').textContent = data.oldest_snapshot ?
+                        new Date(data.oldest_snapshot).toLocaleDateString() : '-';
+                    document.getElementById('statNewest').textContent = data.newest_snapshot ?
+                        new Date(data.newest_snapshot).toLocaleDateString() : '-';
+                }
+            } catch (error) {
+                console.error('Failed to load stats:', error);
+            }
+        }
+
+        async function loadSnapshots() {
+            try {
+                const response = await fetch('/api/snapshots?limit=50');
+                const data = await response.json();
+
+                const tbody = document.getElementById('snapshotsTable');
+
+                if (!data.success || !data.snapshots || data.snapshots.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No snapshots found. Snapshots are created automatically before each sync.</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = data.snapshots.map(s => `
+                    <tr>
+                        <td>${s.id}</td>
+                        <td>${formatDate(s.created_at)}</td>
+                        <td>${s.row_count}</td>
+                        <td>${s.column_count}</td>
+                        <td><span class="size-badge">${formatSize(s.size_bytes)}</span></td>
+                        <td>
+                            <span class="sheet-id">${truncate(s.sheet_id, 20)}</span>
+                            <br>
+                            <small style="color: var(--text-muted)">${s.worksheet_name}</small>
+                        </td>
+                        <td class="actions">
+                            <button class="btn-secondary btn-small" onclick="previewRollback(${s.id})">Preview</button>
+                            <button class="btn-danger btn-small" onclick="deleteSnapshot(${s.id})">Delete</button>
+                        </td>
+                    </tr>
+                `).join('');
+
+            } catch (error) {
+                console.error('Failed to load snapshots:', error);
+                showAlert('Failed to load snapshots: ' + error.message, 'error');
+            }
+        }
+
+        async function previewRollback(snapshotId) {
+            currentSnapshotId = snapshotId;
+            const detail = document.getElementById('previewDetail');
+            detail.innerHTML = '<dt>Loading...</dt>';
+            document.getElementById('previewModal').classList.add('active');
+
+            try {
+                const response = await fetch(`/api/snapshots/${snapshotId}/preview`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                });
+                const data = await response.json();
+
+                if (!data.success) {
+                    showAlert(data.error || 'Preview failed', 'error');
+                    closeModal('previewModal');
+                    return;
+                }
+
+                const preview = data.preview;
+                const diff = preview.diff;
+
+                detail.innerHTML = `
+                    <dt>Snapshot ID</dt>
+                    <dd>${preview.snapshot_id}</dd>
+                    <dt>Created</dt>
+                    <dd>${formatDate(preview.snapshot_created_at)}</dd>
+                    <dt>Current Sheet</dt>
+                    <dd>${preview.current_row_count} rows, ${preview.current_column_count} columns</dd>
+                    <dt>Snapshot Data</dt>
+                    <dd>${preview.snapshot_row_count} rows, ${preview.snapshot_column_count} columns</dd>
+                    ${diff ? `
+                    <div class="diff-summary">
+                        <strong>Changes if restored:</strong>
+                        <div class="diff-item">
+                            <span>Rows to add:</span>
+                            <span class="diff-add">+${diff.rows_to_add}</span>
+                        </div>
+                        <div class="diff-item">
+                            <span>Rows to remove:</span>
+                            <span class="diff-remove">-${diff.rows_to_remove}</span>
+                        </div>
+                        <div class="diff-item">
+                            <span>Rows unchanged:</span>
+                            <span class="diff-unchanged">${diff.rows_unchanged}</span>
+                        </div>
+                        ${diff.header_changes.added.length > 0 ? `
+                        <div class="diff-item">
+                            <span>Columns to add:</span>
+                            <span class="diff-add">${diff.header_changes.added.join(', ')}</span>
+                        </div>` : ''}
+                        ${diff.header_changes.removed.length > 0 ? `
+                        <div class="diff-item">
+                            <span>Columns to remove:</span>
+                            <span class="diff-remove">${diff.header_changes.removed.join(', ')}</span>
+                        </div>` : ''}
+                    </div>
+                    ` : ''}
+                `;
+
+            } catch (error) {
+                showAlert('Failed to preview: ' + error.message, 'error');
+                closeModal('previewModal');
+            }
+        }
+
+        function confirmRollback() {
+            closeModal('previewModal');
+            document.getElementById('confirmModal').classList.add('active');
+        }
+
+        async function executeRollback() {
+            const btn = document.getElementById('executeRollbackBtn');
+            btn.disabled = true;
+            btn.textContent = 'Restoring...';
+
+            try {
+                const response = await fetch(`/api/snapshots/${currentSnapshotId}/rollback`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({create_backup: true}),
+                });
+                const data = await response.json();
+
+                closeModal('confirmModal');
+
+                if (data.success) {
+                    showAlert(`Sheet restored successfully! Backup created: ID ${data.result.backup_snapshot_id}`, 'success');
+                    loadSnapshots();
+                    loadStats();
+                } else {
+                    showAlert(data.error || 'Rollback failed', 'error');
+                }
+
+            } catch (error) {
+                closeModal('confirmModal');
+                showAlert('Rollback failed: ' + error.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Yes, Restore';
+            }
+        }
+
+        async function deleteSnapshot(snapshotId) {
+            if (!confirm('Delete this snapshot? This cannot be undone.')) return;
+
+            try {
+                const response = await fetch(`/api/snapshots/${snapshotId}`, {
+                    method: 'DELETE',
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    showAlert('Snapshot deleted', 'success');
+                    loadSnapshots();
+                    loadStats();
+                } else {
+                    showAlert(data.error || 'Failed to delete', 'error');
+                }
+            } catch (error) {
+                showAlert('Failed to delete: ' + error.message, 'error');
+            }
+        }
+
+        async function runCleanup() {
+            if (!confirm('Run cleanup to remove old snapshots based on retention policy?')) return;
+
+            try {
+                const response = await fetch('/api/snapshots/cleanup', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    showAlert(`Cleanup complete: ${data.total_deleted} snapshots removed`, 'success');
+                    loadSnapshots();
+                    loadStats();
+                } else {
+                    showAlert(data.error || 'Cleanup failed', 'error');
+                }
+            } catch (error) {
+                showAlert('Cleanup failed: ' + error.message, 'error');
+            }
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.remove('active');
+        }
+
+        // Close modals on outside click
+        document.querySelectorAll('.modal').forEach(modal => {
+            modal.addEventListener('click', function(e) {
+                if (e.target === this) closeModal(this.id);
+            });
+        });
+
+        // Close modals on Escape
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                document.querySelectorAll('.modal.active').forEach(m => closeModal(m.id));
+            }
+        });
+
+        // Initial load
+        loadSnapshots();
+        loadStats();
+    </script>
+</body>
+</html>

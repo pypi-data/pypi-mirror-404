@@ -1,0 +1,449 @@
+{# Navigation macros for the dashboard #}
+
+{# Render tier badge based on tier name #}
+{% macro tier_badge(tier) %}
+{% if tier %}
+<span class="tier-badge tier-{{ tier|lower }}">{{ tier }}</span>
+{% endif %}
+{% endmacro %}
+
+{# Check if a feature is available for the current tier #}
+{% macro is_feature_available(feature, current_tier) %}
+{# Define feature availability by tier #}
+{% set feature_tiers = {
+    'basic_sync': ['free', 'starter', 'professional', 'enterprise'],
+    'schedules': ['starter', 'professional', 'enterprise'],
+    'favorites': ['starter', 'professional', 'enterprise'],
+    'api_keys': ['professional', 'enterprise'],
+    'webhooks': ['professional', 'enterprise'],
+    'multi_user': ['professional', 'enterprise'],
+    'sla_monitoring': ['enterprise'],
+    'audit_logs': ['enterprise'],
+} %}
+{% set available_tiers = feature_tiers.get(feature, []) %}
+{{ current_tier|lower in available_tiers }}
+{% endmacro %}
+
+{# Main navigation component with dropdown menus #}
+{% macro main_nav(current_path, current_user=None) %}
+{% set tier = current_user.tier|default('free') if current_user else 'free' %}
+<nav>
+    <div class="nav-links">
+        {# Dashboard - always visible #}
+        <a href="/" {% if current_path == '/' %}class="active"{% endif %}>Dashboard</a>
+
+        {# Sync dropdown #}
+        <div class="nav-dropdown {% if current_path in ['/configs', '/worksheets', '/favorites', '/snapshots', '/reverse-sync', '/multi-sync', '/history'] %}has-active{% endif %}">
+            <span class="nav-dropdown-toggle {% if current_path in ['/configs', '/worksheets', '/favorites', '/snapshots', '/reverse-sync', '/multi-sync', '/history'] %}active{% endif %}">
+                Sync
+            </span>
+            <div class="nav-dropdown-menu">
+                <a href="/configs" {% if current_path == '/configs' %}class="active"{% endif %}>Configurations</a>
+                <a href="/worksheets" {% if current_path == '/worksheets' %}class="active"{% endif %}>Worksheets</a>
+                {% if tier|lower in ['starter', 'professional', 'enterprise'] %}
+                <a href="/favorites" {% if current_path == '/favorites' %}class="active"{% endif %}>Favorites</a>
+                {% endif %}
+                <div class="nav-dropdown-divider"></div>
+                {# Advanced sync features #}
+                {% if tier|lower in ['professional', 'enterprise'] %}
+                <a href="/reverse-sync" {% if current_path == '/reverse-sync' %}class="active"{% endif %}>Reverse Sync</a>
+                {% else %}
+                <a href="/reverse-sync" class="nav-disabled" title="Upgrade to Professional">Reverse Sync (Pro+)</a>
+                {% endif %}
+                {% if tier|lower in ['business', 'enterprise'] %}
+                <a href="/multi-sync" {% if current_path == '/multi-sync' %}class="active"{% endif %}>Multi-Sheet Sync</a>
+                {% else %}
+                <a href="/multi-sync" class="nav-disabled" title="Upgrade to Business">Multi-Sheet (Biz+)</a>
+                {% endif %}
+                <div class="nav-dropdown-divider"></div>
+                <a href="/snapshots" {% if current_path == '/snapshots' %}class="active"{% endif %}>Snapshots</a>
+                <a href="/history" {% if current_path == '/history' %}class="active"{% endif %}>History</a>
+            </div>
+        </div>
+
+        {# Schedule dropdown #}
+        <div class="nav-dropdown {% if current_path in ['/schedules', '/jobs', '/freshness'] %}has-active{% endif %}">
+            <span class="nav-dropdown-toggle {% if current_path in ['/schedules', '/jobs', '/freshness'] %}active{% endif %}">
+                Schedule
+            </span>
+            <div class="nav-dropdown-menu">
+                {% if tier|lower in ['starter', 'professional', 'enterprise'] %}
+                <a href="/schedules" {% if current_path == '/schedules' %}class="active"{% endif %}>Schedules</a>
+                {% else %}
+                <a href="/schedules" class="nav-disabled" title="Upgrade to Starter">Schedules (Starter+)</a>
+                {% endif %}
+                <a href="/jobs" {% if current_path == '/jobs' %}class="active"{% endif %}>Job Queue</a>
+                <a href="/freshness" {% if current_path == '/freshness' %}class="active"{% endif %}>Freshness</a>
+            </div>
+        </div>
+
+        {# Admin dropdown #}
+        <div class="nav-dropdown {% if current_path in ['/users', '/api-keys', '/webhooks', '/tier', '/audit'] %}has-active{% endif %}">
+            <span class="nav-dropdown-toggle {% if current_path in ['/users', '/api-keys', '/webhooks', '/tier', '/audit'] %}active{% endif %}">
+                Admin
+            </span>
+            <div class="nav-dropdown-menu">
+                {% if tier|lower in ['professional', 'enterprise'] %}
+                <a href="/users" {% if current_path == '/users' %}class="active"{% endif %}>Users</a>
+                <a href="/api-keys" {% if current_path == '/api-keys' %}class="active"{% endif %}>API Keys</a>
+                <a href="/webhooks" {% if current_path == '/webhooks' %}class="active"{% endif %}>Webhooks</a>
+                {% else %}
+                <a href="/users" class="nav-disabled" title="Upgrade to Professional">Users (Pro+)</a>
+                <a href="/api-keys" class="nav-disabled" title="Upgrade to Professional">API Keys (Pro+)</a>
+                <a href="/webhooks" class="nav-disabled" title="Upgrade to Professional">Webhooks (Pro+)</a>
+                {% endif %}
+                <div class="nav-dropdown-divider"></div>
+                <a href="/tier" {% if current_path == '/tier' %}class="active"{% endif %}>Tier & Usage</a>
+                {% if tier|lower == 'enterprise' %}
+                <a href="/audit" {% if current_path == '/audit' %}class="active"{% endif %}>Audit Log</a>
+                {% endif %}
+            </div>
+        </div>
+
+        {# Help dropdown #}
+        <div class="nav-dropdown {% if current_path in ['/health', '/diagnostics', '/errors', '/setup'] %}has-active{% endif %}">
+            <span class="nav-dropdown-toggle {% if current_path in ['/health', '/diagnostics', '/errors', '/setup'] %}active{% endif %}">
+                Help
+            </span>
+            <div class="nav-dropdown-menu">
+                <a href="/health" {% if current_path == '/health' %}class="active"{% endif %}>System Health</a>
+                <a href="/diagnostics" {% if current_path == '/diagnostics' %}class="active"{% endif %}>Diagnostics</a>
+                <a href="/errors" {% if current_path == '/errors' %}class="active"{% endif %}>Error Log</a>
+                <div class="nav-dropdown-divider"></div>
+                <a href="/setup" {% if current_path == '/setup' %}class="active"{% endif %}>Setup Wizard</a>
+            </div>
+        </div>
+
+        {# User menu #}
+        {% if current_user %}
+        <div class="nav-user">
+            <span class="shortcuts-hint-badge" onclick="document.dispatchEvent(new KeyboardEvent('keydown', {key: '?'}))" title="View keyboard shortcuts">
+                <kbd>?</kbd> Shortcuts
+            </span>
+            {{ tier_badge(current_user.tier) }}
+            <span>{{ current_user.email }}</span>
+            <a href="{{ url_for('auth.logout') }}" class="btn btn-sm">Logout</a>
+        </div>
+        {% endif %}
+    </div>
+</nav>
+{% endmacro %}
+
+{# Simplified navigation for error/minimal pages #}
+{% macro minimal_nav() %}
+<nav>
+    <div class="nav-links">
+        <a href="/">Dashboard</a>
+        <a href="/health">Health</a>
+        <a href="/diagnostics">Diagnostics</a>
+        <a href="/setup">Setup</a>
+    </div>
+</nav>
+{% endmacro %}
+
+{# Breadcrumb navigation - enhanced version with home icon and accessibility #}
+{% macro breadcrumb(items) %}
+{# Renders breadcrumb navigation.
+
+Args:
+    items: List of dicts with 'label' and optional 'url' keys
+           Example: [{'label': 'Configs', 'url': '/configs'}, {'label': 'Edit Sales'}]
+#}
+<nav aria-label="Breadcrumb" class="breadcrumb-nav">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item">
+            <a href="{{ url_for('dashboard.index') }}">
+                <svg class="home-icon" width="14" height="14" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"/>
+                </svg>
+                <span>Home</span>
+            </a>
+        </li>
+        {% for item in items %}
+        <li class="breadcrumb-item {% if loop.last %}active{% endif %}" {% if loop.last %}aria-current="page"{% endif %}>
+            {% if item.url and not loop.last %}
+            <a href="{{ item.url }}">{{ item.label }}</a>
+            {% else %}
+            <span>{{ item.label }}</span>
+            {% endif %}
+        </li>
+        {% endfor %}
+    </ol>
+</nav>
+{% endmacro %}
+
+{# Legacy alias for backward compatibility #}
+{% macro breadcrumbs(items) %}
+{{ breadcrumb(items) }}
+{% endmacro %}
+
+{# Feature upgrade notice #}
+{% macro upgrade_notice(feature, required_tier) %}
+<div class="alert alert-info" style="display: flex; align-items: center; gap: 1rem;">
+    <div style="flex: 1;">
+        <strong>{{ feature }}</strong> is available on the <strong>{{ required_tier }}</strong> plan and above.
+    </div>
+    <a href="/tier" class="btn btn-primary btn-sm">Upgrade</a>
+</div>
+{% endmacro %}
+
+{# Tier usage bar for dashboard #}
+{% macro tier_usage_bar(usage, limits, tier) %}
+<div class="tier-usage-bar">
+    <div class="usage-item">
+        <span class="usage-label">Configs:</span>
+        {% set config_pct = (usage.configs / limits.max_configs * 100) if limits.max_configs > 0 else 0 %}
+        <span class="usage-value {% if config_pct >= 90 %}error{% elif config_pct >= 70 %}warning{% endif %}">
+            {{ usage.configs }}/{{ limits.max_configs }}
+        </span>
+    </div>
+    <div class="usage-divider"></div>
+    <div class="usage-item">
+        <span class="usage-label">Syncs today:</span>
+        {% set sync_pct = (usage.syncs_today / limits.daily_syncs * 100) if limits.daily_syncs > 0 else 0 %}
+        <span class="usage-value {% if sync_pct >= 90 %}error{% elif sync_pct >= 70 %}warning{% endif %}">
+            {{ usage.syncs_today }}/{{ limits.daily_syncs }}
+        </span>
+    </div>
+    {% if tier|lower == 'free' %}
+    <div class="usage-divider"></div>
+    <a href="/tier" class="upgrade-link">Upgrade</a>
+    {% endif %}
+</div>
+{% endmacro %}
+
+
+{# Sidebar navigation with collapsible sections - Phase 5 Navigation #}
+{% macro sidebar_nav(current_path, current_user=None, super_admin_enabled=False) %}
+{# Renders a sidebar navigation with logical groupings and collapsible admin section.
+
+Args:
+    current_path: Current request path for highlighting active items
+    current_user: Current user object (optional, for role-based visibility)
+    super_admin_enabled: Whether super admin features are enabled (from env)
+#}
+{% set tier = current_user.tier|default('free') if current_user else 'free' %}
+{% set role = current_user.role|default('viewer') if current_user else 'viewer' %}
+<nav class="sidebar-nav" role="navigation" aria-label="Main navigation">
+    {# Main Section (always visible) #}
+    <div class="nav-section">
+        <div class="nav-section-title">Main</div>
+        <ul class="nav-section-items">
+            <li>
+                <a href="{{ url_for('dashboard.index') }}" class="nav-item {% if current_path == '/' %}active{% endif %}">
+                    <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"/>
+                    </svg>
+                    Dashboard
+                </a>
+            </li>
+            <li>
+                <a href="{{ url_for('dashboard.configs_page') }}" class="nav-item {% if '/configs' in current_path %}active{% endif %}">
+                    <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/>
+                    </svg>
+                    Configurations
+                </a>
+            </li>
+            <li>
+                <a href="{{ url_for('dashboard.history_page') }}" class="nav-item {% if '/history' in current_path %}active{% endif %}">
+                    <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/>
+                    </svg>
+                    History
+                </a>
+            </li>
+            {% if tier|lower in ['starter', 'professional', 'pro', 'business', 'enterprise'] %}
+            <li>
+                <a href="{{ url_for('dashboard.schedules') }}" class="nav-item {% if '/schedules' in current_path %}active{% endif %}">
+                    <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd"/>
+                    </svg>
+                    Schedules
+                </a>
+            </li>
+            {% endif %}
+        </ul>
+    </div>
+
+    {# Monitoring Section (operators and above) #}
+    {% if role in ['owner', 'admin', 'operator'] %}
+    <div class="nav-section">
+        <div class="nav-section-title">Monitoring</div>
+        <ul class="nav-section-items">
+            <li>
+                <a href="{{ url_for('dashboard.jobs_page') }}" class="nav-item {% if '/jobs' in current_path %}active{% endif %}">
+                    <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z"/>
+                        <path fill-rule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clip-rule="evenodd"/>
+                    </svg>
+                    Job Queue
+                </a>
+            </li>
+            <li>
+                <a href="{{ url_for('freshness.freshness_page') }}" class="nav-item {% if '/freshness' in current_path %}active{% endif %}">
+                    <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clip-rule="evenodd"/>
+                    </svg>
+                    Freshness
+                </a>
+            </li>
+            <li>
+                <a href="{{ url_for('agents.agents_list') }}" class="nav-item {% if '/agents' in current_path %}active{% endif %}">
+                    <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-3a5.972 5.972 0 00-.75-2.906A3.005 3.005 0 0119 15v3h-3zM4.75 12.094A5.973 5.973 0 004 15v3H1v-3a3 3 0 013.75-2.906z"/>
+                    </svg>
+                    Agents
+                </a>
+            </li>
+            <li>
+                <a href="{{ url_for('databases.index') }}" class="nav-item {% if '/databases' in current_path %}active{% endif %}">
+                    <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M3 12v3c0 1.657 3.134 3 7 3s7-1.343 7-3v-3c0 1.657-3.134 3-7 3s-7-1.343-7-3z"/>
+                        <path d="M3 7v3c0 1.657 3.134 3 7 3s7-1.343 7-3V7c0 1.657-3.134 3-7 3S3 8.657 3 7z"/>
+                        <path d="M17 5c0 1.657-3.134 3-7 3S3 6.657 3 5s3.134-3 7-3 7 1.343 7 3z"/>
+                    </svg>
+                    Databases
+                </a>
+            </li>
+        </ul>
+    </div>
+    {% endif %}
+
+    {# Admin Section (collapsed by default, admins only) #}
+    {% if role in ['owner', 'admin'] %}
+    <div class="nav-section collapsible" id="admin-nav-section">
+        <button class="nav-section-title clickable" aria-expanded="false" aria-controls="admin-nav-items" onclick="toggleNavSection('admin-nav-section')">
+            Admin
+            <svg class="collapse-chevron" width="12" height="12" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/>
+            </svg>
+        </button>
+        <ul class="nav-section-items" id="admin-nav-items">
+            {% if tier|lower in ['professional', 'pro', 'business', 'enterprise'] %}
+            <li>
+                <a href="{{ url_for('dashboard.users') }}" class="nav-item {% if '/users' in current_path %}active{% endif %}">
+                    <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/>
+                    </svg>
+                    Users
+                </a>
+            </li>
+            <li>
+                <a href="{{ url_for('api_keys.api_keys_page') }}" class="nav-item {% if '/api-keys' in current_path %}active{% endif %}">
+                    <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M18 8a6 6 0 01-7.743 5.743L10 14l-1 1-1 1H6v2H2v-4l4.257-4.257A6 6 0 1118 8zm-6-4a1 1 0 100 2 2 2 0 012 2 1 1 0 102 0 4 4 0 00-4-4z" clip-rule="evenodd"/>
+                    </svg>
+                    API Keys
+                </a>
+            </li>
+            <li>
+                <a href="{{ url_for('dashboard.webhooks_page') }}" class="nav-item {% if '/webhooks' in current_path %}active{% endif %}">
+                    <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M12.586 4.586a2 2 0 112.828 2.828l-3 3a2 2 0 01-2.828 0 1 1 0 00-1.414 1.414 4 4 0 005.656 0l3-3a4 4 0 00-5.656-5.656l-1.5 1.5a1 1 0 101.414 1.414l1.5-1.5zm-5 5a2 2 0 012.828 0 1 1 0 101.414-1.414 4 4 0 00-5.656 0l-3 3a4 4 0 105.656 5.656l1.5-1.5a1 1 0 10-1.414-1.414l-1.5 1.5a2 2 0 11-2.828-2.828l3-3z" clip-rule="evenodd"/>
+                    </svg>
+                    Webhooks
+                </a>
+            </li>
+            {% if tier|lower == 'enterprise' %}
+            <li>
+                <a href="{{ url_for('dashboard.audit_page') }}" class="nav-item {% if '/audit' in current_path %}active{% endif %}">
+                    <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clip-rule="evenodd"/>
+                    </svg>
+                    Audit Log
+                </a>
+            </li>
+            {% endif %}
+            {% endif %}
+        </ul>
+    </div>
+    {% endif %}
+
+    {# Super Admin Section (only for owners when enabled) #}
+    {% if super_admin_enabled and role == 'owner' %}
+    <div class="nav-section">
+        <div class="nav-section-title super-admin-title">Super Admin</div>
+        <ul class="nav-section-items">
+            <li>
+                <a href="{{ url_for('super_admin.users_list') }}" class="nav-item super-admin-link {% if '/super-admin' in current_path %}active{% endif %}">
+                    <svg class="nav-icon super-admin-icon" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                    </svg>
+                    All Users
+                </a>
+            </li>
+        </ul>
+    </div>
+    {% endif %}
+
+    {# Help Section (always visible) #}
+    <div class="nav-section">
+        <div class="nav-section-title">Help</div>
+        <ul class="nav-section-items">
+            <li>
+                <a href="{{ url_for('diagnostics.diagnostics_page') }}" class="nav-item {% if '/diagnostics' in current_path %}active{% endif %}">
+                    <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"/>
+                    </svg>
+                    Diagnostics
+                </a>
+            </li>
+            <li>
+                <a href="{{ url_for('tier.tier_status') }}" class="nav-item {% if '/tier' in current_path %}active{% endif %}">
+                    <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z"/>
+                    </svg>
+                    Tier & Usage
+                </a>
+            </li>
+            <li>
+                <a href="https://github.com/BrandonFricke/mysql-to-sheets#readme" target="_blank" rel="noopener" class="nav-item external">
+                    <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M9 4.804A7.968 7.968 0 005.5 4c-1.255 0-2.443.29-3.5.804v10A7.969 7.969 0 015.5 14c1.669 0 3.218.51 4.5 1.385A7.962 7.962 0 0114.5 14c1.255 0 2.443.29 3.5.804v-10A7.968 7.968 0 0014.5 4c-1.255 0-2.443.29-3.5.804V12a1 1 0 11-2 0V4.804z"/>
+                    </svg>
+                    Documentation
+                    <svg class="external-link-icon" width="12" height="12" viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M11 3a1 1 0 100 2h2.586l-6.293 6.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 102 0V4a1 1 0 00-1-1h-5z"/>
+                        <path d="M5 5a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-3a1 1 0 10-2 0v3H5V7h3a1 1 0 000-2H5z"/>
+                    </svg>
+                </a>
+            </li>
+        </ul>
+    </div>
+
+    {# Keyboard shortcuts hint #}
+    <div class="nav-shortcuts-hint">
+        Press <kbd>?</kbd> for shortcuts
+    </div>
+</nav>
+
+<script>
+function toggleNavSection(sectionId) {
+    const section = document.getElementById(sectionId);
+    if (section) {
+        section.classList.toggle('collapsed');
+        const btn = section.querySelector('.nav-section-title.clickable');
+        if (btn) {
+            const isCollapsed = section.classList.contains('collapsed');
+            btn.setAttribute('aria-expanded', !isCollapsed);
+        }
+        // Save state
+        localStorage.setItem('nav_' + sectionId + '_collapsed', section.classList.contains('collapsed'));
+    }
+}
+
+// Restore collapsed state on load
+document.addEventListener('DOMContentLoaded', function() {
+    const sections = document.querySelectorAll('.nav-section.collapsible');
+    sections.forEach(function(section) {
+        const id = section.id;
+        if (id && localStorage.getItem('nav_' + id + '_collapsed') === 'true') {
+            section.classList.add('collapsed');
+            const btn = section.querySelector('.nav-section-title.clickable');
+            if (btn) btn.setAttribute('aria-expanded', 'false');
+        }
+    });
+});
+</script>
+{% endmacro %}

@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tier Status - MySQL to Sheets Sync</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --success: #16a34a;
+            --error: #dc2626;
+            --warning: #ca8a04;
+            --bg: #f8fafc;
+            --card-bg: #ffffff;
+            --border: #e2e8f0;
+            --text: #1e293b;
+            --text-muted: #64748b;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.5;
+            padding: 2rem;
+        }
+
+        .container { max-width: 1200px; margin: 0 auto; }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
+
+        h1 { font-size: 1.5rem; font-weight: 600; }
+        .version { color: var(--text-muted); font-size: 0.875rem; }
+
+        nav {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 2rem;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 1rem;
+        }
+
+        nav a {
+            color: var(--text-muted);
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem;
+        }
+
+        nav a:hover { background: var(--border); color: var(--text); }
+        nav a.active { background: var(--primary); color: white; }
+
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .card h2 { font-size: 1.125rem; font-weight: 600; margin-bottom: 1rem; }
+
+        .tier-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            border-radius: 9999px;
+            font-size: 1rem;
+            font-weight: 600;
+        }
+
+        .tier-free { background: #f3f4f6; color: #374151; }
+        .tier-pro { background: #dbeafe; color: #1e40af; }
+        .tier-business { background: #fef3c7; color: #92400e; }
+        .tier-enterprise { background: #f3e8ff; color: #7c3aed; }
+
+        .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.5rem; }
+        @media (max-width: 768px) { .grid { grid-template-columns: 1fr; } }
+
+        .usage-item {
+            margin-bottom: 1rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .usage-item:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+
+        .usage-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.5rem;
+        }
+
+        .usage-label { font-weight: 500; }
+        .usage-value { font-size: 0.875rem; color: var(--text-muted); }
+
+        .progress-bar {
+            height: 8px;
+            background: var(--border);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.3s ease;
+        }
+
+        .progress-fill.low { background: var(--success); }
+        .progress-fill.medium { background: var(--warning); }
+        .progress-fill.high { background: var(--error); }
+        .progress-fill.unlimited { background: var(--primary); width: 100%; }
+
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 0.75rem;
+        }
+
+        .feature-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 0.75rem;
+            background: var(--bg);
+            border-radius: 0.375rem;
+            font-size: 0.875rem;
+        }
+
+        .feature-item.available { color: var(--text); }
+        .feature-item.unavailable { color: var(--text-muted); opacity: 0.6; }
+
+        .feature-icon {
+            width: 16px;
+            height: 16px;
+            flex-shrink: 0;
+        }
+
+        .feature-icon.check { color: var(--success); }
+        .feature-icon.lock { color: var(--text-muted); }
+
+        .tier-comparison {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        @media (max-width: 900px) {
+            .tier-comparison { grid-template-columns: repeat(2, 1fr); }
+        }
+
+        .tier-card {
+            background: var(--bg);
+            border: 2px solid var(--border);
+            border-radius: 0.5rem;
+            padding: 1rem;
+            text-align: center;
+        }
+
+        .tier-card.current { border-color: var(--primary); }
+
+        .tier-card h4 {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        .tier-card .tier-limits {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .tier-card .tier-limits p { margin: 0.25rem 0; }
+
+        .category-header {
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            margin: 1.5rem 0 0.75rem 0;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .category-header:first-child { margin-top: 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div>
+                <h1>Subscription Tier</h1>
+                <span class="version">v{{ version }}</span>
+            </div>
+            <div>
+                {% if current_user %}
+                <span style="margin-right: 1rem;">{{ current_user.email }}</span>
+                <a href="{{ url_for('auth.logout') }}" style="color: var(--primary); text-decoration: none;">Logout</a>
+                {% endif %}
+            </div>
+        </header>
+
+        <nav>
+            <a href="{{ url_for('dashboard.index') }}">Dashboard</a>
+            <a href="{{ url_for('dashboard.configs_page') }}">Configs</a>
+            <a href="{{ url_for('dashboard.schedules') }}">Schedules</a>
+            <a href="{{ url_for('dashboard.users') }}">Users</a>
+            <a href="{{ url_for('dashboard.webhooks_page') }}">Webhooks</a>
+            <a href="{{ url_for('tier.tier_status') }}" class="active">Tier</a>
+        </nav>
+
+        <div class="grid">
+            <!-- Current Tier Card -->
+            <div class="card">
+                <h2>Current Tier</h2>
+                <div style="text-align: center; padding: 1rem;">
+                    <span class="tier-badge tier-{{ current_tier }}">
+                        {% if current_tier == 'enterprise' %}
+                        <svg class="feature-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"/>
+                        </svg>
+                        {% endif %}
+                        {{ tier_name }}
+                    </span>
+                    {% if billing_status == 'trialing' %}
+                    <span style="display: inline-flex; align-items: center; gap: 0.25rem; margin-left: 0.75rem; padding: 0.25rem 0.75rem; background: #fef3c7; color: #92400e; border-radius: 9999px; font-size: 0.75rem; font-weight: 500;">
+                        Trial - {{ trial_days_remaining }} days left
+                    </span>
+                    {% endif %}
+                </div>
+
+                <div style="margin-top: 1.5rem;">
+                    <p style="font-size: 0.875rem; color: var(--text-muted); text-align: center;">
+                        {% if billing_status == 'trialing' %}
+                        You're on a trial of the Pro tier. Upgrade before it ends to keep your features.
+                        {% elif current_tier == 'free' %}
+                        You're on the Free tier. Upgrade to unlock more features.
+                        {% elif current_tier == 'pro' %}
+                        Pro tier gives you scheduling, notifications, and more.
+                        {% elif current_tier == 'business' %}
+                        Business tier includes webhooks, snapshots, and team features.
+                        {% else %}
+                        Enterprise tier with unlimited resources and premium support.
+                        {% endif %}
+                    </p>
+                </div>
+
+                {% if current_tier != 'enterprise' %}
+                <div style="text-align: center; margin-top: 1.5rem;">
+                    <a href="{{ url_for('tier.upgrade') }}"
+                       style="display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1.5rem; background: var(--primary); color: white; text-decoration: none; border-radius: 0.5rem; font-weight: 500; transition: background 0.2s;">
+                        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/>
+                        </svg>
+                        Upgrade Plan
+                    </a>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Billing Details Card -->
+            {% if billing_customer_id or subscription_period_end or billing_status not in ('active', 'trialing') %}
+            <div class="card">
+                <h2>Billing Details</h2>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; padding: 0.5rem 0;">
+                    {% if billing_status and billing_status not in ('active', 'trialing') %}
+                    <div>
+                        <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">Status</div>
+                        <div style="font-weight: 500; margin-top: 0.25rem;">
+                            {% if billing_status == 'past_due' %}
+                            <span style="color: #dc2626;">Past Due</span>
+                            {% elif billing_status == 'canceled' %}
+                            <span style="color: #6b7280;">Canceled</span>
+                            {% else %}
+                            {{ billing_status | title }}
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endif %}
+                    {% if billing_customer_id %}
+                    <div>
+                        <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">Customer ID</div>
+                        <div style="font-weight: 500; margin-top: 0.25rem; font-family: monospace; font-size: 0.85rem;">
+                            {{ billing_customer_id[:8] }}...{{ billing_customer_id[-4:] if billing_customer_id|length > 12 else '' }}
+                        </div>
+                    </div>
+                    {% endif %}
+                    {% if subscription_period_end %}
+                    <div>
+                        <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;">Renewal Date</div>
+                        <div style="font-weight: 500; margin-top: 0.25rem;">
+                            {{ subscription_period_end.strftime('%B %d, %Y') if subscription_period_end else 'N/A' }}
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Usage Card -->
+            <div class="card">
+                <h2>Usage</h2>
+
+                <div class="usage-item">
+                    <div class="usage-header">
+                        <span class="usage-label">Sync Configs</span>
+                        <span class="usage-value">
+                            {{ usage.configs }}
+                            {% if limits.configs is not none %} / {{ limits.configs }}{% else %} (Unlimited){% endif %}
+                        </span>
+                    </div>
+                    <div class="progress-bar">
+                        {% if usage_percentages.configs is none %}
+                        <div class="progress-fill unlimited"></div>
+                        {% else %}
+                        <div class="progress-fill {% if usage_percentages.configs < 50 %}low{% elif usage_percentages.configs < 80 %}medium{% else %}high{% endif %}"
+                             style="width: {{ usage_percentages.configs }}%"></div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="usage-item">
+                    <div class="usage-header">
+                        <span class="usage-label">Users</span>
+                        <span class="usage-value">
+                            {{ usage.users }}
+                            {% if limits.users is not none %} / {{ limits.users }}{% else %} (Unlimited){% endif %}
+                        </span>
+                    </div>
+                    <div class="progress-bar">
+                        {% if usage_percentages.users is none %}
+                        <div class="progress-fill unlimited"></div>
+                        {% else %}
+                        <div class="progress-fill {% if usage_percentages.users < 50 %}low{% elif usage_percentages.users < 80 %}medium{% else %}high{% endif %}"
+                             style="width: {{ usage_percentages.users }}%"></div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="usage-item">
+                    <div class="usage-header">
+                        <span class="usage-label">Schedules</span>
+                        <span class="usage-value">
+                            {{ usage.schedules }}
+                            {% if limits.schedules is not none %} / {{ limits.schedules }}{% else %} (Unlimited){% endif %}
+                        </span>
+                    </div>
+                    <div class="progress-bar">
+                        {% if usage_percentages.schedules is none %}
+                        <div class="progress-fill unlimited"></div>
+                        {% elif limits.schedules == 0 %}
+                        <div class="progress-fill" style="width: 0%; background: var(--text-muted);"></div>
+                        {% else %}
+                        <div class="progress-fill {% if usage_percentages.schedules < 50 %}low{% elif usage_percentages.schedules < 80 %}medium{% else %}high{% endif %}"
+                             style="width: {{ usage_percentages.schedules }}%"></div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="usage-item">
+                    <div class="usage-header">
+                        <span class="usage-label">Webhooks</span>
+                        <span class="usage-value">
+                            {{ usage.webhooks }}
+                            {% if limits.webhooks is not none %} / {{ limits.webhooks }}{% else %} (Unlimited){% endif %}
+                        </span>
+                    </div>
+                    <div class="progress-bar">
+                        {% if usage_percentages.webhooks is none %}
+                        <div class="progress-fill unlimited"></div>
+                        {% elif limits.webhooks == 0 %}
+                        <div class="progress-fill" style="width: 0%; background: var(--text-muted);"></div>
+                        {% else %}
+                        <div class="progress-fill {% if usage_percentages.webhooks < 50 %}low{% elif usage_percentages.webhooks < 80 %}medium{% else %}high{% endif %}"
+                             style="width: {{ usage_percentages.webhooks }}%"></div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Limits Card -->
+        <div class="card">
+            <h2>Tier Limits</h2>
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem;">
+                <div style="padding: 1rem; background: var(--bg); border-radius: 0.375rem;">
+                    <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase;">API Rate Limit</div>
+                    <div style="font-size: 1.25rem; font-weight: 600;">{{ limits.api_requests_per_minute }} req/min</div>
+                </div>
+                <div style="padding: 1rem; background: var(--bg); border-radius: 0.375rem;">
+                    <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase;">History Retention</div>
+                    <div style="font-size: 1.25rem; font-weight: 600;">
+                        {% if limits.history_days is none %}Unlimited{% else %}{{ limits.history_days }} days{% endif %}
+                    </div>
+                </div>
+                <div style="padding: 1rem; background: var(--bg); border-radius: 0.375rem;">
+                    <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase;">Snapshot Retention</div>
+                    <div style="font-size: 1.25rem; font-weight: 600;">
+                        {% if limits.snapshot_retention_count is none %}Unlimited{% elif limits.snapshot_retention_count == 0 %}N/A{% else %}{{ limits.snapshot_retention_count }}{% endif %}
+                    </div>
+                </div>
+                <div style="padding: 1rem; background: var(--bg); border-radius: 0.375rem;">
+                    <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase;">Audit Log Retention</div>
+                    <div style="font-size: 1.25rem; font-weight: 600;">
+                        {% if limits.audit_retention_days is none %}Unlimited{% elif limits.audit_retention_days == 0 %}N/A{% else %}{{ limits.audit_retention_days }} days{% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Features Card -->
+        <div class="card">
+            <h2>Feature Availability</h2>
+
+            {% set current_category = namespace(value='') %}
+            {% for feature in features %}
+                {% if feature.category != current_category.value %}
+                    {% set current_category.value = feature.category %}
+                    <div class="category-header">{{ feature.category }}</div>
+                {% endif %}
+            {% endfor %}
+
+            {% set grouped = {} %}
+            {% for feature in features %}
+                {% if feature.category not in grouped %}
+                    {% set _ = grouped.update({feature.category: []}) %}
+                {% endif %}
+                {% set _ = grouped[feature.category].append(feature) %}
+            {% endfor %}
+
+            {% for category, category_features in grouped.items() %}
+            <div class="category-header">{{ category }}</div>
+            <div class="feature-grid">
+                {% for feature in category_features %}
+                <div class="feature-item {% if feature.available %}available{% else %}unavailable{% endif %}">
+                    {% if feature.available %}
+                    <svg class="feature-icon check" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                    </svg>
+                    {% else %}
+                    <svg class="feature-icon lock" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                    </svg>
+                    {% endif %}
+                    <span>{{ feature.name }}</span>
+                    {% if not feature.available %}
+                    <span style="font-size: 0.625rem; color: var(--text-muted);">({{ feature.required_tier }})</span>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            {% endfor %}
+        </div>
+
+        <!-- Tier Comparison Card -->
+        <div class="card">
+            <h2>Compare Tiers</h2>
+            <div class="tier-comparison">
+                {% for tier in all_tiers %}
+                <div class="tier-card {% if tier.tier == current_tier %}current{% endif %}">
+                    <h4>{{ tier.name }}</h4>
+                    <div class="tier-limits">
+                        <p><strong>Configs:</strong> {{ tier.limits.configs }}</p>
+                        <p><strong>Users:</strong> {{ tier.limits.users }}</p>
+                        <p><strong>Schedules:</strong> {{ tier.limits.schedules }}</p>
+                        <p><strong>Webhooks:</strong> {{ tier.limits.webhooks }}</p>
+                        <p><strong>API:</strong> {{ tier.limits.api_requests_per_minute }}/min</p>
+                    </div>
+                    {% if tier.tier == current_tier %}
+                    <div style="margin-top: 0.75rem;">
+                        <span style="font-size: 0.75rem; background: var(--primary); color: white; padding: 0.125rem 0.5rem; border-radius: 9999px;">Current</span>
+                    </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,182 @@
+{% extends "base.html" %}
+
+{% block title %}Agents - MySQL to Sheets Sync{% endblock %}
+
+{% block page_title %}Hybrid Agents{% endblock %}
+{% block page_subtitle %}<p class="text-muted">Monitor your fleet of sync agents</p>{% endblock %}
+
+{% block content %}
+<div class="dashboard-grid">
+    <!-- Fleet Stats Cards -->
+    <div class="stats-row">
+        <div class="stat-card">
+            <div class="stat-value">{{ stats.total }}</div>
+            <div class="stat-label">Total Agents</div>
+        </div>
+        <div class="stat-card stat-success">
+            <div class="stat-value">{{ stats.online + stats.busy }}</div>
+            <div class="stat-label">Online</div>
+        </div>
+        <div class="stat-card stat-error">
+            <div class="stat-value">{{ stats.offline }}</div>
+            <div class="stat-label">Offline</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ stats.jobs_completed }}</div>
+            <div class="stat-label">Jobs Completed</div>
+        </div>
+        <div class="stat-card stat-warning">
+            <div class="stat-value">{{ stats.jobs_failed }}</div>
+            <div class="stat-label">Jobs Failed</div>
+        </div>
+    </div>
+
+    <!-- Agents Table -->
+    <div class="card">
+        <div class="card-header">
+            <h2>Agent Fleet</h2>
+            <div class="card-actions">
+                <button class="btn btn-sm" onclick="refreshAgents()">Refresh</button>
+            </div>
+        </div>
+
+        {% if agents %}
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Status</th>
+                    <th>Agent ID</th>
+                    <th>Hostname</th>
+                    <th>Version</th>
+                    <th>Jobs Completed</th>
+                    <th>Jobs Failed</th>
+                    <th>Last Seen</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="agentsTableBody">
+                {% for agent in agents %}
+                <tr>
+                    <td>
+                        {% if agent.status == 'online' %}
+                        <span class="badge badge-success">Online</span>
+                        {% elif agent.status == 'busy' %}
+                        <span class="badge badge-warning">Busy</span>
+                        {% else %}
+                        <span class="badge badge-error">Offline</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <a href="{{ url_for('agents.agent_detail', agent_id=agent.agent_id) }}" class="agent-link">
+                            {{ agent.agent_id }}
+                        </a>
+                    </td>
+                    <td>{{ agent.hostname }}</td>
+                    <td><code>{{ agent.version }}</code></td>
+                    <td>{{ agent.jobs_completed }}</td>
+                    <td>{{ agent.jobs_failed }}</td>
+                    <td>
+                        {% if agent.last_seen_at %}
+                        <span class="timestamp" data-timestamp="{{ agent.last_seen_at.isoformat() if agent.last_seen_at else '' }}">
+                            {{ agent.last_seen_at.strftime('%Y-%m-%d %H:%M:%S') if agent.last_seen_at else 'Never' }}
+                        </span>
+                        {% else %}
+                        <span class="text-muted">Never</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <a href="{{ url_for('agents.agent_detail', agent_id=agent.agent_id) }}" class="btn btn-sm">View Details</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state">
+            <svg class="empty-icon" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M2 5a2 2 0 012-2h12a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V5zm3.293 1.293a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 01-1.414-1.414L7.586 10 5.293 7.707a1 1 0 010-1.414zM11 12a1 1 0 100 2h3a1 1 0 100-2h-3z" clip-rule="evenodd"/>
+            </svg>
+            <h3>No Agents Registered</h3>
+            <p>Deploy a Hybrid Agent to sync data from databases within your network.</p>
+            <a href="https://github.com/anthropics/claude-code/blob/main/docs/hybrid-agent.md" target="_blank" class="btn btn-primary">View Documentation</a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<style>
+.stats-row {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+}
+
+.stat-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    padding: 1rem 1.5rem;
+    min-width: 150px;
+    flex: 1;
+}
+
+.stat-value {
+    font-size: 2rem;
+    font-weight: 700;
+    line-height: 1;
+    margin-bottom: 0.25rem;
+}
+
+.stat-label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.stat-card.stat-success .stat-value { color: var(--success); }
+.stat-card.stat-error .stat-value { color: var(--error); }
+.stat-card.stat-warning .stat-value { color: var(--warning); }
+
+.agent-link {
+    color: var(--primary);
+    text-decoration: none;
+    font-family: monospace;
+    font-size: 0.875rem;
+}
+
+.agent-link:hover {
+    text-decoration: underline;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 3rem 1rem;
+}
+
+.empty-icon {
+    width: 48px;
+    height: 48px;
+    color: var(--text-muted);
+    margin-bottom: 1rem;
+}
+
+.empty-state h3 {
+    margin-bottom: 0.5rem;
+}
+
+.empty-state p {
+    color: var(--text-muted);
+    margin-bottom: 1rem;
+}
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function refreshAgents() {
+    window.location.reload();
+}
+</script>
+{% endblock %}

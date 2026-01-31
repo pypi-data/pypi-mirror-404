@@ -1,0 +1,742 @@
+{% extends "base.html" %}
+
+{% block title %}Multi-Sheet Sync - MySQL to Sheets{% endblock %}
+
+{% block page_title %}Multi-Sheet Sync{% endblock %}
+{% block page_subtitle %}
+<span class="text-muted">Sync data from your database to multiple Google Sheets</span>
+{% endblock %}
+
+{% block content %}
+{% if not feature_available %}
+<div class="card">
+    <div class="alert alert-info" style="display: flex; align-items: center; gap: 1rem; margin: 0;">
+        <div style="flex: 1;">
+            <strong>Multi-Sheet Sync</strong> is available on the <strong>{{ required_tier }}</strong> plan and above.
+            <span class="text-muted">You are currently on the {{ current_tier }} plan.</span>
+        </div>
+        <a href="{{ url_for('tier.upgrade') }}" class="btn btn-primary">Upgrade</a>
+    </div>
+</div>
+{% else %}
+
+<!-- Source Configuration Card -->
+<div class="card">
+    <h2>Source: Database Query ({{ db_type|upper }})</h2>
+    <div class="form-group">
+        <label for="sqlQuery">SQL Query</label>
+        <textarea id="sqlQuery" name="query" class="form-control code-input" rows="4"
+                  placeholder="SELECT * FROM your_table">{{ default_query }}</textarea>
+        <small class="text-muted">This query will be executed once and the results sent to all target sheets</small>
+    </div>
+    <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="testQuery()">Test Query</button>
+        <span id="queryStatus" class="text-muted" style="line-height: 2;"></span>
+    </div>
+</div>
+
+<!-- Query Results Preview (hidden by default) -->
+<div class="card" id="queryPreviewCard" style="display: none;">
+    <h2>Query Preview</h2>
+    <div id="queryPreviewContent"></div>
+</div>
+
+<!-- Target Sheets Card -->
+<div class="card">
+    <h2>
+        Target Sheets
+        <button type="button" class="btn btn-primary btn-sm" onclick="addTarget()" style="margin-left: auto;">
+            + Add Target
+        </button>
+    </h2>
+
+    <div id="targetsContainer">
+        <!-- Target cards will be added here -->
+    </div>
+
+    <div id="noTargetsMessage" class="empty-state" style="padding: 2rem; text-align: center; color: var(--text-muted);">
+        No targets added yet. Click "Add Target" to add a Google Sheet target.
+    </div>
+</div>
+
+<!-- Execution Options Card -->
+<div class="card">
+    <h2>Execution Options</h2>
+    <div style="display: flex; gap: 2rem; flex-wrap: wrap;">
+        <label class="checkbox-label">
+            <input type="checkbox" id="parallelExecution" checked>
+            <span>Execute in parallel</span>
+            <small class="text-muted" style="margin-left: 0.5rem;">(faster for multiple targets)</small>
+        </label>
+    </div>
+</div>
+
+<!-- Actions Card -->
+<div class="card">
+    <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
+        <button type="button" id="previewBtn" class="btn btn-secondary" onclick="runPreview()">
+            Preview All
+        </button>
+        <button type="button" id="executeBtn" class="btn btn-primary" onclick="runSync()">
+            Execute Multi-Sheet Sync
+        </button>
+        <span id="statusText" class="text-muted" style="margin-left: auto;"></span>
+    </div>
+</div>
+
+<!-- Results Card (hidden by default) -->
+<div class="card" id="resultsCard" style="display: none;">
+    <h2>Results</h2>
+    <div id="resultsContent"></div>
+</div>
+
+<!-- Target Template (hidden) -->
+<template id="targetTemplate">
+    <div class="target-card" data-target-id="">
+        <div class="target-header">
+            <h3 class="target-title">Target Sheet</h3>
+            <div class="target-actions">
+                <button type="button" class="btn btn-secondary btn-sm" onclick="validateTarget(this)">Validate</button>
+                <button type="button" class="btn btn-danger btn-sm" onclick="removeTarget(this)">Remove</button>
+            </div>
+        </div>
+
+        <div class="target-grid">
+            <div class="form-group">
+                <label>Sheet ID</label>
+                <input type="text" class="form-control target-sheet-id" placeholder="Enter Google Sheet ID or URL">
+            </div>
+            <div class="form-group">
+                <label>Worksheet Name</label>
+                <input type="text" class="form-control target-worksheet" placeholder="Sheet1" value="Sheet1">
+            </div>
+            <div class="form-group">
+                <label>Sync Mode</label>
+                <select class="form-control target-mode">
+                    {% for mode in sync_modes %}
+                    <option value="{{ mode.value }}">{{ mode.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        <div class="target-advanced">
+            <details>
+                <summary style="cursor: pointer; color: var(--primary); font-size: 0.875rem;">
+                    Advanced Filters (Optional)
+                </summary>
+                <div class="target-grid" style="margin-top: 0.75rem;">
+                    <div class="form-group">
+                        <label>Column Filter</label>
+                        <input type="text" class="form-control target-column-filter"
+                               placeholder="name, email, status (comma-separated)">
+                        <small class="text-muted">Only include these columns in this sheet</small>
+                    </div>
+                    <div class="form-group">
+                        <label>Row Filter</label>
+                        <input type="text" class="form-control target-row-filter"
+                               placeholder="status == 'active'">
+                        <small class="text-muted">Python expression to filter rows</small>
+                    </div>
+                </div>
+            </details>
+        </div>
+
+        <div class="target-status" style="display: none;">
+            <span class="status-icon"></span>
+            <span class="status-message"></span>
+        </div>
+    </div>
+</template>
+
+<style>
+.code-input {
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 0.875rem;
+}
+
+.target-card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    padding: 1rem;
+    margin-bottom: 1rem;
+}
+
+.target-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.target-title {
+    font-size: 1rem;
+    font-weight: 600;
+    margin: 0;
+}
+
+.target-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.target-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+}
+
+@media (max-width: 900px) {
+    .target-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.target-status {
+    margin-top: 0.75rem;
+    padding: 0.5rem;
+    border-radius: 0.25rem;
+    font-size: 0.875rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.target-status.valid {
+    background: #dcfce7;
+    color: var(--success);
+}
+
+.target-status.invalid {
+    background: #fee2e2;
+    color: var(--error);
+}
+
+.target-status.loading {
+    background: #dbeafe;
+    color: #1e40af;
+}
+
+.form-group {
+    margin-bottom: 0.75rem;
+}
+
+.form-group label {
+    display: block;
+    font-weight: 500;
+    margin-bottom: 0.25rem;
+    font-size: 0.875rem;
+}
+
+.form-control {
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 0.375rem;
+    font-size: 0.875rem;
+    background: var(--card-bg);
+}
+
+.form-control:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+}
+
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"] {
+    width: 1rem;
+    height: 1rem;
+}
+
+.btn {
+    padding: 0.5rem 1rem;
+    border: none;
+    border-radius: 0.375rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.btn-primary {
+    background: var(--primary);
+    color: white;
+}
+
+.btn-primary:hover {
+    background: var(--primary-hover);
+}
+
+.btn-secondary {
+    background: white;
+    color: var(--text);
+    border: 1px solid var(--border);
+}
+
+.btn-secondary:hover {
+    background: var(--bg);
+}
+
+.btn-danger {
+    background: var(--error);
+    color: white;
+}
+
+.btn-sm {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+}
+
+.btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.text-muted {
+    color: var(--text-muted);
+    font-size: 0.875rem;
+}
+
+.alert {
+    padding: 0.75rem 1rem;
+    border-radius: 0.375rem;
+    margin-bottom: 1rem;
+}
+
+.alert-info {
+    background: #dbeafe;
+    color: #1e40af;
+    border: 1px solid #93c5fd;
+}
+
+.alert-success {
+    background: #dcfce7;
+    color: var(--success);
+    border: 1px solid #86efac;
+}
+
+.alert-error {
+    background: #fee2e2;
+    color: var(--error);
+    border: 1px solid #fca5a5;
+}
+
+.empty-state {
+    background: var(--bg);
+    border: 2px dashed var(--border);
+    border-radius: 0.5rem;
+}
+
+.results-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.summary-card {
+    background: var(--bg);
+    padding: 1rem;
+    border-radius: 0.375rem;
+    text-align: center;
+}
+
+.summary-card .value {
+    font-size: 1.5rem;
+    font-weight: 600;
+}
+
+.summary-card .label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+}
+
+.target-result {
+    padding: 0.75rem;
+    border-radius: 0.375rem;
+    margin-bottom: 0.5rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.target-result.success {
+    background: #dcfce7;
+}
+
+.target-result.failed {
+    background: #fee2e2;
+}
+
+.target-result-info {
+    flex: 1;
+}
+
+.target-result-rows {
+    font-weight: 600;
+    margin-left: 1rem;
+}
+
+.query-preview-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.75rem;
+    margin-top: 0.5rem;
+}
+
+.query-preview-table th,
+.query-preview-table td {
+    padding: 0.5rem;
+    border: 1px solid var(--border);
+    text-align: left;
+}
+
+.query-preview-table th {
+    background: var(--bg);
+    font-weight: 600;
+}
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let targetCounter = 0;
+
+function addTarget() {
+    const template = document.getElementById('targetTemplate');
+    const container = document.getElementById('targetsContainer');
+    const noTargetsMessage = document.getElementById('noTargetsMessage');
+
+    const clone = template.content.cloneNode(true);
+    const targetCard = clone.querySelector('.target-card');
+
+    targetCounter++;
+    targetCard.dataset.targetId = targetCounter;
+    targetCard.querySelector('.target-title').textContent = `Target ${targetCounter}`;
+
+    container.appendChild(clone);
+    noTargetsMessage.style.display = 'none';
+
+    updateTargetCount();
+}
+
+function removeTarget(btn) {
+    const card = btn.closest('.target-card');
+    card.remove();
+
+    const container = document.getElementById('targetsContainer');
+    const noTargetsMessage = document.getElementById('noTargetsMessage');
+
+    if (container.children.length === 0) {
+        noTargetsMessage.style.display = 'block';
+    }
+
+    updateTargetCount();
+}
+
+function updateTargetCount() {
+    const targets = document.querySelectorAll('.target-card');
+    targets.forEach((card, index) => {
+        card.querySelector('.target-title').textContent = `Target ${index + 1}`;
+    });
+}
+
+function getTargetsData() {
+    const targets = [];
+    document.querySelectorAll('.target-card').forEach(card => {
+        targets.push({
+            sheet_id: card.querySelector('.target-sheet-id').value.trim(),
+            worksheet_name: card.querySelector('.target-worksheet').value.trim() || 'Sheet1',
+            mode: card.querySelector('.target-mode').value,
+            column_filter: card.querySelector('.target-column-filter').value.trim(),
+            row_filter: card.querySelector('.target-row-filter').value.trim(),
+        });
+    });
+    return targets;
+}
+
+function getFormData() {
+    return {
+        query: document.getElementById('sqlQuery').value.trim(),
+        targets: getTargetsData(),
+        parallel: document.getElementById('parallelExecution').checked,
+    };
+}
+
+function validateForm() {
+    const data = getFormData();
+    const errors = [];
+
+    if (!data.query) errors.push('SQL query is required');
+    if (data.targets.length === 0) errors.push('At least one target sheet is required');
+
+    data.targets.forEach((t, i) => {
+        if (!t.sheet_id) errors.push(`Target ${i + 1}: Sheet ID is required`);
+    });
+
+    return errors;
+}
+
+function setStatus(message, isError = false) {
+    const statusEl = document.getElementById('statusText');
+    statusEl.textContent = message;
+    statusEl.style.color = isError ? 'var(--error)' : 'var(--text-muted)';
+}
+
+function setTargetStatus(card, status, message) {
+    const statusEl = card.querySelector('.target-status');
+    statusEl.style.display = 'flex';
+    statusEl.className = 'target-status ' + status;
+    statusEl.querySelector('.status-message').textContent = message;
+
+    const icon = statusEl.querySelector('.status-icon');
+    if (status === 'valid') {
+        icon.innerHTML = '&#10003;';
+    } else if (status === 'invalid') {
+        icon.innerHTML = '&#10007;';
+    } else {
+        icon.innerHTML = '&#8987;';
+    }
+}
+
+async function validateTarget(btn) {
+    const card = btn.closest('.target-card');
+    const sheetId = card.querySelector('.target-sheet-id').value.trim();
+    const worksheet = card.querySelector('.target-worksheet').value.trim() || 'Sheet1';
+
+    if (!sheetId) {
+        setTargetStatus(card, 'invalid', 'Sheet ID is required');
+        return;
+    }
+
+    setTargetStatus(card, 'loading', 'Validating...');
+
+    try {
+        const response = await fetch('/api/multi-sync/validate-sheet', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sheet_id: sheetId, worksheet_name: worksheet }),
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            const worksheetStatus = data.worksheet_exists ?
+                `Worksheet "${worksheet}" found` :
+                `Worksheet "${worksheet}" will be created`;
+            setTargetStatus(card, 'valid', `${data.title} - ${worksheetStatus}`);
+        } else {
+            setTargetStatus(card, 'invalid', data.error);
+        }
+    } catch (error) {
+        setTargetStatus(card, 'invalid', 'Validation failed: ' + error.message);
+    }
+}
+
+async function testQuery() {
+    const query = document.getElementById('sqlQuery').value.trim();
+    if (!query) {
+        document.getElementById('queryStatus').textContent = 'Query is required';
+        return;
+    }
+
+    document.getElementById('queryStatus').textContent = 'Testing query...';
+
+    try {
+        const response = await fetch('/api/multi-sync/test-query', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query }),
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            document.getElementById('queryStatus').textContent = `Query returned ${data.row_count} rows`;
+            showQueryPreview(data);
+        } else {
+            document.getElementById('queryStatus').textContent = 'Error: ' + data.error;
+        }
+    } catch (error) {
+        document.getElementById('queryStatus').textContent = 'Test failed: ' + error.message;
+    }
+}
+
+function showQueryPreview(data) {
+    const card = document.getElementById('queryPreviewCard');
+    const content = document.getElementById('queryPreviewContent');
+
+    card.style.display = 'block';
+
+    let tableHtml = '<table class="query-preview-table"><thead><tr>';
+    data.headers.forEach(h => {
+        tableHtml += `<th>${escapeHtml(h)}</th>`;
+    });
+    tableHtml += '</tr></thead><tbody>';
+
+    data.preview_rows.forEach(row => {
+        tableHtml += '<tr>';
+        row.forEach(cell => {
+            tableHtml += `<td>${escapeHtml(String(cell ?? ''))}</td>`;
+        });
+        tableHtml += '</tr>';
+    });
+    tableHtml += '</tbody></table>';
+
+    content.innerHTML = `
+        <p><strong>${data.row_count}</strong> total rows, showing first ${data.preview_rows.length}</p>
+        <p><strong>Columns:</strong> ${data.headers.join(', ')}</p>
+        ${tableHtml}
+    `;
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function showResults(result, isPreview = false) {
+    const card = document.getElementById('resultsCard');
+    const content = document.getElementById('resultsContent');
+
+    card.style.display = 'block';
+
+    const alertClass = result.success !== false ? 'alert-success' : 'alert-error';
+
+    let html = `<div class="alert ${alertClass}">${result.message || (result.success ? 'Operation completed!' : 'Operation failed')}</div>`;
+
+    // Summary stats
+    const succeeded = result.targets_succeeded || result.target_results?.filter(r => r.success).length || 0;
+    const failed = result.targets_failed || result.target_results?.filter(r => !r.success).length || 0;
+
+    html += `
+        <div class="results-summary">
+            <div class="summary-card">
+                <div class="value">${result.total_rows_fetched || 0}</div>
+                <div class="label">Rows Fetched</div>
+            </div>
+            <div class="summary-card">
+                <div class="value">${result.targets_count || result.target_results?.length || 0}</div>
+                <div class="label">Total Targets</div>
+            </div>
+            <div class="summary-card">
+                <div class="value" style="color: var(--success);">${succeeded}</div>
+                <div class="label">Succeeded</div>
+            </div>
+            <div class="summary-card">
+                <div class="value" style="color: ${failed > 0 ? 'var(--error)' : 'var(--text-muted)'};">${failed}</div>
+                <div class="label">Failed</div>
+            </div>
+        </div>
+    `;
+
+    // Per-target results
+    if (result.target_results && result.target_results.length > 0) {
+        html += '<h3 style="margin-top: 1rem; margin-bottom: 0.5rem;">Target Results</h3>';
+        result.target_results.forEach((tr, i) => {
+            const status = tr.success ? 'success' : 'failed';
+            html += `
+                <div class="target-result ${status}">
+                    <div class="target-result-info">
+                        <strong>Target ${i + 1}:</strong> ${tr.target?.sheet_id || 'Unknown'}
+                        ${tr.error ? `<br><small style="color: var(--error);">${tr.error}</small>` : ''}
+                    </div>
+                    <div class="target-result-rows">
+                        ${tr.rows_synced} rows ${isPreview ? 'to sync' : 'synced'}
+                    </div>
+                </div>
+            `;
+        });
+    }
+
+    content.innerHTML = html;
+    card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+async function runPreview() {
+    const errors = validateForm();
+    if (errors.length > 0) {
+        setStatus(errors.join(', '), true);
+        return;
+    }
+
+    const btn = document.getElementById('previewBtn');
+    btn.disabled = true;
+    btn.textContent = 'Loading...';
+    setStatus('Running preview...');
+
+    try {
+        const response = await fetch('/api/multi-sync/preview', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(getFormData()),
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            showResults(data.preview, true);
+            setStatus('Preview complete');
+        } else {
+            setStatus('Preview failed: ' + data.error, true);
+        }
+    } catch (error) {
+        setStatus('Preview failed: ' + error.message, true);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Preview All';
+    }
+}
+
+async function runSync() {
+    const errors = validateForm();
+    if (errors.length > 0) {
+        setStatus(errors.join(', '), true);
+        return;
+    }
+
+    const targets = getTargetsData().filter(t => t.sheet_id);
+    if (!confirm(`This will sync data to ${targets.length} Google Sheet(s). Are you sure you want to proceed?`)) {
+        return;
+    }
+
+    const btn = document.getElementById('executeBtn');
+    btn.disabled = true;
+    btn.textContent = 'Syncing...';
+    setStatus('Executing multi-sheet sync...');
+
+    try {
+        const response = await fetch('/api/multi-sync/execute', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(getFormData()),
+        });
+        const data = await response.json();
+
+        showResults(data.result || data, false);
+        if (data.success) {
+            setStatus('Multi-sheet sync completed!');
+        } else {
+            setStatus('Multi-sheet sync completed with some failures', true);
+        }
+    } catch (error) {
+        setStatus('Multi-sheet sync failed: ' + error.message, true);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Execute Multi-Sheet Sync';
+    }
+}
+
+// Add one target by default on page load
+document.addEventListener('DOMContentLoaded', function() {
+    addTarget();
+});
+</script>
+{% endblock %}

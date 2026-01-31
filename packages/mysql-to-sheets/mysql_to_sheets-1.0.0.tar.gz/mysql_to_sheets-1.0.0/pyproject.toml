@@ -1,0 +1,198 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mysql-to-sheets"
+version = "1.0.0"
+description = "Sync MySQL/PostgreSQL/SQLite/MSSQL data to Google Sheets with CLI, API, and Web Dashboard"
+readme = {file = "README.md", content-type = "text/markdown"}
+license = {text = "MIT"}
+requires-python = ">=3.10"
+authors = [
+    {name = "Texas Longhorn Analytics", email = "frickesoftware@gmail.com"}
+]
+keywords = [
+    "mysql",
+    "google-sheets",
+    "sync",
+    "etl",
+    "data-pipeline",
+    "postgresql",
+    "sqlite",
+    "mssql",
+    "sql-server",
+    "spreadsheet",
+    "automation",
+    "data-export",
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Environment :: Web Environment",
+    "Framework :: FastAPI",
+    "Framework :: Flask",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Database",
+    "Topic :: Database :: Front-Ends",
+    "Topic :: Internet :: WWW/HTTP :: WSGI :: Application",
+    "Topic :: Office/Business :: Office Suites",
+    "Typing :: Typed",
+]
+
+dependencies = [
+    # Core - Google Sheets & Auth
+    "gspread~=6.1.2",
+    "google-auth~=2.23.0",
+    # Core - Database Connectivity (MySQL is the primary use case)
+    "mysql-connector-python~=9.0.0",
+    # Core - Environment Variable Management
+    "python-dotenv~=1.0.1",
+    # API Layer
+    "fastapi~=0.109.0",
+    "uvicorn~=0.27.0",
+    "pydantic~=2.5.3",
+    # Web Dashboard
+    "flask~=3.0.0",
+    "flask-wtf~=1.2.1",
+    # Database Persistence
+    "sqlalchemy~=2.0.25",
+    "alembic~=1.13.0",
+    # Scheduler
+    "APScheduler~=3.10.4",
+    # Auth & Security
+    "bcrypt~=4.0.0",
+    "PyJWT~=2.8.0",
+    "PyYAML~=6.0",
+    # Security - Credential Encryption
+    "cryptography>=42.0",
+]
+
+[project.optional-dependencies]
+postgres = ["psycopg2-binary~=2.9.9"]
+mssql = ["pymssql~=2.2.0"]
+redis = ["redis~=5.0.0"]
+desktop = [
+    "pystray>=0.19.0",
+    "plyer>=2.1.0",
+    "Pillow>=10.0.0",
+    "pywebview>=5.0",
+    "keyring>=25.0",
+    "ttkbootstrap>=1.10",
+]
+all = [
+    "psycopg2-binary~=2.9.9",
+    "pymssql~=2.2.0",
+    "redis~=5.0.0",
+    "pystray>=0.19.0",
+    "plyer>=2.1.0",
+    "Pillow>=10.0.0",
+    "pywebview>=5.0",
+    "keyring>=25.0",
+    "ttkbootstrap>=1.10",
+]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-xdist>=3.5.0",
+    "freezegun>=1.2.0",
+    "httpx>=0.25.0",
+    "mypy>=1.7.0",
+    "ruff>=0.1.0",
+    "fakeredis>=2.21.0",
+]
+build = [
+    "pyinstaller>=6.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/BrandonFricke/mysql-to-sheets"
+Documentation = "https://github.com/BrandonFricke/mysql-to-sheets#readme"
+Repository = "https://github.com/BrandonFricke/mysql-to-sheets"
+Issues = "https://github.com/BrandonFricke/mysql-to-sheets/issues"
+Changelog = "https://github.com/BrandonFricke/mysql-to-sheets/blob/main/CHANGELOG.md"
+
+[project.scripts]
+mysql-to-sheets = "mysql_to_sheets.cli.main:main"
+
+[project.gui-scripts]
+"mysql-to-sheets-gui" = "mysql_to_sheets.desktop.app:main"
+
+[project.entry-points."mysql_to_sheets.plugins"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["mysql_to_sheets*"]
+
+[tool.setuptools.package-data]
+"mysql_to_sheets.web" = ["templates/*.html"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+# Parallel execution with progress reporting and timeout protection
+# -n 4: Fixed 4 workers (memory-safe vs -n auto)
+# --dist loadgroup: Balance work across workers
+# --timeout 120: Kill tests running >2 min (prevents frozen tests)
+# --timeout-method thread: Compatible with xdist
+# -q: Quieter output, let pytest-sugar handle display
+addopts = "-n 4 --dist loadgroup --timeout=120 --timeout-method=thread -q"
+markers = [
+    "slow: marks tests as slow (deselect with '-m not slow')",
+    "integration: marks integration tests requiring external services",
+    "e2e: marks end-to-end tests that run the full sync pipeline",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning:mysql_to_sheets",
+]
+# Timeout defaults (also configurable per-test with @pytest.mark.timeout)
+timeout = 120
+timeout_method = "thread"
+
+[tool.coverage.run]
+source = ["mysql_to_sheets"]
+omit = [
+    "mysql_to_sheets/desktop/*",
+    "mysql_to_sheets/web/templates/*",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]
+
+[tool.mypy]
+strict = true
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "PLC", "PLE", "PLW"]
+ignore = ["E501"]
+
+[tool.ruff.lint.pylint]
+# Prevent future function bloat
+max-args = 10
+max-statements = 50
+max-branches = 15
+max-returns = 6

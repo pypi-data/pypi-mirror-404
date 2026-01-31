@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Users - MySQL to Sheets Sync</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --success: #16a34a;
+            --error: #dc2626;
+            --warning: #ca8a04;
+            --bg: #f8fafc;
+            --card-bg: #ffffff;
+            --border: #e2e8f0;
+            --text: #1e293b;
+            --text-muted: #64748b;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.5;
+            padding: 2rem;
+        }
+
+        .container { max-width: 1200px; margin: 0 auto; }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
+
+        h1 { font-size: 1.5rem; font-weight: 600; }
+        .version { color: var(--text-muted); font-size: 0.875rem; }
+
+        nav {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 2rem;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 1rem;
+        }
+
+        nav a {
+            color: var(--text-muted);
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem;
+        }
+
+        nav a:hover { background: var(--border); color: var(--text); }
+        nav a.active { background: var(--primary); color: white; }
+
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .card h2 { font-size: 1.125rem; font-weight: 600; margin-bottom: 1rem; }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            border: 1px solid var(--border);
+            border-radius: 0.375rem;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            background: var(--card-bg);
+            color: var(--text);
+            text-decoration: none;
+        }
+
+        .btn:hover { background: var(--bg); }
+        .btn-primary { background: var(--primary); color: white; border-color: var(--primary); }
+        .btn-primary:hover { background: var(--primary-hover); }
+        .btn-danger { background: var(--error); color: white; border-color: var(--error); }
+        .btn-danger:hover { opacity: 0.9; }
+        .btn-sm { padding: 0.25rem 0.5rem; font-size: 0.75rem; }
+
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 0.75rem 1rem; text-align: left; border-bottom: 1px solid var(--border); }
+        th { font-weight: 500; color: var(--text-muted); font-size: 0.75rem; text-transform: uppercase; }
+        tr:hover { background: var(--bg); }
+
+        .badge {
+            display: inline-flex;
+            padding: 0.25rem 0.5rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+
+        .badge-success { background: #dcfce7; color: #166534; }
+        .badge-warning { background: #fef3c7; color: #92400e; }
+        .badge-error { background: #fee2e2; color: #991b1b; }
+        .badge-info { background: #dbeafe; color: #1e40af; }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active { display: flex; }
+
+        .modal-content {
+            background: var(--card-bg);
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            width: 100%;
+            max-width: 500px;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .modal-header h3 { font-size: 1.125rem; font-weight: 600; }
+        .modal-close { cursor: pointer; font-size: 1.5rem; color: var(--text-muted); }
+
+        .form-group { margin-bottom: 1rem; }
+        label { display: block; font-size: 0.875rem; font-weight: 500; margin-bottom: 0.25rem; }
+
+        input[type="text"],
+        input[type="email"],
+        select {
+            width: 100%;
+            padding: 0.5rem 0.75rem;
+            border: 1px solid var(--border);
+            border-radius: 0.375rem;
+            font-size: 0.875rem;
+            font-family: inherit;
+        }
+
+        input:focus, select:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+
+        .form-actions {
+            display: flex;
+            gap: 0.5rem;
+            justify-content: flex-end;
+            margin-top: 1.5rem;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            color: var(--text-muted);
+        }
+
+        .alert {
+            padding: 0.75rem 1rem;
+            border-radius: 0.375rem;
+            margin-bottom: 1rem;
+        }
+
+        .alert-error { background: #fee2e2; border: 1px solid #fecaca; color: var(--error); }
+        .alert-success { background: #dcfce7; border: 1px solid #bbf7d0; color: var(--success); }
+
+        .toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div>
+                <h1>User Management</h1>
+                <span class="version">{{ current_user.organization_name }}</span>
+            </div>
+            <div>
+                <span style="margin-right: 1rem;">{{ current_user.email }}</span>
+                <a href="{{ url_for('auth.logout') }}" class="btn btn-sm">Logout</a>
+            </div>
+        </header>
+
+        <nav>
+            <a href="{{ url_for('dashboard.index') }}">Dashboard</a>
+            <a href="{{ url_for('dashboard.schedules') }}">Schedules</a>
+            <a href="{{ url_for('dashboard.users') }}" class="active">Users</a>
+            <a href="{{ url_for('dashboard.configs_page') }}">Configs</a>
+            <a href="{{ url_for('dashboard.webhooks_page') }}">Webhooks</a>
+            <a href="{{ url_for('dashboard.worksheets_page') }}">Worksheets</a>
+        </nav>
+
+        <div id="alertContainer"></div>
+
+        <div class="card">
+            <div class="toolbar">
+                <h2>Users</h2>
+                {% if current_user.role in ['owner', 'admin'] %}
+                <button class="btn btn-primary" onclick="openInviteModal()">Invite User</button>
+                {% endif %}
+            </div>
+
+            {% if users %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th>Role</th>
+                        <th>Status</th>
+                        <th>Last Login</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="userList">
+                    {% for user in users %}
+                    <tr data-user-id="{{ user.id }}">
+                        <td>{{ user.display_name }}</td>
+                        <td>{{ user.email }}</td>
+                        <td>
+                            <span class="badge {% if user.role == 'owner' %}badge-info{% elif user.role == 'admin' %}badge-warning{% else %}badge-success{% endif %}">
+                                {{ user.role }}
+                            </span>
+                        </td>
+                        <td>
+                            <span class="badge {% if user.is_active %}badge-success{% else %}badge-error{% endif %}">
+                                {{ 'Active' if user.is_active else 'Inactive' }}
+                            </span>
+                        </td>
+                        <td>{{ user.last_login_at[:16] if user.last_login_at else 'Never' }}</td>
+                        <td>
+                            {% if current_user.role in ['owner', 'admin'] and user.id != current_user.id %}
+                            <button class="btn btn-sm" onclick="openEditModal({{ user|tojson }})">Edit</button>
+                            {% if user.is_active %}
+                            <button class="btn btn-sm btn-danger" onclick="deactivateUser({{ user.id }})">Deactivate</button>
+                            {% else %}
+                            <button class="btn btn-sm" onclick="activateUser({{ user.id }})">Activate</button>
+                            {% endif %}
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="empty-state">
+                <p>No users found.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Invite User Modal -->
+    <div class="modal" id="inviteModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Invite User</h3>
+                <span class="modal-close" onclick="closeModal('inviteModal')">&times;</span>
+            </div>
+            <form id="inviteForm" onsubmit="inviteUser(event)">
+                <div class="form-group">
+                    <label for="inviteName">Name</label>
+                    <input type="text" id="inviteName" name="name" required>
+                </div>
+                <div class="form-group">
+                    <label for="inviteEmail">Email</label>
+                    <input type="email" id="inviteEmail" name="email" required>
+                </div>
+                <div class="form-group">
+                    <label for="inviteRole">Role</label>
+                    <select id="inviteRole" name="role">
+                        <option value="viewer">Viewer</option>
+                        <option value="operator">Operator</option>
+                        {% if current_user.role == 'owner' %}
+                        <option value="admin">Admin</option>
+                        {% endif %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="invitePassword">Temporary Password</label>
+                    <input type="text" id="invitePassword" name="password" required>
+                    <button type="button" class="btn btn-sm" style="margin-top: 0.5rem" onclick="generatePassword()">Generate</button>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn" onclick="closeModal('inviteModal')">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Invite</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Edit User Modal -->
+    <div class="modal" id="editModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Edit User</h3>
+                <span class="modal-close" onclick="closeModal('editModal')">&times;</span>
+            </div>
+            <form id="editForm" onsubmit="updateUser(event)">
+                <input type="hidden" id="editUserId" name="id">
+                <div class="form-group">
+                    <label for="editName">Name</label>
+                    <input type="text" id="editName" name="name" required>
+                </div>
+                <div class="form-group">
+                    <label for="editEmail">Email</label>
+                    <input type="email" id="editEmail" name="email" required>
+                </div>
+                <div class="form-group">
+                    <label for="editRole">Role</label>
+                    <select id="editRole" name="role">
+                        <option value="viewer">Viewer</option>
+                        <option value="operator">Operator</option>
+                        {% if current_user.role == 'owner' %}
+                        <option value="admin">Admin</option>
+                        {% endif %}
+                    </select>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn" onclick="closeModal('editModal')">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        function showAlert(message, type = 'success') {
+            const container = document.getElementById('alertContainer');
+            container.innerHTML = `<div class="alert alert-${type}">${message}</div>`;
+            setTimeout(() => container.innerHTML = '', 5000);
+        }
+
+        function openInviteModal() {
+            document.getElementById('inviteModal').classList.add('active');
+        }
+
+        function openEditModal(user) {
+            document.getElementById('editUserId').value = user.id;
+            document.getElementById('editName').value = user.display_name;
+            document.getElementById('editEmail').value = user.email;
+            document.getElementById('editRole').value = user.role;
+            document.getElementById('editModal').classList.add('active');
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).classList.remove('active');
+        }
+
+        function generatePassword() {
+            const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+            let password = '';
+            for (let i = 0; i < 12; i++) {
+                password += chars.charAt(Math.floor(Math.random() * chars.length));
+            }
+            document.getElementById('invitePassword').value = password;
+        }
+
+        async function inviteUser(e) {
+            e.preventDefault();
+            const form = e.target;
+            const data = {
+                display_name: form.name.value,
+                email: form.email.value,
+                role: form.role.value,
+                password: form.password.value,
+            };
+
+            try {
+                const res = await fetch('/api/users', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data),
+                });
+                const result = await res.json();
+                if (result.success) {
+                    showAlert('User invited successfully');
+                    closeModal('inviteModal');
+                    location.reload();
+                } else {
+                    showAlert(result.message || 'Failed to invite user', 'error');
+                }
+            } catch (err) {
+                showAlert('An error occurred', 'error');
+            }
+        }
+
+        async function updateUser(e) {
+            e.preventDefault();
+            const form = e.target;
+            const userId = form.querySelector('#editUserId').value;
+            const data = {
+                display_name: form.name.value,
+                email: form.email.value,
+                role: form.role.value,
+            };
+
+            try {
+                const res = await fetch(`/api/users/${userId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data),
+                });
+                const result = await res.json();
+                if (result.success) {
+                    showAlert('User updated successfully');
+                    closeModal('editModal');
+                    location.reload();
+                } else {
+                    showAlert(result.message || 'Failed to update user', 'error');
+                }
+            } catch (err) {
+                showAlert('An error occurred', 'error');
+            }
+        }
+
+        async function deactivateUser(userId) {
+            if (!confirm('Are you sure you want to deactivate this user?')) return;
+
+            try {
+                const res = await fetch(`/api/users/${userId}/deactivate`, { method: 'POST' });
+                const result = await res.json();
+                if (result.success) {
+                    showAlert('User deactivated');
+                    location.reload();
+                } else {
+                    showAlert(result.message || 'Failed to deactivate user', 'error');
+                }
+            } catch (err) {
+                showAlert('An error occurred', 'error');
+            }
+        }
+
+        async function activateUser(userId) {
+            try {
+                const res = await fetch(`/api/users/${userId}/activate`, { method: 'POST' });
+                const result = await res.json();
+                if (result.success) {
+                    showAlert('User activated');
+                    location.reload();
+                } else {
+                    showAlert(result.message || 'Failed to activate user', 'error');
+                }
+            } catch (err) {
+                showAlert('An error occurred', 'error');
+            }
+        }
+    </script>
+</body>
+</html>

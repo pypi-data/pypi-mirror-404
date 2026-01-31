@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+
+{% block title %}Sync History - MySQL to Sheets Sync{% endblock %}
+
+{% block breadcrumbs %}
+{{ breadcrumb([{'label': 'Sync', 'url': '/'}, {'label': 'History'}]) }}
+{% endblock %}
+
+{% block page_title %}Sync History{% endblock %}
+{% block page_subtitle %}
+<span class="version">v{{ version }}</span>
+{% endblock %}
+
+{% block content %}
+<div class="bg-white border border-slate-200 rounded-lg shadow-sm">
+    <div class="px-6 py-4 border-b border-slate-200">
+        <h2 class="text-lg font-semibold text-slate-900">All Syncs ({{ total }} total)</h2>
+    </div>
+    {% if history %}
+    <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+            <thead class="bg-slate-50 text-slate-600 text-left">
+                <tr>
+                    <th class="px-4 py-3 font-medium">Time</th>
+                    <th class="px-4 py-3 font-medium">Status</th>
+                    <th class="px-4 py-3 font-medium">Rows</th>
+                    <th class="px-4 py-3 font-medium">Sheet</th>
+                    <th class="px-4 py-3 font-medium">Duration</th>
+                    <th class="px-4 py-3 font-medium">Message</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-200">
+                {% for entry in history %}
+                <tr class="hover:bg-slate-50">
+                    <td class="px-4 py-3 text-slate-600">{{ entry.timestamp }}</td>
+                    <td class="px-4 py-3">
+                        {% if entry.success %}
+                        <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-800">Success</span>
+                        {% else %}
+                        <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-800">Failed</span>
+                        {% if entry.error_code %}
+                        <span class="ml-1 text-xs text-red-600 font-mono">{{ entry.error_code }}</span>
+                        {% endif %}
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-3 text-slate-900 font-medium">{{ entry.rows_synced }}</td>
+                    <td class="px-4 py-3 text-slate-600 truncate max-w-[120px]">{{ entry.worksheet }}</td>
+                    <td class="px-4 py-3 text-slate-600">{{ entry.duration_ms }}ms</td>
+                    <td class="px-4 py-3 text-slate-600 truncate max-w-[200px]">{{ entry.message }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% if total_pages > 1 %}
+    <div class="flex justify-center items-center gap-4 px-6 py-4 border-t border-slate-200">
+        {% if page > 1 %}
+        <a href="?page={{ page - 1 }}" class="inline-flex items-center px-3 py-1.5 text-sm font-medium rounded-md bg-white text-slate-700 hover:bg-slate-50 border border-slate-300 transition-colors">Previous</a>
+        {% endif %}
+        <span class="text-sm text-slate-500">Page {{ page }} of {{ total_pages }}</span>
+        {% if page < total_pages %}
+        <a href="?page={{ page + 1 }}" class="inline-flex items-center px-3 py-1.5 text-sm font-medium rounded-md bg-white text-slate-700 hover:bg-slate-50 border border-slate-300 transition-colors">Next</a>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    {% else %}
+    <div class="text-center py-12 px-6">
+        <div class="text-slate-400 mb-2">
+            <svg class="mx-auto h-12 w-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+        </div>
+        <p class="text-slate-600 font-medium">No sync history yet</p>
+        <p class="text-sm text-slate-500 mt-1"><a href="/" class="text-blue-600 hover:text-blue-700 hover:underline">Run your first sync</a> from the dashboard.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
