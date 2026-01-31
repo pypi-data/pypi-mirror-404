@@ -1,0 +1,6 @@
+# Release notes for v0.1.12
+
+Changes since v0.1.11:
+
+- package refresh (fb12ee2) by Skhendle
+- ... (6150537) by Skhendle

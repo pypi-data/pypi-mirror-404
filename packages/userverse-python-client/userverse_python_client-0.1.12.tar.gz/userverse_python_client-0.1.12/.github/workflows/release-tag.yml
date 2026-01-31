@@ -1,0 +1,171 @@
+name: Release - Python Package with uv
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write  # push tags/commits & create releases
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # fetch all history & tags
+          persist-credentials: true
+
+      # ---- build & test first ----
+      - name: Install uv (latest release)
+        run: |
+          wget -qO- https://astral.sh/uv/install.sh | sh
+          uv --version
+
+      - name: Install Python 3.12 with uv and create venv
+        run: |
+          uv python install 3.12
+          uv venv
+          echo "✅ Virtual environment created at .venv"
+
+      - name: Sync dependencies
+        run: |
+          source .venv/bin/activate
+          uv sync
+
+      - name: Run tests with coverage
+        run: |
+          source .venv/bin/activate
+          uv pip install coverage
+          coverage run -m pytest
+          mkdir -p coverage_reports
+          coverage xml -o coverage_reports/coverage.xml
+          coverage report -m
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: SoftwareVerse/userverse-python-client
+          files: coverage_reports/coverage.xml
+          fail_ci_if_error: true
+
+      # ---- versioning & release notes ----
+      - name: Determine Version Bump
+        id: version
+        run: |
+          bump="patch"
+          message=$(git log -1 --pretty=%B)
+          if echo "$message" | grep -iqE '\[major\]'; then
+            bump="major"
+          elif echo "$message" | grep -iqE '\[minor\]'; then
+            bump="minor"
+          fi
+          echo "bump=$bump" >> "$GITHUB_OUTPUT"
+
+      - name: Get Latest Tag
+        id: get_tag
+        run: |
+          git fetch --tags --force
+          latest_tag=$(git tag --sort=-v:refname | head -n 1)
+          echo "Latest tag: ${latest_tag:-<none>}"
+          echo "tag=${latest_tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Calculate Next Version
+        id: semver
+        run: |
+          current=${{ steps.get_tag.outputs.tag }}
+          # default when no tag exists
+          if [ -z "$current" ]; then
+            current="v0.1.0"
+          fi
+
+          IFS='.' read -r major minor patch <<<"${current#v}"
+          bump=${{ steps.version.outputs.bump }}
+
+          case "$bump" in
+            major) new_version="$((major + 1)).0.0" ;;
+            minor) new_version="$major.$((minor + 1)).0" ;;
+            patch) new_version="$major.$minor.$((patch + 1))" ;;
+          esac
+
+          echo "current=$current"
+          echo "new_version=$new_version" >> "$GITHUB_OUTPUT"
+
+      - name: Generate Release Notes (commits since last tag)
+        id: notes
+        run: |
+          prev="${{ steps.get_tag.outputs.tag }}"
+          echo "# Release notes for v${{ steps.semver.outputs.new_version }}" > release_notes.md
+          echo "" >> release_notes.md
+          if [ -z "$prev" ]; then
+            echo "Initial release (no previous tag)." >> release_notes.md
+            echo "" >> release_notes.md
+            git log --no-merges --pretty=format:'- %s (%h) by %an' >> release_notes.md
+          else
+            echo "Changes since ${prev}:" >> release_notes.md
+            echo "" >> release_notes.md
+            git log "${prev}..HEAD" --no-merges --pretty=format:'- %s (%h) by %an' >> release_notes.md
+          fi
+          echo "---"
+          cat release_notes.md
+          # escape for multi-line output variable
+          notes=$(awk '{printf "%s\\n", $0}' release_notes.md)
+          echo "notes=$notes" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Git credentials (for commit & tag push)
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
+
+      - name: Update version in pyproject.toml
+        run: |
+          new_version=${{ steps.semver.outputs.new_version }}
+          sed -i -E '/^\[project\]/,/^\[.*\]/ s/^version = ".*"/version = "'"$new_version"'"/' pyproject.toml
+          git add pyproject.toml
+          git commit -m "chore: bump version to v${new_version}" || echo "No changes to commit"
+
+      - name: Create Annotated Tag with Release Notes
+        run: |
+          new_tag="v${{ steps.semver.outputs.new_version }}"
+          {
+            echo "Release ${new_tag}"
+            echo
+            cat release_notes.md
+          } > TAG_MSG.txt
+          # Recreate locally in case of rerun
+          git tag -d "$new_tag" 2>/dev/null || true
+          git tag -a "$new_tag" -F TAG_MSG.txt
+
+      - name: Push main and tag
+        run: |
+          git push origin main
+          git push origin "v${{ steps.semver.outputs.new_version }}"
+
+      # ---- build & publish ----
+      - name: Build package
+        run: |
+          source .venv/bin/activate
+          uv build
+
+      # We’re running on push to main, so publish explicitly (not tag-triggered)
+      - name: Publish to PyPI
+        run: |
+          source .venv/bin/activate
+          uv publish --username __token__ --password ${{ secrets.PYPI_TOKEN }}
+
+      - name: Create/Update GitHub Release (with notes)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          new_tag="v${{ steps.semver.outputs.new_version }}"
+          if gh release view "$new_tag" >/dev/null 2>&1; then
+            gh release edit "$new_tag" --title "$new_tag" --notes-file release_notes.md
+          else
+            gh release create "$new_tag" --title "$new_tag" --notes-file release_notes.md
+          fi

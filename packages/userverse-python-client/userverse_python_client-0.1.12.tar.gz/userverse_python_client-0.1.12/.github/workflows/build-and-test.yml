@@ -1,0 +1,85 @@
+name: CI - Integration Tests with uv
+
+on:
+  # push:
+  #   branches: [main]
+
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write  # Required to allow pushing commits/tags
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Install uv (latest release)
+        run: |
+          wget -qO- https://astral.sh/uv/install.sh | sh
+          uv --version
+
+      - name: Install Python 3.12 with uv and create venv
+        run: |
+          uv python install 3.12
+          uv venv
+          echo "✅ Virtual environment created at .venv"
+
+      - name: Activate venv and sync dependencies
+        run: |
+          source .venv/bin/activate
+          uv sync
+
+      - name: Auto-format code with Black
+        run: |
+          source .venv/bin/activate
+          black .
+
+      - name: Set up Git credentials
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
+
+      - name: Commit and Push formatting changes
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          BRANCH_NAME: ${{ github.head_ref }}
+        run: |
+          echo "Pushing to PR branch: ${BRANCH_NAME}"
+
+          # Ensure we have the branch locally (checkout in PR runs can be detached)
+          git fetch origin "${BRANCH_NAME}:${BRANCH_NAME}"
+          git checkout "${BRANCH_NAME}"
+          git pull origin "${BRANCH_NAME}"
+
+          git add .
+          if ! git diff --cached --quiet; then
+            git commit -m "style: auto-format code with Black"
+            git push origin "${BRANCH_NAME}"
+          else
+            echo "No formatting changes to commit"
+          fi
+
+
+      - name: Run tests with coverage (pytest)
+        run: |
+          source .venv/bin/activate
+          uv pip install coverage pytest
+          coverage run -m pytest
+          mkdir -p coverage_reports
+          coverage xml -o coverage_reports/coverage.xml
+          coverage report -m
+
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: SoftwareVerse/userverse-python-client
+          files: coverage_reports/coverage.xml
+          fail_ci_if_error: true
