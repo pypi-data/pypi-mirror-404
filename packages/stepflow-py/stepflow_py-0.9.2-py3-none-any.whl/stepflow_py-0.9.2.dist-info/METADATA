@@ -1,0 +1,110 @@
+Metadata-Version: 2.4
+Name: stepflow-py
+Version: 0.9.2
+Summary: Python SDK for Stepflow - includes API client and component server (worker) functionality.
+Project-URL: Homepage, https://stepflow-ai.github.io/stepflow/
+Project-URL: Documentation, https://stepflow-ai.github.io/stepflow/
+Project-URL: Repository, https://github.com/stepflow-ai/stepflow
+Project-URL: Bug Tracker, https://github.com/stepflow-ai/stepflow/issues
+Project-URL: Changelog, https://github.com/stepflow-ai/stepflow/blob/main/sdks/python/CHANGELOG.md
+Project-URL: Source Code, https://github.com/stepflow-ai/stepflow/tree/main/sdks/python/stepflow-py
+Author: DataStax Inc.
+Maintainer: DataStax Inc.
+License: Apache-2.0
+Keywords: ai,automation,components,orchestration,pipeline,stepflow,workflow
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: Apache Software License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Topic :: Scientific/Engineering :: Artificial Intelligence
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Classifier: Topic :: System :: Distributed Computing
+Classifier: Typing :: Typed
+Requires-Python: >=3.11
+Requires-Dist: aiohttp-retry>=2.8.0
+Requires-Dist: aiohttp>=3.9.0
+Requires-Dist: jsonschema>=4.17.0
+Requires-Dist: msgspec>=0.19.0
+Requires-Dist: opentelemetry-api>=1.20.0
+Requires-Dist: opentelemetry-exporter-otlp-proto-grpc>=1.20.0
+Requires-Dist: opentelemetry-sdk>=1.20.0
+Requires-Dist: pydantic>=2
+Requires-Dist: python-dateutil>=2.8.2
+Requires-Dist: types-jsonschema>=4.17.0
+Requires-Dist: typing-extensions>=4.7.1
+Requires-Dist: urllib3>=2.0.0
+Provides-Extra: http
+Requires-Dist: fastapi>=0.104.1; extra == 'http'
+Requires-Dist: sse-starlette>=1.6.5; extra == 'http'
+Requires-Dist: uvicorn>=0.24.0; extra == 'http'
+Provides-Extra: langchain
+Requires-Dist: langchain-core>=0.3; extra == 'langchain'
+Provides-Extra: local
+Requires-Dist: stepflow-orchestrator~=0.9.0; extra == 'local'
+Description-Content-Type: text/markdown
+
+# stepflow-py
+
+The official Python SDK for Stepflow - an orchestration engine for AI workflows.
+
+## Installation
+
+```bash
+pip install stepflow-py
+```
+
+## Features
+
+- **API Client**: Type-safe client for the Stepflow REST API
+- **Worker Module**: Build component servers that extend Stepflow functionality
+- **Flow Builder**: Programmatically create and manipulate workflows
+
+## Quick Start
+
+### Using the API Client
+
+```python
+from stepflow_py.api import ApiClient, Configuration, FlowApi
+
+config = Configuration(host="http://localhost:8080")
+client = ApiClient(configuration=config)
+flow_api = FlowApi(client)
+
+# Submit a workflow
+response = flow_api.submit_flow(flow_definition)
+```
+
+### Building a Worker (Component Server)
+
+```python
+from stepflow_py.worker import StepflowServer, StepflowContext
+import msgspec
+
+class MyInput(msgspec.Struct):
+    message: str
+
+class MyOutput(msgspec.Struct):
+    result: str
+
+server = StepflowServer()
+
+@server.component
+async def my_component(input: MyInput, context: StepflowContext) -> MyOutput:
+    return MyOutput(result=f"Processed: {input.message}")
+
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(server.run())
+```
+
+## Documentation
+
+For full documentation, visit [stepflow.org](https://stepflow.org).
+
+## License
+
+Apache License 2.0
