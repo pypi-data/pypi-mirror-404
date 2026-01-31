@@ -1,0 +1,1068 @@
+{% extends "indy_hub/base.html" %}
+{% load i18n %}
+{% load static %}
+
+{% block page_title %}{% trans "Material Exchange Configuration" %}{% endblock page_title %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'indy_hub/css/page_headers.css' %}">
+<link rel="stylesheet" href="{% static 'indy_hub/css/components.css' %}">
+<link rel="stylesheet" href="{% static 'indy_hub/css/blueprints.css' %}">
+<link rel="stylesheet" href="{% static 'indy_hub/css/material_exchange_config.css' %}">
+{% endblock extra_css %}
+
+{% block content %}
+<div class="container-fluid py-2 me-config">
+    <div class="page-header mb-2">
+        <div class="d-flex flex-wrap align-items-start justify-content-between gap-3">
+            <div>
+                <h2 class="h3 mb-1">
+                    <i class="fas fa-exchange-alt me-2"></i>
+                    {% trans "Material Exchange" %}
+                </h2>
+                <p class="description mb-0">{% trans "Configure corp hangar location and pricing rules." %}</p>
+            </div>
+                <div class="d-flex flex-column align-items-end gap-2 me-header-actions">
+                    <a href="{% url 'indy_hub:material_exchange_index' %}" class="btn btn-outline-light me-header-btn me-header-btn--back">
+                    <i class="fas fa-arrow-left me-1"></i>{% trans "Back to Hub" %}
+                </a>
+                <div class="d-flex flex-wrap gap-2">
+                        <a href="{% url 'indy_hub:material_exchange_request_all_scopes' %}" class="btn btn-success btn-sm me-header-btn me-header-btn--scopes">
+                        <i class="fas fa-plus-circle me-1"></i>
+                        {% trans "Add All Scopes" %}
+                    </a>
+                        <a href="{% url 'indy_hub:token_management' %}" class="btn btn-outline-secondary btn-sm me-header-btn me-header-btn--tokens">
+                        <i class="fas fa-key me-1"></i>
+                        {% trans "Manage Tokens" %}
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        {% if config %}
+            <p class="me-header-sync small mb-0">
+                {% trans "Stock sync:" %}
+                <strong>
+                    {% if config.last_stock_sync %}
+                        {{ config.last_stock_sync|date:"Y-m-d H:i:s" }}
+                    {% else %}
+                        {% trans "Never" %}
+                    {% endif %}
+                </strong>
+                <span class="text-muted">·</span>
+                {% trans "Price sync:" %}
+                <strong>
+                    {% if config.last_price_sync %}
+                        {{ config.last_price_sync|date:"Y-m-d H:i:s" }}
+                    {% else %}
+                        {% trans "Never" %}
+                    {% endif %}
+                </strong>
+            </p>
+        {% endif %}
+        <i class="fas fa-exchange-alt header-bg"></i>
+    </div>
+
+    {% if not available_corps %}
+    <section class="dashboard-section mb-3">
+        <div class="alert alert-warning">
+            <i class="fas fa-exclamation-triangle me-2"></i>
+            {% trans "No corporations found. Make sure you have ESI tokens authorized." %}
+        </div>
+    </section>
+    {% endif %}
+
+    {{ market_group_search_index|json_script:"marketGroupSearchIndex" }}
+
+    {% if config %}
+    <section class="dashboard-section mb-3">
+        <div class="card focus-card me-current-bar">
+            <div class="card-body p-2">
+                <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+                    <div class="me-current-content">
+                        <span class="text-muted">{% trans "Current:" %}</span>
+                        <strong>
+                            "{% if current_corp_ticker %}{{ current_corp_ticker }}{% else %}{{ config.corporation_id }}{% endif %}"
+                        </strong>
+                        <span class="text-muted">--</span>
+                        <strong>{{ config.structure_name|default:config.structure_id }}</strong>
+                        <span class="text-muted">--</span>
+                        <strong>"{{ current_hangar_name|default:config.hangar_division }}"</strong>
+                    </div>
+                    <div class="d-flex flex-wrap align-items-center gap-2">
+                        {% if config.enforce_jita_price_bounds %}
+                            <span class="badge bg-warning text-dark">
+                                <i class="fas fa-shield-alt me-1"></i>
+                                {% trans "Jita bounds" %}
+                            </span>
+                        {% endif %}
+                        {% if config.is_active %}
+                            <span class="badge bg-success">{% trans "Active" %}</span>
+                        {% else %}
+                            <span class="badge bg-secondary">{% trans "Disabled" %}</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+    {% endif %}
+
+    <section class="dashboard-section mb-3">
+        <header class="section-heading">
+            <div>
+                <h3 class="section-title">{% trans "Hub Configuration" %}</h3>
+                <p class="text-muted small mb-0">{% trans "Quick setup" %}</p>
+            </div>
+        </header>
+        <div class="card focus-card">
+            <div class="card-body p-3">
+                <form method="post" id="configForm" onsubmit="return validateForm()">
+                    {% csrf_token %}
+
+                    <div class="d-flex flex-wrap align-items-center gap-2 mb-3 small text-muted me-steps-header">
+                        <span class="badge bg-secondary me-step-badge">1</span><span>{% trans "Corporation" %}</span>
+                        <i class="fas fa-arrow-right opacity-50"></i>
+                        <span class="badge bg-secondary me-step-badge">2</span><span>{% trans "Structure" %}</span>
+                        <i class="fas fa-arrow-right opacity-50"></i>
+                        <span class="badge bg-secondary me-step-badge">3</span><span>{% trans "Hangar" %}</span>
+                        <i class="fas fa-arrow-right opacity-50"></i>
+                        <span class="badge bg-secondary me-step-badge">4</span><span>{% trans "Pricing" %}</span>
+                        <i class="fas fa-arrow-right opacity-50"></i>
+                        <span class="badge bg-secondary me-step-badge">5</span><span>{% trans "Market Groups" %}</span>
+                    </div>
+
+                    <div class="row g-2">
+
+                    <!-- Step 1: Corporation -->
+                    <div class="col-lg-4">
+                        <div class="card focus-card h-100 me-step-card">
+                            <div class="card-body p-2">
+                            <div class="d-flex align-items-center gap-2 mb-2">
+                                <span class="badge bg-secondary me-step-badge">1</span>
+                                <h5 class="fw-semibold mb-0">
+                                    <i class="fas fa-building me-1 text-muted"></i>{% trans "Corporation" %}
+                                    <button
+                                        type="button"
+                                        class="me-help-icon"
+                                        aria-label="Help: Corporation"
+                                        data-bs-toggle="popover"
+                                        data-bs-trigger="hover focus"
+                                        data-bs-placement="right"
+                                        title="Corporation"
+                                        data-bs-content="Select the corporation that will run the hub.">
+                                        <i class="fas fa-info-circle"></i>
+                                    </button>
+                                </h5>
+                            </div>
+                            <label class="form-label fw-semibold">{% trans "Corporation" %} <span class="text-danger">*</span></label>
+                            <div class="input-group input-group-sm">
+                                <select name="corporation_id" class="form-select form-select-sm" required id="corpSelect">
+                                    <option value="">{% trans "Select a corporation..." %}</option>
+                                    {% for corp in available_corps %}
+                                    <option value="{{ corp.id }}" {% if config and config.corporation_id == corp.id %}selected{% endif %}>
+                                        [{{ corp.ticker }}] {{ corp.name }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                                <button type="button" class="btn btn-outline-secondary btn-sm" id="refreshAssetsBtn" title="{% trans 'Refresh corporation assets and structures' %}" disabled>
+                                    <i class="fas fa-sync-alt"></i>
+                                </button>
+                            </div>
+
+                            <div class="form-text">{% trans "Tip: use refresh after adding tokens." %}</div>
+
+                            <div id="refreshStatus" class="mt-2 refresh-status">
+                                <small class="text-info d-flex align-items-center gap-2">
+                                    <span class="spinner-border spinner-border-sm" id="refreshSpinner"></span>
+                                    <span id="refreshStatusText">{% trans "Refreshing assets..." %}</span>
+                                </small>
+                                <div class="progress mt-2 refresh-progress" id="progressBar">
+                                    <div id="progressBarFill" class="progress-bar progress-bar-striped progress-bar-animated refresh-progress-bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+                                        <span id="progressText" class="text-dark fw-bold">0%</span>
+                                    </div>
+                                </div>
+                            </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Step 2: Structure -->
+                    <div class="col-lg-4">
+                        <div class="card focus-card h-100 me-step-card">
+                            <div class="card-body p-2">
+                            <div class="d-flex align-items-center gap-2 mb-2">
+                                <span class="badge bg-secondary me-step-badge">2</span>
+                                <h5 class="fw-semibold mb-0">
+                                    <i class="fas fa-warehouse me-1 text-muted"></i>{% trans "Structure" %}
+                                    <button
+                                        type="button"
+                                        class="me-help-icon"
+                                        aria-label="Help: Structure"
+                                        data-bs-toggle="popover"
+                                        data-bs-trigger="hover focus"
+                                        data-bs-placement="right"
+                                        title="Structure"
+                                        data-bs-content="Pick the structure that contains your hub inventory.">
+                                        <i class="fas fa-info-circle"></i>
+                                    </button>
+                                </h5>
+                            </div>
+                            <label class="form-label fw-semibold">{% trans "Structure" %} <span class="text-danger">*</span></label>
+                            <select name="structure_id" class="form-select form-select-sm" required id="structureSelect">
+                                <option value="">{% trans "Select corporation first..." %}</option>
+                                {% for structure in available_structures %}
+                                <option value="{{ structure.id }}"
+                                        data-name="{{ structure.name }}"
+                                        data-flags="{{ structure.flags|join:',' }}"
+                                        {% if config and config.structure_id == structure.id %}selected{% endif %}>
+                                    {{ structure.name }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                            <input type="hidden" name="structure_name" id="structureName" value="{{ config.structure_name|default:'' }}">
+
+                            <div id="assetsScopeInfo" class="mt-2">
+                                <div class="alert alert-warning py-2 mb-0 d-none" id="assetsScopeMissingNotice">
+                                    <small><i class="fas fa-warning me-1"></i>{% trans "Structures need esi-assets.read_corporation_assets.v1 for this corporation." %}</small>
+                                    <div class="mt-2 d-flex gap-2">
+                                        <button type="button" class="btn btn-sm btn-outline-primary" id="assetsScopeButton" onclick="requestAssetsToken()">
+                                            {% trans "Add token" %}
+                                        </button>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary" id="assetsScopeRefreshButton" onclick="requestTokensSync()">
+                                            {% trans "Refresh tokens" %}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Step 3: Hangar Division -->
+                    <div class="col-lg-4">
+                        <div class="card focus-card h-100 me-step-card">
+                            <div class="card-body p-2">
+                            <div class="d-flex align-items-center gap-2 mb-2">
+                                <span class="badge bg-secondary me-step-badge">3</span>
+                                <h5 class="fw-semibold mb-0">
+                                    <i class="fas fa-box-open me-1 text-muted"></i>{% trans "Hangar" %}
+                                    <button
+                                        type="button"
+                                        class="me-help-icon"
+                                        aria-label="Help: Hangar"
+                                        data-bs-toggle="popover"
+                                        data-bs-trigger="hover focus"
+                                        data-bs-placement="right"
+                                        title="Hangar"
+                                        data-bs-content="Choose the corporate hangar division used for hub stock.">
+                                        <i class="fas fa-info-circle"></i>
+                                    </button>
+                                </h5>
+                            </div>
+                            <label class="form-label fw-semibold">{% trans "Hangar Division" %} <span class="text-danger">*</span></label>
+                            <select name="hangar_division" class="form-select form-select-sm" required id="hangarSelect">
+                                {% for div_num, div_name in hangar_divisions.items %}
+                                <option value="{{ div_num }}" {% if config and config.hangar_division == div_num %}selected{% endif %}>
+                                    {{ div_name }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                            <div id="divisionScopeInfo" class="mt-2">
+                                <div class="alert alert-warning py-2 mb-0 d-none" id="divisionScopeMissingNotice">
+                                    <small><i class="fas fa-warning me-1"></i>{% trans "Division names need esi-corporations.read_divisions.v1 for this corporation." %}</small>
+                                    <div class="mt-2 d-flex gap-2">
+                                        <button type="button" class="btn btn-sm btn-outline-primary" id="divisionScopeButton" onclick="requestDivisionsToken()">
+                                            {% trans "Add token" %}
+                                        </button>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary" id="divisionScopeRefreshButton" onclick="requestTokensSync()">
+                                            {% trans "Refresh tokens" %}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Step 4: Pricing Rules -->
+                    <div class="col-12">
+                        <div class="card focus-card">
+                            <div class="card-body p-2">
+                            <div class="d-flex align-items-center gap-2 mb-2">
+                                <span class="badge bg-secondary me-step-badge">4</span>
+                                <h5 class="fw-semibold mb-0">
+                                    <i class="fas fa-tags me-1 text-muted"></i>{% trans "Pricing" %}
+                                    <button
+                                        type="button"
+                                        class="me-help-icon"
+                                        aria-label="Help: Pricing"
+                                        data-bs-toggle="popover"
+                                        data-bs-trigger="hover focus"
+                                        data-bs-placement="right"
+                                        title="Pricing"
+                                        data-bs-content="Set how much members pay (BUY) and receive (SELL) compared to Jita prices.">
+                                        <i class="fas fa-info-circle"></i>
+                                    </button>
+                                </h5>
+                            </div>
+                            <div class="d-flex flex-wrap align-items-center gap-3 mb-2">
+                                <div class="form-check mb-0">
+                                    <input
+                                        class="form-check-input"
+                                        type="checkbox"
+                                        name="enforce_jita_price_bounds"
+                                        id="enforceJitaPriceBounds"
+                                        {% if config and config.enforce_jita_price_bounds %}checked{% endif %}>
+                                    <label class="form-check-label fw-semibold" for="enforceJitaPriceBounds">
+                                        Enable Jita price bounds
+                                    </label>
+                                </div>
+                                <details class="me-details small text-muted">
+                                    <summary class="me-details-summary">What does it do?<span class="me-details-chevron"><i class="fas fa-chevron-down"></i></span></summary>
+                                    <div class="mt-1">
+                                        <ul class="mb-0 ps-3">
+                                            <li>Jita Sell + negative % will never go below Jita Buy (floor)</li>
+                                            <li>Jita Buy + positive % will never go above Jita Sell (cap)</li>
+                                        </ul>
+                                    </div>
+                                </details>
+                            </div>
+
+                            <div class="row g-2">
+                    <div class="col-md-6">
+                        <div class="card focus-card h-100">
+                            <div class="card-body p-2">
+                                <div class="d-flex align-items-center mb-2">
+                                    <div class="bg-success bg-opacity-10 text-success p-2 rounded-2 me-2">
+                                        <i class="fas fa-arrow-right"></i>
+                                    </div>
+                                    <h6 class="fw-semibold mb-0">{% trans "Sell Markup" %}</h6>
+                                </div>
+                                <p class="text-muted small mb-2">{% trans "Members SELL items to your hub" %}</p>
+                                <label class="form-label fw-semibold">{% trans "Markup %" %}</label>
+                                <div class="input-group input-group-sm mb-2">
+                                    <input
+                                        type="number"
+                                        name="sell_markup_percent"
+                                        class="form-control form-control-sm"
+                                        step="0.01"
+                                        min="-100"
+                                        max="100"
+                                        inputmode="decimal"
+                                        value="{{ config.sell_markup_percent|default_if_none:'0'|floatformat:'-2' }}">
+                                    <span class="input-group-text">%</span>
+                                </div>
+                                <div class="small text-muted mb-2">
+                                    {% trans "Impact: changes what members receive when selling to the hub." %}
+                                </div>
+                                <label class="form-label fw-semibold">{% trans "Base Price" %}</label>
+                                <select name="sell_markup_base" class="form-select form-select-sm mb-2">
+                                    <option value="buy" {% if not config or config.sell_markup_base == 'buy' %}selected{% endif %}>
+                                        {% trans "Jita Buy Price" %}
+                                    </option>
+                                    <option value="sell" {% if config and config.sell_markup_base == 'sell' %}selected{% endif %}>
+                                        {% trans "Jita Sell Price" %}
+                                    </option>
+                                </select>
+                                <details class="me-details small text-muted me-example-details">
+                                    <summary class="me-details-summary">{% trans "Examples" %}<span class="me-details-chevron"><i class="fas fa-chevron-down"></i></span></summary>
+                                    <div class="mt-2 p-2 bg-body-secondary rounded-3 me-example-box">
+                                        <ul class="mb-0 ps-3">
+                                            <li>{% trans "0% on Jita Buy = members get exact Jita Buy price" %}</li>
+                                            <li>{% trans "5% on Jita Buy = members get 5% less ISK per unit" %}</li>
+                                        </ul>
+                                    </div>
+                                </details>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card focus-card h-100">
+                            <div class="card-body p-2">
+                                <div class="d-flex align-items-center mb-2">
+                                    <div class="bg-danger bg-opacity-10 text-danger p-2 rounded-2 me-2">
+                                        <i class="fas fa-arrow-left"></i>
+                                    </div>
+                                    <h6 class="fw-semibold mb-0">{% trans "Buy Markup" %}</h6>
+                                </div>
+                                <p class="text-muted small mb-2">{% trans "Members BUY items from your hub" %}</p>
+                                <label class="form-label fw-semibold">{% trans "Markup %" %}</label>
+                                <div class="input-group input-group-sm mb-2">
+                                    <input
+                                        type="number"
+                                        name="buy_markup_percent"
+                                        class="form-control form-control-sm"
+                                        step="0.01"
+                                        min="-100"
+                                        max="1000"
+                                        inputmode="decimal"
+                                        value="{{ config.buy_markup_percent|default_if_none:'5'|floatformat:'-2' }}">
+                                    <span class="input-group-text">%</span>
+                                </div>
+                                <div class="small text-muted mb-2">
+                                    {% trans "Impact: changes what members pay when buying from the hub." %}
+                                </div>
+                                <label class="form-label fw-semibold">{% trans "Base Price" %}</label>
+                                <select name="buy_markup_base" class="form-select form-select-sm mb-2">
+                                    <option value="buy" {% if not config or config.buy_markup_base == 'buy' %}selected{% endif %}>
+                                        {% trans "Jita Buy Price" %}
+                                    </option>
+                                    <option value="sell" {% if config and config.buy_markup_base == 'sell' %}selected{% endif %}>
+                                        {% trans "Jita Sell Price" %}
+                                    </option>
+                                </select>
+                                <details class="me-details small text-muted me-example-details">
+                                    <summary class="me-details-summary">{% trans "Examples" %}<span class="me-details-chevron"><i class="fas fa-chevron-down"></i></span></summary>
+                                    <div class="mt-2 p-2 bg-body-secondary rounded-3 me-example-box">
+                                        <ul class="mb-0 ps-3">
+                                            <li>{% trans "-5% on Jita Sell = members pay 5% less than Jita Sell" %}</li>
+                                            <li>{% trans "5% on Jita Buy = members pay 5% more than Jita Buy" %}</li>
+                                        </ul>
+                                    </div>
+                                </details>
+                            </div>
+                        </div>
+                    </div>
+                            </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Step 5: Market Groups -->
+                    <div class="col-12">
+                        <div class="card focus-card">
+                            <div class="card-body p-2">
+                                <div class="d-flex align-items-center gap-2 mb-2">
+                                    <span class="badge bg-secondary me-step-badge">5</span>
+                                    <h5 class="fw-semibold mb-0">
+                                        <i class="fas fa-layer-group me-1 text-muted"></i>{% trans "Market Groups" %}
+                                        <button
+                                            type="button"
+                                            class="me-help-icon"
+                                            aria-label="Help: Market Groups"
+                                            data-bs-toggle="popover"
+                                            data-bs-trigger="hover focus"
+                                            data-bs-placement="right"
+                                            title="Market Groups"
+                                            data-bs-content="Select which categories your hub will BUY from members and SELL to members.">
+                                            <i class="fas fa-info-circle"></i>
+                                        </button>
+                                    </h5>
+                                </div>
+                                <div class="mb-2">
+                                    <label class="form-label fw-semibold" for="marketGroupSearch">{% trans "Search categories or items" %}</label>
+                                    <input
+                                        type="text"
+                                        class="form-control form-control-sm"
+                                        id="marketGroupSearch"
+                                        placeholder="{% trans 'Type a category or item name…' %}">
+                                    <div class="form-text">
+                                        {% trans "Tip: you can type an item name (e.g. Mexallon) to reveal its category, then add the whole category." %}
+                                    </div>
+                                </div>
+                                {% if not market_group_choices %}
+                                    <div class="alert alert-warning py-2 mb-0">
+                                        <small><i class="fas fa-exclamation-triangle me-1"></i>{% trans "No industry market groups found. Check that eveuniverse data is loaded." %}</small>
+                                    </div>
+                                {% else %}
+                                    <div class="row g-3">
+                                        <div class="col-lg-6 me-dual-list-block">
+                                            <label class="form-label fw-semibold"><span class="me-pill-info"><i class="fas fa-arrow-right"></i> {% trans "SELL - Market Groups" %}</span></label>
+                                            <div class="row g-1 me-dual-list me-dual-list-sell">
+                                                <div class="col-5">
+                                                    <div class="small text-muted mb-1">{% trans "Available" %}</div>
+                                                    <select class="form-select form-select-sm me-dual-list-select" multiple size="10" id="marketGroupsSellAvailable">
+                                                        {% for group in market_group_choices %}
+                                                            {% if group.id not in selected_market_groups_sell %}
+                                                                <option value="{{ group.id }}">{{ group.label }}</option>
+                                                            {% endif %}
+                                                        {% endfor %}
+                                                    </select>
+                                                </div>
+                                                <div class="col-2 d-flex flex-column align-items-center justify-content-center gap-2 me-dual-list-controls">
+                                                    <button type="button" class="btn btn-outline-info btn-sm" id="sellAddBtn" title="{% trans 'Add' %}">
+                                                        <i class="fas fa-chevron-right"></i>
+                                                    </button>
+                                                    <button type="button" class="btn btn-outline-info btn-sm" id="sellRemoveBtn" title="{% trans 'Remove' %}">
+                                                        <i class="fas fa-chevron-left"></i>
+                                                    </button>
+                                                </div>
+                                                <div class="col-5">
+                                                    <div class="small text-muted mb-1">{% trans "Selected" %}</div>
+                                                    <select name="allowed_market_groups_sell" class="form-select form-select-sm me-dual-list-select" multiple size="10" id="marketGroupsSellSelected">
+                                                        {% for group in market_group_choices %}
+                                                            {% if group.id in selected_market_groups_sell %}
+                                                                <option value="{{ group.id }}" selected>{{ group.label }}</option>
+                                                            {% endif %}
+                                                        {% endfor %}
+                                                    </select>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="col-lg-6 me-dual-list-block">
+                                            <label class="form-label fw-semibold"><span class="me-pill-success"><i class="fas fa-arrow-left"></i> {% trans "BUY - Market Groups" %}</span></label>
+                                            <div class="row g-1 me-dual-list me-dual-list-buy">
+                                                <div class="col-5">
+                                                    <div class="small text-muted mb-1">{% trans "Available" %}</div>
+                                                    <select class="form-select form-select-sm me-dual-list-select" multiple size="10" id="marketGroupsBuyAvailable">
+                                                        {% for group in market_group_choices %}
+                                                            {% if group.id not in selected_market_groups_buy %}
+                                                                <option value="{{ group.id }}">{{ group.label }}</option>
+                                                            {% endif %}
+                                                        {% endfor %}
+                                                    </select>
+                                                </div>
+                                                <div class="col-2 d-flex flex-column align-items-center justify-content-center gap-2 me-dual-list-controls">
+                                                    <button type="button" class="btn btn-outline-success btn-sm" id="buyAddBtn" title="{% trans 'Add' %}">
+                                                        <i class="fas fa-chevron-right"></i>
+                                                    </button>
+                                                    <button type="button" class="btn btn-outline-success btn-sm" id="buyRemoveBtn" title="{% trans 'Remove' %}">
+                                                        <i class="fas fa-chevron-left"></i>
+                                                    </button>
+                                                </div>
+                                                <div class="col-5">
+                                                    <div class="small text-muted mb-1">{% trans "Selected" %}</div>
+                                                    <select name="allowed_market_groups_buy" class="form-select form-select-sm me-dual-list-select" multiple size="10" id="marketGroupsBuySelected">
+                                                        {% for group in market_group_choices %}
+                                                            {% if group.id in selected_market_groups_buy %}
+                                                                <option value="{{ group.id }}" selected>{{ group.label }}</option>
+                                                            {% endif %}
+                                                        {% endfor %}
+                                                    </select>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+
+                    </div>
+
+                    <div class="d-flex flex-wrap gap-2 mt-2 justify-content-end">
+                    <button type="submit" class="btn btn-primary btn-sm" id="submitBtn">
+                        <i class="fas fa-save me-2"></i>{% trans "Save Configuration" %}
+                    </button>
+                    <a href="{% url 'indy_hub:material_exchange_index' %}" class="btn btn-outline-secondary btn-sm">
+                        {% trans "Cancel" %}
+                    </a>
+                </div>
+                </form>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+{{ hangar_divisions|json_script:"hangarDivisionsData" }}
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const corpSelect = document.getElementById('corpSelect');
+    const structureSelect = document.getElementById('structureSelect');
+    const structureName = document.getElementById('structureName');
+    const hangarSelect = document.getElementById('hangarSelect');
+    const submitBtn = document.getElementById('submitBtn');
+    const initialStructureId = "{{ config.structure_id|default:'' }}";
+    const initialHangarDivision = "{{ config.hangar_division|default:'' }}";
+    let hangarDivisions = JSON.parse(document.getElementById('hangarDivisionsData').textContent);
+    let divisionScopeMissing = {{ division_scope_missing|yesno:"true,false" }};
+    let assetsScopeMissing = {{ assets_scope_missing|yesno:"true,false" }};
+    const divisionScopeMissingNotice = document.getElementById('divisionScopeMissingNotice');
+    const assetsScopeMissingNotice = document.getElementById('assetsScopeMissingNotice');
+
+    // Initialize scope notices based on server-rendered flags
+    if (divisionScopeMissing && divisionScopeMissingNotice) {
+        divisionScopeMissingNotice.classList.remove('d-none');
+    }
+    if (assetsScopeMissing && assetsScopeMissingNotice) {
+        assetsScopeMissingNotice.classList.remove('d-none');
+    }
+
+    // Help popovers (hover the blue info icon)
+    if (typeof bootstrap !== 'undefined' && bootstrap.Popover) {
+        document.querySelectorAll('[data-bs-toggle="popover"]').forEach((el) => {
+            new bootstrap.Popover(el, { container: 'body' });
+        });
+    }
+
+    const updateSubmitButton = () => {
+        if (hangarSelect.disabled || divisionScopeMissing) {
+            submitBtn.disabled = true;
+            submitBtn.title = "{% trans 'Please add a divisions token to save configuration' %}";
+        } else {
+            submitBtn.disabled = false;
+            submitBtn.title = "";
+        }
+    };
+
+    const rebuildHangarOptions = (flagsCsv) => {
+        const prevValue = hangarSelect.value;
+
+        // If scope is missing, block selection and prompt for token
+        if (divisionScopeMissing) {
+            hangarSelect.innerHTML = '<option value="">{% trans "Add divisions token to load hangars" %}</option>';
+            hangarSelect.disabled = true;
+            if (divisionScopeMissingNotice) {
+                divisionScopeMissingNotice.classList.remove('d-none');
+            }
+            updateSubmitButton();
+            return;
+        }
+
+        hangarSelect.disabled = false;
+        hangarSelect.innerHTML = '';
+
+        const flags = (flagsCsv || '').split(',').map(f => f.trim()).filter(Boolean);
+        const allowedNumbers = flags
+            .map(flag => flag.startsWith('CorpSAG') ? parseInt(flag.replace('CorpSAG', ''), 10) : null)
+            .filter(num => Number.isInteger(num) && num >= 1 && num <= 7);
+
+        const divisionOrder = allowedNumbers.length ? allowedNumbers : Object.keys(hangarDivisions).map(n => parseInt(n, 10)).sort((a,b) => a-b);
+
+        divisionOrder.forEach(num => {
+            const option = document.createElement('option');
+            option.value = num;
+            option.textContent = hangarDivisions[num] || hangarDivisions[String(num)] || `Hangar Division ${num}`;
+            hangarSelect.appendChild(option);
+        });
+
+        const prevNum = parseInt(prevValue, 10);
+        if (divisionOrder.includes(prevNum)) {
+            hangarSelect.value = prevValue;
+        } else if (divisionOrder.length > 0) {
+            hangarSelect.value = String(divisionOrder[0]);
+        }
+        updateSubmitButton();
+    };
+
+    // Update structure name when structure is selected
+    structureSelect.addEventListener('change', function() {
+        const selectedOption = structureSelect.options[structureSelect.selectedIndex];
+        structureName.value = selectedOption.getAttribute('data-name') || '';
+        rebuildHangarOptions(selectedOption.getAttribute('data-flags'));
+    });
+
+    const fetchStructures = (corpId, preserveSelection = false) => {
+        const prevStructure = preserveSelection ? structureSelect.value : '';
+        const prevHangar = preserveSelection ? hangarSelect.value : '';
+
+        if (!corpId) {
+            structureSelect.innerHTML = '<option value="">{% trans "Select corporation first..." %}</option>';
+            rebuildHangarOptions('');
+            updateSubmitButton();
+            return;
+        }
+
+        structureSelect.innerHTML = '<option value="">{% trans "Loading structures..." %}</option>';
+        structureSelect.disabled = true;
+
+        fetch(`{% url 'indy_hub:material_exchange_get_structures' 0 %}`.replace('/0/', `/${corpId}/`))
+            .then(response => response.json())
+            .then(data => {
+                structureSelect.innerHTML = '<option value="">{% trans "Select a structure..." %}</option>';
+
+                if (data.hangar_divisions) {
+                    hangarDivisions = data.hangar_divisions;
+                }
+                divisionScopeMissing = !!data.division_scope_missing;
+                if (divisionScopeMissing) {
+                    console.warn('Division names are defaulted: missing esi-corporations.read_divisions.v1 for this corp.');
+                    if (divisionScopeMissingNotice) {
+                        divisionScopeMissingNotice.classList.remove('d-none');
+                    }
+                } else if (divisionScopeMissingNotice) {
+                    divisionScopeMissingNotice.classList.add('d-none');
+                }
+
+                assetsScopeMissing = !!data.assets_scope_missing;
+                if (assetsScopeMissing) {
+                    console.warn('Structures list may be incomplete: missing esi-assets.read_corporation_assets.v1 for this corp.');
+                    if (assetsScopeMissingNotice) {
+                        assetsScopeMissingNotice.classList.remove('d-none');
+                    }
+                } else if (assetsScopeMissingNotice) {
+                    assetsScopeMissingNotice.classList.add('d-none');
+                }
+
+                data.structures.forEach(structure => {
+                    const option = document.createElement('option');
+                    option.value = structure.id;
+                    option.textContent = structure.name;
+                    option.setAttribute('data-name', structure.name);
+                    option.setAttribute('data-flags', (structure.flags || []).join(','));
+                    structureSelect.appendChild(option);
+                });
+
+                structureSelect.disabled = false;
+
+                // Restore previous structure if still available, else pick first
+                let selectedIndex = 1;
+                const desiredStructure = prevStructure || initialStructureId;
+                if (desiredStructure) {
+                    const exists = Array.from(structureSelect.options).some(opt => opt.value === desiredStructure);
+                    if (!exists) {
+                        const fallbackOption = document.createElement('option');
+                        fallbackOption.value = desiredStructure;
+                        fallbackOption.textContent = structureName.value || `Structure ${desiredStructure}`;
+                        fallbackOption.setAttribute('data-name', structureName.value || `Structure ${desiredStructure}`);
+                        fallbackOption.setAttribute('data-flags', '');
+                        structureSelect.appendChild(fallbackOption);
+                    }
+                }
+                if (desiredStructure) {
+                    const foundIndex = Array.from(structureSelect.options).findIndex(opt => opt.value === desiredStructure);
+                    if (foundIndex > 0) {
+                        selectedIndex = foundIndex;
+                    }
+                }
+                if (structureSelect.options.length > selectedIndex) {
+                    structureSelect.selectedIndex = selectedIndex;
+                    const selectedOption = structureSelect.options[selectedIndex];
+                    structureName.value = selectedOption.getAttribute('data-name') || '';
+                    rebuildHangarOptions(selectedOption.getAttribute('data-flags'));
+                    const desiredHangar = prevHangar || initialHangarDivision;
+                    if (desiredHangar) {
+                        hangarSelect.value = desiredHangar;
+                    }
+                } else {
+                    rebuildHangarOptions('');
+                }
+                updateSubmitButton();
+            })
+            .catch(error => {
+                console.error('Error fetching structures:', error);
+                structureSelect.innerHTML = '<option value="">{% trans "Error loading structures" %}</option>';
+                structureSelect.disabled = false;
+                rebuildHangarOptions('');
+                updateSubmitButton();
+            });
+    };
+
+    corpSelect.addEventListener('change', function() {
+        fetchStructures(corpSelect.value, false);
+    });
+
+    // On load, fetch structures (and divisions) for the preselected corp to hydrate names
+    if (corpSelect.value) {
+        fetchStructures(corpSelect.value, true);
+    } else if (structureSelect.value) {
+        const selectedOption = structureSelect.options[structureSelect.selectedIndex];
+        rebuildHangarOptions(selectedOption.getAttribute('data-flags'));
+    }
+
+    updateSubmitButton();
+});
+
+function validateForm() {
+    const hangarSelect = document.getElementById('hangarSelect');
+    const submitBtn = document.getElementById('submitBtn');
+
+    if (hangarSelect.disabled || !hangarSelect.value) {
+        alert('{% trans "Please add a divisions token and select a hangar division before saving." %}');
+        return false;
+    }
+    return true;
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    const searchInput = document.getElementById('marketGroupSearch');
+    const searchDataEl = document.getElementById('marketGroupSearchIndex');
+    const sellAvailable = document.getElementById('marketGroupsSellAvailable');
+    const sellSelected = document.getElementById('marketGroupsSellSelected');
+    const buyAvailable = document.getElementById('marketGroupsBuyAvailable');
+    const buySelected = document.getElementById('marketGroupsBuySelected');
+    const sellAddBtn = document.getElementById('sellAddBtn');
+    const sellRemoveBtn = document.getElementById('sellRemoveBtn');
+    const buyAddBtn = document.getElementById('buyAddBtn');
+    const buyRemoveBtn = document.getElementById('buyRemoveBtn');
+
+    if (!searchInput || !sellAvailable || !sellSelected || !buyAvailable || !buySelected || !searchDataEl) {
+        return;
+    }
+
+    let searchIndex = {};
+    try {
+        searchIndex = JSON.parse(searchDataEl.textContent || '{}');
+    } catch (e) {
+        searchIndex = {};
+    }
+
+    const matchesQuery = (groupId, label, query) => {
+        if (!query) return true;
+        const q = query.toLowerCase();
+        if ((label || '').toLowerCase().includes(q)) return true;
+        const payload = searchIndex[groupId] || {};
+        const items = payload.items || [];
+        return items.some(name => String(name).toLowerCase().includes(q));
+    };
+
+    const applyFilter = () => {
+        const query = (searchInput.value || '').trim();
+        const filterSelect = (selectEl) => {
+            Array.from(selectEl.options).forEach(option => {
+                const groupId = option.value;
+                const label = option.textContent || '';
+                const visible = matchesQuery(groupId, label, query);
+                option.hidden = !visible;
+            });
+        };
+
+        filterSelect(sellAvailable);
+        filterSelect(buyAvailable);
+    };
+
+    const moveSelected = (fromSelect, toSelect) => {
+        const selected = Array.from(fromSelect.options).filter(opt => opt.selected && !opt.hidden);
+        selected.forEach(option => {
+            const newOption = new Option(option.textContent, option.value, true, true);
+            toSelect.add(newOption);
+            fromSelect.remove(option.index);
+        });
+    };
+
+    const moveAllToSelected = (fromSelect, toSelect) => {
+        Array.from(fromSelect.options).forEach(option => {
+            const newOption = new Option(option.textContent, option.value, true, true);
+            toSelect.add(newOption);
+        });
+        fromSelect.innerHTML = '';
+    };
+
+    const ensureAllSelected = (selectEl) => {
+        Array.from(selectEl.options).forEach(option => {
+            option.selected = true;
+        });
+    };
+
+    if (sellAddBtn) {
+        sellAddBtn.addEventListener('click', () => moveSelected(sellAvailable, sellSelected));
+    }
+    if (sellRemoveBtn) {
+        sellRemoveBtn.addEventListener('click', () => moveSelected(sellSelected, sellAvailable));
+    }
+    if (buyAddBtn) {
+        buyAddBtn.addEventListener('click', () => moveSelected(buyAvailable, buySelected));
+    }
+    if (buyRemoveBtn) {
+        buyRemoveBtn.addEventListener('click', () => moveSelected(buySelected, buyAvailable));
+    }
+
+    const bindDoubleClickMove = (fromSelect, toSelect) => {
+        fromSelect.addEventListener('dblclick', (event) => {
+            const option = event.target;
+            if (option && option.tagName === 'OPTION') {
+                const newOption = new Option(option.textContent, option.value, true, true);
+                toSelect.add(newOption);
+                fromSelect.remove(option.index);
+            }
+        });
+    };
+
+    bindDoubleClickMove(sellAvailable, sellSelected);
+    bindDoubleClickMove(sellSelected, sellAvailable);
+    bindDoubleClickMove(buyAvailable, buySelected);
+    bindDoubleClickMove(buySelected, buyAvailable);
+
+    searchInput.addEventListener('input', applyFilter);
+
+    const form = document.getElementById('configForm');
+    if (form) {
+        form.addEventListener('submit', function() {
+            ensureAllSelected(sellSelected);
+            ensureAllSelected(buySelected);
+        });
+    }
+});
+
+function requestDivisionsToken() {
+    // Redirect to corporation authorization (includes divisions/roles)
+    window.location.href = '{% url "indy_hub:authorize_corp_all" %}';
+}
+
+function requestAssetsToken() {
+    // Redirect to Material Exchange authorization (corp scopes incl. assets)
+    window.location.href = '{% url "indy_hub:authorize_material_exchange" %}';
+}
+
+function requestTokensSync() {
+    // Trigger token sync to refresh validity and scopes, then return
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '{% url "indy_hub:sync_all_tokens" %}';
+
+    const csrf = document.createElement('input');
+    csrf.type = 'hidden';
+    csrf.name = 'csrfmiddlewaretoken';
+    csrf.value = document.querySelector('[name=csrfmiddlewaretoken]').value;
+
+    form.appendChild(csrf);
+    document.body.appendChild(form);
+    form.submit();
+}
+
+// Handle corporation selection and asset refresh
+document.addEventListener('DOMContentLoaded', function() {
+    const corpSelect = document.getElementById('corpSelect');
+    const refreshBtn = document.getElementById('refreshAssetsBtn');
+    const refreshStatus = document.getElementById('refreshStatus');
+    const refreshStatusText = document.getElementById('refreshStatusText');
+    const structureSelect = document.getElementById('structureSelect');
+
+    // Enable/disable refresh button based on corp selection
+    corpSelect.addEventListener('change', function() {
+        refreshBtn.disabled = !this.value;
+    });
+
+    // Handle refresh button click
+    refreshBtn.addEventListener('click', function(e) {
+        e.preventDefault();
+        const corpId = corpSelect.value;
+        if (!corpId) return;
+
+        refreshBtn.disabled = true;
+        refreshStatus.style.display = 'block';
+        refreshStatusText.textContent = '{% trans "Refreshing assets..." %}';
+        refreshStatusText.className = 'text-info';
+
+        const progressBar = document.getElementById('progressBar');
+        const progressBarFill = document.getElementById('progressBarFill');
+        const progressText = document.getElementById('progressText');
+        if (progressBar) {
+            progressBar.style.display = 'none';
+        }
+        if (progressBarFill) {
+            progressBarFill.style.width = '0%';
+            progressBarFill.setAttribute('aria-valuenow', '0');
+        }
+        if (progressText) {
+            progressText.textContent = '0%';
+        }
+
+        fetch('{% url "indy_hub:material_exchange_refresh_corp_assets" %}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+            },
+            body: JSON.stringify({ corporation_id: parseInt(corpId) })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                refreshStatusText.textContent = '{% trans "Task started. Waiting for completion..." %}';
+                refreshStatusText.className = 'text-info';
+
+                // Poll for task completion
+                const taskId = data.task_id;
+                const pollInterval = 2000; // 2 seconds
+                const maxAttempts = 60; // 2 minutes max
+                let attempts = 0;
+
+                const checkStatus = () => {
+                    attempts++;
+                    if (attempts > maxAttempts) {
+                        throw new Error('{% trans "Task took too long to complete" %}');
+                    }
+
+                    return fetch(`/indy_hub/material-exchange/api/refresh-status/${taskId}/?corp_id=${corpId}`, {
+                        headers: {
+                            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                        }
+                    })
+                    .then(r => r.json())
+                    .then(statusData => {
+                        // Update progress bar if available
+                        const progress = statusData.progress || {};
+                        const percent = progress.percent || 0;
+                        const progressBar = document.getElementById('progressBar');
+                        const progressBarFill = document.getElementById('progressBarFill');
+                        const progressText = document.getElementById('progressText');
+
+                        if (progressBar && percent > 0) {
+                            progressBar.style.display = 'block';
+                            progressBarFill.style.width = percent + '%';
+                            progressBarFill.setAttribute('aria-valuenow', percent);
+                            progressText.textContent = percent + '%';
+                        }
+
+                        if (progress.status) {
+                            refreshStatusText.textContent = progress.status;
+                        }
+
+                        if (statusData.status === 'pending') {
+                            // Still waiting, retry after delay
+                            return new Promise((resolve, reject) => {
+                                setTimeout(() => checkStatus().then(resolve).catch(reject), pollInterval);
+                            });
+                        } else if (statusData.status === 'success') {
+                            // Task complete!
+                            refreshStatusText.textContent = '{% trans "Task complete! Loading structures..." %}';
+                            refreshStatusText.className = 'text-success';
+                            if (progressBar) {
+                                progressBar.style.display = 'block';
+                            }
+                            if (progressBarFill) {
+                                progressBarFill.style.width = '100%';
+                                progressText.textContent = '100%';
+                            }
+                            return true;
+                        } else if (statusData.status === 'failure') {
+                            throw new Error(statusData.error || '{% trans "Task failed" %}');
+                        } else {
+                            throw new Error('{% trans "Unknown task status" %}');
+                        }
+                    });
+                };
+
+                return checkStatus()
+                .then(() => {
+                    // Reload structures after task completes
+                    return fetch(`{% url "indy_hub:material_exchange_get_structures" 0 %}`.replace('/0/', '/' + corpId + '/'), {
+                        headers: {
+                            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                        }
+                    })
+                    .then(r => r.json())
+                    .then(structData => {
+                        // Update structure select
+                        structureSelect.innerHTML = '<option value="">{% trans "Select a structure..." %}</option>';
+                        structData.structures.forEach(struct => {
+                            const option = document.createElement('option');
+                            option.value = struct.id;
+                            option.textContent = struct.name;
+                            option.dataset.name = struct.name;
+                            option.dataset.flags = (struct.flags || []).join(',');
+                            structureSelect.appendChild(option);
+                        });
+
+                        refreshStatusText.textContent = '{% trans "Done! Structures loaded." %}';
+                        setTimeout(() => {
+                            refreshStatus.style.display = 'none';
+                            refreshBtn.disabled = false;
+                        }, 2000);
+                    });
+                });
+            } else {
+                throw new Error(data.error || '{% trans "Failed to refresh assets" %}');
+            }
+        })
+        .catch(err => {
+            console.error('Error:', err);
+            refreshStatusText.textContent = err.message || '{% trans "Error refreshing assets" %}';
+            refreshStatusText.className = 'text-danger';
+            setTimeout(() => {
+                refreshStatus.style.display = 'none';
+                refreshBtn.disabled = false;
+            }, 3000);
+        });
+    });
+
+    // Initial state
+    refreshBtn.disabled = !corpSelect.value;
+});
+
+</script>
+{% endblock content %}
