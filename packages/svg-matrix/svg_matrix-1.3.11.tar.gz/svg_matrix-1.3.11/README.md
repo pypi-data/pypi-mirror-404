@@ -1,0 +1,320 @@
+# svg-matrix (Python)
+
+Python wrapper for [svg-matrix](https://github.com/Emasoft/SVG-MATRIX) - arbitrary-precision SVG optimization, validation, and manipulation.
+
+## Installation
+
+### As a CLI Tool (Recommended)
+
+For command-line usage, install as a [uv](https://docs.astral.sh/uv/) tool:
+
+```bash
+uv tool install svg-matrix --python 3.12
+```
+
+This installs `psvgm`, `psvg-matrix`, `psvgfonts`, and `psvglinter` globally.
+
+**Upgrade to latest version:**
+
+```bash
+uv tool upgrade svg-matrix
+```
+
+**Uninstall:**
+
+```bash
+uv tool uninstall svg-matrix
+```
+
+**List installed tools:**
+
+```bash
+uv tool list
+```
+
+### As a Library
+
+For use in Python projects:
+
+```bash
+pip install svg-matrix
+# or
+uv add svg-matrix
+```
+
+**Prerequisites:** Requires [Bun](https://bun.sh/) (recommended) or [Node.js](https://nodejs.org/) installed on your system. The package will attempt to auto-install Bun if neither is found.
+
+```bash
+# Install Bun (recommended, faster)
+curl -fsSL https://bun.sh/install | bash
+
+# Or use Node.js
+# https://nodejs.org/
+```
+
+## Quick Start
+
+```python
+from svg_matrix import validate_svg, optimize_svg, to_plain_svg
+
+# Validate an SVG file
+result = validate_svg("icon.svg")
+if result["valid"]:
+    print("SVG is valid!")
+else:
+    for issue in result["issues"]:
+        print(f"Issue: {issue['reason']}")
+
+# Optimize an SVG file
+optimize_svg("large.svg", "small.svg", precision=4)
+
+# Convert Inkscape SVG to plain SVG
+to_plain_svg("inkscape_drawing.svg", "plain.svg")
+```
+
+## Features
+
+### Validation
+
+```python
+from svg_matrix import validate_svg, validate_svg_async
+
+# Synchronous validation
+result = validate_svg("file.svg")
+# Returns: {"valid": bool, "issues": list, "error": str|None}
+
+# Async validation
+import asyncio
+result = await validate_svg_async("file.svg")
+
+# Validate SVG string content
+result = validate_svg('<svg xmlns="http://www.w3.org/2000/svg">...</svg>')
+```
+
+### Optimization
+
+```python
+from svg_matrix import optimize_svg, optimize_paths
+
+# Full optimization
+optimize_svg("input.svg", "output.svg",
+    precision=6,        # Decimal precision (default: 6)
+    minify=True,        # Minify output
+    remove_comments=True,
+    remove_metadata=True
+)
+
+# Path-only optimization (lighter)
+optimize_paths("input.svg", "output.svg", precision=4)
+```
+
+### Conversion
+
+```python
+from svg_matrix import to_plain_svg, flatten, convert_shapes
+
+# Remove Inkscape namespaces
+to_plain_svg("inkscape.svg", "plain.svg")
+
+# Flatten transforms, groups, clipPaths
+flatten("complex.svg", "flat.svg",
+    flatten_transforms=True,
+    flatten_groups=True,
+    flatten_clipaths=True
+)
+
+# Convert shapes to paths
+convert_shapes("shapes.svg", "paths.svg")
+```
+
+### Direct CLI Access
+
+```python
+from svg_matrix import run_svgm, run_svg_matrix, get_info
+
+# Run svgm with any arguments
+result = run_svgm(["input.svg", "-o", "output.svg", "-p", "4"])
+print(result["stdout"])
+
+# Run svg-matrix commands
+result = run_svg_matrix(["info", "file.svg"])
+
+# Get SVG info
+info = get_info("file.svg")
+print(f"Width: {info.get('width')}, Height: {info.get('height')}")
+```
+
+## CLI Commands
+
+The package installs CLI wrappers that mirror the Node.js/Bun commands exactly:
+
+| Python CLI | Mirrors | Description |
+|------------|---------|-------------|
+| `psvgm` | `svgm` | SVG optimization |
+| `psvg-matrix` | `svg-matrix` | SVG matrix operations |
+| `psvgfonts` | `svgfonts` | SVG font operations |
+| `psvglinter` | `svglinter` | SVG linting |
+
+```bash
+# Optimize SVG (same options as svgm)
+psvgm input.svg -o output.svg -p 4
+
+# Get SVG info
+psvg-matrix info input.svg
+
+# Lint SVG
+psvglinter input.svg
+
+# Font operations
+psvgfonts embed input.svg -o output.svg
+
+# Show help (same as Node.js version)
+psvgm --help
+psvg-matrix --help
+```
+
+## Batch Processing
+
+```python
+from pathlib import Path
+from svg_matrix import validate_svg, optimize_svg
+
+# Process all SVGs in a directory
+svg_dir = Path("./svgs")
+output_dir = Path("./optimized")
+output_dir.mkdir(exist_ok=True)
+
+for svg_file in svg_dir.glob("*.svg"):
+    result = validate_svg(svg_file)
+    if result["valid"]:
+        optimize_svg(svg_file, output_dir / svg_file.name)
+        print(f"Optimized: {svg_file.name}")
+    else:
+        print(f"Skipped (invalid): {svg_file.name}")
+```
+
+## API Reference
+
+### Validation Functions
+
+| Function | Description |
+|----------|-------------|
+| `validate_svg(svg_input, strict=False)` | Validate SVG file or string |
+| `validate_svg_async(svg_input, strict=False)` | Async validation |
+
+### Optimization Functions
+
+| Function | Description |
+|----------|-------------|
+| `optimize_svg(input, output, ...)` | Full SVG optimization |
+| `optimize_paths(input, output, precision)` | Path-only optimization |
+
+### Conversion Functions
+
+| Function | Description |
+|----------|-------------|
+| `to_plain_svg(input, output)` | Remove Inkscape namespaces |
+| `flatten(input, output, ...)` | Flatten transforms/groups |
+| `convert_shapes(input, output)` | Convert shapes to paths |
+
+### CLI Functions
+
+| Function | Description |
+|----------|-------------|
+| `run_svgm(args, timeout)` | Run svgm CLI |
+| `run_svg_matrix(args, timeout)` | Run svg-matrix CLI |
+| `get_info(svg_path)` | Get SVG file info |
+
+### Geometry Functions
+
+| Function | Description |
+|----------|-------------|
+| `circle_to_path(cx, cy, r, precision)` | Convert circle to SVG path |
+| `ellipse_to_path(cx, cy, rx, ry, precision)` | Convert ellipse to SVG path |
+| `rect_to_path(x, y, w, h, rx, ry, precision)` | Convert rect to SVG path |
+| `line_to_path(x1, y1, x2, y2, precision)` | Convert line to SVG path |
+| `polygon_to_path(points, precision)` | Convert polygon to SVG path |
+| `polyline_to_path(points, precision)` | Convert polyline to SVG path |
+
+### Path Functions
+
+| Function | Description |
+|----------|-------------|
+| `parse_path(path_data)` | Parse SVG path to commands list |
+| `path_to_string(commands, precision)` | Convert commands to path string |
+| `path_to_absolute(path_data)` | Convert to absolute coordinates |
+| `path_to_cubics(path_data)` | Convert to cubic Bezier curves |
+| `transform_path(path_data, matrix, precision)` | Apply transform matrix to path |
+
+### Transform Functions
+
+| Function | Description |
+|----------|-------------|
+| `translate_2d(tx, ty)` | Create translation matrix |
+| `rotate_2d(angle)` | Create rotation matrix (radians) |
+| `scale_2d(sx, sy)` | Create scaling matrix |
+| `transform_2d(matrix, x, y)` | Apply matrix to point |
+| `identity(n)` | Create identity matrix |
+| `multiply_matrices(a, b)` | Multiply two matrices |
+
+### Precision Functions
+
+| Function | Description |
+|----------|-------------|
+| `get_kappa()` | Get circular arc kappa constant |
+| `set_precision(precision)` | Set decimal precision |
+| `get_precision()` | Get current precision |
+
+## Library Usage Examples
+
+```python
+from svg_matrix import (
+    circle_to_path, rect_to_path,
+    translate_2d, rotate_2d, scale_2d,
+    transform_path, multiply_matrices,
+    parse_path
+)
+import math
+
+# Convert shapes to paths
+circle_path = circle_to_path(100, 100, 50)
+rect_path = rect_to_path(0, 0, 100, 50)
+
+# Create transform matrices
+translate = translate_2d(50, 50)
+rotate = rotate_2d(math.pi / 4)  # 45 degrees
+scale = scale_2d(2, 2)
+
+# Compose transforms (right-to-left: scale, then rotate, then translate)
+combined = multiply_matrices(translate, multiply_matrices(rotate, scale))
+
+# Apply transform to path
+transformed = transform_path("M 0 0 L 100 100", combined)
+
+# Parse path to commands
+commands = parse_path("M 0 0 C 50 0 50 100 100 100")
+# Returns: [{'command': 'M', 'args': ['0', '0']}, ...]
+```
+
+## How It Works
+
+This package is a thin Python wrapper around the [@emasoft/svg-matrix](https://www.npmjs.com/package/@emasoft/svg-matrix) npm package. It uses `bunx` (or `npx` as fallback) to execute the Node.js CLI tools.
+
+**Advantages:**
+- Always uses the latest svg-matrix version
+- Minimal Python package size (~20KB)
+- Full feature parity with the Node.js library
+
+**Requirements:**
+- Bun or Node.js must be installed
+- First run may take a few seconds to download the npm package
+
+## License
+
+MIT License - see [LICENSE](LICENSE)
+
+## Links
+
+- [GitHub Repository](https://github.com/Emasoft/SVG-MATRIX)
+- [npm Package](https://www.npmjs.com/package/@emasoft/svg-matrix)
+- [Issue Tracker](https://github.com/Emasoft/SVG-MATRIX/issues)
