@@ -1,0 +1,62 @@
+repos:
+  # Secret detection
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.24.3
+    hooks:
+      - id: gitleaks
+
+  # Pre-commit default hooks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: end-of-file-fixer
+        exclude: ^(tests/snapshot/__snapshots__/|CNAME$)
+      - id: trailing-whitespace
+        exclude: ^tests/snapshot/__snapshots__/
+      - id: check-yaml
+        exclude: ^mkdocs\.yml$
+      - id: check-added-large-files
+      - id: check-merge-conflict
+      - id: mixed-line-ending
+        args: [--fix=lf]
+        exclude: ^tests/snapshot/__snapshots__/
+
+  # Markdown formatter
+  - repo: https://github.com/hukkin/mdformat
+    rev: 1.0.0
+    hooks:
+      - id: mdformat
+        exclude: ^(\.github/|README\.md$|CNAME$|CHANGELOG\.md$)
+        additional_dependencies:
+          - mdformat-gfm
+          - mdformat-ruff
+
+  # UV lock file sync
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: 0.9.26
+    hooks:
+      - id: uv-lock
+
+  # Local hooks using uv and poe tasks
+  - repo: local
+    hooks:
+      - id: lint
+        name: ruff lint
+        entry: uv run poe lint
+        language: system
+        types: [python]
+        pass_filenames: false
+
+      - id: format
+        name: ruff format
+        entry: uv run poe format
+        language: system
+        types: [python]
+        pass_filenames: false
+
+      - id: typecheck
+        name: pyrefly typecheck
+        entry: uv run poe typecheck
+        language: system
+        types: [python]
+        pass_filenames: false
