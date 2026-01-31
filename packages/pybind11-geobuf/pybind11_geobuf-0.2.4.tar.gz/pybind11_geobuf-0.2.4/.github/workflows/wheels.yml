@@ -1,0 +1,112 @@
+name: Wheels
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+     - master
+  release:
+    types:
+      - published
+
+env:
+  FORCE_COLOR: 3
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build_sdist:
+    name: Build SDist
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+
+    - name: Build SDist
+      run: pipx run build --sdist
+
+    - name: Check metadata
+      run: pipx run twine check dist/*
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: cibw-sdist
+        path: dist/*.tar.gz
+
+
+  build_wheels:
+    name: Wheels on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, windows-latest, macos-14]
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+
+    - name: Cache cibuildwheel
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/Library/Caches/pip
+          ~/.cache/pip
+          ~/AppData/Local/pip/Cache
+        key: cibw-pip-${{ matrix.os }}-${{ hashFiles('pyproject.toml') }}
+        restore-keys: |
+          cibw-pip-${{ matrix.os }}-
+
+    - uses: pypa/cibuildwheel@v2.22
+      env:
+        CIBW_ARCHS_MACOS: universal2
+        CIBW_ARCHS_WINDOWS: AMD64 ARM64
+        CIBW_SKIP: "pp* *musllinux* *_i686"
+        CIBW_TEST_SKIP: "*macosx* *win* *aarch64"
+        CIBW_BEFORE_BUILD: "pip install --prefer-binary numpy fire pytest"
+
+    - name: Verify clean directory
+      run: git diff --exit-code
+      shell: bash
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: cibw-wheels-${{ matrix.os }}-${{ strategy.job-index }}
+        path: wheelhouse/*.whl
+
+
+  upload_all:
+    name: Upload if release
+    needs: [build_wheels, build_sdist]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release' && github.event.action == 'published'
+    environment: pypi
+    permissions:
+      id-token: write
+      attestations: write
+
+    steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.x"
+
+    - uses: actions/download-artifact@v4
+      with:
+        pattern: cibw-*
+        merge-multiple: true
+        path: dist
+
+    - name: Generate artifact attestation for sdist and wheels
+      uses: actions/attest-build-provenance@v1
+      with:
+        subject-path: "dist/*"
+
+    - uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        attestations: true
+        password: ${{ secrets.PYPI_API_TOKEN }}
