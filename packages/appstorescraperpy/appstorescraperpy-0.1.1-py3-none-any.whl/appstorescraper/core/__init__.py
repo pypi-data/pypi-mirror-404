@@ -1,0 +1,1 @@
+from .applescraper import AppleScraper
