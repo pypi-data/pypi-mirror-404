@@ -1,0 +1,423 @@
+"""
+Distribution Families for GLMs
+==============================
+
+This module provides distribution families that specify:
+1. What type of data you're modeling (counts, binary, continuous, etc.)
+2. How variance relates to the mean (the variance function)
+3. The default link function to use
+
+Choosing the Right Family
+-------------------------
+
++------------------+-------------------+------------------+-------------------+
+| Data Type        | Example           | Family           | Typical Link      |
++==================+===================+==================+===================+
+| Continuous       | Temperature       | Gaussian         | Identity          |
+| Strictly positive| Claim amounts     | Gamma            | Log               |
+| Counts (0,1,2,..)| Claim frequency   | Poisson          | Log               |
+| Binary (0 or 1)  | Did they claim?   | Binomial         | Logit             |
+| Proportions      | % who claimed     | Binomial         | Logit             |
++------------------+-------------------+------------------+-------------------+
+
+Understanding Variance Functions
+--------------------------------
+
+The variance function V(μ) tells us how the variance of Y relates to its mean:
+
+    Var(Y) = φ × V(μ)
+
+where φ is the dispersion parameter (φ=1 for Poisson and Binomial).
+
+- **Gaussian**: V(μ) = 1
+  Variance is constant. A $100 claim varies the same as a $10,000 claim.
+  This is usually unrealistic for monetary amounts.
+
+- **Poisson**: V(μ) = μ  
+  Variance equals mean. If average claims = 0.1, variance = 0.1.
+  Good for counts, but real data is often overdispersed.
+
+- **Gamma**: V(μ) = μ²
+  Variance is proportional to mean squared, so coefficient of variation (CV)
+  is constant. A $1,000 claim varies proportionally the same as a $100,000 claim.
+  Very appropriate for insurance claim amounts.
+
+- **Binomial**: V(μ) = μ(1-μ)
+  Maximum variance at μ=0.5, zero variance at μ=0 or μ=1.
+  Makes sense: if something always (or never) happens, there's no variation.
+
+Examples
+--------
+>>> import rustystats as rs
+>>> import numpy as np
+>>>
+>>> # Check variance function values
+>>> poisson = rs.families.Poisson()
+>>> mu = np.array([1.0, 2.0, 5.0])
+>>> print(poisson.variance(mu))  # [1.0, 2.0, 5.0] - same as mu!
+>>>
+>>> gamma = rs.families.Gamma()
+>>> print(gamma.variance(mu))  # [1.0, 4.0, 25.0] - mu squared!
+"""
+
+# Import the Rust implementations
+from rustystats._rustystats import (
+    GaussianFamily as _GaussianFamily,
+    PoissonFamily as _PoissonFamily,
+    BinomialFamily as _BinomialFamily,
+    GammaFamily as _GammaFamily,
+    QuasiPoissonFamily as _QuasiPoissonFamily,
+    QuasiBinomialFamily as _QuasiBinomialFamily,
+    NegativeBinomialFamily as _NegativeBinomialFamily,
+)
+
+
+def Gaussian():
+    """
+    Gaussian (Normal) family for continuous response data.
+    
+    Use this for standard linear regression where the response can be
+    any real value (positive, negative, or zero).
+    
+    Properties
+    ----------
+    - Variance function: V(μ) = 1 (constant variance)
+    - Default link: Identity (η = μ)
+    - Dispersion: σ² (estimated from residuals)
+    
+    When to Use
+    -----------
+    - Continuous data with approximately constant variance
+    - When you'd normally use ordinary least squares
+    - When residuals are roughly normally distributed
+    
+    When NOT to Use
+    ---------------
+    - For strictly positive data (use Gamma instead)
+    - For count data (use Poisson instead)
+    - For binary outcomes (use Binomial instead)
+    
+    Example
+    -------
+    >>> family = rs.families.Gaussian()
+    >>> print(family.name())  # "Gaussian"
+    >>> print(family.variance(np.array([1.0, 100.0])))  # [1.0, 1.0]
+    """
+    return _GaussianFamily()
+
+
+def Poisson():
+    """
+    Poisson family for count data (0, 1, 2, 3, ...).
+    
+    This is the standard family for claim FREQUENCY modeling.
+    
+    Properties
+    ----------
+    - Variance function: V(μ) = μ (variance equals the mean)
+    - Default link: Log (η = log(μ))
+    - Dispersion: φ = 1 (fixed)
+    
+    Key Assumption: Equidispersion
+    ------------------------------
+    Poisson assumes variance = mean. This is often violated in practice
+    ("overdispersion"). Check by looking at:
+    
+        Pearson χ² / degrees of freedom
+    
+    If this is much greater than 1, you have overdispersion. Options:
+    - Use quasi-Poisson (adjust standard errors)
+    - Use Negative Binomial family (once implemented)
+    
+    When to Use
+    -----------
+    - Claim counts per policy
+    - Number of accidents
+    - Event counts in a fixed period
+    
+    Exposure Adjustment
+    -------------------
+    Often used with an "exposure" offset. If modeling annual claim counts
+    but some policies are only 6 months:
+    
+        E(claims) = exposure × exp(Xβ)
+        log(E(claims)) = log(exposure) + Xβ
+    
+    The log(exposure) term is an "offset" with coefficient fixed at 1.
+    
+    Example
+    -------
+    >>> family = rs.families.Poisson()
+    >>> mu = np.array([0.5, 1.0, 2.0])
+    >>> print(family.variance(mu))  # [0.5, 1.0, 2.0] - same as mu!
+    """
+    return _PoissonFamily()
+
+
+def Binomial():
+    """
+    Binomial family for binary or proportion data.
+    
+    This is the foundation of LOGISTIC REGRESSION.
+    
+    Properties
+    ----------
+    - Variance function: V(μ) = μ(1-μ)
+    - Default link: Logit (η = log(μ/(1-μ)))
+    - Dispersion: φ = 1 (fixed)
+    
+    Understanding the Variance Function
+    -----------------------------------
+    V(μ) = μ(1-μ) means variance is:
+    - Maximum at μ = 0.5 (most uncertainty)
+    - Zero at μ = 0 or μ = 1 (certain outcomes)
+    
+    This makes intuitive sense: if something almost always (or never)
+    happens, there's not much variation in outcomes.
+    
+    Interpreting Coefficients
+    -------------------------
+    With logit link, coefficients are on the log-odds scale:
+    
+    - If β = 0.5 for variable X, then exp(0.5) ≈ 1.65
+    - This means: "1.65 times the odds for each 1-unit increase in X"
+    - OR: "65% higher odds"
+    
+    When to Use
+    -----------
+    - Binary outcomes (claim/no claim, lapse/retain)
+    - Conversion rates
+    - Any yes/no question
+    
+    Example
+    -------
+    >>> family = rs.families.Binomial()
+    >>> mu = np.array([0.2, 0.5, 0.8])
+    >>> print(family.variance(mu))  # [0.16, 0.25, 0.16]
+    >>> # Note: max variance at μ=0.5
+    """
+    return _BinomialFamily()
+
+
+def Gamma():
+    """
+    Gamma family for positive continuous data.
+    
+    This is the standard family for claim SEVERITY (amount) modeling.
+    
+    Properties
+    ----------
+    - Variance function: V(μ) = μ² (variance proportional to mean squared)
+    - Default link: Log (η = log(μ)) - note: canonical is inverse, but log is standard
+    - Dispersion: φ = 1/shape (estimated from residuals)
+    
+    Key Insight: Constant Coefficient of Variation
+    ----------------------------------------------
+    Since V(μ) = μ², the standard deviation is proportional to the mean:
+    
+        SD(Y) = √(φ × μ²) = √φ × μ
+        CV = SD/mean = √φ (constant!)
+    
+    This is very realistic for monetary amounts:
+    - A $1,000 claim might vary by ±$500 (CV = 50%)
+    - A $100,000 claim might vary by ±$50,000 (same CV = 50%)
+    
+    Why Gamma for Claim Amounts?
+    ----------------------------
+    - Gaussian assumes constant variance (unrealistic for money)
+    - Gamma's constant CV matches observed behavior of claim amounts
+    - Log link ensures predictions are always positive
+    - Coefficients have multiplicative interpretation
+    
+    Combining with Poisson (Pure Premium)
+    -------------------------------------
+    Pure premium = Frequency × Severity
+    
+    If you model:
+    - Frequency: Poisson with log link
+    - Severity: Gamma with log link
+    
+    Then pure premium coefficients are the SUM of the two models' coefficients!
+    (Because log(Freq × Sev) = log(Freq) + log(Sev))
+    
+    Example
+    -------
+    >>> family = rs.families.Gamma()
+    >>> mu = np.array([100.0, 1000.0, 10000.0])
+    >>> print(family.variance(mu))  # [10000, 1000000, 100000000]
+    >>> # Variance grows with the square of the mean
+    """
+    return _GammaFamily()
+
+
+def QuasiPoisson():
+    """
+    QuasiPoisson family for overdispersed count data.
+    
+    Uses the same variance function as Poisson (V(μ) = μ) but estimates
+    the dispersion parameter φ from data instead of fixing it at 1.
+    
+    Properties
+    ----------
+    - Variance function: V(μ) = μ (same as Poisson)
+    - Full variance: Var(Y) = φ × μ where φ is estimated
+    - Default link: Log (η = log(μ))
+    - Dispersion: φ = Pearson_χ² / (n - p), estimated from data
+    
+    When to Use
+    -----------
+    - Count data with overdispersion (Pearson χ²/df >> 1)
+    - When you want Poisson-like point estimates but valid standard errors
+    - Insurance claim frequency with extra-Poisson variation
+    
+    How It Works
+    ------------
+    Point estimates (coefficients) are IDENTICAL to Poisson. The only
+    difference is how standard errors are computed:
+    
+    - Poisson: SE = sqrt(diag((X'WX)⁻¹))
+    - QuasiPoisson: SE = sqrt(φ × diag((X'WX)⁻¹))
+    
+    The inflation factor √φ makes confidence intervals wider and p-values
+    more conservative, correctly accounting for overdispersion.
+    
+    Detecting Overdispersion
+    ------------------------
+    After fitting a Poisson model, check:
+    
+        dispersion = result.pearson_chi2() / result.df_resid
+    
+    If dispersion >> 1 (e.g., > 1.5), overdispersion is present.
+    
+    Alternatives
+    ------------
+    - Robust standard errors (result.bse_robust("HC1"))
+    - Negative Binomial family (not yet implemented)
+    
+    Example
+    -------
+    >>> import rustystats as rs
+    >>> # Fit QuasiPoisson when overdispersion is detected
+    >>> result = rs.fit_glm(y, X, family="quasipoisson")
+    >>> print(f"Estimated dispersion: {result.scale():.3f}")
+    >>> print(f"SE (model-based): {result.bse()}")  # Inflated by √φ
+    """
+    return _QuasiPoissonFamily()
+
+
+def QuasiBinomial():
+    """
+    QuasiBinomial family for overdispersed binary/proportion data.
+    
+    Uses the same variance function as Binomial (V(μ) = μ(1-μ)) but estimates
+    the dispersion parameter φ from data instead of fixing it at 1.
+    
+    Properties
+    ----------
+    - Variance function: V(μ) = μ(1-μ) (same as Binomial)
+    - Full variance: Var(Y) = φ × μ(1-μ) where φ is estimated
+    - Default link: Logit (η = log(μ/(1-μ)))
+    - Dispersion: φ = Pearson_χ² / (n - p), estimated from data
+    
+    When to Use
+    -----------
+    - Binary outcomes with overdispersion
+    - Clustered binary data (where observations within clusters are correlated)
+    - When unobserved heterogeneity inflates variance beyond Binomial
+    
+    How It Works
+    ------------
+    Point estimates (coefficients, odds ratios) are IDENTICAL to Binomial.
+    The only difference is how standard errors are computed:
+    
+    - Binomial: SE = sqrt(diag((X'WX)⁻¹))
+    - QuasiBinomial: SE = sqrt(φ × diag((X'WX)⁻¹))
+    
+    The inflation factor √φ makes confidence intervals wider and p-values
+    more conservative, correctly accounting for overdispersion.
+    
+    Common Causes of Overdispersion
+    -------------------------------
+    - Clustered/correlated observations
+    - Omitted predictors that affect variance
+    - Non-constant success probability within groups
+    
+    Alternatives
+    ------------
+    - Robust standard errors (result.bse_robust("HC1"))
+    - Mixed effects models (not yet implemented)
+    
+    Example
+    -------
+    >>> import rustystats as rs
+    >>> # Fit QuasiBinomial when overdispersion is detected
+    >>> result = rs.fit_glm(y, X, family="quasibinomial")
+    >>> print(f"Estimated dispersion: {result.scale():.3f}")
+    >>> print(f"Odds ratios: {np.exp(result.params)}")
+    """
+    return _QuasiBinomialFamily()
+
+
+def NegativeBinomial(theta=1.0):
+    """
+    Negative Binomial family for overdispersed count data.
+    
+    Uses the NB2 parameterization where variance is quadratic in the mean:
+      Var(Y) = μ + μ²/θ
+    
+    This is an alternative to QuasiPoisson that models overdispersion explicitly
+    with a proper probability distribution, enabling valid likelihood-based inference.
+    
+    Parameters
+    ----------
+    theta : float, optional
+        Dispersion parameter (default: 1.0). Larger θ = less overdispersion.
+        - θ = 0.5: Strong overdispersion (variance = μ + 2μ²)
+        - θ = 1.0: Moderate overdispersion (variance = μ + μ²)
+        - θ = 10: Mild overdispersion (close to Poisson)
+        - θ → ∞: Approaches Poisson
+    
+    Properties
+    ----------
+    - Variance function: V(μ) = μ + μ²/θ (NB2 parameterization)
+    - Default link: Log (η = log(μ))
+    - True probability distribution with valid likelihood
+    
+    Comparison to QuasiPoisson
+    --------------------------
+    | Aspect           | QuasiPoisson        | Negative Binomial    |
+    |------------------|---------------------|----------------------|
+    | Variance         | φ × μ               | μ + μ²/θ             |
+    | True distribution| No (quasi)          | Yes                  |
+    | Likelihood-based | No                  | Yes                  |
+    | AIC/BIC valid    | Questionable        | Yes                  |
+    | Predictions      | Point only          | Proper intervals     |
+    
+    When to Use
+    -----------
+    - Count data with overdispersion (variance > mean)
+    - When you need valid likelihood-based inference (AIC, BIC)
+    - When you want proper prediction intervals
+    - Claim frequency with extra-Poisson variation
+    
+    Example
+    -------
+    >>> import rustystats as rs
+    >>> # Fit Negative Binomial with θ=1.0
+    >>> result = rs.fit_glm(y, X, family="negbinomial", theta=1.0)
+    >>> 
+    >>> # Check the variance function
+    >>> family = rs.families.NegativeBinomial(theta=2.0)
+    >>> mu = np.array([1.0, 2.0, 4.0])
+    >>> print(family.variance(mu))  # [1.5, 4.0, 12.0]
+    >>> 
+    >>> # Variance = μ + μ²/θ = μ + μ²/2
+    >>> # V(1) = 1 + 0.5 = 1.5
+    >>> # V(2) = 2 + 2 = 4.0
+    >>> # V(4) = 4 + 8 = 12.0
+    """
+    return _NegativeBinomialFamily(theta)
+
+
+# For backwards compatibility and convenience
+__all__ = ["Gaussian", "Poisson", "Binomial", "Gamma", "QuasiPoisson", "QuasiBinomial", "NegativeBinomial"]
