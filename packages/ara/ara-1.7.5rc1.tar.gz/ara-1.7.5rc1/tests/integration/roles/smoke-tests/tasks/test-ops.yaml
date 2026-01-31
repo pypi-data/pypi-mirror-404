@@ -1,0 +1,50 @@
+---
+# Copyright (c) 2022 The ARA Records Ansible authors
+# GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
+
+# Tests some things around blocks, failures and rescues
+
+- block:
+    - name: Debug message
+      debug:
+        msg: "Successful debug task"
+    - name: Return false
+      command: /bin/false
+    - name: Command that should not run
+      debug:
+        msg: "This should never run"
+  rescue:
+    - name: Rescue task
+      debug:
+        msg: "Rescue was called successfully"
+  always:
+    - name: Task that should always run
+      debug:
+        msg: "This should always be printed"
+
+- name: Test a skipped task
+  debug:
+    msg: "This is skipped"
+  when: false
+
+- name: Test with_items
+  debug:
+    msg: "{{ item }}"
+  with_items: "{{ list_items }}"
+
+- name: Test for XSS
+  command: echo "<script>alert(document.cookie)</script>"
+  changed_when: False
+
+- name: Notify something for a handler task
+  command: /bin/true
+  notify:
+    - handler
+
+- name: Flush handlers
+  meta: flush_handlers
+
+- name: Assert that handler task has run
+  assert:
+    that:
+      - _handler_run is success

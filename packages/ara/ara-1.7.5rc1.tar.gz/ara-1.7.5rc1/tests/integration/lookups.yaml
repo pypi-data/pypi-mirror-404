@@ -1,0 +1,140 @@
+---
+# Copyright (c) 2022 The ARA Records Ansible authors
+# GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
+
+- name: Assert playbook properties
+  hosts: localhost
+  gather_facts: true
+  vars:
+    ara_playbook_name: ARA self tests
+    ara_playbook_labels:
+      - lookup-tests
+  tasks:
+    - name: Retrieve the current playbook so we can get the ID
+      ara_playbook:
+      register: playbook_query
+
+    - name: Save the playbook id so we can re-use it easily
+      set_fact:
+        playbook_id: "{{ playbook_query.playbook.id | string }}"
+
+    - name: Recover data from ARA
+      set_fact:
+        playbook: "{{ lookup('ara_api', '/api/v1/playbooks/' + playbook_id) }}"
+        _tasks: "{{ lookup('ara_api', '/api/v1/tasks?playbook=' + playbook_id) }}"
+        results: "{{ lookup('ara_api', '/api/v1/results?playbook=' + playbook_id) }}"
+        hosts: "{{ lookup('ara_api', '/api/v1/hosts?playbook=' + playbook_id) }}"
+
+    - name: Print versions we're testing with
+      debug:
+        msg: >-
+          Integration test playbook running under ansible-core {{ ansible_version.full }},
+          ara {{ playbook.client_version }} (client) and {{ playbook.server_version }} (server)
+
+    - name: Assert playbook properties
+      vars:
+        _controller: "{{ lookup('env', 'ARA_RECORD_CONTROLLER_NAME', default=lookup('pipe', 'hostname')) }}"
+        _user: "{{ lookup('env', 'ARA_RECORD_USER_NAME', default=ansible_facts['user_id']) }}"
+      assert:
+        that:
+          - playbook.name == 'ARA self tests'
+          - "playbook.labels | selectattr('name', 'search', 'lookup-tests') | list | length == 1"
+          - playbook.ansible_version == ansible_version.full
+          - playbook.controller == _controller
+          - playbook.user == _user
+          - playbook_dir in playbook.path
+          - "'tests/integration/lookups.yaml' in playbook.path"
+
+    # TODO: Validate when set from configuration file too
+    - name: Validate hostname when localhost_as_hostname is enabled
+      vars:
+        _localhost_as_hostname: "{{ lookup('env', 'ARA_LOCALHOST_AS_HOSTNAME') | default(false) }}"
+      assert:
+        that:
+          - hosts['results'][0]['name'] != inventory_hostname
+          - hosts['results'][0]['name'] != 'localhost'
+          - inventory_hostname == 'localhost'
+        success_msg: "inventory_hostname '{{ inventory_hostname }}' != {{ hosts['results'][0]['name'] }}"
+        fail_msg: |
+          localhost_as_hostname is enabled but the inventory hostname is still localhost...
+          It should be the hostname of the controller.
+      when: _localhost_as_hostname | bool
+
+    - name: Validate hostname when localhost_as_hostname is not enabled
+      vars:
+        _localhost_as_hostname: "{{ lookup('env', 'ARA_LOCALHOST_AS_HOSTNAME') | default(false) }}"
+      assert:
+        that:
+          - inventory_hostname == 'localhost'
+          - hosts['results'][0]['name'] == inventory_hostname
+        success_msg: "inventory_hostname {{ inventory_hostname }} == {{ hosts['results'][0]['name'] }}"
+        fail_msg: |
+          localhost_as_hostname isn't enabled
+          The inventory_hostname is localhost but the host is not localhost (???)
+      when: not _localhost_as_hostname | bool
+
+    - block:
+        - name: Fail something with ignore_errors
+          command: /usr/bin/false
+          ignore_errors: true
+
+        - name: Generate a failure that will be rescued
+          fail:
+            msg: Message from a failed task
+      rescue:
+        - name: We can go on, it was a failure for test purposes
+          debug:
+            msg: 👍
+
+    # failed is a new status for a task, validate that it actually works
+    - name: Find the task with the ignored errors and validate the status
+      vars:
+        _task: "{{ lookup('ara_api', '/api/v1/tasks?name=ignore_errors&playbook=' + playbook_id ) }}"
+      assert:
+        that:
+          - _task['results'][0]['name'] == 'Fail something with ignore_errors'
+          - _task['results'][0]['status'] == 'completed'
+
+    - name: Find the task with the failure and validate the status
+      vars:
+        _task: "{{ lookup('ara_api', '/api/v1/tasks?name=generate&playbook=' + playbook_id ) }}"
+      assert:
+        that:
+          - _task['results'][0]['name'] == 'Generate a failure that will be rescued'
+          - _task['results'][0]['status'] == 'failed'
+
+    #####
+    # Examples taken from docs on Ansible plugins and use cases
+    #####
+    - name: Get failed results
+      set_fact:
+        failed: "{{ lookup('ara_api', '/api/v1/results?status=failed&playbook=' + playbook_id) }}"
+
+    - name: Print task data from failed results
+      vars:
+        task_id: "{{ item.task | string }}"
+        task: "{{ lookup('ara_api', '/api/v1/tasks/' + task_id ) }}"
+        host_id: "{{ item.host | string }}"
+        host: "{{ lookup('ara_api', '/api/v1/hosts/' + host_id) }}"
+      debug:
+        msg: "{{ host.name }} failed | {{ task.name }} ({{ task.path }}:{{ task.lineno }})"
+      loop: "{{ failed.results }}"
+
+    - name: Get the currently running playbook
+      ara_playbook:
+      register: query
+
+    - name: Retrieve playbook id
+      set_fact:
+        playbook_id: "{{ query.playbook.id | string }}"
+
+    # With the playbook id we can create a link to the playbook report
+    - name: Recover base url from ara
+      set_fact:
+        api_base_url: "{{ lookup('ara_api', '/api/') }}"
+
+    - name: Print link to playbook report
+      vars:
+        ui_base_url: "{{ api_base_url.api[0] | regex_replace('/api/v1/', '') }}"
+      debug:
+        msg: "{{ ui_base_url }}/playbooks/{{ playbook_id }}.html"

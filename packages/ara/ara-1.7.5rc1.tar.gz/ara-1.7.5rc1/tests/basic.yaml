@@ -1,0 +1,244 @@
+---
+# Copyright (c) 2022 The ARA Records Ansible authors
+# GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
+
+- name: Basic ARA tests without Ansible roles
+  hosts: all
+  vars:
+    ara_api_root_dir: "{{ ansible_user_dir }}/.ara-tests"
+    ara_api_venv_path: "{{ ara_api_root_dir }}/virtualenv"
+    ara_api_secret_key: testing
+    ara_api_debug: true
+    ara_api_log_level: DEBUG
+  tasks:
+    # The name can be "ansible", "ansible-base" or "ansible-core" in which case
+    # they would be installed from PyPI.
+    # The name can otherwise be the path to a git repository or release tarball.
+    # We're handling it here to allow various levels of variable precedence.
+    - name: Set default Ansible name if unset
+      set_fact:
+        ara_tests_ansible_name: ansible
+      when: ara_tests_ansible_name is not defined or ara_tests_ansible_name is none
+
+    - name: Set default Ansible version is unset
+      set_fact:
+        ara_tests_ansible_version: latest
+      when: ara_tests_ansible_version is not defined or ara_tests_ansible_version is none
+
+    # If a version is not explicitly set we want to make sure to
+    # completely omit the version argument to pip, as it will be coming
+    # from the long-form ara_tests_ansible_name variable.  Additionally, if
+    # the version is the special value "latest", then we also want to omit
+    # any version number, but also set the package state to "latest".
+    - name: Set Ansible version for installation
+      set_fact:
+        _install_ansible_version: "{{ ara_tests_ansible_version }}"
+      when: ara_tests_ansible_version not in ("", "latest")
+
+    - name: Set Ansible package state for installation
+      set_fact:
+        _install_ansible_state: latest
+      when: ara_tests_ansible_version == "latest"
+
+    - name: Set source to checked out repository if it isn't specified
+      set_fact:
+        ara_api_source: "{{ lookup('pipe', 'git rev-parse --show-toplevel') }}"
+      when: ara_api_source is not defined or ara_api_source is none
+
+    - name: Ensure root server directory exists
+      file:
+        path: "{{ ara_api_root_dir }}/server"
+        state: directory
+        recurse: yes
+
+    - name: Ensure python3-venv is installed for Ubuntu
+      become: yes
+      package:
+        name: python3-venv
+        state: present
+      when: ansible_distribution == "Ubuntu"
+
+    - block:
+        - name: Initialize virtual environment with Ansible
+          pip:
+            name: "{{ ara_tests_ansible_name }}"
+            version: "{{ _install_ansible_version | default(omit, True) }}"
+            state: "{{ _install_ansible_state | default(omit, True) }}"
+            virtualenv: "{{ ara_api_venv_path }}"
+            virtualenv_command: /usr/bin/python3 -m venv
+
+        - name: Install ansible-runner so we can test it
+          pip:
+            name: ansible-runner
+            state: present
+            virtualenv: "{{ ara_api_venv_path }}"
+            virtualenv_command: /usr/bin/python3 -m venv
+
+        - name: Install ARA from source in virtual environment
+          pip:
+            name: "{{ ara_api_source }}[server]"
+            state: present
+            virtualenv: "{{ ara_api_venv_path }}"
+            virtualenv_command: /usr/bin/python3 -m venv
+      rescue:
+        # ex: low RAM node with /tmp as tmpfs
+        - name: Recover from installation failure
+          debug:
+            msg: There may be insufficient storage in /tmp, trying again with /var/tmp
+
+        - name: Initialize virtual environment with Ansible
+          environment:
+            TMPDIR: /var/tmp
+          pip:
+            name: "{{ ara_tests_ansible_name }}"
+            version: "{{ _install_ansible_version | default(omit, True) }}"
+            state: "{{ _install_ansible_state | default(omit, True) }}"
+            virtualenv: "{{ ara_api_venv_path }}"
+            virtualenv_command: /usr/bin/python3 -m venv
+
+        - name: Install ansible-runner so we can test it
+          environment:
+            TMPDIR: /var/tmp
+          pip:
+            name: ansible-runner
+            state: present
+            virtualenv: "{{ ara_api_venv_path }}"
+            virtualenv_command: /usr/bin/python3 -m venv
+
+        - name: Install ARA from source in virtual environment
+          environment:
+            TMPDIR: /var/tmp
+          pip:
+            name: "{{ ara_api_source }}[server]"
+            state: present
+            virtualenv: "{{ ara_api_venv_path }}"
+            virtualenv_command: /usr/bin/python3 -m venv
+
+    # For debug purposes: record minimum introspection of installed ansible, ansible-base and ansible-core versions
+    - name: Record effective version of Ansible installed
+      shell: "{{ ara_api_venv_path }}/bin/pip show {{ item }} | awk '/Version/ {print $2}'"
+      ignore_errors: yes
+      changed_when: false
+      loop:
+        - ansible
+        - ansible-base
+        - ansible-core
+
+    - name: Get ARA plugins directory
+      command: "{{ ara_api_venv_path }}/bin/python3 -m ara.setup.plugins"
+      register: ara_setup_plugins
+
+    - name: Template an ansible.cfg file
+      copy:
+        content: |
+          [defaults]
+          action_plugins = {{ ara_setup_plugins.stdout }}/action
+          callback_plugins = {{ ara_setup_plugins.stdout }}/callback
+          lookup_plugins = {{ ara_setup_plugins.stdout }}/lookup
+
+          [ara]
+          api_client = {{ lookup('env', 'ARA_API_CLIENT', default='offline') }}
+          api_server = {{ lookup('env', 'ARA_API_SERVER', default='http://127.0.0.1:8000') }}
+          callback_threads = {{ lookup('env', 'ARA_CALLBACK_THREADS', default='1') }}
+          ignored_files = .ansible/tmp,ignored_task_file.yaml
+          default_labels = {{ lookup('env', 'ARA_DEFAULT_LABELS', default='basic-tests') }}
+        dest: "{{ ara_api_root_dir }}/server/ansible.cfg"
+
+    - name: Set environment variables
+      set_fact:
+        _env:
+          ANSIBLE_CONFIG: "{{ ara_api_root_dir }}/server/ansible.cfg"
+          ANSIBLE_DISPLAY_TRACEBACK: always
+          ARA_DEBUG: "{{ ara_api_debug }}"
+          ARA_LOG_LEVEL: "{{ ara_api_log_level }}"
+          ARA_BASE_DIR: "{{ ara_api_root_dir }}/server"
+          ARA_SECRET_KEY: "{{ ara_api_secret_key }}"
+          ARA_API_USERNAME: "{{ lookup('env', 'ARA_API_USERNAME') | default(None) }}"
+          ARA_API_PASSWORD: "{{ lookup('env', 'ARA_API_PASSWORD') | default(None) }}"
+          PATH: "{{ ara_api_venv_path }}/bin:/bin:/usr/bin:/usr/local/bin"
+      no_log: yes
+
+    # These aren't in the same task (i.e, with loop) so we can tell individual test
+    # runs apart easily rather than keeping all the output bundled in a single task.
+    # TODO: Add validation for the tests
+    - environment: "{{ _env }}"
+      vars:
+        _test_root: "{{ ara_api_source }}/tests/integration"
+      block:
+        # smoke.yaml tests setting ara_playbook_name in one of three plays
+        - name: Run smoke.yaml integration test
+          command: "ansible-playbook -vvv {{ _test_root }}/smoke.yaml"
+
+        - name: Run lookup integration tests
+          environment:
+            ARA_LOCALHOST_AS_HOSTNAME: "{{ ara_localhost_as_hostname | default(true) }}"
+          command: "ansible-playbook -vvv {{ _test_root }}/lookups.yaml"
+
+        - name: Run record settings tests
+          environment:
+            ARA_RECORD_USER_NAME: "test-user"
+            ARA_RECORD_CONTROLLER_NAME: "test-controller"
+            ARA_RECORD_TASK_CONTENT: "false"
+          command: "ansible-playbook -vvv {{ _test_root }}/record_settings.yaml"
+
+        - name: Run delegate_to integration tests
+          command: "ansible-playbook -vvv {{ _test_root }}/delegate_to.yaml"
+
+        - name: Run free strategy test
+          # known issue: status of a task can be wrong when using the free strategy
+          ignore_errors: true
+          command: "ansible-playbook -vvv {{ _test_root }}/free_strategy.yaml"
+
+        - name: Run hosts.yaml integration test
+          command: "ansible-playbook -vvv {{ _test_root }}/hosts.yaml"
+
+        - name: Run import.yaml integration test
+          command: "ansible-playbook -vvv {{ _test_root }}/import.yaml"
+
+        - name: Run facts.yaml integration test
+          command: "ansible-playbook -vvv {{ _test_root }}/facts.yaml"
+
+        - name: Run long_strings.yaml integration test
+          command: "ansible-playbook -vvv {{ _test_root }}/long_strings.yaml"
+
+        # Tests setting ara_playbook_name as an extra var
+        - name: Run failed.yaml integration test
+          command: >
+            ansible-playbook -vvv {{ _test_root }}/failed.yaml -e ara_playbook_name="Failed playbook"
+          ignore_errors: yes
+
+        - name: Run incomplete.yaml integration test
+          shell: |
+            ansible-playbook -vvv {{ _test_root }}/incomplete.yaml &
+            sleep 5
+            kill $!
+          args:
+            executable: /bin/bash
+          ignore_errors: yes
+
+        # TODO: Enable this once 2.9 and 2.10 go end-of-life, otherwise fails with libselinux binding issue that was fixed in >=2.11
+        #- name: Run a playbook with ansible-runner
+        #  command: "{{ _test_root | dirname }}/with_ansible-runner.py"
+
+        - name: Run ignored_files tests
+          environment:
+            ANSIBLE_VAULT_PASSWORD_FILE: "{{ _test_root }}/vault_password_file"
+          command: "ansible-playbook -vvv {{ _test_root }}/ignored_files.yaml"
+
+        - name: Run ignored_facts tests
+          environment:
+            ARA_IGNORED_FACTS: all
+          command: "ansible-playbook -vvv {{ _test_root }}/ignored_facts.yaml"
+
+        - name: Run notes tests for deprecations, exceptions and warnings
+          command: "ansible-playbook -vvv {{ _test_root }}/notes.yaml"
+
+        - name: Generate static report
+          command: ara-manage generate {{ ara_api_root_dir }}/server/static
+          vars:
+            ara_api_server: "{{ lookup('env', 'ARA_API_SERVER', default='http://127.0.0.1:8000') }}"
+          # Only do this when running locally, otherwise the results are on
+          # a remote server and ara-manage generate doesn't support filtering (yet)
+          # Thus we could end up generating thousands of playbooks if recording
+          # to a central location.
+          when: ara_api_server == "http://127.0.0.1:8000"

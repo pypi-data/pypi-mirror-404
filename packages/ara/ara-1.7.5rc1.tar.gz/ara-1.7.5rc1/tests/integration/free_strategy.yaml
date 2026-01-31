@@ -1,0 +1,107 @@
+---
+# Copyright (c) 2022 The ARA Records Ansible authors
+# GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
+
+# Requires:
+# export ANSIBLE_CALLBACK_PLUGINS=$(python3 -m ara.setup.callback_plugins)
+# export ANSIBLE_ACTION_PLUGINS=$(python3 -m ara.setup.action_plugins)
+# export ANSIBLE_LOOKUP_PLUGINS=$(python3 -m ara.setup.lookup_plugins)
+
+- name: Create hosts
+  hosts: localhost
+  gather_facts: no
+  vars:
+    test_host_count: 10
+  tasks:
+    - name: Add a host to the inventory
+      add_host:
+        ansible_connection: local
+        hostname: "host-{{ item }}"
+        groups: test_hosts
+        # Pseudo-random sleep duration to influence how quickly different hosts complete
+        randomized_sleep_duration: "{{ 3 | random }}"
+      with_sequence: start=1 end={{ test_host_count }}
+
+- name: Run tasks with free strategy
+  hosts: test_hosts
+  strategy: free
+  gather_facts: no
+  tasks:
+    - name: First sleep task
+      command: sleep {{ randomized_sleep_duration }}
+    - name: Second sleep task
+      command: sleep {{ randomized_sleep_duration }}
+    - name: Third sleep task
+      command: sleep {{ randomized_sleep_duration }}
+
+    - block:
+        - name: A failed task with ignore_errors
+          command: /usr/bin/false
+          ignore_errors: true
+
+        - name: Generate a task with a failure for the first host
+          fail:
+            msg: This task should succeed on every host but this one
+          when: inventory_hostname == groups['test_hosts'][0]
+      rescue:
+        - name: We can go on, it was for test purposes
+          debug:
+            msg: 👍
+
+- name: Assert playbook properties
+  hosts: localhost
+  gather_facts: no
+  vars:
+    test_host_count: 10
+  tasks:
+    - name: Retrieve the current playbook so we can get the ID
+      ara_playbook:
+      register: playbook_query
+
+    - name: Save the playbook id so we can re-use it easily
+      set_fact:
+        playbook_id: "{{ playbook_query.playbook.id | string }}"
+
+    - name: Search for the free play
+      set_fact:
+        play_query: "{{ lookup('ara_api', '/api/v1/plays?name=free&playbook=' + playbook_id) }}"
+
+    - name: Search for the sleep command tasks
+      vars:
+        play_id: "{{ play_query.results[0].id | string }}"
+      set_fact:
+        sleep_tasks: "{{ lookup('ara_api', '/api/v1/tasks?name=sleep&action=command&play=' + play_id) }}"
+
+    - name: Assert the number of tasks
+      assert:
+        that:
+          - sleep_tasks.count == 3
+
+    - name: Assert the status of the sleep tasks
+      assert:
+        that:
+          - item.status == 'completed'
+          - item.action == 'command'
+          - item.play == play_query.results[0].id
+          - item['items']['results'] == test_host_count
+      loop: "{{ sleep_tasks.results }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    # failed is a new status for a task, validate that it actually works
+    - name: Find the task with the ignored errors and validate the status
+      vars:
+        _task: "{{ lookup('ara_api', '/api/v1/tasks?name=ignore_errors&playbook=' + playbook_id ) }}"
+      assert:
+        that:
+          - _task['results'][0]['name'] == 'A failed task with ignore_errors'
+          - _task['results'][0]['status'] == 'completed'
+
+    - name: Find the task with the failure and validate the status
+      vars:
+        _task: "{{ lookup('ara_api', '/api/v1/tasks?name=Generate&playbook=' + playbook_id ) }}"
+      assert:
+        that:
+          - _task['results'][0]['name'] == 'Generate a task with a failure for the first host'
+          - _task['results'][0]['status'] == 'failed'
+        fail_msg: "task {{ _task['results'][0]['id'] }} status is {{ _task['results'][0]['status'] }} instead of failed (known issue with free strategy)"
