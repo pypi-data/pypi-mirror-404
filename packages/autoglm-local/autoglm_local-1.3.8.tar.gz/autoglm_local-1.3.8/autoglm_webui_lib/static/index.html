@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI-APPUI自动化测试平台</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css?v=17">
+</head>
+
+<body>
+    <!-- 顶部标题栏 -->
+    <header class="header">
+        <div class="header-left">
+            <span class="material-icons-round logo-icon">smart_toy</span>
+            <h1>AI-APPUI自动化测试平台</h1>
+            <span class="version">v2.0</span>
+        </div>
+        <div class="header-right">
+            <div class="system-status" id="systemStatus"></div>
+            <div class="connection-status" id="connectionStatus">
+                <span class="status-dot"></span>
+                <span class="status-text">未连接</span>
+            </div>
+            <a href="/static/guide.html" class="help-link" title="帮助文档">
+                <span class="material-icons-round">help_outline</span>
+            </a>
+        </div>
+    </header>
+
+    <!-- 主内容区 -->
+    <main class="main-container">
+        <!-- 左侧面板：设备、API配置、输入法、场景 -->
+        <aside class="left-panel">
+            <!-- 本地端选择（多用户隔离） -->
+            <section class="panel-section local-selector-section" id="localSelector">
+                <div class="section-header">
+                    <span class="material-icons-round">computer</span>
+                    <h3>本地端</h3>
+                    <span class="local-status" id="localStatus"></span>
+                </div>
+                <select class="config-select local-select" id="localSelect" onchange="switchLocal(this.value)">
+                    <option value="">-- 加载中... --</option>
+                </select>
+            </section>
+
+            <!-- 设备管理 -->
+            <section class="panel-section">
+                <div class="section-header">
+                    <span class="material-icons-round">devices</span>
+                    <h3>设备管理</h3>
+                    <button class="icon-btn" id="refreshDevices" title="刷新设备">
+                        <span class="material-icons-round">refresh</span>
+                    </button>
+                </div>
+                <div class="device-list" id="deviceList">
+                    <div class="empty-state">
+                        <span class="material-icons-round">phone_android</span>
+                        <p>点击刷新获取设备</p>
+                    </div>
+                </div>
+                <div class="device-actions">
+                    <button class="scrcpy-btn" id="toggleRemoteControl" onclick="remoteControl.start()">
+                        <span class="material-icons-round">touch_app</span>远程控制
+                    </button>
+                </div>
+            </section>
+
+            <!-- API 配置 -->
+            <section class="panel-section">
+                <div class="section-header">
+                    <span class="material-icons-round">api</span>
+                    <h3>API 配置</h3>
+                    <button class="icon-btn" id="addApiConfig" title="添加配置">
+                        <span class="material-icons-round">add</span>
+                    </button>
+                </div>
+                <div class="api-config-list" id="apiConfigList">
+                    <div class="empty-state">暂无配置</div>
+                </div>
+                <select class="config-select" id="activeApiConfig">
+                    <option value="">-- 选择API配置 --</option>
+                </select>
+            </section>
+
+            <!-- 输入法管理 (仅 Android) -->
+            <section class="panel-section ime-section" id="imeSection">
+                <div class="section-header">
+                    <span class="material-icons-round">keyboard</span>
+                    <h3>输入法</h3>
+                    <span class="platform-badge android" id="imePlatformBadge">Android</span>
+                </div>
+                <div class="ime-control">
+                    <select class="ime-select" id="imeSelect" disabled title="点击选择输入法">
+                        <option value="">选择设备后加载</option>
+                    </select>
+                    <button class="btn btn-primary btn-small" id="switchIme" disabled>切换</button>
+                </div>
+                <div id="imeHint">选择设备后查看输入法状态</div>
+                <div class="ime-actions">
+                    <button class="btn btn-outline btn-small" id="installAdbKeyboard" disabled style="width: 100%;">
+                        <span class="material-icons-round">download</span>
+                        安装 ADB Keyboard
+                    </button>
+                </div>
+            </section>
+
+            <!-- 用例场景 -->
+            <section class="panel-section">
+                <div class="section-header">
+                    <span class="material-icons-round">folder_special</span>
+                    <h3>用例场景</h3>
+                    <button class="icon-btn" id="saveScenario" title="保存当前用例为场景">
+                        <span class="material-icons-round">save</span>
+                    </button>
+                </div>
+                <div class="scenario-list" id="scenarioList">
+                    <div class="empty-state">暂无保存的场景</div>
+                </div>
+            </section>
+        </aside>
+
+        <!-- 中间面板：测试用例 + 状态/日志/历史 -->
+        <div class="center-panel">
+            <!-- 测试用例区域 -->
+            <section class="test-case-section">
+                <div class="section-header" style="border-bottom: none; padding-bottom: 8px; margin-bottom: 8px;">
+                    <span class="material-icons-round">checklist</span>
+                    <h3>测试用例</h3>
+                </div>
+                <div class="case-actions-row">
+                    <button class="btn btn-small btn-primary" id="addTestCase">
+                        <span class="material-icons-round">add</span>添加
+                    </button>
+                    <button class="btn btn-small btn-outline" id="importCsv">
+                        <span class="material-icons-round">upload_file</span>导入CSV
+                    </button>
+                    <button class="btn btn-small btn-outline" id="exportCsv">
+                        <span class="material-icons-round">download</span>导出CSV
+                    </button>
+                    <button class="btn btn-small btn-outline" id="downloadTemplate">
+                        <span class="material-icons-round">description</span>下载模板
+                    </button>
+                    <input type="file" id="csvFileInput" accept=".csv" hidden>
+                </div>
+                <div class="test-case-toolbar">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="selectAllCases">
+                        <span>全选</span>
+                    </label>
+                    <span class="case-count">共 <strong id="totalCases">0</strong> 条，已选 <strong
+                            id="selectedCases">0</strong> 条</span>
+                    <button class="btn btn-small btn-danger" id="clearCases">清空</button>
+                </div>
+                <div class="test-case-list" id="testCaseList">
+                    <div class="empty-state">
+                        <span class="material-icons-round">playlist_add</span>
+                        <p>添加或导入测试用例开始测试</p>
+                    </div>
+                </div>
+                <div class="run-controls">
+                    <button class="btn btn-cta btn-large" id="runSelected">
+                        <span class="material-icons-round">play_arrow</span>
+                        执行选中用例
+                    </button>
+                    <button class="btn btn-danger btn-large" id="stopTask" disabled>
+                        <span class="material-icons-round">stop</span>
+                        停止执行
+                    </button>
+                </div>
+            </section>
+
+            <!-- 状态指标 -->
+            <div class="status-metrics-row">
+                <div class="status-card">
+                    <div class="card-header">
+                        <span class="material-icons-round">timer</span>
+                        <span>运行时长</span>
+                    </div>
+                    <div class="card-value" id="runTime">00:00</div>
+                </div>
+                <div class="status-card">
+                    <div class="card-header">
+                        <span class="material-icons-round">speed</span>
+                        <span>首Token</span>
+                    </div>
+                    <div class="card-value" id="ttft">-</div>
+                </div>
+                <div class="status-card">
+                    <div class="card-header">
+                        <span class="material-icons-round">psychology</span>
+                        <span>思考耗时</span>
+                    </div>
+                    <div class="card-value" id="thinkingTime">-</div>
+                </div>
+                <div class="status-card">
+                    <div class="card-header">
+                        <span class="material-icons-round">hourglass_bottom</span>
+                        <span>总耗时</span>
+                    </div>
+                    <div class="card-value" id="totalTime">-</div>
+                </div>
+                <div class="status-card status">
+                    <div class="card-header">
+                        <span class="material-icons-round">info</span>
+                        <span>执行状态</span>
+                    </div>
+                    <div class="card-value status-value" id="taskStatus">待执行</div>
+                </div>
+            </div>
+
+            <!-- 日志/历史/报告 Tab切换 -->
+            <div class="logs-history-tabs">
+                <button class="tab-btn active" data-tab="logs">
+                    <span class="material-icons-round">article</span>日志
+                </button>
+                <button class="tab-btn" data-tab="history">
+                    <span class="material-icons-round">history</span>历史
+                </button>
+                <button class="tab-btn" data-tab="reports">
+                    <span class="material-icons-round">description</span>报告
+                </button>
+            </div>
+
+            <!-- 日志面板 -->
+            <div class="tab-content active" id="logsTab">
+                <div class="log-container" id="logContainer">
+                    <div class="log-placeholder">
+                        <span class="material-icons-round">article</span>
+                        <p>等待执行任务...</p>
+                    </div>
+                </div>
+                <button class="btn btn-small btn-outline" id="clearLogs">
+                    <span class="material-icons-round">delete_sweep</span>清空日志
+                </button>
+            </div>
+
+            <!-- 历史面板 -->
+            <div class="tab-content" id="historyTab">
+                <div class="history-list" id="historyList">
+                    <div class="empty-state">
+                        <span class="material-icons-round">history</span>
+                        <p>暂无历史记录</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 报告面板 -->
+            <div class="tab-content" id="reportsTab">
+                <div class="reports-list" id="reportsList">
+                    <div class="empty-state">
+                        <span class="material-icons-round">description</span>
+                        <p>暂无测试报告</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右侧面板：设备屏幕 -->
+        <aside class="right-panel">
+            <section class="screen-section">
+                <div class="section-header">
+                    <span class="material-icons-round">screenshot_monitor</span>
+                    <h3>设备屏幕</h3>
+                    <button class="icon-btn" id="refreshScreen" title="刷新截图">
+                        <span class="material-icons-round">refresh</span>
+                    </button>
+                </div>
+                <div class="device-screen-container">
+                    <div class="device-frame">
+                        <div class="screen-placeholder" id="screenPlaceholder">
+                            <span class="material-icons-round">phone_android</span>
+                            <p>选择设备后显示</p>
+                        </div>
+                        <img id="deviceScreen" class="device-screen" style="display:none;" alt="设备屏幕">
+                    </div>
+                    <div class="screen-info">
+                        <span id="screenInfo">-</span>
+                    </div>
+                </div>
+            </section>
+        </aside>
+    </main>
+
+    <!-- 添加/编辑用例弹窗 -->
+    <div class="modal" id="testCaseModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="caseModalTitle">添加测试用例</h3>
+                <button class="icon-btn" id="closeCaseModal">
+                    <span class="material-icons-round">close</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>用例名称</label>
+                    <input type="text" id="caseName" placeholder="例如：登录功能测试">
+                </div>
+                <div class="form-group">
+                    <label>测试步骤（将作为AI指令执行）</label>
+                    <textarea id="caseDescription" rows="6"
+                        placeholder="描述你希望 AI 执行的操作，例如：&#10;1. 打开应用&#10;2. 点击登录按钮&#10;3. 输入用户名和密码&#10;4. 点击确认登录"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>预期结果（可选）</label>
+                    <input type="text" id="caseExpected" placeholder="例如：登录成功进入首页">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" id="cancelCaseModal">取消</button>
+                <button class="btn btn-primary" id="saveCaseModal">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- API配置弹窗 -->
+    <div class="modal" id="apiConfigModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="apiModalTitle">添加 API 配置</h3>
+                <button class="icon-btn" id="closeApiModal">
+                    <span class="material-icons-round">close</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>配置名称</label>
+                    <input type="text" id="apiConfigName" placeholder="例如：智谱AI">
+                </div>
+                <div class="form-group">
+                    <label>Base URL</label>
+                    <input type="text" id="apiBaseUrl" value="https://open.bigmodel.cn/api/paas/v4">
+                </div>
+                <div class="form-group">
+                    <label>模型名称</label>
+                    <input type="text" id="apiModel" value="autoglm-phone">
+                </div>
+                <div class="form-group">
+                    <label>API Key</label>
+                    <input type="password" id="apiKey" placeholder="输入API密钥">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" id="cancelApiModal">取消</button>
+                <button class="btn btn-primary" id="saveApiModal">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 保存场景弹窗 -->
+    <div class="modal" id="scenarioModal">
+        <div class="modal-content modal-small">
+            <div class="modal-header">
+                <h3>保存为用例场景</h3>
+                <button class="icon-btn" id="closeScenarioModal">
+                    <span class="material-icons-round">close</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>场景名称</label>
+                    <input type="text" id="scenarioName" placeholder="例如：商城完整流程测试">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" id="cancelScenarioModal">取消</button>
+                <button class="btn btn-primary" id="confirmSaveScenario">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 历史详情弹窗 -->
+    <div class="modal" id="historyDetailModal">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h3>测试结果详情</h3>
+                <button class="icon-btn" id="closeHistoryModal">
+                    <span class="material-icons-round">close</span>
+                </button>
+            </div>
+            <div class="modal-body" id="historyDetailContent">
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" id="exportExcel">
+                    <span class="material-icons-round">download</span>导出 Excel
+                </button>
+                <button class="btn btn-primary" id="closeHistoryModalBtn">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 输入法错误弹窗 -->
+    <div class="modal" id="imeErrorModal">
+        <div class="modal-content modal-small">
+            <div class="modal-header error-header">
+                <span class="material-icons-round">warning</span>
+                <h3>输入法未切换</h3>
+            </div>
+            <div class="modal-body">
+                <p id="imeErrorMessage">请先切换到 ADB Keyboard 输入法</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" id="closeImeErrorModal">我知道了</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 远程控制弹窗 -->
+    <div class="modal" id="remoteControlModal">
+        <div class="modal-content modal-fullscreen">
+            <div class="modal-header">
+                <h3><span class="material-icons-round">touch_app</span> 远程控制</h3>
+                <div class="remote-controls-bar">
+                    <button class="btn btn-small" onclick="remoteControl.sendKey('back')" title="返回">
+                        <span class="material-icons-round">arrow_back</span>
+                    </button>
+                    <button class="btn btn-small" onclick="remoteControl.sendKey('home')" title="主页">
+                        <span class="material-icons-round">home</span>
+                    </button>
+                    <button class="btn btn-small" onclick="remoteControl.sendKey('recent')" title="最近任务(仅Android)">
+                        <span class="material-icons-round">view_carousel</span>
+                    </button>
+                    <button class="btn btn-small" onclick="remoteControl.refreshScreen()" title="刷新">
+                        <span class="material-icons-round">refresh</span>
+                    </button>
+                    <button class="btn btn-small btn-outline" onclick="remoteControl.configureWda()" title="配置WDA(iOS)">
+                        <span class="material-icons-round">settings</span>
+                    </button>
+                    <span class="remote-fps" id="remoteFps">0 FPS</span>
+                </div>
+                <button class="icon-btn" id="closeRemoteModal" onclick="remoteControl.stop()">
+                    <span class="material-icons-round">close</span>
+                </button>
+            </div>
+            <div class="modal-body remote-body">
+                <div class="remote-screen-container" id="remoteScreenContainer">
+                    <canvas id="remoteCanvas"></canvas>
+                    <div class="remote-placeholder" id="remotePlaceholder">
+                        <span class="material-icons-round">phonelink</span>
+                        <p>正在连接设备...</p>
+                    </div>
+                </div>
+                <div class="remote-sidebar">
+                    <div class="remote-info">
+                        <h4>设备信息</h4>
+                        <p><strong>设备:</strong> <span id="remoteDeviceId">-</span></p>
+                        <p><strong>分辨率:</strong> <span id="remoteResolution">-</span></p>
+                        <p><strong>状态:</strong> <span id="remoteStatus">未连接</span></p>
+                    </div>
+                    <div class="remote-input-section">
+                        <h4>文本输入</h4>
+                        <input type="text" id="remoteTextInput" placeholder="输入文本后按回车发送">
+                        <button class="btn btn-small btn-primary" onclick="remoteControl.sendText()"
+                            style="width: 100%;">发送文本</button>
+                    </div>
+                    <div class="remote-tips">
+                        <h4>操作说明</h4>
+                        <ul>
+                            <li>点击屏幕 = 点击操作</li>
+                            <li>拖动屏幕 = 滑动操作</li>
+                            <li><strong>Android:</strong> 需要 ADB Keyboard</li>
+                            <li><strong>iOS:</strong> 需要 WebDriverAgent</li>
+                        </ul>
+                        <div style="margin-top:8px;font-size:11px;color:var(--text-muted);">
+                            iOS 设备首次使用需点击设置按钮配置 WDA URL
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast 提示 -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script src="/static/app.js?v=17"></script>
+</body>
+
+</html>
