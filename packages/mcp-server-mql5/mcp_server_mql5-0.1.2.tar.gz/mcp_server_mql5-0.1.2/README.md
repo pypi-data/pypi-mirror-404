@@ -1,0 +1,69 @@
+# MQL5 Developer MCP Server
+
+A specialized Model Context Protocol (MCP) server for **MetaTrader 5 (MQL5)** developers. 
+It bridges the gap between AI Assistants (Claude, Cursor, Antigravity) and your local MetaEditor.
+
+**Maintained by [Elliott Waves 2.0]** – *Advanced Algorithmic Trading Solutions.*
+
+## Features
+
+1.  **Local Compilation (`compile_mql5`)**: 
+    - Compiles MQL5 code locally using your installed `metaeditor64.exe`.
+    - Returns exact error logs and warnings to the AI, enabling auto-fixing loops.
+    - No trading account connection required (safe & fast).
+
+2.  **Documentation Search (`search_mql5_docs`)**: 
+    - Smart search via DuckDuckGo restricted to `mql5.com/docs`.
+    - Fetches clean documentation without requiring API keys or Firecrawl credits.
+    - Helps the AI understand parameters and syntax correctly.
+
+## Configuration
+
+### 1. Prerequisites
+- Python installed
+- `uv` installed (Recommended)
+- MetaTrader 5 installed on Windows
+
+### 2. Setup (Claude Desktop / Antigravity)
+
+Add this to your configuration file (e.g., `claude_desktop_config.json`):
+```json
+{
+  "mcpServers": {
+    "mql5-dev": {
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/elliottwaves-20/mcp-server-mql5.git", "mcp-server-mql5"],
+      "env": {
+        "MQL5_EDITOR_PATH": ""
+      }
+    }
+  }
+}
+```
+
+**⚠️ WICHTIG - MetaEditor Pfad konfigurieren:**
+
+Der Server versucht automatisch, Ihre MetaEditor-Installation zu finden. Falls dies fehlschlägt, setzen Sie den Pfad manuell:
+
+**So finden Sie Ihren Pfad:**
+1. Rechtsklick auf MetaEditor-Verknüpfung → **Eigenschaften** → Reiter "Verknüpfung"
+2. Kopieren Sie den vollständigen Pfad aus dem Feld **"Ziel"**
+3. Fügen Sie ihn in die Config ein (Backslashes verdoppeln: `\\`)
+
+**Häufige Pfade:**
+- `C:\\Program Files\\MetaTrader 5 IC Markets\\metaeditor64.exe`
+- `C:\\Program Files\\MetaTrader 5 XM\\metaeditor64.exe`
+- `C:\\Program Files (x86)\\MetaTrader 5\\metaeditor64.exe`
+
+**Beispiel mit manuellem Pfad:**
+```json
+"env": {
+  "MQL5_EDITOR_PATH": "C:\\Program Files\\MetaTrader 5 IC Markets\\metaeditor64.exe"
+}
+```
+
+**Testen der Installation:**
+Starte Claude Desktop neu und frage:
+> "Compile this MQL5 code: `void OnStart() { Print("Test"); }`"
+
+Bei Erfolg solltest du Compiler-Output sehen.
