@@ -1,0 +1,106 @@
+[build-system]
+requires = ["setuptools>=61.0", "setuptools-scm>=8.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "graphrelax"
+dynamic = ["version"]
+description = "Combine LigandMPNN sequence design with AMBER relaxation"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+authors = [
+    {name = "GraphRelax Authors"}
+]
+keywords = ["protein", "design", "relaxation", "LigandMPNN", "OpenMM", "molecular-dynamics", "protein-design", "bioinformatics"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+]
+dependencies = [
+    "torch>=2.0",
+    "numpy<2",  # PyTorch <2.5 is incompatible with NumPy 2.x
+    "prody",
+    "biopython",
+    "absl-py",
+    "ml-collections",
+    "dm-tree",
+    "openmm",
+]
+
+# Note: pdbfixer is not on PyPI, install via conda:
+#   conda install -c conda-forge pdbfixer
+
+[project.urls]
+Homepage = "https://github.com/delalamo/GraphRelax"
+Repository = "https://github.com/delalamo/GraphRelax"
+Issues = "https://github.com/delalamo/GraphRelax/issues"
+
+[project.optional-dependencies]
+cpu = [
+    # CPU-only OpenMM (smaller install, no GPU dependencies)
+    "openmm[cpu]",
+]
+cuda11 = [
+    # For GPU acceleration with CUDA 11
+    "openmm[cuda11]",
+]
+cuda12 = [
+    # For GPU acceleration with CUDA 12
+    "openmm[cuda12]",
+]
+dev = [
+    "pytest",
+    "pytest-cov",
+]
+test = [
+    "pytest>=7.0",
+    "pytest-cov>=4.1",
+]
+
+[project.scripts]
+graphrelax = "graphrelax.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["graphrelax*"]
+
+[tool.setuptools.package-data]
+graphrelax = ["py.typed"]
+"graphrelax.LigandMPNN" = ["*.py"]
+"graphrelax.LigandMPNN.openfold" = ["**/*.py"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v -m 'not integration'"
+markers = [
+    "integration: marks tests as integration tests (require OpenMM)",
+    "slow: marks tests as slow (skipped by default)",
+]
+
+[tool.setuptools_scm]
+# Version from git tags (e.g., v0.1.0 -> 0.1.0)
+# Commits after tag get dev versions (e.g., 0.1.0.dev3+g1234567)
+version_scheme = "guess-next-dev"
+local_scheme = "no-local-version"
+# Write version to a file for runtime access
+write_to = "src/graphrelax/_version.py"
+
+[tool.black]
+line-length = 80
+extend-exclude = '''
+(
+    /LigandMPNN/
+)
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 80
+skip_glob = ["**/LigandMPNN/**"]

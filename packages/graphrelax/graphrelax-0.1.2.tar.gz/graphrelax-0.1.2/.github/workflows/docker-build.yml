@@ -1,0 +1,110 @@
+name: Docker Build
+
+on:
+  release:
+    types: [published]
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Image tag (optional, defaults to 'dev')"
+        required: false
+        default: "dev"
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Compute image tags and version
+        id: tags
+        run: |
+          REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            VERSION="${{ github.event.release.tag_name }}"
+            VERSION="${VERSION#v}"
+            echo "tags=${{ env.REGISTRY }}/${REPO_LOWER}:${VERSION},${{ env.REGISTRY }}/${REPO_LOWER}:latest" >> $GITHUB_OUTPUT
+            echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+            echo "tags=${{ env.REGISTRY }}/${REPO_LOWER}:${VERSION}" >> $GITHUB_OUTPUT
+            echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          else
+            TAG="${{ github.event.inputs.tag || 'dev' }}"
+            echo "tags=${{ env.REGISTRY }}/${REPO_LOWER}:${TAG}" >> $GITHUB_OUTPUT
+            echo "version=0.0.0.dev0" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          build-args: |
+            VERSION=${{ steps.tags.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Verify image - help command
+        run: |
+          REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          TAG="${{ github.event.inputs.tag || 'dev' }}"
+          docker run --rm ${{ env.REGISTRY }}/${REPO_LOWER}:${TAG} --help
+
+      - name: Verify image - test imports and dependencies
+        run: |
+          REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          TAG="${{ github.event.inputs.tag || 'dev' }}"
+          docker run --rm --entrypoint python ${{ env.REGISTRY }}/${REPO_LOWER}:${TAG} -c "
+          import sys
+          print('Testing critical imports...')
+
+          # Test pdbfixer (conda-only dependency)
+          from pdbfixer import PDBFixer
+          print('  pdbfixer: OK')
+
+          # Test openmm
+          import openmm
+          print('  openmm: OK')
+
+          # Test graphrelax modules
+          from graphrelax import Pipeline, PipelineConfig, PipelineMode
+          from graphrelax.idealize import idealize_structure, minimize_with_constraints
+          from graphrelax.relaxer import Relaxer
+          from graphrelax.designer import Designer
+          print('  graphrelax: OK')
+
+          # Test LigandMPNN weights exist
+          from pathlib import Path
+          import os
+          weights_dir = Path(os.environ['GRAPHRELAX_WEIGHTS_DIR'])
+          assert weights_dir.exists(), f'Weights directory not found: {weights_dir}'
+          weight_files = list(weights_dir.glob('*.pt'))
+          assert len(weight_files) > 0, 'No weight files found'
+          print(f'  LigandMPNN weights: OK ({len(weight_files)} files)')
+
+          print('All dependency checks passed!')
+          "
