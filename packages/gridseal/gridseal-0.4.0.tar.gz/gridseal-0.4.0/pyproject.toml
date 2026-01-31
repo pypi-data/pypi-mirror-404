@@ -1,0 +1,138 @@
+# Copyright (c) 2026 Celestir LLC
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "gridseal"
+dynamic = ["version"]
+description = "Verification and compliance-grade audit logging for LLM applications"
+readme = "README.md"
+license = "AGPL-3.0-or-later"
+requires-python = ">=3.10"
+authors = [
+    { name = "Celestir LLC", email = "gridseal@celestir.com" },
+]
+keywords = [
+    "ai",
+    "llm",
+    "verification",
+    "audit",
+    "compliance",
+    "hallucination-detection",
+    "rag",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "pydantic>=2.0",
+    "sentence-transformers>=2.2",
+    "scikit-learn>=1.0",
+    "typer>=0.9",
+    "rich>=13.0",
+]
+
+[project.optional-dependencies]
+postgresql = [
+    "psycopg2-binary>=2.9",
+]
+langchain = [
+    "langchain>=0.1",
+    "langchain-core>=0.1",
+]
+nli = [
+    "transformers>=4.30",
+    "torch>=2.0",
+]
+all = [
+    "gridseal[postgresql,langchain,nli]",
+]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "pytest-asyncio>=0.21",
+    "ruff>=0.1",
+    "mypy>=1.0",
+]
+
+[project.scripts]
+gridseal = "gridseal.cli:main"
+
+[project.urls]
+Homepage = "https://gridseal.ai"
+Documentation = "https://docs.gridseal.ai"
+Repository = "https://github.com/gridseal-ai/gridseal"
+Issues = "https://github.com/gridseal-ai/gridseal/issues"
+
+[tool.hatch.version]
+path = "gridseal/_version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["gridseal"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+addopts = [
+    "-v",
+    "--cov=gridseal",
+    "--cov-report=term-missing",
+    "--cov-fail-under=75",
+]
+
+[tool.coverage.run]
+source = ["gridseal"]
+omit = [
+    "gridseal/cli.py",
+    "gridseal/adapters/*",
+    "gridseal/integrations/*",
+    "gridseal/audit/backends/postgresql.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # pyflakes
+    "I",      # isort
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "UP",     # pyupgrade
+]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["gridseal"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+warn_return_any = true
+warn_unused_ignores = true
+disallow_untyped_defs = true
