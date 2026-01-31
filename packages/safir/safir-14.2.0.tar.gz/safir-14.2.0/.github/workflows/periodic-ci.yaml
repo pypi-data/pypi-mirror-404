@@ -1,0 +1,119 @@
+# This is a separate run of the Python test suite that doesn't cache the tox
+# environment and runs from a schedule. The purpose is to test compatibility
+# with the latest versions of all modules Safir depends on, since Safir (being
+# a library) does not pin its dependencies.
+
+name: Periodic CI
+
+env:
+  # Default Python version used for all jobs other than test, which uses a
+  # matrix of supported versions. Quote the version to avoid interpretation as
+  # a floating point number.
+  PYTHON_VERSION: "3.13"
+
+"on":
+  schedule:
+    - cron: "0 12 * * 1"
+  workflow_dispatch: {}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    strategy:
+      matrix:
+        python:
+          - "3.12"
+          - "3.13"
+          - "3.14"
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0 # full history for setuptools_scm
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Update dependencies
+        run: make update-deps
+
+      - name: Run nox
+        run: uv run --only-group=nox nox -s lint typing test
+
+      - name: Report status
+        if: failure()
+        uses: ravsamhq/notify-slack-action@v2
+        with:
+          status: ${{ job.status }}
+          notify_when: "failure"
+          notification_title: "Periodic test for {repo} failed"
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_ALERT_WEBHOOK }}
+
+  docs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0 # full history for setuptools_scm
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Install extra packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y graphviz
+
+      - name: Run nox
+        run: uv run --only-group=nox nox -s docs docs-linkcheck
+
+      - name: Report status
+        if: failure()
+        uses: ravsamhq/notify-slack-action@v2
+        with:
+          status: ${{ job.status }}
+          notify_when: "failure"
+          notification_title: "Periodic documentation test for {repo} failed"
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_ALERT_WEBHOOK }}
+
+  test-packaging:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [test, docs]
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0 # full history for setuptools_scm
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Build the packages
+        run: uv build --no-sources --all-packages
+
+      - name: Report status
+        if: failure()
+        uses: ravsamhq/notify-slack-action@v2
+        with:
+          status: ${{ job.status }}
+          notify_when: "failure"
+          notification_title: "Periodic packaging test for {repo} failed"
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_ALERT_WEBHOOK }}
