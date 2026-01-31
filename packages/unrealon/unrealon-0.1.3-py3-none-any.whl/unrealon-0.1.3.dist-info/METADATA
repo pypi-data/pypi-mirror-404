@@ -1,0 +1,280 @@
+Metadata-Version: 2.4
+Name: unrealon
+Version: 0.1.3
+Summary: Unrealon SDK - Service management for Django backend (registration, heartbeat, logging, commands)
+Project-URL: Homepage, https://github.com/unrealon/unrealon-sdk
+Project-URL: Documentation, https://unrealon.com/docs/sdk
+Project-URL: Repository, https://github.com/unrealon/unrealon-sdk
+Author-email: markolofsen <dev@markolofsen.com>
+License-Expression: MIT
+Keywords: api,commands,django,heartbeat,logging,sdk,service,unrealon
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Requires-Python: >=3.10
+Requires-Dist: httpx<1.0.0,>=0.28.0
+Requires-Dist: psutil>=6.0.0
+Requires-Dist: pydantic-settings>=2.7.0
+Requires-Dist: pydantic<3.0.0,>=2.10.0
+Requires-Dist: tenacity>=9.1.0
+Provides-Extra: dev
+Requires-Dist: build>=1.2.0; extra == 'dev'
+Requires-Dist: mypy>=1.15.0; extra == 'dev'
+Requires-Dist: pytest-asyncio>=0.26.0; extra == 'dev'
+Requires-Dist: pytest-cov>=6.0.0; extra == 'dev'
+Requires-Dist: pytest>=8.3.0; extra == 'dev'
+Requires-Dist: ruff>=0.9.0; extra == 'dev'
+Requires-Dist: twine>=6.0.0; extra == 'dev'
+Description-Content-Type: text/markdown
+
+# Unrealon SDK
+
+Service management SDK for Unrealon platform. Provides registration, heartbeat, logging, and command handling.
+
+## Installation
+
+```bash
+pip install unrealon
+```
+
+## Quick Start
+
+```python
+from unrealon import ServiceClient, ServiceStatus
+
+with ServiceClient(
+    api_key="dk_xxx",
+    service_name="my-service",
+) as client:
+
+    # Handle commands from UI
+    client.on_command("pause", lambda cmd: client.update_status(status=ServiceStatus.PAUSED))
+    client.on_command("resume", lambda cmd: client.update_status(status=ServiceStatus.RUNNING))
+    client.on_command("stop", lambda cmd: client.request_shutdown())
+
+    # Main loop
+    while not client.shutdown_requested:
+        process_item()
+        client.increment_processed()
+```
+
+## Configuration
+
+### Environment Variables
+
+```bash
+export UNREALON_API_KEY=dk_xxx
+export UNREALON_SERVICE_NAME=my-service
+```
+
+### Direct Configuration
+
+```python
+client = ServiceClient(
+    api_key="dk_xxx",
+    service_name="my-service",
+    source_code="parser",       # Optional identifier
+    heartbeat_interval=30,      # Seconds between heartbeats
+)
+```
+
+### Settings Reference
+
+| Env Variable | Default | Description |
+|-------------|---------|-------------|
+| `UNREALON_API_KEY` | required | API key |
+| `UNREALON_SERVICE_NAME` | required | Service identifier |
+| `UNREALON_API_URL` | `https://api.unrealon.com` | API endpoint |
+| `UNREALON_HEARTBEAT_INTERVAL` | `30` | Heartbeat interval (seconds) |
+| `UNREALON_LOG_BATCH_SIZE` | `50` | Max logs per batch |
+| `UNREALON_LOG_FLUSH_INTERVAL` | `5.0` | Log flush interval (seconds) |
+| `UNREALON_COMMAND_POLL_INTERVAL` | `10` | Command poll interval (seconds) |
+
+## Features
+
+### Registration & Lifecycle
+
+```python
+# Context manager (recommended)
+with ServiceClient(api_key="...", service_name="...") as client:
+    # Auto-registered on enter, auto-deregistered on exit
+    pass
+
+# Manual control
+client = ServiceClient(api_key="...", service_name="...")
+service_id = client.start()
+# ... work ...
+client.stop()
+```
+
+### Status & Heartbeat
+
+Heartbeats are sent automatically in background:
+
+```python
+with ServiceClient(...) as client:
+    # Check current status
+    if client.status == ServiceStatus.PAUSED:
+        time.sleep(1)
+        continue
+
+    # Update metrics (included in heartbeat)
+    client.increment_processed(100)
+    client.increment_errors(1)
+
+    # Or update directly
+    client.update_status(
+        status=ServiceStatus.RUNNING,
+        items_processed=1000,
+        errors_count=5,
+    )
+```
+
+### Commands
+
+Handle commands from server/UI:
+
+```python
+from unrealon import ServiceClient, ServiceStatus
+
+with ServiceClient(...) as client:
+
+    def handle_pause(cmd):
+        client.update_status(status=ServiceStatus.PAUSED)
+        return {"paused": True}
+
+    def handle_stop(cmd):
+        client.request_shutdown()
+        return {"stopping": True}
+
+    client.on_command("pause", handle_pause)
+    client.on_command("resume", lambda cmd: client.update_status(status=ServiceStatus.RUNNING))
+    client.on_command("stop", handle_stop)
+
+    while not client.shutdown_requested:
+        if client.status == ServiceStatus.PAUSED:
+            time.sleep(1)
+            continue
+        process_items()
+```
+
+### Logging
+
+Logs are batched and sent automatically:
+
+```python
+with ServiceClient(...) as client:
+    client.debug("Debug message")
+    client.info("Info message", extra={"key": "value"})
+    client.warning("Warning message")
+    client.error("Error message")
+    client.critical("Critical error")
+```
+
+## Complete Example
+
+```python
+#!/usr/bin/env python3
+"""Example service using Unrealon SDK."""
+
+import time
+import random
+from unrealon import ServiceClient, ServiceStatus
+
+
+def run_service(api_key: str):
+    with ServiceClient(
+        api_key=api_key,
+        service_name="example-service",
+        source_code="example",
+    ) as client:
+
+        # Setup command handlers
+        client.on_command("pause", lambda cmd: client.update_status(status=ServiceStatus.PAUSED))
+        client.on_command("resume", lambda cmd: client.update_status(status=ServiceStatus.RUNNING))
+        client.on_command("stop", lambda cmd: client.request_shutdown())
+
+        print(f"Service registered: {client.service_id}")
+
+        # Main loop
+        while not client.shutdown_requested:
+            # Skip work if paused
+            if client.status == ServiceStatus.PAUSED:
+                time.sleep(1)
+                continue
+
+            # Simulate work
+            client.increment_processed(random.randint(1, 10))
+
+            if random.random() < 0.05:
+                client.increment_errors()
+
+            time.sleep(1)
+
+    print("Service stopped")
+
+
+if __name__ == "__main__":
+    import os
+    run_service(api_key=os.environ["UNREALON_API_KEY"])
+```
+
+## Service Status
+
+```python
+from unrealon import ServiceStatus
+
+# Available statuses:
+ServiceStatus.INITIALIZING  # Starting up
+ServiceStatus.RUNNING       # Normal operation
+ServiceStatus.PAUSED        # Paused by command
+ServiceStatus.STOPPING      # Shutting down
+ServiceStatus.STOPPED       # Stopped
+ServiceStatus.ERROR         # Error state
+ServiceStatus.OFFLINE       # No heartbeat
+ServiceStatus.STALE         # Heartbeat timeout
+```
+
+## Error Handling
+
+```python
+from unrealon import (
+    UnrealonError,
+    AuthenticationError,
+    RegistrationError,
+    NetworkError,
+)
+
+try:
+    with ServiceClient(...) as client:
+        pass
+except AuthenticationError:
+    print("Invalid API key")
+except RegistrationError:
+    print("Registration failed")
+except NetworkError:
+    print("Network error")
+except UnrealonError:
+    print("SDK error")
+```
+
+## Async Support
+
+```python
+from unrealon import AsyncServiceClient
+
+async with AsyncServiceClient(
+    api_key="...",
+    service_name="...",
+) as client:
+    await client.info("Async message")
+```
+
+## License
+
+MIT
