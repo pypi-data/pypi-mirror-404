@@ -1,0 +1,276 @@
+# PhiGrade
+
+PhiGrade is a lightweight autograder framework designed for educational environments where tests run locally and results are stored remotely. It provides a unique approach to automated grading by executing student code locally while maintaining centralized result management.
+
+## Key Features
+
+- **Local Test Execution**: Tests run on the student's machine, ensuring security and scalability
+- **Dual-Mode Operation**: Teacher mode for storing references, student mode for comparison
+- **Multiple Comparison Types**: Support for exact equality (`phigrade_isequal`) and numpy array tolerance (`phigrade_allclose`)
+- **Flexible Deployment**: Local development server or remote backend integration
+- **Call Count Tracking**: Multiple assertions per test function with unique identification
+
+## Quick Start
+
+### Installation
+
+```bash
+# Install with Poetry
+poetry install
+
+# Or with pip
+pip install -e .
+```
+
+### Basic Usage
+
+1. **Create a configuration file** (`phigrade.yaml`):
+```yaml
+assignment_id: "homework_1"
+use_local_server: true
+teacher_mode: false
+timeout_seconds: 5
+```
+
+2. **Write test functions**:
+```python
+from phigrade.phigrade import phigrade_isequal, phigrade_allclose, weight
+import numpy as np
+
+@weight(5.0)
+def test_basic_math():
+    result = 2 + 2
+    phigrade_isequal(result)  # Compares against stored reference
+    return result
+
+@weight(10.0)
+def test_numpy_array():
+    result = np.array([1.0, 2.0, 3.0])
+    phigrade_allclose(result, rtol=1e-5, atol=1e-8)
+    return result
+```
+
+3. **Run tests**:
+```bash
+poetry run python your_test_file.py
+```
+
+## Architecture
+
+### Dual-Mode Workflow
+
+**Teacher Mode** (`teacher_mode: true`):
+- Instructors run tests on reference implementations
+- Results are stored as "correct" references with comparison metadata
+- Each test function with `@weight` decorator stores its output
+
+**Student Mode** (`teacher_mode: false`):
+- Students run the same test functions on their implementations
+- Their outputs are compared against stored references
+- Automatic scoring based on comparison results
+
+### Comparison Types
+
+#### Exact Equality (`phigrade_isequal`)
+```python
+@weight(3.0)
+def test_string_processing():
+    result = process_text("hello")
+    phigrade_isequal(result)  # Exact match required
+```
+
+#### Numpy Array Tolerance (`phigrade_allclose`)
+```python
+@weight(8.0)
+def test_numerical_computation():
+    result = np.array([1.0, 2.0, 3.0])
+    phigrade_allclose(result, rtol=1e-5, atol=1e-8, equal_nan=False)
+```
+
+### Multiple Calls Per Test
+
+```python
+@weight(15.0)
+def test_multiple_operations():
+    # Each call gets unique identifier: test_multiple_operations@0, @1, @2
+    result1 = operation_a()
+    phigrade_isequal(result1)
+    
+    result2 = operation_b()
+    phigrade_isequal(result2)
+    
+    array_result = operation_c()
+    phigrade_allclose(array_result, rtol=0.01)
+```
+
+## Configuration
+
+### Local Development Mode
+
+```yaml
+assignment_id: "my_assignment"
+use_local_server: true
+teacher_mode: false
+timeout_seconds: 10
+```
+
+### Remote Backend Mode
+
+```yaml
+assignment_id: "my_assignment"
+use_local_server: false
+server_url: "https://your-phigrade-backend.com"
+api_key: "your_api_key_here"
+teacher_mode: false
+timeout_seconds: 30
+```
+
+## Data Flow
+
+```
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
+│   Teacher Mode  │    │                  │    │  Student Mode   │
+│                 │    │  PhiGrade Server │    │                 │
+│ Store Reference │───▶│                  │◀───│ Submit Results  │
+│    Results      │    │  (Local/Remote)  │    │ Get Comparison  │
+└─────────────────┘    └──────────────────┘    └─────────────────┘
+```
+
+1. **Teacher Phase**: Instructor runs tests, stores reference outputs and comparison configuration
+2. **Student Phase**: Students run tests, submit outputs for comparison against references
+3. **Scoring**: Automatic scoring based on comparison results (exact match or tolerance-based)
+
+## Development
+
+### Running Tests
+
+```bash
+# Run all tests
+poetry run pytest
+
+# Run specific test categories
+poetry run pytest tests/test_phigrade_isequal_local.py  # Equality tests
+poetry run pytest tests/test_phigrade_allclose_local.py # Array tolerance tests
+poetry run pytest tests/test_local_server.py          # Local server tests
+poetry run pytest tests/test_real_backend_integration.py # Backend integration
+
+# Verbose output
+poetry run pytest -v
+```
+
+### Local Development Server
+
+```bash
+# Start local server manually
+poetry run python -m phigrade.app
+
+# Server starts automatically when use_local_server: true
+```
+
+### Project Structure
+
+```
+phigrade/
+├── phigrade/
+│   ├── __init__.py
+│   ├── phigrade.py          # Main API (decorators, assertions)
+│   ├── app.py             # Local FastAPI server
+│   ├── server.py          # Server management
+│   ├── compare.py         # Comparison logic
+│   └── config.py          # Configuration handling
+├── tests/
+│   ├── test_phigrade_isequal_local.py    # Equality comparison tests
+│   ├── test_phigrade_allclose_local.py   # Array tolerance tests
+│   ├── test_local_server.py             # Local server API tests
+│   └── test_real_backend_integration.py # Backend integration tests
+├── examples/              # Example usage
+├── phigrade.yaml          # Configuration file
+└── README.md
+```
+
+## Examples
+
+### Complete Teacher Workflow
+
+```python
+# teacher_tests.py
+from phigrade.phigrade import phigrade_isequal, phigrade_allclose, weight
+import numpy as np
+
+@weight(5.0)
+def test_factorial():
+    """Test factorial function"""
+    result = factorial(5)
+    phigrade_isequal(result)  # Stores 120 as reference
+    return result
+
+@weight(10.0)
+def test_matrix_multiplication():
+    """Test matrix operations"""
+    A = np.array([[1, 2], [3, 4]])
+    B = np.array([[2, 0], [1, 2]])
+    result = A @ B
+    phigrade_allclose(result, rtol=1e-10)  # Stores array with tight tolerance
+    return result
+```
+
+### Complete Student Workflow
+
+```python
+# student_tests.py (same function names)
+from phigrade.phigrade import phigrade_isequal, phigrade_allclose, weight
+import numpy as np
+
+@weight(5.0)
+def test_factorial():
+    """Student implementation"""
+    result = my_factorial(5)  # Student's implementation
+    phigrade_isequal(result)   # Compares against teacher's stored result
+    return result
+
+@weight(10.0)
+def test_matrix_multiplication():
+    """Student implementation"""
+    A = np.array([[1, 2], [3, 4]])
+    B = np.array([[2, 0], [1, 2]])
+    result = my_matrix_mult(A, B)  # Student's implementation
+    phigrade_allclose(result, rtol=1e-10)  # Compares with tolerance
+    return result
+```
+
+## API Reference
+
+### Decorators
+
+#### `@weight(points: float)`
+Decorates test functions to assign point values and enable phigrade tracking.
+
+### Assertion Functions
+
+#### `phigrade_isequal(output: Any) -> None`
+Compares output using exact equality (`==`).
+
+#### `phigrade_allclose(output: np.ndarray, rtol=1e-05, atol=1e-08, equal_nan=False) -> None`
+Compares numpy arrays with tolerance using `np.allclose()`.
+
+### Configuration
+
+#### `PhiGradeConfig`
+Loads configuration from YAML files with validation and type checking.
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Add tests for new functionality
+4. Ensure all tests pass: `poetry run pytest`
+5. Submit a pull request
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Related Projects
+
+- **phigrade-backend**: Centralized backend server for multi-user deployments
+- **phigrade-frontend**: Web interface for instructors and administrators
