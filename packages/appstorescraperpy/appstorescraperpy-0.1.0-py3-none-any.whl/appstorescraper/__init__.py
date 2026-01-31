@@ -1,0 +1,1 @@
+from .appstorescraper import get_app
