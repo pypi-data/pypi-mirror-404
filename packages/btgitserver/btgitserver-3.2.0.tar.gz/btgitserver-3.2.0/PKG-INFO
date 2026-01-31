@@ -1,0 +1,138 @@
+Metadata-Version: 2.4
+Name: btgitserver
+Version: 3.2.0
+Summary: Python-based Git Server
+Home-page: https://github.com/berttejeda/bert.git-server
+Author: Engelbert Tejeda
+Author-email: berttejeda@gmail.com
+Keywords: yaml,configuration,config,file,python,settings
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Developers
+Classifier: Intended Audience :: Information Technology
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Natural Language :: English
+Classifier: Programming Language :: Python :: 3.7
+Requires-Python: >=3.7
+Description-Content-Type: text/markdown
+Requires-Dist: btconfig<5.0.0,>=4.4.4
+Requires-Dist: coloredlogs<16.0,>=15.0.0
+Requires-Dist: setuptools
+Requires-Dist: dulwich<1.0,>=0.22.1
+Requires-Dist: flask<4.0.0,>=3.0.3
+Requires-Dist: Flask-HTTPAuth<5.0.0,>=4.8.0
+Requires-Dist: gunicorn<21.0.0,>=20.1.0
+Provides-Extra: tests
+Requires-Dist: pytest; extra == "tests"
+Requires-Dist: pytest-cov; extra == "tests"
+Requires-Dist: coveralls; extra == "tests"
+Requires-Dist: flake8; extra == "tests"
+Requires-Dist: mypy; extra == "tests"
+
+## Overview
+
+A git server implementation written in python.
+
+Based off the amazing work by Stewart Park in this gist: [https://gist.github.com/stewartpark/1b079dc0481c6213def9](https://gist.github.com/stewartpark/1b079dc0481c6213def9).
+
+Features:
+
+- Makes any git repository lying below the _search\_paths_ setting
+  available for `git clone` and `git push` via HTTP using basic authentication
+- Application defaults can be overridden by specifying a configuration file<br />
+  Review [etc/config.yaml](etc/config.yaml) for a sample data structure.
+- On-demand repos: If you attempt to push a non-existing repo to the server, it will be created 
+- Employs process threading via [gunicorn](https://gunicorn.org/)
+
+## Installation
+
+- Install from pypi.org: `pip install btgitserver`
+- Install directly from git repo: `pip install git+http://www.github.com/berttejeda/bert.git-server.git`
+
+## Usage
+
+To get usage information and help: `bt.git-server -h`
+
+### Clone paths
+
+These are the routes accepted by the script:
+
+- '/<org_name>/<project_name>'
+
+These routes mirror the directory structure under the git search path(s).
+
+### Authentication
+  
+For now, the only authentication available is HTTP AUTH BASIC
+
+As such, the default credentials are:
+
+Username: `git-user`
+Password: `git-password`
+
+### Usage Examples
+
+#### Clone a repo
+
+* Create a test org and repo:
+
+```
+cd ~
+mkdir -p /tmp/repos/contoso/test
+cd /tmp/repos/contoso/test
+git init .
+git checkout -b main
+touch test_file.txt
+git add .
+git commit -m 'Initial Commit'
+cd ~
+bt.git-server -r /tmp/repos
+```
+
+**Note**: The `--repo-search-paths/-r` cli option allows specifying 
+multiple, space-delimited search paths, e.g. `bt.git-server -r /tmp/repos /tmp/repos2`
+
+* Launch the standalone git server
+
+`bt.git-server`
+
+You should see output similar to:
+```
+Running on http://0.0.0.0:5000/	
+```
+
+* On client-side:
+
+Try cloning the repo you just created via the supported routes:
+
+e.g.
+	
+```bash
+git clone http://git-user:git-password@127.0.0.1:5000/contoso/test
+```
+
+#### Push an on-demand repo
+
+```
+mkdir -p foo-bar
+cd foo-bar
+git init .
+git remote add origin http://git-user:git-password@127.0.0.1:5000/contoso/foo-bar
+git checkout -b main
+touch test_file.txt
+git add .
+git commit -m 'Initial Commit'
+git push --set-upstream origin $(git rev-parse --abbrev-ref HEAD)
+```
+
+## Docker
+
+For your convenience, a [Dockerfile](Dockerfile) has been provided,
+so feel free to build your own containerized instance of this app, or
+use the pre-built docker image:
+
+```bash
+mkdir /tmp/repos
+docker run -it --rm -p 5000:5000 \
+-v /tmp/repos:/opt/git-server/repos \
+berttejeda/git-server
+```
