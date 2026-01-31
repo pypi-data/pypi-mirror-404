@@ -1,0 +1,403 @@
+Metadata-Version: 2.4
+Name: folderbot
+Version: 0.1.28
+Summary: Telegram bot for chatting with your folder using Claude AI
+Project-URL: Homepage, https://gitlab.com/jorgeecardona/folderbot
+Project-URL: Repository, https://gitlab.com/jorgeecardona/folderbot
+Author: Jorge Cardona
+License-Expression: MIT
+Keywords: ai,bot,claude,personal-assistant,telegram
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: End Users/Desktop
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Requires-Python: >=3.11
+Requires-Dist: anthropic>=0.70.0
+Requires-Dist: beautifulsoup4>=4.12
+Requires-Dist: croniter>=5.0
+Requires-Dist: duckduckgo-search>=6.0
+Requires-Dist: httpx>=0.27
+Requires-Dist: pathspec>=0.12.0
+Requires-Dist: pydantic>=2.0
+Requires-Dist: python-dotenv>=1.0
+Requires-Dist: python-telegram-bot>=22.0
+Requires-Dist: pyyaml>=6.0
+Requires-Dist: watchdog>=4.0
+Provides-Extra: dev
+Requires-Dist: pytest-asyncio>=1.3; extra == 'dev'
+Requires-Dist: pytest-cov>=7.0; extra == 'dev'
+Requires-Dist: pytest>=9.0; extra == 'dev'
+Description-Content-Type: text/markdown
+
+# Folderbot
+
+[![PyPI version](https://badge.fury.io/py/folderbot.svg)](https://badge.fury.io/py/folderbot)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Pipeline](https://gitlab.com/jorgeecardona/folderbot/badges/main/pipeline.svg)](https://gitlab.com/jorgeecardona/folderbot/-/pipelines)
+[![Coverage](https://gitlab.com/jorgeecardona/folderbot/badges/main/coverage.svg)](https://gitlab.com/jorgeecardona/folderbot/-/pipelines)
+
+A Telegram bot that lets you chat with your folder using Claude AI.
+
+**Repository:** [https://gitlab.com/jorgeecardona/folderbot](https://gitlab.com/jorgeecardona/folderbot)
+
+## Features
+
+- **Tool Use**: Claude actively interacts with your files using built-in tools
+- **Built-in Tools**: List, read, search, and write files
+- **Web Tools**: Search the web and fetch content from URLs
+- **Task Scheduler**: Schedule long-running, repeating, cron, or time-limited tasks
+- **Custom Tools**: Extend with your own tools via `.folderbot/tools.py`
+- **Persistent Sessions**: Conversation history stored in SQLite
+- **Auto-logging**: All conversations logged to markdown files
+- **Access Control**: Whitelist specific Telegram user IDs
+- **Append Protection**: Configure which files can be appended to
+- **Smart Message Handling**: Send multiple messages quickly - they're combined into one request
+- **Version Notifications**: Get notified when the bot updates
+
+## Installation
+
+```bash
+pip install folderbot
+```
+
+Or install from source:
+
+```bash
+git clone https://gitlab.com/jorgeecardona/folderbot
+cd folderbot
+pip install -e .
+```
+
+## Quick Start
+
+```bash
+# Initialize configuration
+folderbot init
+
+# Run the bot
+folderbot run
+```
+
+## Configuration
+
+Configuration is stored in `~/.config/folderbot/config.yaml`:
+
+```yaml
+telegram_token: "YOUR_TELEGRAM_BOT_TOKEN"
+anthropic_api_key: "YOUR_ANTHROPIC_API_KEY"
+allowed_user_ids:
+  - 123456789  # Your Telegram user ID
+
+root_folder: /path/to/your/folder
+
+read_rules:
+  include:
+    - "**/*.md"
+    - "**/*.txt"
+  exclude:
+    - "**/docs/**"
+    - ".git/**"
+  append_allowed:
+    - "logs/*.md"
+    - "**/todo.md"
+
+auto_log_folder: logs/
+model: claude-sonnet-4-20250514
+```
+
+Get your Telegram user ID from [@userinfobot](https://t.me/userinfobot).
+
+## Built-in Tools
+
+Claude has access to these tools for interacting with your folder:
+
+| Tool | Description |
+|------|-------------|
+| `list_files` | List files in a folder or subfolder |
+| `read_file` | Read the contents of a specific file |
+| `read_files` | Read multiple files at once (concatenated view) |
+| `search_files` | Search for text across all files |
+| `write_file` | Create or update files (supports append mode) |
+
+All tools respect the `include`, `exclude`, and `append_allowed` patterns in your config.
+
+## Web Tools
+
+Claude can search the web and fetch content from URLs to help with research.
+
+### Installation
+
+```bash
+pip install folderbot[web]
+```
+
+### Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `web_search` | Search the web using DuckDuckGo |
+| `web_fetch` | Fetch and extract text content from a URL |
+
+### Example Conversations
+
+**Research a topic:**
+> "Search for the latest Python 3.12 features and summarize them"
+
+Claude will search the web, find relevant articles, and provide a summary.
+
+**Save web content to notes:**
+> "Fetch this article and save the key points to my notes: https://example.com/article"
+
+Claude will fetch the URL content, extract the text, and write a summary to your folder.
+
+## Task Scheduler
+
+The task scheduler lets Claude plan and execute long-running or repeating tasks autonomously. Tasks run in the background, report progress via Telegram, and optionally generate a Claude-powered summary when complete.
+
+### Installation
+
+The scheduler requires an optional dependency for cron scheduling:
+
+```bash
+pip install folderbot[scheduler]
+```
+
+### Schedule Types
+
+| Type | Description | Example Use Case |
+|------|-------------|------------------|
+| `once` | Run once, optionally after a delay | "Check this file in 30 minutes" |
+| `repeating` | Run at fixed intervals | "Check for updates every hour" |
+| `cron` | Run on a cron schedule | "Generate a report daily at 9am" |
+| `time_limited` | Run repeatedly until time expires | "Search for available domains for 5 minutes" |
+
+### Scheduler Tools
+
+| Tool | Description |
+|------|-------------|
+| `schedule_task` | Create a new scheduled task |
+| `list_tasks` | List your scheduled tasks (filter by status) |
+| `cancel_task` | Cancel a running or pending task |
+| `get_task_results` | Get the results of a task |
+
+### Example Conversations
+
+**Time-limited search:**
+> "Search for available .ai domains for 5 minutes and tell me what you find"
+
+Claude will schedule a time-limited task that repeatedly calls your domain search tool, sends progress updates, and summarizes results when done.
+
+**Repeating check:**
+> "Check my inbox folder every hour and let me know if there are new files"
+
+Claude schedules a repeating task that runs indefinitely (or until you cancel it).
+
+**Cron schedule:**
+> "Every day at 9am, read my todo.md and send me a summary"
+
+Claude schedules a cron task using the expression `0 9 * * *`.
+
+**Delayed execution:**
+> "In 30 minutes, remind me to review the meeting notes"
+
+Claude schedules a one-time task with a 30-minute delay.
+
+### Task Management
+
+Use the `/tasks` Telegram command for a quick overview of your scheduled tasks, or ask Claude:
+- "What tasks do I have running?"
+- "Cancel task abc123"
+- "Show me the results of my domain search task"
+
+### Features
+
+- **Progress updates**: Configure how often to receive updates (every N iterations)
+- **Auto-summarization**: Claude summarizes results when tasks complete
+- **Error handling**: Tasks auto-stop after too many consecutive errors
+- **Persistence**: Tasks survive bot restarts (restored from SQLite)
+- **Result capping**: Only the most recent results are kept to manage memory
+
+## Custom Tools
+
+You can extend folderbot with custom tools by creating `.folderbot/tools.py` in your root folder.
+
+### Example: Daily Journal Tool
+
+This example adds a tool that appends timestamped entries to a daily journal file:
+
+```python
+# .folderbot/tools.py
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+from pydantic import BaseModel, Field
+
+from folderbot.tools import ToolDefinition, ToolResult
+
+
+class JournalEntryInput(BaseModel):
+    """Input for adding a journal entry."""
+    content: str = Field(description="The journal entry content")
+    mood: str = Field(default="neutral", description="Current mood (happy, sad, neutral, excited)")
+
+
+class CustomTools:
+    """Custom tools for my second brain."""
+
+    def __init__(self, root_folder: Path):
+        self.root_folder = root_folder
+
+    def get_tool_definitions(self) -> list[dict[str, Any]]:
+        tools = [
+            ToolDefinition(
+                name="add_journal_entry",
+                description="Add a timestamped entry to today's journal with optional mood tracking",
+                input_model=JournalEntryInput,
+            ),
+        ]
+        return [t.to_api_format() for t in tools]
+
+    def execute(self, tool_name: str, tool_input: dict[str, Any]) -> ToolResult:
+        if tool_name == "add_journal_entry":
+            return self._add_journal_entry(tool_input)
+        return ToolResult(content=f"Unknown tool: {tool_name}", is_error=True)
+
+    def _add_journal_entry(self, tool_input: dict[str, Any]) -> ToolResult:
+        params = JournalEntryInput(**tool_input)
+
+        # Create journal folder if needed
+        journal_dir = self.root_folder / "journal"
+        journal_dir.mkdir(exist_ok=True)
+
+        # Today's journal file
+        today = datetime.now().strftime("%Y-%m-%d")
+        journal_file = journal_dir / f"{today}.md"
+
+        # Create header if new file
+        if not journal_file.exists():
+            header = f"# Journal - {today}\n\n"
+            journal_file.write_text(header)
+
+        # Append entry with timestamp
+        timestamp = datetime.now().strftime("%H:%M")
+        mood_emoji = {"happy": "😊", "sad": "😢", "neutral": "😐", "excited": "🎉"}.get(params.mood, "📝")
+        entry = f"### {timestamp} {mood_emoji}\n\n{params.content}\n\n---\n\n"
+
+        with open(journal_file, "a") as f:
+            f.write(entry)
+
+        return ToolResult(content=f"Added journal entry to {today}.md")
+```
+
+Now you can tell the bot: *"Add to my journal: Had a great meeting with the team today"* and it will create a timestamped entry.
+
+### Alternative: Factory Function
+
+Instead of a `CustomTools` class, you can export a `create_tools(root_folder)` function:
+
+```python
+def create_tools(root_folder: Path):
+    return CustomTools(root_folder)
+```
+
+### Package Structure
+
+For more complex tools, use `.folderbot/tools/__init__.py`:
+
+```
+.folderbot/
+└── tools/
+    ├── __init__.py      # Exports CustomTools or create_tools
+    ├── journal.py       # Journal tool implementation
+    └── reminders.py     # Reminder tool implementation
+```
+
+## CLI Commands
+
+### Bot Management
+
+```bash
+folderbot run              # Run the bot
+folderbot run --bot mybot  # Run a specific bot (multi-bot config)
+folderbot status           # Show configuration status
+```
+
+### Configuration
+
+```bash
+folderbot init                           # Interactive setup
+folderbot config show                    # Show current config
+folderbot config set telegram_token XXX  # Set a config value
+folderbot config folder /path/to/folder  # Set root folder
+```
+
+### Systemd Service
+
+```bash
+folderbot service install   # Install as user service
+folderbot service enable    # Enable auto-start
+folderbot service start     # Start the service
+folderbot service stop      # Stop the service
+folderbot service status    # Check service status
+folderbot service logs      # View logs
+folderbot service logs -f   # Follow logs
+folderbot service uninstall # Remove service
+```
+
+## Telegram Commands
+
+| Command | Description |
+|---------|-------------|
+| `/start` | Initialize bot and show help |
+| `/clear` | Clear conversation history |
+| `/new` | Start a new topic (clears history) |
+| `/status` | Show session info |
+| `/files` | List files available in context |
+| `/tasks` | List your scheduled tasks |
+
+## Multi-Bot Configuration
+
+Run multiple bots with different folders from a single config:
+
+```yaml
+anthropic_api_key: "SHARED_KEY"
+
+bots:
+  work:
+    telegram_token: "WORK_BOT_TOKEN"
+    root_folder: ~/work/notes
+    allowed_user_ids: [123456789]
+
+  personal:
+    telegram_token: "PERSONAL_BOT_TOKEN"
+    root_folder: ~/personal/notes
+    allowed_user_ids: [123456789]
+```
+
+```bash
+folderbot run --bot work
+folderbot run --bot personal
+```
+
+## Development
+
+```bash
+# Setup
+./setup/setup.sh
+source .venv/bin/activate
+
+# Run tests
+pytest
+
+# Run with coverage
+pytest --cov=folderbot
+```
+
+## License
+
+MIT
