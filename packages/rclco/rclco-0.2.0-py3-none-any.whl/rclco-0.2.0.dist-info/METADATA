@@ -1,0 +1,547 @@
+Metadata-Version: 2.4
+Name: rclco
+Version: 0.2.0
+Summary: RCLCO Python library - Core data connectivity for databases, APIs, storage, and SharePoint
+Author-email: scott-stoltzman-consulting <scott@stoltzmanconsulting.com>
+Requires-Python: >=3.10
+Requires-Dist: azure-identity>=1.15
+Requires-Dist: azure-keyvault-secrets>=4.8
+Requires-Dist: azure-storage-blob>=12.0
+Requires-Dist: geopandas>=1.1.2
+Requires-Dist: httpx>=0.27
+Requires-Dist: msal>=1.28
+Requires-Dist: office365-rest-python-client>=2.5
+Requires-Dist: polars>=1.0
+Requires-Dist: psycopg[binary]>=3.1
+Requires-Dist: pyarrow>=23.0.0
+Requires-Dist: pygris>=0.2.1
+Requires-Dist: pyodbc>=5.0
+Provides-Extra: dev
+Requires-Dist: mypy>=1.9; extra == 'dev'
+Requires-Dist: pytest-asyncio>=0.23; extra == 'dev'
+Requires-Dist: pytest>=8.0; extra == 'dev'
+Requires-Dist: ruff>=0.3; extra == 'dev'
+Description-Content-Type: text/markdown
+
+# RCLCO Python Library
+
+A Python library for RCLCO.
+
+## Installation
+
+Install from PyPI:
+
+```bash
+pip install rclco
+```
+
+Or using uv:
+
+```bash
+uv pip install rclco
+```
+
+## Development
+
+This project uses [uv](https://docs.astral.sh/uv/) for dependency management. uv is an extremely fast Python package manager written in Rust that replaces pip, poetry, pyenv, and virtualenv.
+
+### Installing uv
+
+**Windows (PowerShell):**
+
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+**macOS/Linux:**
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+**Alternative (via pip):**
+
+```bash
+pip install uv
+```
+
+After installation, restart your terminal or run `refreshenv` to ensure `uv` is available in your PATH.
+
+### Getting Started (Full Workflow)
+
+1. **Clone the repository:**
+
+```bash
+git clone https://github.com/RCLCO-RFA/python-rclco.git
+cd python-rclco
+```
+
+2. **Install all dependencies (including dev dependencies):**
+
+```bash
+uv sync --all-extras
+```
+
+This command will:
+- Create a virtual environment in `.venv` (if it doesn't exist)
+- Install all project dependencies
+- Install the package in editable mode
+
+3. **Activate the virtual environment (optional):**
+
+uv commands automatically use the virtual environment, but if you want to activate it manually:
+
+```powershell
+# Windows PowerShell
+.venv\Scripts\Activate.ps1
+
+# Windows Command Prompt
+.venv\Scripts\activate.bat
+
+# macOS/Linux
+source .venv/bin/activate
+```
+
+### Common uv Commands
+
+| Task | Command |
+|------|---------|
+| Install all dependencies | `uv sync` |
+| Install with dev dependencies | `uv sync --all-extras` |
+| Add a new dependency | `uv add <package>` |
+| Add a dev dependency | `uv add --dev <package>` |
+| Remove a dependency | `uv remove <package>` |
+| Update all dependencies | `uv lock --upgrade` then `uv sync` |
+| Run a command in the venv | `uv run <command>` |
+| Run Python | `uv run python` |
+| Run tests | `uv run pytest` |
+
+### Adding Dependencies
+
+**Add a runtime dependency:**
+
+```bash
+uv add requests
+```
+
+**Add a dev-only dependency:**
+
+```bash
+uv add --dev black ruff mypy
+```
+
+**Add a dependency with version constraints:**
+
+```bash
+uv add "pandas>=2.0"
+```
+
+After adding dependencies, the `pyproject.toml` and `uv.lock` files will be updated automatically. Commit both files to version control.
+
+### Running Tests
+
+```bash
+uv run pytest
+```
+
+To run with verbose output:
+
+```bash
+uv run pytest -v
+```
+
+### Building and Publishing
+
+This project uses **tag-based versioning** with [hatch-vcs](https://github.com/ofek/hatch-vcs). The version is automatically derived from git tags — no need to manually edit version strings in code.
+
+#### How Versioning Works
+
+- The version is determined by git tags (e.g., `v0.1.2` → version `0.1.2`)
+- During development, the version includes git metadata (e.g., `0.1.2.dev3+g1234567`)
+- When you build from a tagged commit, you get a clean version (e.g., `0.1.2`)
+
+#### Creating a Release
+
+1. **Ensure all changes are committed and pushed to main**
+
+2. **Create and push a version tag:**
+
+```bash
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+3. **GitHub Actions automatically:**
+   - Runs all tests
+   - Builds the package
+   - Creates a GitHub Release with auto-generated release notes
+   - Publishes to PyPI
+
+#### Manual Build (for testing)
+
+**Build the package locally:**
+
+```bash
+uv build
+```
+
+This creates distribution files in the `dist/` directory.
+
+**Publish manually (if needed):**
+
+```bash
+uv publish --token YOUR_PYPI_TOKEN
+```
+
+### Setting Up PyPI Publishing (for maintainers)
+
+To enable automatic publishing to PyPI:
+
+1. **Create a PyPI API Token:**
+   - Go to https://pypi.org/manage/account/token/
+   - Create a token scoped to the `rclco` project
+   - Copy the token (starts with `pypi-`)
+
+2. **Add the token to GitHub Secrets:**
+   - Go to your repo → **Settings** → **Secrets and variables** → **Actions**
+   - Click **New repository secret**
+   - Name: `PYPI_TOKEN`
+   - Value: paste your PyPI token
+   - Click **Add secret**
+
+### Version Tag Format
+
+Use semantic versioning with a `v` prefix:
+
+| Tag | Version | Description |
+|-----|---------|-------------|
+| `v0.1.0` | 0.1.0 | Initial release |
+| `v0.1.1` | 0.1.1 | Patch release (bug fixes) |
+| `v0.2.0` | 0.2.0 | Minor release (new features) |
+| `v1.0.0` | 1.0.0 | Major release (breaking changes) |
+
+## Git Workflow for Contributors
+
+This section outlines our team's Git workflow. It's designed to be simple and safe for developers of all experience levels while maintaining code quality.
+
+### Overview: Branch-Based Development
+
+We use a **feature branch workflow**:
+
+```
+main (protected) ← Pull Requests ← feature branches
+```
+
+- **`main`** is our stable branch — always deployable
+- **All changes** go through feature branches and Pull Requests (PRs)
+- **No one pushes directly to `main`** — changes are merged via PR only
+
+### Quick Reference Card
+
+| What you want to do | Command(s) |
+|---------------------|------------|
+| Start new work | `git checkout main` → `git pull` → `git checkout -b your-name/feature-description` |
+| Save your work | `git add .` → `git commit -m "description"` |
+| Push to GitHub | `git push -u origin your-branch-name` (first time) or `git push` (after) |
+| Update your branch with latest main | `git checkout main` → `git pull` → `git checkout your-branch` → `git merge main` |
+| See what's changed | `git status` |
+| See your branches | `git branch` |
+| Switch branches | `git checkout branch-name` |
+
+---
+
+### Step-by-Step Workflow
+
+#### 1. Before Starting Any New Work
+
+Always start from an up-to-date `main` branch:
+
+```bash
+# Switch to main branch
+git checkout main
+
+# Get the latest changes from GitHub
+git pull origin main
+```
+
+#### 2. Create a Feature Branch
+
+Create a new branch for your work. Use this naming convention:
+
+```
+your-name/short-description
+```
+
+**Examples:**
+- `sarah/add-census-data-loader`
+- `john/fix-api-timeout`
+- `maria/update-documentation`
+
+```bash
+# Create and switch to your new branch
+git checkout -b your-name/feature-description
+```
+
+#### 3. Make Your Changes
+
+Edit code, add files, etc. Check your changes often:
+
+```bash
+# See what files have changed
+git status
+
+# See the actual changes in files
+git diff
+```
+
+#### 4. Save Your Work (Commit Often!)
+
+Commit your changes frequently with clear messages:
+
+```bash
+# Stage all your changes
+git add .
+
+# Or stage specific files
+git add path/to/file.py
+
+# Commit with a descriptive message
+git commit -m "Add function to load census data from API"
+```
+
+**Good commit messages:**
+- ✅ "Add census data loader function"
+- ✅ "Fix timeout error in API requests"
+- ✅ "Update README with installation steps"
+
+**Avoid vague messages:**
+- ❌ "Fixed stuff"
+- ❌ "WIP"
+- ❌ "Changes"
+
+#### 5. Push Your Branch to GitHub
+
+```bash
+# First time pushing this branch
+git push -u origin your-name/feature-description
+
+# After the first push, just use
+git push
+```
+
+#### 6. Create a Pull Request (PR)
+
+1. Go to the repository on GitHub
+2. You'll see a prompt to "Compare & pull request" — click it
+3. Fill out the PR template:
+   - **Title**: Brief description of what this PR does
+   - **Description**: Explain what you changed and why
+4. Request a review from a teammate
+5. Click "Create pull request"
+
+#### 7. Address Review Feedback
+
+If reviewers request changes:
+
+```bash
+# Make the requested changes in your code
+# Then commit and push
+git add .
+git commit -m "Address review feedback: improve error handling"
+git push
+```
+
+The PR will automatically update with your new commits.
+
+#### 8. Merge Your PR
+
+Once approved:
+1. Click "Squash and merge" (recommended) or "Merge pull request"
+2. Delete your branch when prompted
+
+#### 9. Clean Up Locally
+
+After your PR is merged:
+
+```bash
+# Switch back to main
+git checkout main
+
+# Get the merged changes
+git pull origin main
+
+# Delete your local feature branch (optional but recommended)
+git branch -d your-name/feature-description
+```
+
+---
+
+### Handling Common Situations
+
+#### Your Branch is Behind Main
+
+If `main` has been updated while you were working:
+
+```bash
+# Make sure your changes are committed first
+git add .
+git commit -m "Your commit message"
+
+# Get the latest main
+git checkout main
+git pull origin main
+
+# Go back to your branch and merge main into it
+git checkout your-name/feature-description
+git merge main
+```
+
+If there are **merge conflicts**, see the section below.
+
+#### Resolving Merge Conflicts
+
+When Git can't automatically merge changes, you'll see conflict markers in files:
+
+```python
+<<<<<<< HEAD
+# Your version of the code
+def load_data():
+    return pd.read_csv("data.csv")
+=======
+# The other version of the code
+def load_data():
+    return pd.read_excel("data.xlsx")
+>>>>>>> main
+```
+
+**To resolve:**
+
+1. Open the conflicted file(s)
+2. Decide which code to keep (or combine both)
+3. Remove the conflict markers (`<<<<<<<`, `=======`, `>>>>>>>`)
+4. Save the file
+5. Stage and commit:
+
+```bash
+git add .
+git commit -m "Resolve merge conflicts with main"
+git push
+```
+
+**If you're unsure how to resolve a conflict, ask for help!** It's better to ask than to accidentally delete someone's work.
+
+#### Oops! I Made Changes on Main
+
+If you accidentally started working on `main`:
+
+```bash
+# Create a new branch with your changes
+git checkout -b your-name/accidental-changes
+
+# Your changes are now on the new branch
+# Push and create a PR as normal
+git push -u origin your-name/accidental-changes
+```
+
+#### Oops! I Need to Undo My Last Commit
+
+If you haven't pushed yet:
+
+```bash
+# Undo the commit but keep the changes
+git reset --soft HEAD~1
+```
+
+If you already pushed, **ask for help** before trying to undo — it's more complicated.
+
+#### I Want to See What's on Another Branch
+
+```bash
+# List all branches
+git branch -a
+
+# Switch to another branch (make sure your work is committed first!)
+git checkout branch-name
+```
+
+---
+
+### Best Practices
+
+#### Do ✅
+
+- **Pull before you start** — always `git pull` on main before creating a branch
+- **Commit often** — small, frequent commits are easier to understand and undo
+- **Write clear commit messages** — your future self will thank you
+- **Push your branch daily** — protects your work and lets others see your progress
+- **Ask for help** — Git can be confusing; there's no shame in asking
+- **Run tests before pushing** — `uv run pytest`
+
+#### Don't ❌
+
+- **Don't push directly to main** — always use a PR
+- **Don't force push** (`git push --force`) — unless you really know what you're doing
+- **Don't commit sensitive data** — API keys, passwords, etc. (use `.env` files)
+- **Don't commit large data files** — use `.gitignore` for CSVs, Excel files, etc.
+
+---
+
+### Git Glossary
+
+| Term | What it means |
+|------|---------------|
+| **Repository (repo)** | The project folder tracked by Git |
+| **Branch** | An independent line of development |
+| **Commit** | A saved snapshot of your changes |
+| **Push** | Upload your commits to GitHub |
+| **Pull** | Download changes from GitHub |
+| **Merge** | Combine changes from one branch into another |
+| **Pull Request (PR)** | A request to merge your branch into main |
+| **Clone** | Download a copy of a repository |
+| **Stage** | Mark files to be included in the next commit |
+| **HEAD** | The current commit you're working on |
+| **Origin** | The default name for the remote GitHub repository |
+
+---
+
+### Getting Help
+
+**Git command help:**
+```bash
+git help <command>
+# Example: git help merge
+```
+
+**Check repository status:**
+```bash
+git status
+```
+
+**See commit history:**
+```bash
+git log --oneline -10
+```
+
+**Still stuck?** Ask the team! Git mistakes are almost always recoverable.
+
+---
+
+### Development Workflow Summary
+
+```
+1. Clone repo          → git clone ... && cd python-rclco
+2. Install deps        → uv sync --all-extras
+3. Update main         → git checkout main && git pull
+4. Create branch       → git checkout -b your-name/feature-description
+5. Make changes        → edit code
+6. Add dependencies    → uv add <package> or uv add --dev <package>
+7. Run tests           → uv run pytest
+8. Commit changes      → git add . && git commit -m "..."
+9. Push branch         → git push -u origin your-name/feature-description
+10. Open PR            → merge to main after review
+11. Release (maintainer) → git tag v0.2.0 && git push origin v0.2.0
+```
+
+## License
+
+See LICENSE file for details.
