@@ -1,0 +1,225 @@
+Metadata-Version: 2.4
+Name: isagellm-control-plane
+Version: 0.4.0.6
+Summary: sageLLM Control Plane - Intelligent request routing, scheduling, and engine lifecycle management
+Author: IntelliStream Team
+License: Proprietary - IntelliStream
+Project-URL: Homepage, https://github.com/IntelliStream/sagellm-control-plane
+Project-URL: Repository, https://github.com/IntelliStream/sagellm-control-plane
+Keywords: llm,inference,control-plane,scheduling,routing,autoscaling
+Classifier: Development Status :: 3 - Alpha
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Scientific/Engineering :: Artificial Intelligence
+Requires-Python: ==3.11.*
+Description-Content-Type: text/markdown
+Requires-Dist: isagellm-protocol<0.5.0,>=0.4.0.0
+Requires-Dist: pydantic>=2.0.0
+Requires-Dist: httpx>=0.24.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0.0; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.21.0; extra == "dev"
+Requires-Dist: pytest-cov>=4.0.0; extra == "dev"
+Requires-Dist: ruff>=0.8.0; extra == "dev"
+Requires-Dist: mypy>=1.0.0; extra == "dev"
+Requires-Dist: isage-pypi-publisher>=0.2.0; extra == "dev"
+
+# sageLLM Control Plane
+
+## Protocol Compliance (Mandatory)
+
+- MUST follow Protocol v0.1: https://github.com/intellistream/sagellm-docs/blob/main/docs/specs/protocol_v0.1.md
+- Any globally shared definitions (fields, error codes, metrics, IDs, schemas) MUST be added to Protocol first.
+
+[![CI Status](https://github.com/intellistream/sagellm-control-plane/actions/workflows/ci.yml/badge.svg)](https://github.com/intellistream/sagellm-control-plane/actions/workflows/ci.yml)
+[![PyPI version](https://badge.fury.io/py/isagellm-control-plane.svg)](https://badge.fury.io/py/isagellm-control-plane)
+[![Python Versions](https://img.shields.io/pypi/pyversions/isagellm-control-plane.svg)](https://pypi.org/project/isagellm-control-plane/)
+[![License](https://img.shields.io/badge/License-Proprietary-red.svg)](LICENSE)
+[![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
+
+**Intelligent request routing, scheduling, and engine lifecycle management for sageLLM.**
+
+## Features
+
+- 🎯 **Scheduling Policies** - FIFO, Priority, SLO-aware, Cost-optimized, Adaptive
+- ⚖️ **Load Balancing** - Intelligent request routing across multiple engine instances
+- 📈 **Autoscaling** - SLA-based autoscaling for Prefill/Decode instances
+- 🔄 **Engine Lifecycle** - Spawn, stop, health check, auto-restart
+- 📊 **Observability** - Metrics collection, performance monitoring
+- 🧩 **Parallelism** - TP, PP, DP, EP strategy optimization
+
+## Installation
+
+```bash
+# Basic installation
+pip install isagellm-control-plane
+
+# With optional features
+pip install isagellm-control-plane[gpu]      # GPU monitoring
+pip install isagellm-control-plane[metrics]  # Prometheus metrics
+pip install isagellm-control-plane[all]      # All features
+```
+
+**Requirements**: Python 3.10+
+
+## 🚀 开发者快速开始
+
+```bash
+git clone git@github.com:intellistream/sagellm-control-plane.git
+cd sagellm-control-plane
+./quickstart.sh   # 一键安装开发环境（含依赖）
+
+# 或手动安装
+pip install -e ".[dev]"
+```
+
+运行测试：
+```bash
+pytest tests/ -v
+```
+
+## Quick Start
+
+### Running Modes
+
+| Mode | Use Case | Backend |
+|------|----------|----------|
+| **CPU** | Development/CI | HuggingFace Transformers |
+| **GPU** | Production | CUDA/Ascend |
+
+### CPU Mode (Development)
+
+```python
+from sagellm_core.llm_engine import LLMEngine, LLMEngineConfig
+from sagellm_control import LocalEngineClient
+from sagellm_protocol import Request
+
+# Create LLMEngine with TinyLlama (unified hardware-agnostic engine)
+config = LLMEngineConfig(
+    model_path="TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+    backend_type="cpu",  # or "cuda", "ascend", "auto"
+    max_new_tokens=50,
+)
+engine = LLMEngine(config)
+await engine.start()
+
+# Create local client
+client = LocalEngineClient(engine)
+
+# Execute request
+request = Request(
+    request_id="req-001",
+    trace_id="trace-001",
+    model="TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+    prompt="What is AI?",
+    max_tokens=30,
+)
+
+response = await client.execute_request(request)
+print(f"Response: {response.output_text}")
+print(f"TTFT: {response.metrics.ttft_ms:.2f}ms")
+
+await engine.stop()
+```
+
+See [examples/cpu_engine_demo.py](examples/cpu_engine_demo.py) for complete examples.
+
+### Execution API
+
+Complete inference execution interface:
+
+```python
+from sagellm_control import ControlPlaneManager
+from sagellm_protocol import Request
+
+# 使用本地执行器（CPU 模式）
+cp = ControlPlaneManager(mode="local")
+
+# 1. 非流式推理
+request = Request(
+    request_id="req-001",
+    trace_id="trace-001",
+    model="test-model",
+    prompt="Hello, how are you?",
+    max_tokens=100,
+    stream=False,
+)
+response = await cp.execute_request(request)
+print(f"Output: {response.output_text}")
+print(f"TTFT: {response.metrics.ttft_ms:.2f} ms")
+
+# 2. 流式推理
+async for event in cp.stream_request(request):
+    if event.event == "delta":
+        print(event.chunk, end="", flush=True)
+
+# 3. 文本嵌入
+embeddings = await cp.get_embeddings(
+    texts=["Text 1", "Text 2", "Text 3"],
+    model_id="embedding-model"
+)
+print(f"Generated {len(embeddings)} embeddings of dimension {len(embeddings[0])}")
+```
+
+See [examples/execution_layer_demo.py](examples/execution_layer_demo.py) for more examples.
+
+## Architecture
+
+```
+sagellm_control/
+├── types.py           # Core data types (RequestMetadata, EngineInfo, etc.)
+├── strategies/        # Scheduling policies (FIFO, Priority, SLO, etc.)
+├── executors/         # Execution coordinators (HTTP, LocalAsync)
+├── router.py          # Request routing and load balancing
+├── autoscaler.py      # SLA-based autoscaling
+├── parallelism.py     # Parallelism strategy optimization
+├── manager.py         # Main ControlPlaneManager
+└── engine_lifecycle.py # Engine lifecycle management
+```
+
+
+
+## Documentation
+
+- [TODO.md](docs/TODO.md) - Development roadmap
+- [TEAM.md](docs/TEAM.md) - Team assignments
+
+## 🔄 贡献指南
+
+请遵循以下工作流程：
+
+1. **创建 Issue** - 描述问题/需求
+   ```bash
+   gh issue create --title "[Bug] 描述" --label "bug,sagellm-control-plane"
+   ```
+
+2. **开发修复** - 在本地 `fix/#123-xxx` 分支解决
+   ```bash
+   git checkout -b fix/#123-xxx origin/main-dev
+   # 开发、测试...
+   pytest -v
+   ruff format . && ruff check . --fix
+   ```
+
+3. **发起 PR** - 提交到 `main-dev` 分支
+   ```bash
+   gh pr create --base main-dev --title "Fix: 描述" --body "Closes #123"
+   ```
+
+4. **合并** - 审批后合并到 `main-dev`
+
+更多详情见 [.github/copilot-instructions.md](.github/copilot-instructions.md)
+
+### Related Repositories
+- [sagellm](https://github.com/intellistream/sagellm) - Umbrella 包 + CLI
+- [sagellm-protocol](https://github.com/intellistream/sagellm-protocol) - 协议定义
+- [sagellm-backend](https://github.com/intellistream/sagellm-backend) - 后端抽象
+- [sagellm-gateway](https://github.com/intellistream/sagellm-gateway) - API 网关
+
+---
+
+## License
+
+Proprietary - IntelliStream
