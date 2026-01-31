@@ -1,0 +1,237 @@
+"""Run FastAgent as an MCP server from the command line."""
+
+from enum import Enum
+from pathlib import Path
+from typing import Any
+
+import typer
+
+from fast_agent.cli.commands.go import (
+    collect_stdio_commands,
+    resolve_instruction_option,
+    run_async_agent,
+)
+from fast_agent.cli.env_helpers import resolve_environment_dir_option
+
+
+class ServeTransport(str, Enum):
+    HTTP = "http"
+    SSE = "sse"
+    STDIO = "stdio"
+    ACP = "acp"
+
+
+class InstanceScope(str, Enum):
+    SHARED = "shared"
+    CONNECTION = "connection"
+    REQUEST = "request"
+
+
+def _build_run_async_agent_kwargs(
+    *,
+    ctx: typer.Context,
+    name: str,
+    instruction: str | None,
+    config_path: str | None,
+    servers: str | None,
+    agent_cards: list[str] | None,
+    card_tools: list[str] | None,
+    urls: str | None,
+    auth: str | None,
+    model: str | None,
+    skills_dir: Path | None,
+    env_dir: Path | None,
+    npx: str | None,
+    uvx: str | None,
+    stdio: str | None,
+    description: str | None,
+    tool_name_template: str | None,
+    transport: ServeTransport,
+    host: str,
+    port: int,
+    shell: bool,
+    instance_scope: InstanceScope,
+    no_permissions: bool,
+    reload: bool,
+    watch: bool,
+) -> dict[str, Any]:
+    env_dir = resolve_environment_dir_option(ctx, env_dir)
+    stdio_commands = collect_stdio_commands(npx, uvx, stdio)
+    resolved_instruction, agent_name = resolve_instruction_option(
+        instruction,
+        model,
+        "serve",
+    )
+
+    return {
+        "name": name,
+        "instruction": resolved_instruction,
+        "config_path": config_path,
+        "servers": servers,
+        "agent_cards": agent_cards,
+        "card_tools": card_tools,
+        "urls": urls,
+        "auth": auth,
+        "model": model,
+        "message": None,
+        "prompt_file": None,
+        "stdio_commands": stdio_commands,
+        "agent_name": agent_name,
+        "skills_directory": skills_dir,
+        "environment_dir": env_dir,
+        "shell_enabled": shell,
+        "mode": "serve",
+        "transport": transport.value,
+        "host": host,
+        "port": port,
+        "tool_description": description,
+        "tool_name_template": tool_name_template,
+        "instance_scope": instance_scope.value,
+        "permissions_enabled": not no_permissions,
+        "reload": reload,
+        "watch": watch,
+    }
+
+
+app = typer.Typer(
+    help="Run FastAgent as an MCP server without writing an agent.py file",
+    context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
+)
+
+
+@app.callback(invoke_without_command=True, no_args_is_help=False)
+def serve(
+    ctx: typer.Context,
+    name: str = typer.Option("fast-agent", "--name", help="Name for the MCP server"),
+    instruction: str | None = typer.Option(
+        None, "--instruction", "-i", help="Path to file or URL containing instruction for the agent"
+    ),
+    config_path: str | None = typer.Option(None, "--config-path", "-c", help="Path to config file"),
+    servers: str | None = typer.Option(
+        None, "--servers", help="Comma-separated list of server names to enable from config"
+    ),
+    agent_cards: list[str] | None = typer.Option(
+        None,
+        "--agent-cards",
+        "--card",
+        help="Path or URL to an AgentCard file or directory (repeatable)",
+    ),
+    card_tools: list[str] | None = typer.Option(
+        None,
+        "--card-tool",
+        help="Path or URL to an AgentCard file or directory to load as tools (repeatable)",
+    ),
+    urls: str | None = typer.Option(
+        None, "--url", help="Comma-separated list of HTTP/SSE URLs to connect to"
+    ),
+    auth: str | None = typer.Option(
+        None, "--auth", help="Bearer token for authorization with URL-based servers"
+    ),
+    model: str | None = typer.Option(
+        None, "--model", "--models", help="Override the default model (e.g., haiku, sonnet, gpt-4)"
+    ),
+    env_dir: Path | None = typer.Option(
+        None,
+        "--env",
+        help="Override the base fast-agent environment directory",
+    ),
+    skills_dir: Path | None = typer.Option(
+        None,
+        "--skills-dir",
+        "--skills",
+        help="Override the default skills directory",
+    ),
+    npx: str | None = typer.Option(
+        None, "--npx", help="NPX package and args to run as MCP server (quoted)"
+    ),
+    uvx: str | None = typer.Option(
+        None, "--uvx", help="UVX package and args to run as MCP server (quoted)"
+    ),
+    stdio: str | None = typer.Option(
+        None, "--stdio", help="Command to run as STDIO MCP server (quoted)"
+    ),
+    description: str | None = typer.Option(
+        None,
+        "--description",
+        "-d",
+        help="Description used for the exposed send tool (use {agent} to reference the agent name)",
+    ),
+    tool_name_template: str | None = typer.Option(
+        None,
+        "--tool-name-template",
+        help="Template for exposed agent tool names (use {agent} to reference the agent name)",
+    ),
+    transport: ServeTransport = typer.Option(
+        ServeTransport.HTTP,
+        "--transport",
+        help="Transport protocol to expose (http, sse, stdio, acp)",
+    ),
+    host: str = typer.Option(
+        "0.0.0.0",
+        "--host",
+        help="Host address to bind when using HTTP or SSE transport",
+    ),
+    port: int = typer.Option(
+        8000,
+        "--port",
+        help="Port to use when running as a server with HTTP or SSE transport",
+    ),
+    shell: bool = typer.Option(
+        False,
+        "--shell",
+        "-x",
+        help="Enable a local shell runtime and expose the execute tool (bash or pwsh).",
+    ),
+    instance_scope: InstanceScope = typer.Option(
+        InstanceScope.SHARED,
+        "--instance-scope",
+        help="Control how MCP clients receive isolated agent instances (shared, connection, request)",
+    ),
+    no_permissions: bool = typer.Option(
+        False,
+        "--no-permissions",
+        help="Disable tool permission requests (allow all tool executions without asking) - ACP only",
+    ),
+    reload: bool = typer.Option(False, "--reload", help="Enable manual AgentCard reloads"),
+    watch: bool = typer.Option(False, "--watch", help="Watch AgentCard paths and reload"),
+) -> None:
+    """
+    Run FastAgent as an MCP server.
+
+    Examples:
+        fast-agent serve --model=haiku --instruction=./instruction.md --transport=http --port=8000
+        fast-agent serve --url=http://localhost:8001/mcp --auth=YOUR_API_TOKEN
+        fast-agent serve --stdio "python my_server.py --debug"
+        fast-agent serve --npx "@modelcontextprotocol/server-filesystem /path/to/data"
+        fast-agent serve --description "Interact with the {agent} assistant"
+        fast-agent serve --agent-cards ./agents --transport=http --port=8000
+    """
+    run_async_agent(
+        **_build_run_async_agent_kwargs(
+            ctx=ctx,
+            name=name,
+            instruction=instruction,
+            config_path=config_path,
+            servers=servers,
+            agent_cards=agent_cards,
+            card_tools=card_tools,
+            urls=urls,
+            auth=auth,
+            model=model,
+            skills_dir=skills_dir,
+            env_dir=env_dir,
+            npx=npx,
+            uvx=uvx,
+            stdio=stdio,
+            description=description,
+            tool_name_template=tool_name_template,
+            transport=transport,
+            host=host,
+            port=port,
+            shell=shell,
+            instance_scope=instance_scope,
+            no_permissions=no_permissions,
+            reload=reload,
+            watch=watch,
+        )
+    )
