@@ -1,0 +1,154 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "parallel-web-tools"
+version = "0.0.11"
+description = "Parallel Tools: CLI and data enrichment utilities for the Parallel API"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+authors = [
+    { name = "Parallel", email = "support@parallel.ai" }
+]
+keywords = ["ai", "data-enrichment", "parallel", "etl", "data-pipeline", "web-search", "llm"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Database",
+]
+
+dependencies = [
+    "parallel-web>=0.4.0",
+    "python-dotenv>=1.0.0",
+    # CLI dependencies (minimal - search, extract, enrich with CLI args)
+    "click>=8.1.0",
+    "rich>=13.0.0",
+    "httpx>=0.25.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/parallel-web/parallel-web-tools"
+Documentation = "https://docs.parallel.ai"
+Repository = "https://github.com/parallel-web/parallel-web-tools"
+Issues = "https://github.com/parallel-web/parallel-web-tools/issues"
+
+[project.scripts]
+parallel-cli = "parallel_web_tools.cli:main"
+
+[project.optional-dependencies]
+# CLI extras: YAML config files and interactive planner
+cli = [
+    "pyyaml>=6.0.0",
+    "questionary>=2.0.0",
+]
+# Polars integration for data processing
+polars = [
+    "polars>=1.37.0",
+    "pyarrow>=18.0.0",
+]
+# Pandas integration (for Spark UDFs)
+pandas = [
+    "pandas>=2.3.0",
+]
+# DuckDB integration (includes polars for data handling)
+duckdb = [
+    "parallel-web-tools[cli,polars]",
+    "duckdb>=1.0.0",
+    "nest-asyncio>=1.6.0",
+]
+# Snowflake integration
+snowflake = [
+    "snowflake-connector-python>=3.0.0",
+]
+# SQLAlchemy-based BigQuery connector (for YAML configs and ETL)
+bigquery = [
+    "parallel-web-tools[cli]",
+    "sqlalchemy>=2.0.0",
+    "sqlalchemy-bigquery>=1.11.0",
+]
+# BigQuery native UDF deployment (Cloud Functions + Remote Functions)
+# Note: Requires gcloud CLI to be installed. See docs/bigquery-setup.md
+bigquery-native = []  # No Python deps, just CLI tools
+# Apache Spark integration
+spark = [
+    "parallel-web-tools[pandas]",
+    "pyspark>=3.4.0",
+]
+# All features (recommended for full CLI experience)
+all = [
+    "parallel-web-tools[cli,polars,duckdb,snowflake,bigquery]",
+]
+# Development
+dev = [
+    "parallel-web-tools[all,spark]",
+    "pytest>=8.0.0",
+    "pytest-cov>=4.0.0",
+    "pyinstaller>=6.0.0",
+    "pre-commit>=4.0.0",
+    "ruff>=0.14.0",
+    "pyrefly>=0.49.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["parallel_web_tools"]
+artifacts = [
+    "*.sql",
+    "*.txt",  # requirements.txt for cloud function
+]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/parallel_web_tools",
+]
+
+[tool.pyrefly]
+project-includes = [
+    "**/*.py*",
+    "**/*.ipynb",
+]
+# Exclude files that have external dependencies not in the main project
+project-excludes = [
+    "**/integrations/bigquery/cloud_function/**",  # Separate deployment with flask, functions_framework
+    "**/integrations/spark/**",  # PySpark type stubs are incomplete (pandas_udf overloads)
+    "**/integrations/duckdb/udf.py",  # DuckDB UDF uses type="arrow" not in type stubs
+    "scripts/runtime_hook_ssl.py",  # PyInstaller runtime hook with sys._MEIPASS
+    "notebooks/**",  # Jupyter notebooks with Databricks display()
+    "examples/**",  # Example scripts
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # pyflakes
+    "I",      # isort
+    "B",      # flake8-bugbear
+    "UP",     # pyupgrade
+]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+    "B008",   # do not perform function calls in argument defaults
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["parallel_web_tools"]
+
+[tool.ruff.lint.per-file-ignores]
+"examples/*" = ["E402"]  # Allow imports not at top for tutorial scripts
+
+[dependency-groups]
+dev = [
+    "ipykernel>=7.1.0",
+]
