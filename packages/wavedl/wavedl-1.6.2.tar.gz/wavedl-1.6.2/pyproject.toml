@@ -1,0 +1,218 @@
+# ============================================================================
+# WaveDL Project Configuration
+# ============================================================================
+# This file configures project metadata and development tools.
+# For editable installation: pip install -e .
+# ============================================================================
+
+[build-system]
+requires = ["setuptools>=61.0,<77"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["wavedl*"]
+
+[tool.setuptools.dynamic]
+version = {attr = "wavedl.__version__"}
+
+[project]
+name = "wavedl"
+dynamic = ["version"]
+description = "A Scalable Deep Learning Framework for Wave-Based Inverse Problems"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.11"
+authors = [
+    {name = "Ductho Le"}
+]
+keywords = [
+    "deep-learning",
+    "inverse-problems",
+    "wave-propagation",
+    "ultrasonic",
+    "guided-waves",
+    "non-destructive-testing",
+    "machine-learning",
+    "pytorch",
+    "regression",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+dependencies = [
+    # Core ML stack
+    "torch>=2.0.0",
+    "torchvision>=0.15.0",
+    "timm>=0.9.0",  # Pretrained models (MaxViT, FastViT, CAFormer)
+    "accelerate>=0.20.0",
+    "numpy>=1.24.0",
+    "scipy>=1.10.0",
+    "scikit-learn>=1.2.0",
+    "pandas>=2.0.0",
+    "matplotlib>=3.7.0",
+    "tqdm>=4.65.0",
+    "pyyaml>=6.0.0",
+    # Data formats
+    "h5py>=3.8.0",
+    "safetensors>=0.3.0",
+    # Logging
+    "wandb>=0.15.0",
+    # HPO
+    "optuna>=3.0.0",
+    # ONNX export
+    "onnx>=1.14.0",
+    "onnxruntime>=1.15.0",
+    "onnxscript>=0.1.0",  # Required by torch.onnx.export in PyTorch 2.1+
+    # torch.compile backend (Linux only)
+    "triton>=2.0.0; sys_platform == 'linux'",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-xdist>=3.5.0",
+    "ruff>=0.8.0",
+    "pre-commit>=3.5.0",
+]
+
+[project.scripts]
+wavedl-train = "wavedl.launcher:main"  # Universal training (auto-detects HPC vs local)
+wavedl-hpc = "wavedl.launcher:main"    # Alias for backwards compatibility
+wavedl-test = "wavedl.test:main"
+wavedl-hpo = "wavedl.hpo:main"
+
+[project.urls]
+Homepage = "https://github.com/ductho-le/WaveDL"
+Repository = "https://github.com/ductho-le/WaveDL"
+Documentation = "https://github.com/ductho-le/WaveDL#readme"
+Issues = "https://github.com/ductho-le/WaveDL/issues"
+
+# ============================================================================
+# Ruff Configuration - Fast Python Linter & Formatter
+# ============================================================================
+# Ruff replaces Black, Flake8, isort, and more in a single tool.
+# Docs: https://docs.astral.sh/ruff/
+# ============================================================================
+
+[tool.ruff]
+# Target Python version
+target-version = "py311"
+
+# Line length matching Black's default
+line-length = 88
+
+# Directories to exclude from linting
+exclude = [
+    ".git",
+    ".github",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "*.egg-info",
+    "build",
+    "dist",
+    "docs",
+    "notebooks",
+    ".pytest_cache",
+    "wandb",
+]
+
+[tool.ruff.lint]
+# Enable rule categories
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # Pyflakes
+    "I",      # isort (import sorting)
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "UP",     # pyupgrade
+    "SIM",    # flake8-simplify
+    "TCH",    # flake8-type-checking
+    "RUF",    # Ruff-specific rules
+]
+
+# Rules to ignore
+ignore = [
+    "E501",    # Line too long (handled by formatter)
+    "E721",    # Type comparison with == (common pattern)
+    "E741",    # Ambiguous variable name (common in math: l, I, O)
+    "B006",    # Mutable argument default (intentional in some APIs)
+    "B007",    # Loop control variable not used (common: for i in range)
+    "B008",    # Do not perform function calls in argument defaults
+    "B904",    # raise without from (legacy exception handling)
+    "B905",    # `zip()` without an explicit `strict=` parameter
+    "SIM102",  # Nested if statements (often clearer for complex logic)
+    "SIM105",  # Use contextlib.suppress (less readable)
+    "SIM108",  # Use ternary operator (often less readable)
+    "RUF002",  # Ambiguous Unicode in docstring (× is intentional)
+    "RUF003",  # Ambiguous Unicode in comment (× is intentional)
+    "RUF005",  # Collection literal concatenation (style preference)
+    "RUF013",  # PEP 484 implicit Optional (legacy code pattern)
+]
+
+# Allow fix for all enabled rules (when `--fix` is provided)
+fixable = ["ALL"]
+unfixable = []
+
+# Allow unused variables when underscore-prefixed
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+[tool.ruff.lint.isort]
+# Group imports: stdlib, third-party, local
+known-first-party = ["wavedl"]
+force-single-line = false
+combine-as-imports = true
+lines-after-imports = 2
+
+[tool.ruff.lint.per-file-ignores]
+# Allow unused imports in __init__.py files
+"__init__.py" = ["F401"]
+# Allow assert statements in tests
+"unit_tests/*" = ["B011", "S101"]
+# Allow unused imports for availability checks
+"src/wavedl/train.py" = ["F401", "E402"]
+"src/wavedl/test.py" = ["F401"]
+"src/wavedl/utils/data.py" = ["F401"]
+
+[tool.ruff.format]
+# Format configuration (replaces Black)
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+docstring-code-format = true
+
+# ============================================================================
+# pytest Configuration
+# ============================================================================
+# Replaces pytest.ini - all settings now consolidated here.
+# ============================================================================
+
+[tool.pytest.ini_options]
+testpaths = ["unit_tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+norecursedirs = ["examples", ".git", "__pycache__", "*.egg-info", "docs", "logos"]
+addopts = "-v --tb=short --strict-markers"
+minversion = "7.0"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "gpu: marks tests that require GPU (deselect with '-m \"not gpu\"')",
+    "integration: marks integration tests",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+    "ignore::UserWarning",
+]
