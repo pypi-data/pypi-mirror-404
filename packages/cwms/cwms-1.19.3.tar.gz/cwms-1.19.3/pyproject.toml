@@ -1,0 +1,265 @@
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+name = "cwms"
+version = "1.19.3"
+description = "Claude Code skill for extended context through swap-to-disk memory management"
+authors = ["Dennis Lattka"]
+license = "MIT"
+readme = "README.md"
+keywords = ["agentic", "context", "memory", "claude", "llm", "swap", "rag"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: OS Independent",
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+packages = [
+    { include = "cwms", from = "src" }
+]
+
+# Include skill files in package
+include = [
+    "src/cwms/skill_files/SKILL.md",
+    "src/cwms/skill_files/AUTO_SWAP_README.md",
+    "src/cwms/skill_files/config.yaml",
+    "src/cwms/skill_files/statusline.py",
+    "src/cwms/skill_files/hooks/*.py"
+]
+
+[tool.poetry.dependencies]
+python = ">=3.12,<3.14"
+pyyaml = ">=6.0"
+click = ">=8.1"
+chromadb = ">=1.4.1,<2.0.0"
+# Optional dependencies
+tiktoken = {version = ">=0.8.0", optional = true}
+sentence-transformers = {version = ">=2.2.0", optional = true}
+torch = {version = ">=2.0.0", optional = true}
+numpy = {version = ">=1.24.0", optional = true}
+anthropic = {version = ">=0.18.0", optional = true}
+
+[tool.poetry.extras]
+tiktoken = ["tiktoken"]
+local = ["sentence-transformers", "torch"]
+numpy = ["numpy"]
+api = ["anthropic"]
+all = ["tiktoken", "sentence-transformers", "torch", "numpy", "anthropic"]
+
+[tool.poetry.group.dev.dependencies]
+# Testing
+pytest = ">=7.0"
+pytest-cov = ">=4.0"
+pytest-xdist = ">=3.0"
+# Code formatting
+black = ">=24.0"
+isort = ">=5.13"
+# Linting
+ruff = ">=0.1.0"
+pylint = ">=3.0"
+# Type checking
+mypy = ">=1.8"
+# Security
+bandit = {version = ">=1.7", extras = ["toml"]}
+# Task automation
+tox = ">=4.0"
+pre-commit = ">=3.0"
+
+[tool.poetry.scripts]
+cwms = "cwms.cli:main"
+
+[tool.poetry.urls]
+Homepage = "https://github.com/Taderich73/cwms"
+Repository = "https://github.com/Taderich73/cwms"
+
+[tool.black]
+line-length = 100
+target-version = ['py312', 'py313']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | _build
+  | buck-out
+  | build
+  | dist
+  | node_modules
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 100
+multi_line_output = 3
+include_trailing_comma = true
+force_grid_wrap = 0
+use_parentheses = true
+ensure_newline_before_comments = true
+skip_gitignore = true
+skip = [".tox", ".venv", "venv", "build", "dist"]
+# Ensure compatibility with ruff
+known_first_party = ["cwms"]
+sections = ["FUTURE", "STDLIB", "THIRDPARTY", "FIRSTPARTY", "LOCALFOLDER"]
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_calls = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+show_error_codes = true
+show_column_numbers = true
+pretty = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = true
+disallow_untyped_calls = true
+
+[[tool.mypy.overrides]]
+module = "cwms.vector_store"
+warn_unused_ignores = false  # ChromaDB types vary between versions
+
+[[tool.mypy.overrides]]
+module = [
+    "tiktoken",
+    "sentence_transformers",
+    "yaml",
+    "numpy",
+    "anthropic"
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+    "--showlocals",
+]
+markers = [
+    "integration: marks tests as integration tests requiring external services (deselect with '-m \"not integration\"')",
+]
+
+[tool.coverage.run]
+source = ["cwms"]
+omit = [
+    "*/tests/*",
+    "*/test_*",
+    "*/__pycache__/*",
+    "*/venv/*",
+    "*/.venv/*",
+    "*/example/*",
+    "*/skill_files/*",
+]
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if TYPE_CHECKING:",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if sys.version_info",
+    "if typing.TYPE_CHECKING:",
+]
+
+[tool.coverage.html]
+directory = "htmlcov"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+    "ARG", # flake8-unused-arguments
+    "SIM", # flake8-simplify
+]
+ignore = [
+    "E501",  # line too long (handled by black)
+    "B008",  # do not perform function calls in argument defaults
+    "C901",  # too complex (we'll use other complexity tools)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+"tests/*" = ["ARG", "I001"]
+"*/metrics/complexity.py" = ["ARG002"]  # Handler methods have consistent interface
+
+[tool.bandit]
+exclude_dirs = ["/tests", "/test", "/.venv", "/venv", "/example"]
+skips = [
+    "B101",  # Skip assert warnings in tests
+    "B311",  # Skip random warning (not used for crypto, just jitter)
+    "B403",  # Skip pickle import warning (used only for local caching)
+    "B112",  # Skip try-except-continue (valid error handling pattern)
+]
+
+[tool.pylint.main]
+py-version = "3.12"
+jobs = 0
+ignore = ["tests", "example", ".venv", "venv"]
+
+[tool.pylint.messages_control]
+disable = [
+    "C0111",  # missing-docstring (handled by other tools)
+    "C0103",  # invalid-name
+    "R0903",  # too-few-public-methods
+    "C0301",  # line-too-long (enforced by black formatter)
+    "C0302",  # too-many-lines (monolithic file, refactoring planned)
+    "W0212",  # protected-access (internal helper method access)
+    "W0718",  # broad-exception-caught (robust error handling needed)
+    "R0902",  # too-many-instance-attributes (data-heavy analysis classes)
+    "R0911",  # too-many-return-statements (AST visitor pattern)
+    "R0912",  # too-many-branches (complex analysis logic)
+    "R0914",  # too-many-locals (complex algorithmic functions)
+    "R0915",  # too-many-statements (comprehensive analysis)
+    "R1702",  # too-many-nested-blocks (AST traversal depth)
+    "R1724",  # no-else-continue (explicit flow preferred)
+    "R1714",  # consider-using-in (readability over micro-optimization)
+]
+
+[tool.pylint.format]
+max-line-length = 100
+
+[tool.pylint.design]
+max-args = 8
+max-attributes = 12
+max-branches = 15
+max-locals = 20
