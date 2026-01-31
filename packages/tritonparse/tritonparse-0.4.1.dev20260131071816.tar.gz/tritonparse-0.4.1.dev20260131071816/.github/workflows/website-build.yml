@@ -1,0 +1,98 @@
+name: Website Build Test
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "website/**"
+      - ".github/workflows/website-build.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "website/**"
+      - ".github/workflows/website-build.yml"
+  workflow_dispatch:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-slim
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: "website/package-lock.json"
+
+      - name: Install dependencies
+        working-directory: ./website
+        run: npm ci
+
+      - name: Run ESLint
+        working-directory: ./website
+        run: npm run lint
+
+      - name: Build website
+        working-directory: ./website
+        run: npm run build
+
+      - name: Build standalone website
+        working-directory: ./website
+        run: npm run build:single
+
+      - name: Verify build output
+        run: |
+          if [ ! -d "website/dist" ]; then
+            echo "❌ Build failed: dist directory not found"
+            exit 1
+          fi
+          if [ ! -f "website/dist/index.html" ]; then
+            echo "❌ Build failed: index.html not found"
+            exit 1
+          fi
+          if [ ! -f "website/dist/standalone.html" ]; then
+            echo "❌ Build failed: standalone.html not found"
+            exit 1
+          fi
+          echo "✅ Build successful: all expected files present"
+          ls -la website/dist/
+
+      - name: Runtime accessibility test
+        working-directory: ./website
+        run: |
+          echo "Starting preview server..."
+          npm run preview &
+          SERVER_PID=$!
+
+          # Wait for server to start
+          echo "Waiting for server to start..."
+          sleep 5
+
+          # Test main page accessibility
+          echo "Testing main page accessibility..."
+          if curl --fail --silent --show-error http://localhost:4173/ > /dev/null; then
+            echo "✅ Main page is accessible"
+          else
+            echo "❌ Main page is not accessible"
+            kill $SERVER_PID 2>/dev/null || true
+            exit 1
+          fi
+
+          # Test standalone page accessibility
+          echo "Testing standalone page accessibility..."
+          if curl --fail --silent --show-error http://localhost:4173/standalone.html > /dev/null; then
+            echo "✅ Standalone page is accessible"
+          else
+            echo "❌ Standalone page is not accessible"
+            kill $SERVER_PID 2>/dev/null || true
+            exit 1
+          fi
+
+          # Cleanup
+          kill $SERVER_PID 2>/dev/null || true
+          echo "✅ Runtime accessibility test passed"
