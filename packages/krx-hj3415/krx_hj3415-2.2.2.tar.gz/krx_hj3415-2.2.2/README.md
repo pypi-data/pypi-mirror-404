@@ -1,0 +1,58 @@
+# krx-hj3415
+
+이 프로젝트는 유니버스(현재: krx300)를 수집 → DB의 이전 latest와 diff → latest(+선택 snapshot) 저장 → (옵션) removed 종목을 nfs에서 삭제까지 수행합니다.
+
+설치 후 실행
+
+### 도움말
+krx --help
+krx sync --help
+
+#### 기본 실행 (diff 계산 + latest 저장)
+
+krx sync
+
+#### removed 종목을 nfs(latest/snapshots)에서 실제 삭제까지 적용
+
+krx sync --apply
+
+#### snapshot 저장 끄기
+
+krx sync --no-snapshot
+
+#### 유효한 엑셀 URL 탐색 범위 조정 (기본 15일)
+
+krx sync --max-days 30
+
+#### DB 접속 설정 (환경변수)
+
+db2 패키지 설정을 그대로 사용합니다. 예:
+
+export DB2_MONGO_URI="mongodb://192.168.100.172:27017"
+export DB2_NFS_DB_NAME="nfs"
+
+##### (선택) TTL 등 db2 쪽에 있으면 같이 설정
+export DB2_MONGO_SNAPSHOT_TTL_DAYS="730"
+
+
+⸻
+
+### 스케줄러(크론) 등록 예시
+
+.. - 실제 경로
+
+#### 1) 매일 새벽 4시 실행 (snapshot 저장, apply 없음)
+
+0 4 * * * cd ../krx-hj3415 && ../krx sync >> ../logs/krx_sync.log 2>&1
+
+#### 2) 매주 월요일 새벽 4시 실행 + removed 적용(–apply)
+
+주의: --apply는 nfs 데이터 삭제가 실제로 일어납니다.
+
+0 4 * * 1 cd ../krx-hj3415 && ../krx sync --apply >> ../krx_sync_apply.log 2>&1
+
+#### 크론에서 환경변수 주입 예시
+
+크론은 쉘 환경을 그대로 안 가져오는 경우가 많아서, 명령 앞에 붙이는 방식이 안전합니다.
+
+0 4 * * * DB2_MONGO_URI="mongodb://192.168.100.172:27017" DB2_NFS_DB_NAME="nfs" cd /Users/hyungjin/Desktop/backend/krx-hj3415 && /Users/hyungjin/Desktop/backend/.venv/bin/krx sync >> /Users/hyungjin/Desktop/backend/logs/krx_sync.log 2>&1
