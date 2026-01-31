@@ -1,0 +1,234 @@
+from http import HTTPStatus
+from typing import Any
+from urllib.parse import quote
+from uuid import UUID
+
+import httpx
+
+from ... import errors
+from ...client import AuthenticatedClient, Client
+from ...models.empty_success_response import EmptySuccessResponse
+from ...models.error import Error
+from ...models.google_cloud_service_credentials_existing_account_spec import (
+    GoogleCloudServiceCredentialsExistingAccountSpec,
+)
+from ...types import Response
+
+
+def _get_kwargs(
+    id: UUID,
+    *,
+    body: GoogleCloudServiceCredentialsExistingAccountSpec,
+    x_api_version: str = "1.3-rev1",
+) -> dict[str, Any]:
+    headers: dict[str, Any] = {}
+    headers["x-api-version"] = x_api_version
+
+    _kwargs: dict[str, Any] = {
+        "method": "post",
+        "url": "/api/v1/cloudCredentials/{id}/changeAccount".format(
+            id=quote(str(id), safe=""),
+        ),
+    }
+
+    _kwargs["json"] = body.to_dict()
+
+    headers["Content-Type"] = "application/json"
+
+    _kwargs["headers"] = headers
+    return _kwargs
+
+
+def _parse_response(
+    *, client: AuthenticatedClient | Client, response: httpx.Response
+) -> EmptySuccessResponse | Error | None:
+    if response.status_code == 201:
+        response_201 = EmptySuccessResponse.from_dict(response.json())
+
+        return response_201
+
+    if response.status_code == 400:
+        response_400 = Error.from_dict(response.json())
+
+        return response_400
+
+    if response.status_code == 401:
+        response_401 = Error.from_dict(response.json())
+
+        return response_401
+
+    if response.status_code == 403:
+        response_403 = Error.from_dict(response.json())
+
+        return response_403
+
+    if response.status_code == 500:
+        response_500 = Error.from_dict(response.json())
+
+        return response_500
+
+    if client.raise_on_unexpected_status:
+        raise errors.UnexpectedStatus(response.status_code, response.content)
+    else:
+        return None
+
+
+def _build_response(
+    *, client: AuthenticatedClient | Client, response: httpx.Response
+) -> Response[EmptySuccessResponse | Error]:
+    return Response(
+        status_code=HTTPStatus(response.status_code),
+        content=response.content,
+        headers=response.headers,
+        parsed=_parse_response(client=client, response=response),
+    )
+
+
+def sync_detailed(
+    id: UUID,
+    *,
+    client: AuthenticatedClient | Client,
+    body: GoogleCloudServiceCredentialsExistingAccountSpec,
+    x_api_version: str = "1.3-rev1",
+) -> Response[EmptySuccessResponse | Error]:
+    """Change Google Service Account
+
+     The HTTP POST request to the `/api/v1/cloudCredentials/{id}/changeAccount` endpoint sets a new
+    Google Cloud service account associated with the same credentials `id`.<p>**Available to**&#58;
+    Veeam Backup Administrator, Veeam Security Administrator.</p>
+
+    Args:
+        id (UUID):
+        x_api_version (str):  Default: '1.3-rev1'.
+        body (GoogleCloudServiceCredentialsExistingAccountSpec): Settings for modifying existing
+            credentials for Google Cloud service account.
+
+    Raises:
+        errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
+        httpx.TimeoutException: If the request takes longer than Client.timeout.
+
+    Returns:
+        Response[EmptySuccessResponse | Error]
+    """
+
+    kwargs = _get_kwargs(
+        id=id,
+        body=body,
+        x_api_version=x_api_version,
+    )
+
+    response = client.get_httpx_client().request(
+        **kwargs,
+    )
+
+    return _build_response(client=client, response=response)
+
+
+def sync(
+    id: UUID,
+    *,
+    client: AuthenticatedClient | Client,
+    body: GoogleCloudServiceCredentialsExistingAccountSpec,
+    x_api_version: str = "1.3-rev1",
+) -> EmptySuccessResponse | Error | None:
+    """Change Google Service Account
+
+     The HTTP POST request to the `/api/v1/cloudCredentials/{id}/changeAccount` endpoint sets a new
+    Google Cloud service account associated with the same credentials `id`.<p>**Available to**&#58;
+    Veeam Backup Administrator, Veeam Security Administrator.</p>
+
+    Args:
+        id (UUID):
+        x_api_version (str):  Default: '1.3-rev1'.
+        body (GoogleCloudServiceCredentialsExistingAccountSpec): Settings for modifying existing
+            credentials for Google Cloud service account.
+
+    Raises:
+        errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
+        httpx.TimeoutException: If the request takes longer than Client.timeout.
+
+    Returns:
+        EmptySuccessResponse | Error
+    """
+
+    return sync_detailed(
+        id=id,
+        client=client,
+        body=body,
+        x_api_version=x_api_version,
+    ).parsed
+
+
+async def asyncio_detailed(
+    id: UUID,
+    *,
+    client: AuthenticatedClient | Client,
+    body: GoogleCloudServiceCredentialsExistingAccountSpec,
+    x_api_version: str = "1.3-rev1",
+) -> Response[EmptySuccessResponse | Error]:
+    """Change Google Service Account
+
+     The HTTP POST request to the `/api/v1/cloudCredentials/{id}/changeAccount` endpoint sets a new
+    Google Cloud service account associated with the same credentials `id`.<p>**Available to**&#58;
+    Veeam Backup Administrator, Veeam Security Administrator.</p>
+
+    Args:
+        id (UUID):
+        x_api_version (str):  Default: '1.3-rev1'.
+        body (GoogleCloudServiceCredentialsExistingAccountSpec): Settings for modifying existing
+            credentials for Google Cloud service account.
+
+    Raises:
+        errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
+        httpx.TimeoutException: If the request takes longer than Client.timeout.
+
+    Returns:
+        Response[EmptySuccessResponse | Error]
+    """
+
+    kwargs = _get_kwargs(
+        id=id,
+        body=body,
+        x_api_version=x_api_version,
+    )
+
+    response = await client.get_async_httpx_client().request(**kwargs)
+
+    return _build_response(client=client, response=response)
+
+
+async def asyncio(
+    id: UUID,
+    *,
+    client: AuthenticatedClient | Client,
+    body: GoogleCloudServiceCredentialsExistingAccountSpec,
+    x_api_version: str = "1.3-rev1",
+) -> EmptySuccessResponse | Error | None:
+    """Change Google Service Account
+
+     The HTTP POST request to the `/api/v1/cloudCredentials/{id}/changeAccount` endpoint sets a new
+    Google Cloud service account associated with the same credentials `id`.<p>**Available to**&#58;
+    Veeam Backup Administrator, Veeam Security Administrator.</p>
+
+    Args:
+        id (UUID):
+        x_api_version (str):  Default: '1.3-rev1'.
+        body (GoogleCloudServiceCredentialsExistingAccountSpec): Settings for modifying existing
+            credentials for Google Cloud service account.
+
+    Raises:
+        errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
+        httpx.TimeoutException: If the request takes longer than Client.timeout.
+
+    Returns:
+        EmptySuccessResponse | Error
+    """
+
+    return (
+        await asyncio_detailed(
+            id=id,
+            client=client,
+            body=body,
+            x_api_version=x_api_version,
+        )
+    ).parsed
