@@ -1,0 +1,242 @@
+Usage: doccmd [OPTIONS] [DOCUMENT_PATHS]...
+
+  Run commands against code blocks in the given documentation files.
+
+  This works with reStructuredText, MyST, Markdown, MDX, and Djot files.
+
+Required options:
+  -c, --command TEXT              The command to run against code blocks.
+                                  [required]
+
+Code block selection:
+  -l, --language TEXT             Run `command` against code blocks for this
+                                  language. Give multiple times for multiple
+                                  languages. If this is not given, no code
+                                  blocks are run, unless `--sphinx-jinja2` is
+                                  given.
+  --skip-marker TEXT              The marker used to identify code blocks to be
+                                  skipped.
+                                  
+                                  By default, code blocks which come just after
+                                  a comment matching 'skip doccmd[all]: next'
+                                  are skipped (e.g. `.. skip doccmd[all]: next`
+                                  in reStructuredText, `<!--- skip doccmd[all]:
+                                  next -->` in Markdown or MDX, or `% skip
+                                  doccmd[all]: next` in MyST).
+                                  
+                                  When using this option, those, and code blocks
+                                  which come just after a comment including the
+                                  given marker are ignored. For example, if the
+                                  given marker is 'type-check', code blocks
+                                  which come just after a comment matching 'skip
+                                  doccmd[type-check]: next' are also skipped.
+                                  
+                                  To skip a code block for each of multiple
+                                  markers, for example to skip a code block for
+                                  the ``type-check`` and ``lint`` markers but
+                                  not all markers, add multiple ``skip doccmd``
+                                  comments above the code block.
+  --sphinx-jinja2 / --no-sphinx-jinja2
+                                  Whether to parse `sphinx-jinja2` blocks. This
+                                  is useful for evaluating code blocks with
+                                  Jinja2 templates used in Sphinx documentation.
+                                  This is supported for MyST and
+                                  reStructuredText files only.  [default: no-
+                                  sphinx-jinja2]
+
+Grouping options:
+  --group-marker TEXT             The marker used to identify code blocks to be
+                                  grouped.
+                                  
+                                  By default, code blocks which come just
+                                  between comments matching 'group doccmd[all]:
+                                  start' and 'group doccmd[all]: end' are
+                                  grouped (e.g. `.. group doccmd[all]: start` in
+                                  reStructuredText, `<!--- group doccmd[all]:
+                                  start -->` in Markdown/MDX, or `% group
+                                  doccmd[all]: start` in MyST).
+                                  
+                                  When using this option, those, and code blocks
+                                  which are grouped by a comment including the
+                                  given marker are ignored. For example, if the
+                                  given marker is 'type-check', code blocks
+                                  which come within comments matching 'group
+                                  doccmd[type-check]: start' and 'group
+                                  doccmd[type-check]: end' are also skipped.
+                                  
+                                  Error messages for grouped code blocks may
+                                  include lines which do not match the document,
+                                  so code formatters will not work on them.
+  --group-file / --no-group-file  Automatically group all code blocks within
+                                  each file. When enabled, all code blocks in a
+                                  file are treated as a single group and
+                                  executed together, without requiring explicit
+                                  group directives. This is useful for files
+                                  where code blocks are designed for sequential
+                                  execution. Error messages for grouped code
+                                  blocks may include lines which do not match
+                                  the document, so code formatters will not work
+                                  on them.  [default: no-group-file]
+  --pad-groups / --no-pad-groups  Maintain line spacing between groups from the
+                                  source file in the temporary file. This is
+                                  useful for matching line numbers from the
+                                  output to the relevant location in the
+                                  document. Use --no-pad-groups for formatters -
+                                  they generally need to look at the file
+                                  without padding.  [default: pad-groups]
+  --fail-on-group-write / --no-fail-on-group-write
+                                  Whether to fail (with exit code 1) if a
+                                  command (e.g. a formatter) tries to change
+                                  code within a grouped code block. ``doccmd``
+                                  does not support writing to grouped code
+                                  blocks.  [default: fail-on-group-write]
+  --group-mdx-by-attribute TEXT   Group MDX code blocks by the value of the
+                                  specified attribute. Code blocks with the same
+                                  attribute value are grouped together and
+                                  executed as a single unit. For example, with
+                                  `--group-mdx-by-attribute group`, code blocks
+                                  with `group="example1"` are grouped together.
+                                  This follows the Docusaurus convention for
+                                  grouping code blocks. This option only applies
+                                  to MDX files. Error messages for grouped code
+                                  blocks may include lines which do not match
+                                  the document, so code formatters will not work
+                                  on them.
+
+Temporary file options:
+  --temporary-file-extension TEXT
+                                  The file extension to give to the temporary
+                                  file made from the code block. By default, the
+                                  file extension is inferred from the language,
+                                  or it is '.txt' if the language is not
+                                  recognized.
+  --temporary-file-name-prefix TEXT
+                                  The prefix to give to the temporary file made
+                                  from the code block. This is useful for
+                                  distinguishing files created by this tool from
+                                  other files, e.g. for ignoring in linter
+                                  configurations.  [default: doccmd; required]
+  --temporary-file-name-template TEXT
+                                  The template for the temporary file name.
+                                  Available placeholders: {prefix} (from
+                                  --temporary-file-name-prefix), {source}
+                                  (sanitized source filename), {line} (line
+                                  number), {unique} (unique identifier),
+                                  {suffix} (file extension, required). Example:
+                                  '{prefix}_{unique}{suffix}' produces
+                                  'doccmd_a1b2.py'.  [default:
+                                  {prefix}_{source}_l{line}__{unique}_{suffix};
+                                  required]
+  --pad-file / --no-pad-file      Run the command against a temporary file
+                                  padded with newlines. This is useful for
+                                  matching line numbers from the output to the
+                                  relevant location in the document. Use --no-
+                                  pad-file for formatters - they generally need
+                                  to look at the file without padding.
+                                  [default: pad-file]
+  --write-to-file / --no-write-to-file
+                                  Write any changes made by the command back to
+                                  the source document. Grouped code blocks never
+                                  write to files.  [default: write-to-file]
+
+File discovery options:
+  --rst-extension TEXT            Treat files with this extension (suffix) as
+                                  reStructuredText. Give this multiple times to
+                                  look for multiple extensions. To avoid
+                                  considering any files, including the default,
+                                  as reStructuredText files, use `--rst-
+                                  extension=.`.  [default: .rst]
+  --myst-extension TEXT           Treat files with this extension (suffix) as
+                                  MyST. Give this multiple times to look for
+                                  multiple extensions. To avoid considering any
+                                  files, including the default, as MyST files,
+                                  use `--myst-extension=.`.  [default: .md]
+  --markdown-extension TEXT       Files with this extension (suffix) to treat as
+                                  Markdown. Give this multiple times to look for
+                                  multiple extensions. By default, `.md` is
+                                  treated as MyST, not Markdown. Use `--mdx-
+                                  extension` for MDX files.
+  --mdx-extension TEXT            Treat files with this extension (suffix) as
+                                  MDX. Give this multiple times to look for
+                                  multiple extensions.  [default: .mdx]
+  --djot-extension TEXT           Treat files with this extension (suffix) as
+                                  Djot. Give this multiple times to look for
+                                  multiple extensions.  [default: .djot]
+  --norg-extension TEXT           Treat files with this extension (suffix) as
+                                  Norg. Give this multiple times to look for
+                                  multiple extensions.  [default: .norg]
+  --max-depth INTEGER RANGE       Maximum depth to search for files in
+                                  directories.  [x>=1]
+  --exclude TEXT                  A glob-style pattern that matches file paths
+                                  to ignore while recursively discovering files
+                                  in directories. This option can be used
+                                  multiple times. Use forward slashes on all
+                                  platforms.
+  --respect-gitignore / --no-respect-gitignore
+                                  Respect .gitignore files when recursively
+                                  discovering files in directories. Files passed
+                                  directly are not affected by this option.
+                                  [default: respect-gitignore]
+
+Execution options:
+  --use-pty [yes|no|detect]       Whether to use a pseudo-terminal for running
+                                  commands. Using a PTY can be useful for
+                                  getting color output from commands, but can
+                                  also break in some environments.
+                                  
+                                  'yes': Always use PTY (not supported on
+                                  Windows).
+                                  
+                                  'no': Never use PTY - useful when doccmd
+                                  detects that it is running in a TTY outside of
+                                  Windows but the environment does not support
+                                  PTYs.
+                                  
+                                  'detect': Automatically determine based on
+                                  environment (default).  [default: DETECT]
+  --example-workers INTEGER RANGE
+                                  Number of code blocks to evaluate concurrently
+                                  within each document when `--no-write-to-file`
+                                  is set. Use 0 to auto-detect based on the
+                                  number of CPUs. Values greater than 1 are
+                                  rejected when writing to files, since doccmd
+                                  cannot safely apply changes in parallel. Best
+                                  for files with many code blocks. Can be
+                                  combined with --document-workers for maximum
+                                  parallelism. Output may be interleaved when
+                                  using parallel execution.  [default: 1; x>=0]
+  --document-workers INTEGER RANGE
+                                  Number of documents to evaluate concurrently
+                                  when `--no-write-to-file` is set. Use 0 to
+                                  auto-detect based on the number of CPUs.
+                                  Values greater than 1 are rejected when
+                                  writing to files, since doccmd cannot safely
+                                  apply changes in parallel. Best for processing
+                                  many files. Can be combined with --example-
+                                  workers for maximum parallelism. Output may be
+                                  interleaved when using parallel execution.
+                                  [default: 1; x>=0]
+
+Error handling:
+  --fail-on-parse-error / --no-fail-on-parse-error
+                                  Whether to fail (with exit code 1) if a given
+                                  file cannot be parsed.  [default: no-fail-on-
+                                  parse-error]
+  --continue-on-error / --no-continue-on-error
+                                  Continue executing across all files even when
+                                  errors occur. Collects and displays all errors
+                                  found, then returns a non-zero exit code if
+                                  any command invocation failed. Useful for
+                                  seeing all linting errors in large projects.
+                                  [default: no-continue-on-error]
+
+Output options:
+  -v, --verbose                   Enable verbose output.
+
+Other options:
+  --version                       Show the version and exit.
+  --help                          Show this message and exit.
+
+Constraints:
+  {--group-marker, --group-file, --group-mdx-by-attribute}
+    mutually exclusive
