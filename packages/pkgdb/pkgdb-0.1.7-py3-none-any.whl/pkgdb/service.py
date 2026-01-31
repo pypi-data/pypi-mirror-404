@@ -1,0 +1,597 @@
+"""Service layer for pkgdb - provides a clean abstraction over database and API operations."""
+
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Callable
+
+from .api import (
+    aggregate_env_stats,
+    check_package_exists,
+    fetch_os_stats,
+    fetch_package_stats,
+    fetch_python_versions,
+    fetch_user_packages,
+)
+from .db import (
+    add_package,
+    cleanup_orphaned_stats,
+    get_all_history,
+    get_database_stats,
+    get_db,
+    get_latest_stats,
+    get_package_history,
+    get_packages,
+    get_packages_needing_update,
+    get_stats_with_growth,
+    prune_old_stats,
+    record_fetch_attempt,
+    remove_package,
+    store_stats,
+)
+from .badges import generate_downloads_badge
+from .export import export_csv, export_json, export_markdown
+from .reports import generate_html_report, generate_package_html_report
+from .types import CategoryDownloads, DatabaseInfo, PackageStats
+from .utils import validate_output_path, validate_package_name
+
+
+@dataclass
+class PackageInfo:
+    """Information about a tracked package."""
+
+    name: str
+    added_date: str
+
+
+@dataclass
+class FetchResult:
+    """Result of a fetch operation."""
+
+    success: int
+    failed: int
+    skipped: int
+    results: dict[str, PackageStats | None]
+
+
+@dataclass
+class PackageDetails:
+    """Detailed statistics for a package."""
+
+    name: str
+    stats: PackageStats | None
+    python_versions: list[CategoryDownloads] | None
+    os_stats: list[CategoryDownloads] | None
+
+
+@dataclass
+class SyncResult:
+    """Result of syncing packages from a PyPI user."""
+
+    added: list[str]
+    already_tracked: list[str]
+    not_on_remote: list[str]
+    pruned: list[str]
+
+
+class PackageStatsService:
+    """High-level service for managing package statistics.
+
+    Provides a clean abstraction over database and API operations,
+    making it easier to test, mock, and extend.
+    """
+
+    def __init__(self, db_path: str):
+        """Initialize the service with a database path.
+
+        Args:
+            db_path: Path to the SQLite database file.
+        """
+        self.db_path = db_path
+
+    # -------------------------------------------------------------------------
+    # Package Management
+    # -------------------------------------------------------------------------
+
+    def add_package(self, name: str, verify: bool = True) -> bool:
+        """Add a package to tracking.
+
+        Args:
+            name: Package name to add.
+            verify: If True, verify package exists on PyPI before adding.
+                    Network errors are logged as warnings but don't block addition.
+
+        Returns:
+            True if package was added, False if it already exists.
+
+        Raises:
+            ValueError: If package name is invalid or package not found on PyPI
+                        (when verify=True).
+        """
+        import logging
+
+        logger = logging.getLogger("pkgdb")
+
+        is_valid, error_msg = validate_package_name(name)
+        if not is_valid:
+            raise ValueError(error_msg)
+
+        if verify:
+            exists, error = check_package_exists(name)
+            if exists is False:
+                raise ValueError(f"Package '{name}' not found on PyPI")
+            if exists is None and error:
+                # Network error - warn but allow (fail open)
+                logger.warning("Could not verify package '%s': %s", name, error)
+
+        with get_db(self.db_path) as conn:
+            return add_package(conn, name)
+
+    def remove_package(self, name: str) -> bool:
+        """Remove a package from tracking.
+
+        Args:
+            name: Package name to remove.
+
+        Returns:
+            True if package was removed, False if it didn't exist.
+        """
+        with get_db(self.db_path) as conn:
+            return remove_package(conn, name)
+
+    def list_packages(self) -> list[PackageInfo]:
+        """Get list of tracked packages with their added dates.
+
+        Returns:
+            List of PackageInfo objects.
+        """
+        with get_db(self.db_path) as conn:
+            packages = get_packages(conn)
+            if not packages:
+                return []
+
+            cursor = conn.execute(
+                "SELECT package_name, added_date FROM packages ORDER BY package_name"
+            )
+            return [
+                PackageInfo(name=row["package_name"], added_date=row["added_date"])
+                for row in cursor.fetchall()
+            ]
+
+    def import_packages(
+        self, file_path: str, verify: bool = True
+    ) -> tuple[int, int, list[str], list[str]]:
+        """Import packages from a file.
+
+        Args:
+            file_path: Path to file (YAML, JSON, or plain text).
+            verify: If True, verify each package exists on PyPI before adding.
+
+        Returns:
+            Tuple of (added_count, skipped_count, invalid_names, not_found_names).
+
+        Raises:
+            FileNotFoundError: If file doesn't exist.
+        """
+        import logging
+
+        from .cli import load_packages_from_file
+
+        logger = logging.getLogger("pkgdb")
+        packages = load_packages_from_file(file_path)
+        added = 0
+        skipped = 0
+        invalid: list[str] = []
+        not_found: list[str] = []
+
+        with get_db(self.db_path) as conn:
+            for pkg in packages:
+                is_valid, _ = validate_package_name(pkg)
+                if not is_valid:
+                    invalid.append(pkg)
+                    continue
+
+                if verify:
+                    exists, error = check_package_exists(pkg)
+                    if exists is False:
+                        not_found.append(pkg)
+                        continue
+                    if exists is None and error:
+                        logger.warning("Could not verify package '%s': %s", pkg, error)
+
+                if add_package(conn, pkg):
+                    added += 1
+                else:
+                    skipped += 1
+        return added, skipped, invalid, not_found
+
+    def sync_packages_from_user(
+        self, username: str, prune: bool = False
+    ) -> SyncResult | None:
+        """Sync tracked packages with a PyPI user's current packages.
+
+        Fetches the user's packages from PyPI and adds any that aren't
+        already being tracked. Optionally removes packages no longer
+        associated with the user.
+
+        Args:
+            username: PyPI username to fetch packages from.
+            prune: If True, remove locally tracked packages not in user's
+                PyPI account.
+
+        Returns:
+            SyncResult with lists of added, already tracked, packages
+            not on remote, and pruned packages.
+            Returns None if unable to fetch from PyPI.
+        """
+        remote_packages = fetch_user_packages(username)
+        if remote_packages is None:
+            return None
+
+        remote_set = set(remote_packages)
+        local_packages = [p.name for p in self.list_packages()]
+        local_set = set(local_packages)
+
+        # Packages on remote but not locally tracked
+        to_add = remote_set - local_set
+        # Packages both remote and local
+        already_tracked = remote_set & local_set
+        # Packages tracked locally but not on remote
+        not_on_remote = local_set - remote_set
+
+        added: list[str] = []
+        for pkg in sorted(to_add):
+            # Skip verification since packages come from PyPI's user_packages API
+            if self.add_package(pkg, verify=False):
+                added.append(pkg)
+
+        pruned: list[str] = []
+        if prune:
+            for pkg in sorted(not_on_remote):
+                if self.remove_package(pkg):
+                    pruned.append(pkg)
+
+        return SyncResult(
+            added=added,
+            already_tracked=sorted(already_tracked),
+            not_on_remote=sorted(not_on_remote),
+            pruned=pruned,
+        )
+
+    # -------------------------------------------------------------------------
+    # Data Fetching
+    # -------------------------------------------------------------------------
+
+    def fetch_all_stats(
+        self,
+        progress_callback: Callable[[int, int, str, PackageStats | None], None]
+        | None = None,
+    ) -> FetchResult:
+        """Fetch and store stats for all tracked packages.
+
+        Skips packages that have been attempted within the last 24 hours.
+        Uses batch commits for better performance when storing multiple packages.
+
+        Args:
+            progress_callback: Optional callback called for each package with
+                (current_index, total_count, package_name, stats_or_none).
+
+        Returns:
+            FetchResult with success/failure/skipped counts and results.
+        """
+        with get_db(self.db_path) as conn:
+            all_packages = get_packages(conn)
+            if not all_packages:
+                return FetchResult(success=0, failed=0, skipped=0, results={})
+
+            packages_to_fetch = get_packages_needing_update(conn)
+            skipped = len(all_packages) - len(packages_to_fetch)
+
+            if not packages_to_fetch:
+                return FetchResult(success=0, failed=0, skipped=skipped, results={})
+
+            results: dict[str, PackageStats | None] = {}
+            success = 0
+            failed = 0
+
+            for i, package in enumerate(packages_to_fetch, 1):
+                stats = fetch_package_stats(package)
+                results[package] = stats
+
+                if stats:
+                    # Use commit=False for batch operation
+                    store_stats(conn, package, stats, commit=False)
+                    record_fetch_attempt(conn, package, success=True, commit=False)
+                    success += 1
+                else:
+                    record_fetch_attempt(conn, package, success=False, commit=False)
+                    failed += 1
+
+                if progress_callback:
+                    progress_callback(i, len(packages_to_fetch), package, stats)
+
+            # Single commit for all stores and attempts
+            conn.commit()
+
+            return FetchResult(
+                success=success, failed=failed, skipped=skipped, results=results
+            )
+
+    def fetch_package_details(self, package: str) -> PackageDetails:
+        """Fetch detailed statistics for a single package.
+
+        Args:
+            package: Package name.
+
+        Returns:
+            PackageDetails with stats, Python versions, and OS breakdown.
+        """
+        return PackageDetails(
+            name=package,
+            stats=fetch_package_stats(package),
+            python_versions=fetch_python_versions(package),
+            os_stats=fetch_os_stats(package),
+        )
+
+    # -------------------------------------------------------------------------
+    # Data Retrieval
+    # -------------------------------------------------------------------------
+
+    def get_stats(self, with_growth: bool = False) -> list[dict[str, Any]]:
+        """Get latest stats for all packages.
+
+        Args:
+            with_growth: If True, include growth metrics.
+
+        Returns:
+            List of stats dictionaries ordered by total downloads.
+        """
+        with get_db(self.db_path) as conn:
+            if with_growth:
+                return get_stats_with_growth(conn)
+            return get_latest_stats(conn)
+
+    def get_history(self, package: str, limit: int = 30) -> list[dict[str, Any]]:
+        """Get historical stats for a package.
+
+        Args:
+            package: Package name.
+            limit: Maximum number of days to return.
+
+        Returns:
+            List of historical stats ordered by date descending.
+        """
+        with get_db(self.db_path) as conn:
+            return get_package_history(conn, package, limit=limit)
+
+    def get_all_history(
+        self, limit_per_package: int = 30
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Get historical stats for all packages.
+
+        Args:
+            limit_per_package: Maximum days per package.
+
+        Returns:
+            Dict mapping package names to their history.
+        """
+        with get_db(self.db_path) as conn:
+            return get_all_history(conn, limit_per_package=limit_per_package)
+
+    # -------------------------------------------------------------------------
+    # Reporting
+    # -------------------------------------------------------------------------
+
+    def generate_report(
+        self,
+        output_file: str,
+        include_env: bool = False,
+    ) -> bool:
+        """Generate HTML report for all packages.
+
+        Args:
+            output_file: Path to write HTML file.
+            include_env: If True, include Python/OS distribution summary.
+
+        Returns:
+            True if report was generated, False if no data available.
+
+        Raises:
+            ValueError: If output path is invalid or not writable.
+        """
+        # Validate output path
+        is_valid, error_msg = validate_output_path(
+            output_file, allowed_extensions=[".html", ".htm"]
+        )
+        if not is_valid:
+            raise ValueError(error_msg)
+
+        with get_db(self.db_path) as conn:
+            stats = get_latest_stats(conn)
+            if not stats:
+                return False
+
+            all_history = get_all_history(conn, limit_per_package=30)
+            packages = [s["package_name"] for s in stats]
+
+        env_summary = None
+        if include_env:
+            env_summary = aggregate_env_stats(packages)
+
+        generate_html_report(stats, output_file, all_history, packages, env_summary)
+        return True
+
+    def generate_package_report(self, package: str, output_file: str) -> bool:
+        """Generate detailed HTML report for a single package.
+
+        Args:
+            package: Package name.
+            output_file: Path to write HTML file.
+
+        Returns:
+            True if report was generated.
+
+        Raises:
+            ValueError: If output path is invalid or not writable.
+        """
+        # Validate output path
+        is_valid, error_msg = validate_output_path(
+            output_file, allowed_extensions=[".html", ".htm"]
+        )
+        if not is_valid:
+            raise ValueError(error_msg)
+
+        with get_db(self.db_path) as conn:
+            history = get_package_history(conn, package, limit=30)
+
+        # Find stats in history or fetch fresh
+        pkg_stats: PackageStats | None = None
+        for h in history:
+            if h["package_name"] == package:
+                pkg_stats = {
+                    "total": h["total"] or 0,
+                    "last_month": h["last_month"] or 0,
+                    "last_week": h["last_week"] or 0,
+                    "last_day": h["last_day"] or 0,
+                }
+                break
+
+        generate_package_html_report(
+            package, output_file, stats=pkg_stats, history=history
+        )
+        return True
+
+    # -------------------------------------------------------------------------
+    # Export
+    # -------------------------------------------------------------------------
+
+    def export(self, format: str, output_file: str | None = None) -> str | None:
+        """Export stats in the specified format.
+
+        Args:
+            format: One of 'csv', 'json', 'markdown', 'md'.
+            output_file: Optional path to write output. If None, returns string.
+
+        Returns:
+            Exported string, or None if no data available.
+
+        Raises:
+            ValueError: If format is unknown or output path is invalid.
+        """
+        # Validate output path if specified
+        if output_file:
+            ext_map = {
+                "csv": [".csv"],
+                "json": [".json"],
+                "markdown": [".md", ".markdown", ".txt"],
+                "md": [".md", ".markdown", ".txt"],
+            }
+            allowed_ext = ext_map.get(format, [])
+            is_valid, error_msg = validate_output_path(
+                output_file, allowed_extensions=allowed_ext if allowed_ext else None
+            )
+            if not is_valid:
+                raise ValueError(error_msg)
+
+        stats = self.get_stats()
+        if not stats:
+            return None
+
+        if format == "csv":
+            return export_csv(stats)
+        elif format == "json":
+            return export_json(stats)
+        elif format in ("markdown", "md"):
+            return export_markdown(stats)
+        else:
+            raise ValueError(f"Unknown format: {format}")
+
+    def generate_badge(
+        self,
+        package: str,
+        period: str = "total",
+        color: str | None = None,
+    ) -> str | None:
+        """Generate an SVG badge for a package's download count.
+
+        Args:
+            package: Package name.
+            period: One of "total", "month", "week", "day".
+            color: Badge color (default: auto-select based on count).
+
+        Returns:
+            SVG string for the badge, or None if no stats available.
+        """
+        stats = self.get_stats()
+        if not stats:
+            return None
+
+        # Find the package
+        pkg_stats = None
+        for s in stats:
+            if s["package_name"] == package:
+                pkg_stats = s
+                break
+
+        if pkg_stats is None:
+            return None
+
+        # Get the appropriate count
+        count_map = {
+            "total": pkg_stats.get("total") or 0,
+            "month": pkg_stats.get("last_month") or 0,
+            "week": pkg_stats.get("last_week") or 0,
+            "day": pkg_stats.get("last_day") or 0,
+        }
+        count = count_map.get(period, count_map["total"])
+
+        return generate_downloads_badge(count, period=period, color=color)
+
+    # -------------------------------------------------------------------------
+    # Maintenance
+    # -------------------------------------------------------------------------
+
+    def cleanup(self) -> tuple[int, int]:
+        """Clean up orphaned stats and return counts.
+
+        Removes stats for packages that are no longer being tracked.
+
+        Returns:
+            Tuple of (orphaned_deleted, packages_remaining).
+        """
+        with get_db(self.db_path) as conn:
+            orphaned = cleanup_orphaned_stats(conn)
+            packages = get_packages(conn)
+            return orphaned, len(packages)
+
+    def prune(self, days: int = 365) -> int:
+        """Remove stats older than the specified number of days.
+
+        Args:
+            days: Delete stats older than this many days.
+
+        Returns:
+            Number of records deleted.
+        """
+        with get_db(self.db_path) as conn:
+            return prune_old_stats(conn, days)
+
+    def get_database_info(self) -> DatabaseInfo:
+        """Get database statistics and metadata.
+
+        Returns:
+            DatabaseInfo with package count, record count, date range, and file size.
+        """
+        with get_db(self.db_path) as conn:
+            stats = get_database_stats(conn)
+
+        # Get file size
+        db_path = Path(self.db_path)
+        db_size = db_path.stat().st_size if db_path.exists() else 0
+
+        return DatabaseInfo(
+            package_count=stats["package_count"],
+            record_count=stats["record_count"],
+            first_fetch=stats["first_fetch"],
+            last_fetch=stats["last_fetch"],
+            db_size_bytes=db_size,
+        )

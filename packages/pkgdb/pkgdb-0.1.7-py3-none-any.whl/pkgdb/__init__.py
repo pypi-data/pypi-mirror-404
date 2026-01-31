@@ -1,0 +1,163 @@
+"""
+pkgdb - Track PyPI package download statistics.
+
+Reads published packages from packages.yml, fetches download statistics
+via pypistats, stores data in SQLite, and generates HTML reports.
+"""
+
+__version__ = "0.1.7"
+
+# Re-export public API from submodules
+from .api import (
+    aggregate_env_stats,
+    check_package_exists,
+    fetch_all_package_stats,
+    fetch_os_stats,
+    fetch_package_stats,
+    fetch_python_versions,
+    fetch_user_packages,
+)
+from .badges import (
+    BADGE_COLORS,
+    generate_badge_svg,
+    generate_downloads_badge,
+)
+from .cli import (
+    DEFAULT_PACKAGES_FILE,
+    import_packages_from_file,
+    load_packages,
+    load_packages_from_file,
+    main,
+)
+from .db import (
+    DEFAULT_DB_FILE,
+    DEFAULT_REPORT_FILE,
+    add_package,
+    cleanup_orphaned_stats,
+    get_all_history,
+    get_config_dir,
+    get_database_stats,
+    get_db,
+    get_db_connection,
+    get_latest_stats,
+    get_package_history,
+    get_packages,
+    get_packages_needing_update,
+    get_stats_with_growth,
+    init_db,
+    prune_old_stats,
+    record_fetch_attempt,
+    remove_package,
+    store_stats,
+    store_stats_batch,
+)
+from .export import (
+    export_csv,
+    export_json,
+    export_markdown,
+)
+from .logging import (
+    get_logger,
+    setup_logging,
+)
+from .reports import (
+    generate_html_report,
+    generate_package_html_report,
+    make_svg_pie_chart,
+)
+from .service import (
+    FetchResult,
+    PackageDetails,
+    PackageInfo,
+    PackageStatsService,
+    SyncResult,
+)
+from .types import (
+    CategoryDownloads,
+    DatabaseInfo,
+    EnvSummary,
+    HistoryRecord,
+    PackageStats,
+    StatsWithGrowth,
+)
+from .utils import (
+    calculate_growth,
+    make_sparkline,
+    parse_date_arg,
+    validate_output_path,
+    validate_package_name,
+)
+
+__all__ = [
+    # Version
+    "__version__",
+    # API
+    "aggregate_env_stats",
+    "check_package_exists",
+    "fetch_all_package_stats",
+    "fetch_os_stats",
+    "fetch_package_stats",
+    "fetch_python_versions",
+    "fetch_user_packages",
+    # Badges
+    "BADGE_COLORS",
+    "generate_badge_svg",
+    "generate_downloads_badge",
+    # CLI
+    "DEFAULT_PACKAGES_FILE",
+    "import_packages_from_file",
+    "load_packages",
+    "load_packages_from_file",
+    "main",
+    # Database
+    "DEFAULT_DB_FILE",
+    "DEFAULT_REPORT_FILE",
+    "add_package",
+    "cleanup_orphaned_stats",
+    "get_all_history",
+    "get_config_dir",
+    "get_database_stats",
+    "get_db",
+    "get_db_connection",
+    "get_latest_stats",
+    "get_package_history",
+    "get_packages",
+    "get_packages_needing_update",
+    "get_stats_with_growth",
+    "init_db",
+    "prune_old_stats",
+    "record_fetch_attempt",
+    "remove_package",
+    "store_stats",
+    "store_stats_batch",
+    # Export
+    "export_csv",
+    "export_json",
+    "export_markdown",
+    # Logging
+    "get_logger",
+    "setup_logging",
+    # Reports
+    "generate_html_report",
+    "generate_package_html_report",
+    "make_svg_pie_chart",
+    # Service
+    "FetchResult",
+    "PackageDetails",
+    "PackageInfo",
+    "PackageStatsService",
+    "SyncResult",
+    # Types
+    "CategoryDownloads",
+    "DatabaseInfo",
+    "EnvSummary",
+    "HistoryRecord",
+    "PackageStats",
+    "StatsWithGrowth",
+    # Utils
+    "calculate_growth",
+    "make_sparkline",
+    "parse_date_arg",
+    "validate_output_path",
+    "validate_package_name",
+]
