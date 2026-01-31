@@ -1,0 +1,81 @@
+Metadata-Version: 2.4
+Name: gluex-lumi
+Version: 0.1.8
+Classifier: License :: OSI Approved :: Apache Software License
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Rust
+Classifier: Programming Language :: Python :: Implementation :: CPython
+Classifier: Programming Language :: Python :: Implementation :: PyPy
+Requires-Dist: matplotlib>=3 ; extra == 'plot'
+Requires-Dist: pytest ; extra == 'tests'
+Provides-Extra: plot
+Provides-Extra: tests
+Summary: Python bindings for GlueX luminosity calculations
+Keywords: gluex,luminosity,physics
+Home-Page: https://github.com/denehoffman/gluex-rs
+Author-email: Nathaniel Dene Hoffman <dene@cmu.edu>
+License: Apache-2.0 OR MIT
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown; charset=UTF-8; variant=GFM
+Project-URL: Documentation, https://github.com/denehoffman/gluex-rs/tree/main/crates/gluex-lumi-py
+Project-URL: Homepage, https://github.com/denehoffman/gluex-rs
+Project-URL: Issues, https://github.com/denehoffman/gluex-rs/issues
+Project-URL: Repository, https://github.com/denehoffman/gluex-rs
+
+# gluex-lumi (Python)
+
+Python bindings for the GlueX luminosity calculators. The package exposes `get_flux_histograms`
+from the Rust crate and an entrypoint for the `gluex-lumi` CLI. Use `--plot=path.png` to save
+a matplotlib figure when running from the CLI.
+
+## Installation
+
+Add to an existing Python project:
+
+```bash
+uv pip install gluex-lumi
+```
+
+or install as a CLI tool:
+
+```bash
+uv tool install gluex-lumi
+```
+
+To write a plot image from the CLI:
+
+```bash
+gluex-lumi --plot=flux.png --run f18=0 --bins=40 --coherent-peak --polarized \
+  --rcdb=rcdb.sqlite --ccdb=ccdb.sqlite --min=8.0 --max=9.0
+```
+
+## Example
+
+```python
+import gluex_lumi as lumi
+
+edges = [7.5 + 0.05 * i for i in range(21)]
+histos = lumi.get_flux_histograms(
+    {"f18": None}, # uses current timestamp rather than REST version
+    edges,
+    coherent_peak=True,
+    rcdb="/data/rcdb.sqlite",
+    ccdb="/data/ccdb.sqlite",
+    exclude_runs=[50000, 50001],
+)
+
+luminosity = histos.tagged_luminosity.as_dict()
+print("bin edges:", luminosity["edges"])
+print("counts:", luminosity["counts"])
+```
+
+## License
+
+Dual-licensed under Apache-2.0 or MIT.
+
