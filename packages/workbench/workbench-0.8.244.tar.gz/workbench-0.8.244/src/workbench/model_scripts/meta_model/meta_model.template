@@ -1,0 +1,209 @@
+# Meta Model Template for Workbench
+#
+# NOTE: This is called a "meta model" but it's really a "meta endpoint" - it aggregates
+# predictions from multiple child endpoints. We call it a "model" because Workbench
+# creates Model artifacts that get deployed as Endpoints, so this follows that pattern.
+#
+# Assumptions/Shortcuts:
+# - All child endpoints are regression models
+# - All child endpoints output 'prediction' and 'confidence' columns
+# - Aggregation uses model weights (provided at meta model creation time)
+#
+# This template:
+# - Has no real training phase (just saves metadata including model weights)
+# - At inference time, calls child endpoints and aggregates their predictions
+
+import argparse
+import json
+import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from io import StringIO
+
+import pandas as pd
+
+from workbench_bridges.endpoints.fast_inference import fast_inference
+
+# Template parameters (filled in by Workbench)
+TEMPLATE_PARAMS = {
+    "child_endpoints": "{{child_endpoints}}",
+    "target_column": "{{target_column}}",
+    "model_weights": "{{model_weights}}",
+    "model_metrics_s3_path": "{{model_metrics_s3_path}}",
+    "aws_region": "{{aws_region}}",
+}
+
+
+def invoke_endpoints_parallel(endpoint_names: list[str], df: pd.DataFrame) -> dict[str, pd.DataFrame]:
+    """Call multiple child endpoints in parallel and collect their results.
+
+    Args:
+        endpoint_names: List of endpoint names to call
+        df: Input DataFrame to send to each endpoint
+
+    Returns:
+        Dict mapping endpoint_name -> result DataFrame (or None if failed)
+    """
+    results = {}
+
+    def call_endpoint(name: str) -> tuple[str, pd.DataFrame | None]:
+        try:
+            return name, fast_inference(name, df)
+        except Exception as e:
+            print(f"Error calling endpoint {name}: {e}")
+            return name, None
+
+    with ThreadPoolExecutor(max_workers=len(endpoint_names)) as executor:
+        futures = {executor.submit(call_endpoint, name): name for name in endpoint_names}
+        for future in as_completed(futures):
+            name, result = future.result()
+            results[name] = result
+
+    return results
+
+
+def aggregate_predictions(results: dict[str, pd.DataFrame], model_weights: dict[str, float]) -> pd.DataFrame:
+    """Aggregate predictions from multiple endpoints using model weights.
+
+    Args:
+        results: Dict mapping endpoint_name -> predictions DataFrame
+                 Each DataFrame must have 'prediction' and 'confidence' columns
+        model_weights: Dict mapping endpoint_name -> weight
+
+    Returns:
+        DataFrame with aggregated prediction, prediction_std, and confidence
+    """
+    # Filter out failed endpoints
+    valid_results = {k: v for k, v in results.items() if v is not None}
+    if not valid_results:
+        raise ValueError("All child endpoints failed")
+
+    # Use first result as base (for id columns, etc.)
+    first_df = list(valid_results.values())[0]
+    output_df = first_df.drop(columns=["prediction", "confidence", "prediction_std"], errors="ignore").copy()
+
+    # Build DataFrames of predictions and confidences from all endpoints
+    pred_df = pd.DataFrame({name: df["prediction"] for name, df in valid_results.items()})
+    conf_df = pd.DataFrame({name: df["confidence"] for name, df in valid_results.items()})
+
+    # Apply model weights (renormalize for valid endpoints only)
+    valid_weights = {k: model_weights.get(k, 1.0) for k in valid_results}
+    weight_sum = sum(valid_weights.values())
+    normalized_weights = {k: v / weight_sum for k, v in valid_weights.items()}
+
+    # Weighted average
+    output_df["prediction"] = sum(pred_df[name] * w for name, w in normalized_weights.items())
+
+    # Ensemble std across child endpoints
+    output_df["prediction_std"] = pred_df.std(axis=1)
+
+    # Aggregated confidence: weighted mean of child confidences
+    output_df["confidence"] = sum(conf_df[name] * w for name, w in normalized_weights.items())
+
+    return output_df
+
+
+# =============================================================================
+# Model Loading (for SageMaker inference)
+# =============================================================================
+def model_fn(model_dir: str) -> dict:
+    """Load meta model configuration."""
+    with open(os.path.join(model_dir, "meta_config.json")) as f:
+        config = json.load(f)
+
+    # Set AWS_REGION for fast_inference (baked in at training time)
+    if config.get("aws_region"):
+        os.environ["AWS_REGION"] = config["aws_region"]
+
+    print(f"Meta model loaded: {len(config['child_endpoints'])} child endpoints")
+    print(f"Model weights: {config.get('model_weights')}")
+    print(f"AWS region: {config.get('aws_region')}")
+    return config
+
+
+def input_fn(input_data, content_type):
+    """Parse input data and return a DataFrame."""
+    if not input_data:
+        raise ValueError("Empty input data is not supported!")
+
+    # Decode bytes to string if necessary
+    if isinstance(input_data, bytes):
+        input_data = input_data.decode("utf-8")
+
+    if "text/csv" in content_type:
+        return pd.read_csv(StringIO(input_data))
+    elif "application/json" in content_type:
+        return pd.DataFrame(json.loads(input_data))
+    else:
+        raise ValueError(f"{content_type} not supported!")
+
+
+def output_fn(output_df, accept_type):
+    """Supports both CSV and JSON output formats."""
+    if "text/csv" in accept_type:
+        return output_df.to_csv(index=False), "text/csv"
+    elif "application/json" in accept_type:
+        return output_df.to_json(orient="records"), "application/json"
+    else:
+        raise RuntimeError(f"{accept_type} accept type is not supported by this script.")
+
+
+# =============================================================================
+# Inference (for SageMaker inference)
+# =============================================================================
+def predict_fn(df: pd.DataFrame, config: dict) -> pd.DataFrame:
+    """Run inference by calling child endpoints and aggregating results."""
+    child_endpoints = config["child_endpoints"]
+    model_weights = config.get("model_weights", {})
+
+    print(f"Calling {len(child_endpoints)} child endpoints: {child_endpoints}")
+
+    # Call all child endpoints
+    results = invoke_endpoints_parallel(child_endpoints, df)
+
+    # Report status
+    for name, result in results.items():
+        status = f"{len(result)} rows" if result is not None else "FAILED"
+        print(f"  {name}: {status}")
+
+    # Aggregate predictions using model weights
+    output_df = aggregate_predictions(results, model_weights)
+
+    print(f"Aggregated {len(output_df)} predictions from {len(results)} endpoints")
+    return output_df
+
+
+# =============================================================================
+# Training (just saves configuration - no actual training)
+# =============================================================================
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model-dir", type=str, default=os.environ.get("SM_MODEL_DIR", "/opt/ml/model"))
+    parser.add_argument("--output-data-dir", type=str, default=os.environ.get("SM_OUTPUT_DATA_DIR", "/opt/ml/output/data"))
+    parser.add_argument("--train", type=str, default=os.environ.get("SM_CHANNEL_TRAIN", "/opt/ml/input/data/train"))
+    args = parser.parse_args()
+
+    child_endpoints = TEMPLATE_PARAMS["child_endpoints"]
+    target_column = TEMPLATE_PARAMS["target_column"]
+    model_weights = TEMPLATE_PARAMS["model_weights"]
+    aws_region = TEMPLATE_PARAMS["aws_region"]
+
+    print("=" * 60)
+    print("Meta Model Configuration")
+    print("=" * 60)
+    print(f"Child endpoints: {child_endpoints}")
+    print(f"Target column: {target_column}")
+    print(f"Model weights: {model_weights}")
+    print(f"AWS region: {aws_region}")
+
+    # Save configuration for inference
+    config = {
+        "child_endpoints": child_endpoints,
+        "target_column": target_column,
+        "model_weights": model_weights,
+        "aws_region": aws_region,
+    }
+
+    with open(os.path.join(args.model_dir, "meta_config.json"), "w") as f:
+        json.dump(config, f, indent=2)
+
+    print(f"\nMeta model configuration saved to {args.model_dir}")
