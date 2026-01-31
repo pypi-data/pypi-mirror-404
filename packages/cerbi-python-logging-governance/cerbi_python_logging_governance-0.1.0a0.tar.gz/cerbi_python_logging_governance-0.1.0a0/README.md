@@ -1,0 +1,216 @@
+# Cerbi Python Logging Governance
+
+A lightweight Cerbi governance runtime plugin for Python's standard `logging` module. The plugin loads Cerbi rulesets, applies them to structured log events, and tags records with governance metadata.
+
+## Installation
+
+The project ships as a src-layout package. Install in editable mode during development:
+
+```bash
+pip install -e .
+```
+
+## Usage
+
+Attach the governance filter to an existing logger:
+
+```python
+import logging
+from cerbi_python_logging_governance import CerbiGovernanceFilter
+
+ruleset = {
+    "profile_name": "default",
+    "mode": "enforce",
+    "rules": [
+        {"id": "redact-email", "field": "user.email", "action": "redact"},
+    ],
+}
+
+logger = logging.getLogger("app")
+logger.addFilter(CerbiGovernanceFilter(ruleset=ruleset))
+logger.info("login", extra={"event": {"user": {"email": "alice@example.com"}}})
+```
+
+Or use the governance handler to automatically apply governance before dispatching to a delegate handler:
+
+```python
+from cerbi_python_logging_governance import CerbiGovernanceHandler
+
+handler = CerbiGovernanceHandler(ruleset_path="/path/to/ruleset.json")
+logging.getLogger("app").addHandler(handler)
+```
+
+### Queue-Based Handler (Enterprise)
+
+For high-throughput production workloads, use `CerbiQueueHandler` which provides non-blocking async processing:
+
+```python
+from cerbi_python_logging_governance import CerbiQueueHandler, CallbackQueueSink
+
+# Define your sink (e.g., send to Kafka, RabbitMQ, or a scoring service)
+def send_to_queue(event, tags):
+    # event contains governed payload with CerbiEventId, scoring fields
+    # tags contains GovernanceScoreImpact, violations, etc.
+    your_queue.publish(event)
+
+sink = CallbackQueueSink(send_to_queue)
+
+handler = CerbiQueueHandler(
+    ruleset_path="/path/to/ruleset.json",  # Hot-reloads on file change
+    sink=sink,
+    default_app_name="my-service",
+    default_environment="prod",
+    queue_size=10000,  # Internal buffer size
+    on_drop=lambda e, t: alert("Backpressure: event dropped"),
+    on_sink_error=lambda exc, e, t: dead_letter_queue.send(e),
+)
+
+logger = logging.getLogger("app")
+logger.addHandler(handler)
+
+# Monitor health via metrics
+print(handler.metrics.snapshot())
+# {'emitted_count': 1000, 'processed_count': 998, 'dropped_count': 2, ...}
+```
+
+**Enterprise Features:**
+- **Non-blocking**: Events are queued and processed asynchronously
+- **Metrics**: Track emitted/processed/dropped/error counts via `handler.metrics`
+- **Callbacks**: `on_drop` for backpressure alerts, `on_sink_error` for dead-letter queues
+- **Hot reload**: Ruleset file changes are detected and applied automatically
+- **Graceful shutdown**: Drains queue before stopping
+
+### Resilience: Fallback & Circuit Breaker
+
+For production reliability, use the built-in resilience wrappers:
+
+```python
+from cerbi_python_logging_governance import (
+    CerbiQueueHandler,
+    CallbackQueueSink,
+    FallbackSink,
+    CircuitBreakerSink,
+)
+
+# Primary sink (e.g., Kafka)
+primary = CallbackQueueSink(lambda e, t: kafka.send(e))
+
+# Fallback sink (e.g., local file when Kafka is down)
+fallback = CallbackQueueSink(lambda e, t: write_to_file(e))
+
+
+# Option 1: Simple fallback - tries primary, then fallback
+sink = FallbackSink(
+    primary,
+    fallback,
+    on_fallback=lambda exc, e, t: log.warning(f"Using fallback: {exc}"),
+)
+
+# Option 2: Circuit breaker - stops hammering dead service
+sink = CircuitBreakerSink(
+    primary,
+    fallback=fallback,
+    failure_threshold=5,      # Open after 5 consecutive failures
+    recovery_timeout=30.0,    # Try again after 30 seconds
+    on_state_change=lambda old, new: log.info(f"Circuit: {old} -> {new}"),
+)
+
+handler = CerbiQueueHandler(ruleset=ruleset, sink=sink)
+```
+
+
+**Circuit Breaker States:**
+- `closed` → Normal operation
+- `open` → Sink failing, using fallback
+- `half_open` → Testing if sink recovered
+
+### Weighted Scoring (Cerbi.Governance.Core Contract)
+
+Configure severity levels per the [Cerbi Governance Scoring Contract](https://cerbi.io):
+
+```json
+{
+  "profile_name": "pii-protection",
+  "mode": "enforce",
+  "scoring": {
+    "enabled": true,
+    "weightsBySeverity": {"Info": 0.5, "Warn": 2.0, "Error": 5.0},
+    "pluginWeights": {"require-user-id": 10.0},
+    "version": "1.0.0"
+  },
+  "rules": [
+    {"id": "require-user-id", "field": "user.id", "required": true, "severity": "Error"},
+    {"id": "redact-email", "field": "user.email", "action": "redact", "severity": "Warn"},
+    {"id": "mask-ssn", "field": "user.ssn", "action": "mask", "severity": "Error"}
+  ]
+}
+```
+
+**Severity Levels:** `Info` (0.5), `Warn` (2.0), `Error` (5.0) — matching Cerbi.Governance.Core
+
+**Scoring Output Tags:**
+- `GovernanceScoreImpact` → Weighted sum of all violations (double)
+- `GovernanceScoringVersion` → Version from scoring config (e.g., "1.0.0")
+- `GovernanceViolationsStructured` → Includes `severity` and `weight` per violation
+
+**Plugin Weights:** Override severity weights for specific rules via `pluginWeights`:
+```json
+"pluginWeights": {
+  "require-user-id": 10.0,  // This rule uses weight 10.0 instead of Error's 5.0
+  "custom-rule": 3.5
+}
+```
+
+```python
+# Example: Route high-score events to dead-letter queue
+if tags["GovernanceScoreImpact"] > 10.0:
+    dead_letter_queue.send(event)
+    return
+
+# Example: Track scoring version for compatibility
+print(f"Scored with model v{tags['GovernanceScoringVersion']}")
+```
+
+### Performance Characteristics
+
+Benchmarked on Windows (Python 3.13):
+
+| Metric | Value |
+|--------|-------|
+| Throughput | ~4,000 events/sec (standard) / ~4,600 (high_performance) |
+| P50 Latency | 8ms |
+| P99 Latency | 27ms |
+| Concurrent producers | ✅ 100% delivery with 10 threads |
+| Sink failures | ✅ Resilient (errors swallowed, callbacks invoked) |
+| Memory stability | ✅ No leaks over multiple handler lifecycles |
+
+Enable `high_performance=True` for ~20% throughput boost (uses cached timestamps, sequential IDs).
+
+Run `python tests/benchmark_queue_handler.py` to validate on your hardware.
+
+---
+
+Identity fields for scoring are injected automatically when missing. Provide defaults for application metadata or enable string-only governance tags when needed:
+
+```python
+CerbiGovernanceFilter(
+    ruleset=ruleset,
+    default_app_name="payments-service",
+    default_environment="prod",
+    stringify_collections=True,  # JSON-encode governance lists/objects when sinks only support strings
+)
+```
+
+Refer to `governance-plugin-contract.md` and the golden fixtures for authoritative runtime semantics.
+
+## Publishing via GitHub Actions
+
+This repository includes a `Publish packages` workflow (`.github/workflows/publish.yml`) that can be triggered manually to run ecosystem-specific build/test/publish pipelines. Toggle the ecosystems to run via workflow dispatch inputs:
+
+- **run_nuget**: Executes `dotnet restore`, `dotnet build`, `dotnet test`, `dotnet pack`, and pushes `.nupkg` files to NuGet when `NUGET_API_KEY` is provided.
+- **run_npm**: Runs `npm ci`, `npm run build`, `npm test`, and publishes via `npm publish` when `NPM_TOKEN` is set.
+- **run_pypi**: Installs the package, runs `pytest`, builds with `python -m build`, and uploads with Twine when `PYPI_USERNAME`/`PYPI_PASSWORD` secrets are present.
+- **run_go**: Executes `go test ./...` when Go files are present and tags/releases when a `release_version` is supplied.
+- **run_maven**: Runs `mvn test` and, when Sonatype and GPG secrets are configured, performs `mvn deploy` for Maven Central.
+
+Provide `release_version` to stamp packages (NuGet), tag Go releases, or override default versions. Each publish step is gated on the required secrets so dry-run test/build invocations remain safe.
