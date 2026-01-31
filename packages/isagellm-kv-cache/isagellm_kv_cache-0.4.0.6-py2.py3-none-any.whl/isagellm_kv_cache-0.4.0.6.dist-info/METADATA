@@ -1,0 +1,226 @@
+Metadata-Version: 2.4
+Name: isagellm-kv-cache
+Version: 0.4.0.6
+Summary: KV Cache Management Module for sageLLM
+Author-email: IntelliStream Team <shuhao_zhang@hust.edu.cn>
+License: Private
+Project-URL: Homepage, https://github.com/intellistream/sagellm-kv-cache
+Project-URL: Repository, https://github.com/intellistream/sagellm-kv-cache
+Project-URL: Issues, https://github.com/intellistream/sagellm-kv-cache/issues
+Keywords: llm,inference,kv-cache,domestic-hardware
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Developers
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Requires-Python: ==3.11.*
+Description-Content-Type: text/markdown
+Requires-Dist: pydantic>=2.0.0
+Requires-Dist: isagellm-protocol<0.5.0,>=0.4.0.0
+Requires-Dist: isagellm-backend<0.5.0,>=0.4.0.0
+Requires-Dist: isagellm-comm<0.5.0,>=0.4.0.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0.0; extra == "dev"
+Requires-Dist: pytest-cov>=4.0.0; extra == "dev"
+Requires-Dist: mypy>=1.0.0; extra == "dev"
+Requires-Dist: ruff>=0.1.0; extra == "dev"
+Requires-Dist: isage-pypi-publisher>=0.2.0; extra == "dev"
+
+# sagellm-kv-cache
+
+## Protocol Compliance (Mandatory)
+
+- MUST follow Protocol v0.1: https://github.com/intellistream/sagellm-docs/blob/main/docs/specs/protocol_v0.1.md
+- Any globally shared definitions (fields, error codes, metrics, IDs, schemas) MUST be added to Protocol first.
+
+[![CI](https://github.com/intellistream/sagellm-kv-cache/actions/workflows/ci.yml/badge.svg)](https://github.com/intellistream/sagellm-kv-cache/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/intellistream/sagellm-kv-cache/branch/main/graph/badge.svg)](https://codecov.io/gh/intellistream/sagellm-kv-cache)
+[![PyPI version](https://badge.fury.io/py/isagellm-kv-cache.svg)](https://badge.fury.io/py/isagellm-kv-cache)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+
+**KV Cache Management + KV Transfer** for sageLLM inference engine.
+
+## Overview
+
+This package provides efficient KV cache management and transfer for LLM inference:
+
+| 功能 | 任务 | 说明 |
+|------|------|------|
+| **Prefix Cache** | Task2.1 | 前缀感知的 KV 缓存复用 |
+| **KV Memory Pool** | Task2.2 | 块式 KV 内存池管理 |
+| **Eviction Policies** | Task2.3 | LRU/LFU/Lifetime-aware 驱逐策略 |
+| **KV Transfer** | Task1.3 | KV 块的跨节点传输原语 |
+
+### 📦 职责边界
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    sagellm-control-plane                            │
+│              (调度决策：哪些 KV 需要分配/驱逐/迁移)                    │
+└────────────────────────────┬────────────────────────────────────────┘
+                             │ KVCacheInterface
+                             ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                      sagellm-kv-cache (本仓库)                       │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐ │
+│  │ PrefixCache │  │  KV Pool    │  │  Eviction   │  │ KV Transfer │ │
+│  │  (Task2.1)  │  │  (Task2.2)  │  │  (Task2.3)  │  │  (Task1.3)  │ │
+│  └─────────────┘  └─────────────┘  └─────────────┘  └──────┬──────┘ │
+└────────────────────────────────────────────────────────────┼────────┘
+                             ┌───────────────────────────────┘
+                             │ 使用 CommBackend 进行实际网络传输
+                             ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                         sagellm-comm                                 │
+│              (网络层：拓扑发现、集合操作、互联适配)                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 🔍 Research Context
+
+**sagellm-kv-cache** is conceptually similar to the **Store** component in [Mooncake](https://github.com/kvcache-ai/Mooncake) (KVCache.AI):
+
+| Aspect | Mooncake Store | sagellm-kv-cache |
+|--------|---------------|------------------|
+| **Core Function** | KV cache storage & management | KV cache storage + transfer |
+| **Scope** | Distributed KV store layer | KV pool + prefix cache + eviction + transfer |
+| **Focus** | Multi-tier storage (GPU/CPU/NVMe) | Unified memory pool with compression |
+| **Target** | Cross-node disaggregated KV cache | Inference engine integration |
+
+Both systems aim to solve the **KV cache memory bottleneck** in LLM inference, but sagellm-kv-cache focuses on **deep integration with sageLLM's scheduling and compression layers** (Task2.1-2.3, Task1.3).
+
+**Key innovations**:
+- Unified `KVHandle` abstraction for seamless integration with scheduler (Task2.4) and network layer (sagellm-comm)
+- Native compression support (coordinated with sagellm-compression)
+- Lifecycle-aware eviction policies (Task2.3)
+- **KV Transfer (Task1.3)** integrated for data-aware transfer optimization
+
+## Installation
+
+```bash
+# 从 PyPI 安装（自动安装依赖）
+pip install isagellm-kv-cache
+```
+
+## 🚀 开发者快速开始
+
+```bash
+git clone git@github.com:intellistream/sagellm-kv-cache.git
+cd sagellm-kv-cache
+./quickstart.sh   # 一键安装开发环境（含依赖）
+
+# 或手动安装
+pip install -e ".[dev]"
+```
+
+运行测试：
+```bash
+pytest tests/ -v
+```
+
+> 💡 `isagellm-protocol` 和 `isagellm-backend` 会自动从 PyPI 安装。
+
+## Quick Start
+
+```python
+from sagellm_kv_cache import KVCacheManager, EvictionPolicy
+
+# Create KV cache manager
+cache = KVCacheManager(
+    max_memory_mb=16384,
+    eviction_policy=EvictionPolicy.LRU
+)
+
+# Allocate KV blocks
+block = cache.allocate(num_tokens=128)
+```
+
+## Dependencies
+
+- `isagellm-protocol>=0.1.0` - Protocol definitions
+- `isagellm-backend>=0.1.0` - Backend abstraction
+
+## Development
+
+### Setup Development Environment
+
+```bash
+# Install dev dependencies
+pip install -e ".[dev]"
+
+# Install pre-commit hooks
+pip install pre-commit
+pre-commit install
+```
+
+### Pre-commit Hooks
+
+This project uses [pre-commit](https://pre-commit.com/) to ensure code quality:
+
+- **Ruff**: Fast Python linter and formatter (replaces flake8, isort, black)
+- **MyPy**: Static type checking
+- **File checks**: Trailing whitespace, EOF, YAML/TOML validation
+
+```bash
+# Run on all files
+pre-commit run --all-files
+
+# Run on specific files
+pre-commit run --files src/sagellm_kv_cache/*.py
+
+# Skip hooks temporarily (not recommended)
+git commit --no-verify
+```
+
+Pre-commit hooks run automatically on `git commit`. If hooks modify files, stage the changes and commit again.
+
+### Testing
+
+```bash
+# Run all tests
+pytest tests/ -v
+
+# Run with coverage
+pytest --cov=sagellm_kv_cache --cov-report=html
+
+# Run specific test file
+pytest tests/test_basic.py -v
+```
+
+### Code Quality
+
+```bash
+# Format & lint (or use pre-commit)
+ruff format .
+ruff check .
+mypy src/
+```
+
+## 🔄 贡献指南
+
+请遵循以下工作流程：
+
+1. **创建 Issue** - 描述问题/需求
+   ```bash
+   gh issue create --title "[Bug] 描述" --label "bug,sagellm-kv-cache"
+   ```
+
+2. **开发修复** - 在本地 `fix/#123-xxx` 分支解决
+   ```bash
+   git checkout -b fix/#123-xxx origin/main-dev
+   # 开发、测试...
+   pytest -v
+   ruff format . && ruff check . --fix
+   ```
+
+3. **发起 PR** - 提交到 `main-dev` 分支
+   ```bash
+   gh pr create --base main-dev --title "Fix: 描述" --body "Closes #123"
+   ```
+
+4. **合并** - 审批后合并到 `main-dev`
+
+更多详情见 [.github/copilot-instructions.md](.github/copilot-instructions.md)
+
+## License
+
+Private - IntelliStream Research Project
