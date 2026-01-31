@@ -1,0 +1,68 @@
+# RedNote-MCP-Plus
+
+<p align="center"><img src= "logo.png" width="600"/></p>
+
+[![English](https://img.shields.io/badge/English-Click-yellow)](docs/README.en.md)
+[![简体中文](https://img.shields.io/badge/简体中文-点击查看-orange)](README.md)
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![PyPI version](https://badge.fury.io/py/rednote_mcp_plus.svg)](https://badge.fury.io/py/rednote_mcp_plus)
+
+⚙️ 配备更全面工具集的小红书 MCP 服务器。
+
+## 主要特性
+- 简单易上手：只需要一行命令即可体验工具能力
+- 自动化互动工具：包含发布、点赞、收藏、评论等工具，助力自动化账号运营
+- 自动化爬虫工具：包含搜索、笔记内容爬取、用户数据爬取等工具，助力内容搜索
+
+## 工具清单
+- 登录：
+- 点赞：
+- 收藏：
+- 评论：
+- 发布笔记：
+- 搜索笔记：
+- 笔记内容爬取：
+- 用户数据爬取
+
+## 快速开始
+
+如果你想快速体验工具能力，按照以下步骤即可：
+
+### 配置环境
+- 安装uv：
+```
+brew install uv
+```
+
+- 安装playwright：
+```
+pip install playwright
+playwright install
+```
+
+- 安装node：
+```
+brew install node
+```
+
+## MCP Server Config
+
+```
+{
+  "mcpServers": {
+    "RedNote_MCP_Plus": {
+      "command": "uvx",
+      "args": [
+        "rednote_mcp_plus"
+      ]
+    }
+  }
+}
+```
+
+## MCP Inspector
+
+```
+brew install node
+npx @modelcontextprotocol/inspector uvx rednote_mcp_plus
+```
