@@ -1,0 +1,210 @@
+[project]
+name = "libxrk"
+version = "0.7.0"
+description = "Library for reading AIM XRK files from AIM automotive data loggers"
+authors = [
+    {name = "Christopher Dewan",email = "chris.dewan@m3rlin.net"}
+]
+readme = "README.md"
+requires-python = ">=3.10"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Cython",
+    "Topic :: Scientific/Engineering",
+]
+dependencies = [
+    "numpy>=1.26.0; python_version < '3.13'",
+    "numpy>=2.1.0; python_version >= '3.13' and python_version < '3.14'",
+    "numpy>=2.4.0; python_version >= '3.14'",
+    "cython>=3.0.0",
+    "pyarrow>=18.1.0; python_version < '3.14'",
+    "pyarrow>=22.0.0; python_version >= '3.14'",
+]
+
+[project.urls]
+Homepage = "https://github.com/m3rlin45/libxrk"
+Repository = "https://github.com/m3rlin45/libxrk"
+Issues = "https://github.com/m3rlin45/libxrk/issues"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "setuptools>=68.0.0",
+    "parameterized>=0.9.0",
+]
+test = [
+    "pytest>=7.0.0",
+    "parameterized>=0.9.0",
+]
+
+[tool.poetry]
+packages = [{include = "libxrk", from = "src"}]
+include = [
+    { path = "src/libxrk/**/*.so", format = "wheel" },
+    { path = "src/libxrk/**/*.pyd", format = "wheel" },
+    { path = "src/libxrk/**/*.pyx", format = "sdist" },
+    { path = "src/libxrk/**/*.pyi", format = ["wheel", "sdist"] },
+    { path = "src/libxrk/py.typed", format = ["wheel", "sdist"] },
+    { path = "src/libxrk/CLAUDE.md", format = ["wheel", "sdist"] },
+]
+exclude = [
+    "**/*.c",
+    "**/*.cpp",
+]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+numpy = [
+    {version = ">=1.26.0", python = "<3.13"},
+    {version = ">=2.1.0", python = ">=3.13,<3.14"},
+    {version = ">=2.4.0", python = ">=3.14"},
+]
+cython = "^3.0.0"
+pyarrow = [
+    {version = ">=18.1.0", python = "<3.14"},
+    {version = ">=22.0.0", python = ">=3.14"},
+]
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.0.0"
+setuptools = "^68.0.0"
+black = "^25.11.0"
+mypy = "^1.18.2"
+poethepoet = "^0.24.0"
+pyodide-build = {version = "^0.27.3", python = ">=3.12"}
+parameterized = "^0.9.0"
+py-spy = "^0.4.1"
+
+[tool.black]
+line-length = 100
+target-version = ['py310', 'py311', 'py312', 'py313', 'py314']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+strict_optional = true
+
+# Exclude build artifacts and Cython-generated files
+exclude = [
+    "^build/",
+    "^dist/",
+    "\\.pyx$",
+]
+
+[[tool.mypy.overrides]]
+module = "Cython.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "numpy.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "pyarrow.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "setuptools.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "parameterized.*"
+ignore_missing_imports = true
+
+[tool.poe.tasks]
+format = "black ."
+lint = "black --check ."
+typecheck = "mypy ."
+test = "pytest tests/ -v"
+check = ["lint", "typecheck", "test"]
+repl = "python -i -c \"from libxrk import aim_xrk; log = aim_xrk('tests/test_data/SFJ/CMD_SFJ_Fuji GP Sh_Generic testing_a_0033.xrk'); print('XRK file loaded as: log'); print(f'Channels: {len(log.channels)}'); print(f'Laps: {len(log.laps)}'); print(f'Metadata keys: {list(log.metadata.keys())}')\"" 
+[tool.poe.tasks.pyodide-build]
+shell = "source ./build/emsdk/emsdk_env.sh && pyodide build --exports whole_archive"
+interpreter = "bash"
+help = "Build Pyodide wheel"
+deps = ["emsdk-setup"]
+
+[tool.poe.tasks.emsdk-setup]
+shell = "EMSDK_VERSION=$(pyodide config get emscripten_version) && mkdir -p build && ([ -d build/emsdk ] || (git clone https://github.com/emscripten-core/emsdk.git build/emsdk && cd build/emsdk && git config core.autocrlf false && git checkout -- .)) && ./build/emsdk/emsdk install $EMSDK_VERSION && ./build/emsdk/emsdk activate $EMSDK_VERSION"
+interpreter = "bash"
+help = "Install Emscripten SDK to build/emsdk"
+
+[tool.poe.tasks.pyodide-setup]
+shell = "npm install pyodide@0.27.3"
+interpreter = "bash"
+help = "Install Pyodide npm package for WebAssembly testing"
+
+[tool.poe.tasks.pyodide-test]
+shell = "rm -f src/libxrk/*.so dist/*.whl && source ./build/emsdk/emsdk_env.sh && pyodide build --exports whole_archive && node scripts/run_pyodide_tests.mjs --dist-dir=./dist && node scripts/run_pyodide_tests_idbfs.mjs --dist-dir=./dist && poetry install --only-root"
+interpreter = "bash"
+help = "Build and run tests in Pyodide (WebAssembly)"
+deps = ["emsdk-setup", "pyodide-setup"]
+
+[tool.poe.tasks.build-all]
+shell = "rm -rf dist/ && poetry build && source ./build/emsdk/emsdk_env.sh && pyodide build --exports whole_archive && ls -la dist/"
+interpreter = "bash"
+help = "Build CPython wheel, sdist, and Pyodide wheel"
+deps = ["emsdk-setup"]
+
+[tool.cibuildwheel]
+build = "cp310-* cp311-* cp312-* cp313-* cp314-*"
+skip = "*-musllinux_*"
+build-verbosity = 1
+
+[tool.cibuildwheel.linux]
+archs = ["x86_64", "aarch64"]
+before-build = "pip install numpy cython"
+
+[tool.cibuildwheel.macos]
+archs = ["x86_64", "arm64"]
+before-build = "pip install numpy cython"
+
+[tool.cibuildwheel.windows]
+# ARM64 excluded until pyarrow publishes Windows ARM64 wheels
+archs = ["AMD64"]
+before-build = "pip install numpy cython"
+
+[tool.poetry.build]
+script = "cython_build.py"
+generate-setup-file = false
+
+[build-system]
+requires = [
+    "poetry-core>=2.0.0,<3.0.0",
+    "setuptools>=68.0.0",
+    "cython>=3.0.0",
+    "numpy>=1.26.0; python_version < '3.13'",
+    "numpy>=2.1.0; python_version >= '3.13' and python_version < '3.14'",
+    "numpy>=2.4.0; python_version >= '3.14'",
+]
+build-backend = "poetry.core.masonry.api"
