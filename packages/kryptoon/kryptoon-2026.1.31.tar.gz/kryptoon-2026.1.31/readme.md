@@ -1,0 +1,145 @@
+# 🔐 Python Cryptography
+
+A blazing-fast cryptography library for Python, built on Rust.
+
+Supports an extensive set of **post-quantum** digital signature algorithms (DSA) and key encapsulation mechanisms (KEM).
+
+> ⚠️ **Disclaimer:** This library is intended **for educational and research purposes only** and is **not recommended for production use**.
+
+## ⚡ Features
+- ✅ Dozens of NIST PQC candidates 
+- 🦀 Rust core for speed and safety
+- 📦 Easy installation via [`pip`](https://pip.pypa.io)
+---
+
+### 🧬 Supported Algorithms
+
+## 💻 Classic
+### Encoding
+- #### Base58
+### Hashing
+- #### Blake3
+- #### Keccak
+- #### Ripemd
+### Password Hashing
+- #### Argon2
+- #### Bcrypt
+
+## 🛰️ Quantum
+
+### 🛡️ KEM
+- #### Bike
+- #### ClassicMcEliece
+- #### Hqc
+- #### Kyber
+- #### MLKEM
+- #### NtruPrime
+- #### FrodoKem
+
+### ✍️ DSA
+- #### Cross
+- #### Dilithium
+- #### Falcon
+- #### Mayo
+- #### MLDSA
+- #### Sphincs
+- #### Uov
+
+### ❔ Examples
+
+#### DSA Example
+```python
+from kryptoon.quantum.dsa import Algorithm, KeyPair
+
+# Step 1: Generate a new key pair (secret key and public key) using the MLDSA87 algorithm.
+alicesk, alicepk = KeyPair(Algorithm.MLDSA.MLDSA87)
+
+# Step 2: Restore (import) the secret key from its raw bytes.
+# This simulates loading a saved secret key from storage.
+secretkey = KeyPair(Algorithm.MLDSA.MLDSA87, secretkey=alicesk.secretkey)
+
+# Step 3: Restore (import) the public key from its raw bytes.
+# This simulates loading a saved public key from storage.
+publickey = KeyPair(Algorithm.MLDSA.MLDSA87, publickey=alicepk.publickey)
+
+# --- Alternative: Combined Key Import ---
+# You can also restore both keys at once using a single call.
+# This is useful when both the secret and public keys are available together.
+secretkey, publickey = KeyPair(
+    Algorithm.MLDSA.MLDSA87,
+    secretkey=alicesk.secretkey,
+    publickey=alicepk.publickey
+)
+
+# Step 4: Prepare the message to be signed (convert string to bytes).
+message = "Hello".encode()
+
+# Step 5: Sign the message using the secret key.
+signature = secretkey.sign(message=message)
+
+# Step 6: Verify the signature using the public key.
+valid = publickey.verify(signature=signature, message=message)
+
+# Step 7: Ensure that the signature is valid.
+# If the verification fails, the program will raise an error.
+assert valid, "Signature verification failed!"
+
+# Step 8: Display the original message (decoded back to string).
+print(f"Message:   [{message.decode()}]")
+
+# Display the last 64 hex characters
+print(f"Signature: [{signature.hex()[-64:]}]")
+print(f"SecretKey: [{alicesk.secretkey.hex()[-64:]}]")
+print(f"PublicKey: [{alicepk.publickey.hex()[-64:]}]")
+```
+
+#### KEM Example
+```python
+from kryptoon.quantum.kem import Algorithm, KeyPair
+
+# Step 1: Generate key pairs for Alice and Bob using MLKEM1024 algorithm
+alicesk, alicepk = KeyPair(Algorithm.MLKEM.MLKEM1024)
+_bobsk, _bobpk = KeyPair(Algorithm.MLKEM.MLKEM1024)
+
+# --- Key Export ---
+# Export Alice's keys as bytes (simulate saving keys)
+alice_secret_bytes = alicesk.secretkey
+alice_public_bytes = alicepk.publickey
+
+# Export Bob's keys as bytes (simulate saving keys)
+bob_secret_bytes = _bobsk.secretkey
+bob_public_bytes = _bobpk.publickey
+
+# --- Key Import ---
+# Re-import Alice's keys from bytes
+alicesk_restored = KeyPair(Algorithm.MLKEM.MLKEM1024, secretkey=alice_secret_bytes)
+alicepk_restored = KeyPair(Algorithm.MLKEM.MLKEM1024, publickey=alice_public_bytes)
+
+# Re-import Bob's keys from bytes
+bobsk_restored = KeyPair(Algorithm.MLKEM.MLKEM1024, secretkey=bob_secret_bytes)
+bobpk_restored = KeyPair(Algorithm.MLKEM.MLKEM1024, publickey=bob_public_bytes)
+
+# Step 2: Bob encapsulates a shared secret using Alice's public key
+bobss, bobct = alicepk_restored.encapsulate()
+
+# Step 3: Alice decapsulates the ciphertext using her secret key to recover the shared secret
+alicess = alicesk_restored.decapsulate(bobct)
+
+# Step 4: Verify that both shared secrets match
+assert alicess == bobss, "Shared secrets do not match!"
+
+# Step 5: Print results
+print(f"Alice's Shared Secret: [{alicess.hex()}]")
+print(f"Bob's   Shared Secret: [{bobss.hex()}]")
+
+# Display the last 64 hex characters
+print(f"SecretKey:             [{alicesk_restored.secretkey.hex()[-64:]}]")
+print(f"PublicKey:             [{alicepk_restored.publickey.hex()[-64:]}]")
+```
+
+### 📦 Install
+```shell
+pip install kryptoon
+```
+
+### 🥳 Enjoy!
