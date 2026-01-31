@@ -1,0 +1,89 @@
+# DE Agent CLI Configuration
+
+# Default project (used when no project is specified)
+default_project: ${GITHUB_DBT_PROJECT_REPO_NAME}
+
+# Projects (multiple dbt projects can be configured)
+projects:
+  ${GITHUB_DBT_PROJECT_REPO_NAME}:
+    name: ${GITHUB_DBT_PROJECT_REPO_NAME}
+    dbt_path: ${GITHUB_DBT_PROJECT_LOCAL_PATH}/${GITHUB_DBT_PROJECT_REPO_NAME}/${DBT_PROJECT_ROOT}
+    graph_name: ${GITHUB_DBT_PROJECT_REPO_NAME}
+    profile_name: ${GITHUB_DBT_PROJECT_REPO_NAME}
+    profiles_dir: ${GITHUB_DBT_PROJECT_LOCAL_PATH}/${GITHUB_DBT_PROJECT_REPO_NAME}
+    git:
+      enabled: true
+      working_directory: ${GITHUB_DBT_PROJECT_LOCAL_PATH}/${GITHUB_DBT_PROJECT_REPO_NAME}/${DBT_PROJECT_ROOT}
+
+# Lineage Backend Configuration (embedded graph database)
+lineage:
+  backend: falkordb
+  host: localhost
+  port: 6379
+  username: ""
+  password: ""
+  graph_name: ${GITHUB_DBT_PROJECT_REPO_NAME}
+
+# Memory Backend Configuration (embedded)
+memory:
+  enabled: false
+
+# Data Backend Configuration (local DuckDB)
+data:
+  backend: snowflake
+  # All credentials from environment variables
+  account: ${SNOWFLAKE_ACCOUNT}
+  user: ${SNOWFLAKE_USER}
+  database: ${SNOWFLAKE_DATABASE}
+  schema_name: ${SNOWFLAKE_SCHEMA}
+  private_key_path: ${SNOWFLAKE_PRIVATE_KEY_PATH}
+  role: ${SNOWFLAKE_ROLE}
+  warehouse: ${SNOWFLAKE_WAREHOUSE}
+  allowed_databases: ["${SNOWFLAKE_DATABASE}", "${MATTERMOST_RAW_DB}"]
+
+# Ticket Storage Configuration (filesystem-based)
+ticket:
+  enabled: true
+  # backend: filesystem
+  # base_path: .lineage_workspace/tickets
+  backend: linear
+  mcp_server_url: https://mcp.linear.app/mcp
+  team_id: ${LINEAR_TEAM_ID?}
+  analyst_user_token: ${LINEAR_ANALYST_API_KEY?}
+  data_engineer_user_token: ${LINEAR_DATA_ENGINEER_API_KEY?}
+
+threads:
+  enabled: true
+  backend: sqlite
+
+# Reports Storage Configuration
+reports:
+  enabled: true
+  backend: filesystem
+  base_path: .lineage_workspace/reports
+
+# Agent Runtime Configuration
+# Controls the LLM models used for each agent type
+#
+# Available Bedrock Inference Profile ARNs:
+#   Opus 4.5:
+#     model: bedrock:arn:aws:bedrock:us-west-2:891377378299:inference-profile/us.anthropic.claude-opus-4-5-20251101-v1:0
+#   Sonnet 4.5:
+#     model: bedrock:arn:aws:bedrock:us-west-2:891377378299:inference-profile/us.anthropic.claude-sonnet-4-5-20250929-v1:0
+#   Haiku 4.5:
+#     model: bedrock:arn:aws:bedrock:us-west-2:891377378299:inference-profile/us.anthropic.claude-haiku-4-5-20251001-v1:0
+#   Other examples:
+#     model: bedrock:arn:aws:bedrock:us-east-1:891377378299:inference-profile/global.anthropic.claude-haiku-4-5-20251001-v1:0
+#   To see what models are available, run:
+#     aws bedrock list-foundation-models --region us-west-2
+# NOTE: these are the available models in the typedef sbx1 account 891377378299
+# NOTE: these models are currently only supported by pydantic SDK
+
+agent:
+  analyst:
+    model: anthropic:claude-haiku-4-5
+  data_engineer:
+    model: anthropic:claude-sonnet-4-5
+
+  quality:
+    model: anthropic:claude-sonnet-4-5

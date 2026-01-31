@@ -1,0 +1,567 @@
+{
+  "deterministic": {
+    "column_analysis": {
+      "column_refs": [
+        {
+          "alias": "int_user_active_days_server_telemetry",
+          "column": "activity_date",
+          "evidence": null,
+          "scope": "cte:tmp"
+        },
+        {
+          "alias": "int_user_active_days_server_telemetry",
+          "column": "received_at_date",
+          "evidence": null,
+          "scope": "cte:tmp"
+        },
+        {
+          "alias": "int_user_active_days_server_telemetry",
+          "column": "received_at_date",
+          "evidence": null,
+          "scope": "cte:tmp"
+        },
+        {
+          "alias": "int_user_active_days_server_telemetry",
+          "column": "received_at_date",
+          "evidence": null,
+          "scope": "cte:tmp"
+        },
+        {
+          "alias": "mtp",
+          "column": "CONTEXT_USER_AGENT",
+          "evidence": null,
+          "scope": "cte:tmp"
+        },
+        {
+          "alias": "mtp",
+          "column": "TIMESTAMP",
+          "evidence": null,
+          "scope": "cte:tmp"
+        },
+        {
+          "alias": "mtp",
+          "column": "TIMESTAMP",
+          "evidence": null,
+          "scope": "cte:tmp"
+        },
+        {
+          "alias": "mtp",
+          "column": "received_at",
+          "evidence": null,
+          "scope": "cte:tmp"
+        },
+        {
+          "alias": "mtp",
+          "column": "received_at",
+          "evidence": null,
+          "scope": "cte:tmp"
+        },
+        {
+          "alias": "mtp",
+          "column": "received_at",
+          "evidence": null,
+          "scope": "cte:tmp"
+        },
+        {
+          "alias": "ua",
+          "column": "CONTEXT_USER_AGENT",
+          "evidence": null,
+          "scope": "cte:tmp"
+        },
+        {
+          "alias": "ua",
+          "column": "USER_AGENT",
+          "evidence": null,
+          "scope": "cte:tmp"
+        },
+        {
+          "alias": "ua",
+          "column": "USER_AGENT",
+          "evidence": null,
+          "scope": "cte:tmp"
+        },
+        {
+          "alias": "ua",
+          "column": "USER_AGENT",
+          "evidence": null,
+          "scope": "cte:tmp"
+        }
+      ],
+      "columns_by_alias": [
+        {
+          "alias": "int_user_active_days_server_telemetry",
+          "columns": [
+            "activity_date",
+            "received_at_date"
+          ]
+        },
+        {
+          "alias": "mtp",
+          "columns": [
+            "CONTEXT_USER_AGENT",
+            "TIMESTAMP",
+            "received_at"
+          ]
+        },
+        {
+          "alias": "ua",
+          "columns": [
+            "CONTEXT_USER_AGENT",
+            "USER_AGENT"
+          ]
+        }
+      ],
+      "unresolved_unqualified": [
+        "activity_date",
+        "client_type",
+        "received_at_date",
+        "server_id",
+        "user_id"
+      ]
+    },
+    "filter_analysis": {
+      "having": [],
+      "normalized_predicates": [],
+      "null_killing_on_outer": [],
+      "qualify": [],
+      "unresolved_predicates": [],
+      "where": [
+        "NOT mtp.TIMESTAMP IS NULL",
+        "NOT server_id IS NULL",
+        "NOT user_id /* Exclude items without user ids, such as server side telemetry etc */ IS NULL",
+        "activity_date >= '2018-01-01'",
+        "received_at <= CURRENT_TIMESTAMP()",
+        "received_at >= (SELECT MAX(received_at_date) FROM \"ANALYTICS_BRANDON\".int_product.int_user_active_days_server_telemetry)"
+      ]
+    },
+    "grouping_outer": {
+      "group_by": [
+        "activity_date",
+        "server_id",
+        "user_id"
+      ],
+      "is_aggregated": true,
+      "measures": [
+        "MAX(received_at_date)",
+        "SUM(CASE WHEN client_type = 'IS_DESKTOP' THEN 1 ELSE 0 END)",
+        "SUM(CASE WHEN client_type = 'IS_WEBAPP' THEN 1 ELSE 0 END)"
+      ],
+      "result_grain": [
+        "activity_date",
+        "server_id",
+        "user_id",
+        "MD5(CAST(COALESCE(CAST(activity_date AS TEXT), '_dbt_utils_surrogate_key_null_') || '-' || COALESCE(CAST(server_id AS TEXT), '_dbt_utils_surrogate_key_null_') || '-' || COALESCE(CAST(user_id AS TEXT), '_dbt_utils_surrogate_key_null_') AS TEXT))",
+        "TRUE"
+      ],
+      "select": [
+        {
+          "alias": "IS_DESKTOP",
+          "expr": "SUM(CASE WHEN client_type = 'IS_DESKTOP' THEN 1 ELSE 0 END)",
+          "is_literal": false,
+          "source_aliases": []
+        },
+        {
+          "alias": "IS_WEBAPP",
+          "expr": "SUM(CASE WHEN client_type = 'IS_WEBAPP' THEN 1 ELSE 0 END)",
+          "is_literal": false,
+          "source_aliases": []
+        },
+        {
+          "alias": "activity_date",
+          "expr": "activity_date",
+          "is_literal": false,
+          "source_aliases": [
+            "int_user_active_days_server_telemetry"
+          ]
+        },
+        {
+          "alias": "daily_user_id",
+          "expr": "MD5(CAST(COALESCE(CAST(activity_date AS TEXT), '_dbt_utils_surrogate_key_null_') || '-' || COALESCE(CAST(server_id AS TEXT), '_dbt_utils_surrogate_key_null_') || '-' || COALESCE(CAST(user_id AS TEXT), '_dbt_utils_surrogate_key_null_') AS TEXT))",
+          "is_literal": false,
+          "source_aliases": [
+            "int_user_active_days_server_telemetry"
+          ]
+        },
+        {
+          "alias": "is_active",
+          "expr": "TRUE",
+          "is_literal": true,
+          "source_aliases": []
+        },
+        {
+          "alias": "received_at_date",
+          "expr": "MAX(received_at_date)",
+          "is_literal": false,
+          "source_aliases": [
+            "int_user_active_days_server_telemetry"
+          ]
+        },
+        {
+          "alias": "server_id",
+          "expr": "server_id",
+          "is_literal": false,
+          "source_aliases": []
+        },
+        {
+          "alias": "user_id",
+          "expr": "user_id",
+          "is_literal": false,
+          "source_aliases": []
+        }
+      ]
+    },
+    "join_analysis": {
+      "joins": [
+        {
+          "effective_type": "LEFT",
+          "equi_condition": "mtp.CONTEXT_USER_AGENT = ua.CONTEXT_USER_AGENT",
+          "left": "mtp",
+          "normalized_equi_condition": "mtp.CONTEXT_USER_AGENT = ua.CONTEXT_USER_AGENT",
+          "normalized_raw_condition": "mtp.CONTEXT_USER_AGENT = ua.CONTEXT_USER_AGENT",
+          "raw_condition": "mtp.CONTEXT_USER_AGENT = ua.CONTEXT_USER_AGENT",
+          "right": "ua",
+          "type": "LEFT"
+        }
+      ]
+    },
+    "output_outer": {
+      "limit": null,
+      "offset": null,
+      "order_by": [
+        {
+          "dir": "ASC",
+          "expr": "received_at_date"
+        }
+      ],
+      "select_distinct": false,
+      "set_ops": []
+    },
+    "relation_analysis": {
+      "alias_mappings": [
+        {
+          "alias": "int_user_active_days_server_telemetry",
+          "base": "int_user_active_days_server_telemetry"
+        },
+        {
+          "alias": "mtp",
+          "base": "stg_mm_telemetry_prod__tracks"
+        },
+        {
+          "alias": "tmp",
+          "base": "tmp"
+        },
+        {
+          "alias": "ua",
+          "base": "int_user_agents"
+        }
+      ],
+      "cte_defs": [
+        "tmp"
+      ],
+      "driving_relations": [
+        "tmp"
+      ],
+      "from_clause_order": [
+        "tmp",
+        "ua"
+      ],
+      "relations": [
+        {
+          "alias": "int_user_active_days_server_telemetry",
+          "base": "int_user_active_days_server_telemetry",
+          "catalog": "ANALYTICS_BRANDON",
+          "evidence": [],
+          "is_temp": false,
+          "kind": "table",
+          "schema_name": "int_product",
+          "scope": "cte:tmp"
+        },
+        {
+          "alias": "mtp",
+          "base": "stg_mm_telemetry_prod__tracks",
+          "catalog": "ANALYTICS_BRANDON",
+          "evidence": [],
+          "is_temp": false,
+          "kind": "table",
+          "schema_name": "dbt_staging",
+          "scope": "cte:tmp"
+        },
+        {
+          "alias": "ua",
+          "base": "int_user_agents",
+          "catalog": "ANALYTICS_BRANDON",
+          "evidence": [],
+          "is_temp": false,
+          "kind": "table",
+          "schema_name": "int_product",
+          "scope": "cte:tmp"
+        },
+        {
+          "alias": "tmp",
+          "base": "tmp",
+          "catalog": null,
+          "evidence": [],
+          "is_temp": false,
+          "kind": "cte",
+          "schema_name": null,
+          "scope": "outer"
+        }
+      ],
+      "self_join_groups": [],
+      "subqueries": [],
+      "tables": [
+        "int_user_active_days_server_telemetry",
+        "int_user_agents",
+        "stg_mm_telemetry_prod__tracks",
+        "tmp"
+      ]
+    },
+    "window_outer": {
+      "windows": []
+    }
+  },
+  "dialect": "snowflake",
+  "fixture": "mm_int_user_active_days_server_telemetry",
+  "heuristics": {
+    "semantic": {
+      "classifications": [
+        {
+          "business_name": "Is Desktop",
+          "cardinality_hint": "low",
+          "column_alias": "IS_DESKTOP",
+          "confidence": "high",
+          "derivation": "aggregated",
+          "expr": "SUM(CASE WHEN client_type = 'IS_DESKTOP' THEN 1 ELSE 0 END)",
+          "is_categorical": true,
+          "is_pii": false,
+          "is_time_related": false,
+          "pii_confidence": null,
+          "pii_type": null,
+          "semantic_role": "flag",
+          "table_type": "unknown"
+        },
+        {
+          "business_name": "Is Webapp",
+          "cardinality_hint": "low",
+          "column_alias": "IS_WEBAPP",
+          "confidence": "high",
+          "derivation": "aggregated",
+          "expr": "SUM(CASE WHEN client_type = 'IS_WEBAPP' THEN 1 ELSE 0 END)",
+          "is_categorical": true,
+          "is_pii": false,
+          "is_time_related": false,
+          "pii_confidence": null,
+          "pii_type": null,
+          "semantic_role": "flag",
+          "table_type": "unknown"
+        },
+        {
+          "business_name": "Activity Date",
+          "cardinality_hint": "medium",
+          "column_alias": "activity_date",
+          "confidence": "high",
+          "derivation": "direct",
+          "expr": "activity_date",
+          "is_categorical": false,
+          "is_pii": false,
+          "is_time_related": true,
+          "pii_confidence": null,
+          "pii_type": null,
+          "semantic_role": "timestamp",
+          "table_type": "fact"
+        },
+        {
+          "business_name": "Daily User Id",
+          "cardinality_hint": "high",
+          "column_alias": "daily_user_id",
+          "confidence": "medium",
+          "derivation": "cast",
+          "expr": "MD5(CAST(COALESCE(CAST(activity_date AS TEXT), '_dbt_utils_surrogate_key_null_') || '-' || COALESCE(CAST(server_id AS TEXT), '_dbt_utils_surrogate_key_null_') || '-' || COALESCE(CAST(user_id AS TEXT), '_dbt_utils_surrogate_key_null_') AS TEXT))",
+          "is_categorical": false,
+          "is_pii": false,
+          "is_time_related": true,
+          "pii_confidence": null,
+          "pii_type": null,
+          "semantic_role": "surrogate_key",
+          "table_type": "fact"
+        },
+        {
+          "business_name": "Is Active",
+          "cardinality_hint": "low",
+          "column_alias": "is_active",
+          "confidence": "high",
+          "derivation": "direct",
+          "expr": "TRUE",
+          "is_categorical": true,
+          "is_pii": false,
+          "is_time_related": false,
+          "pii_confidence": null,
+          "pii_type": null,
+          "semantic_role": "flag",
+          "table_type": "unknown"
+        },
+        {
+          "business_name": "Received At Date",
+          "cardinality_hint": "medium",
+          "column_alias": "received_at_date",
+          "confidence": "high",
+          "derivation": "aggregated",
+          "expr": "MAX(received_at_date)",
+          "is_categorical": false,
+          "is_pii": false,
+          "is_time_related": true,
+          "pii_confidence": null,
+          "pii_type": null,
+          "semantic_role": "timestamp",
+          "table_type": "fact"
+        },
+        {
+          "business_name": "Server Id",
+          "cardinality_hint": "high",
+          "column_alias": "server_id",
+          "confidence": "medium",
+          "derivation": "direct",
+          "expr": "server_id",
+          "is_categorical": false,
+          "is_pii": false,
+          "is_time_related": false,
+          "pii_confidence": null,
+          "pii_type": null,
+          "semantic_role": "foreign_key",
+          "table_type": "unknown"
+        },
+        {
+          "business_name": "User Id",
+          "cardinality_hint": "high",
+          "column_alias": "user_id",
+          "confidence": "medium",
+          "derivation": "direct",
+          "expr": "user_id",
+          "is_categorical": false,
+          "is_pii": false,
+          "is_time_related": false,
+          "pii_confidence": null,
+          "pii_type": null,
+          "semantic_role": "foreign_key",
+          "table_type": "unknown"
+        }
+      ],
+      "fact_alias": "mtp",
+      "has_surrogate_keys": true,
+      "high_risk_pii_count": 0,
+      "intent": "time_series",
+      "pii_columns": [],
+      "primary_key_candidates": [
+        "daily_user_id"
+      ]
+    },
+    "time": {
+      "classifications": [
+        {
+          "column_alias": "IS_DESKTOP",
+          "expr": "SUM(CASE WHEN client_type = 'IS_DESKTOP' THEN 1 ELSE 0 END)",
+          "grain": null,
+          "is_time_column": false,
+          "time_role": null
+        },
+        {
+          "column_alias": "IS_WEBAPP",
+          "expr": "SUM(CASE WHEN client_type = 'IS_WEBAPP' THEN 1 ELSE 0 END)",
+          "grain": null,
+          "is_time_column": false,
+          "time_role": null
+        },
+        {
+          "column_alias": "activity_date",
+          "expr": "activity_date",
+          "grain": "day",
+          "is_time_column": true,
+          "time_role": "range_boundary"
+        },
+        {
+          "column_alias": "daily_user_id",
+          "expr": "MD5(CAST(COALESCE(CAST(activity_date AS TEXT), '_dbt_utils_surrogate_key_null_') || '-' || COALESCE(CAST(server_id AS TEXT), '_dbt_utils_surrogate_key_null_') || '-' || COALESCE(CAST(user_id AS TEXT), '_dbt_utils_surrogate_key_null_') AS TEXT))",
+          "grain": "day",
+          "is_time_column": true,
+          "time_role": "attribute"
+        },
+        {
+          "column_alias": "is_active",
+          "expr": "TRUE",
+          "grain": null,
+          "is_time_column": false,
+          "time_role": null
+        },
+        {
+          "column_alias": "received_at_date",
+          "expr": "MAX(received_at_date)",
+          "grain": "day",
+          "is_time_column": true,
+          "time_role": "range_boundary"
+        },
+        {
+          "column_alias": "server_id",
+          "expr": "server_id",
+          "grain": null,
+          "is_time_column": false,
+          "time_role": null
+        },
+        {
+          "column_alias": "user_id",
+          "expr": "user_id",
+          "grain": null,
+          "is_time_column": false,
+          "time_role": null
+        }
+      ]
+    },
+    "watermark": {
+      "classifications": [
+        {
+          "description": null,
+          "is_watermark": false,
+          "predicate": "activity_date >= '2018-01-01'",
+          "watermark_column": null,
+          "watermark_type": null
+        },
+        {
+          "description": null,
+          "is_watermark": false,
+          "predicate": "NOT user_id /* Exclude items without user ids, such as server side telemetry etc */ IS NULL",
+          "watermark_column": null,
+          "watermark_type": null
+        },
+        {
+          "description": null,
+          "is_watermark": false,
+          "predicate": "NOT server_id IS NULL",
+          "watermark_column": null,
+          "watermark_type": null
+        },
+        {
+          "description": null,
+          "is_watermark": false,
+          "predicate": "NOT mtp.TIMESTAMP IS NULL",
+          "watermark_column": null,
+          "watermark_type": null
+        },
+        {
+          "description": null,
+          "is_watermark": false,
+          "predicate": "received_at <= CURRENT_TIMESTAMP()",
+          "watermark_column": null,
+          "watermark_type": null
+        },
+        {
+          "description": "Incremental load using MAX(received_at)",
+          "is_watermark": true,
+          "predicate": "received_at >= (SELECT MAX(received_at_date) FROM \"ANALYTICS_BRANDON\".int_product.int_user_active_days_server_telemetry)",
+          "watermark_column": "received_at",
+          "watermark_type": "max_timestamp"
+        }
+      ],
+      "has_watermark": true,
+      "watermark_summary": "Incremental by received_at"
+    }
+  }
+}

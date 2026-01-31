@@ -1,0 +1,37 @@
+# Development Dockerfile for FastAPI Backend
+# This runs in dev mode with hot reloading - no production optimization
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+  curl git build-essential \
+  && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace/typedef_data_intelligence
+
+# Copy package metadata and lock file
+COPY pyproject.toml ./
+# Hatchling validates [project].readme during `uv sync` (editable build); ensure it's present.
+COPY README.pypi.md ./
+# Copy source code so uv sync can install the package
+# (This will be overridden by volume mount at runtime for hot reload)
+COPY src ./src
+
+# Install package and dependencies with FalkorDB backend
+RUN uv sync
+
+# Set environment
+ENV PATH="/workspace/typedef_data_intelligence/.venv/bin:$PATH"
+ENV PYTHONPATH="/workspace/typedef_data_intelligence/src"
+
+# Copy entrypoint script
+COPY docker-entrypoint.dev.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# Expose FastAPI port
+EXPOSE 8000
+
+# Run backend server in development mode with hot reload
+# Note: Source code is mounted via volumes at runtime (see docker-compose.yml)
+# The entrypoint script reinstalls the package in editable mode after volumes are mounted
+ENTRYPOINT ["/entrypoint.sh"]

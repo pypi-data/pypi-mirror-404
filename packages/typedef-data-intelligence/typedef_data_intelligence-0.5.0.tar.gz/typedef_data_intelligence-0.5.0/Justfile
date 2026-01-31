@@ -1,0 +1,64 @@
+set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
+
+# Default config file
+CONFIG_FILE := "config.example.yml"
+
+# Default recipe - show available commands
+default:
+    @just --list
+
+# ============================================================================
+# Backend Management
+# ============================================================================
+
+# Show current backend configuration
+config-info:
+    @echo "Configuration System"
+    @echo "==================="
+    @echo ""
+    @echo "Unified config file approach - all settings in one YAML file"
+    @echo ""
+    @echo "Example configs:"
+    @echo "  - config.example.yml       (FalkorDB + DuckDB)"
+    @echo "  - config.production.example.yml  (Neo4j + Snowflake)"
+    @echo "  - config.postgres.example.yml    (PostgreSQL AGE + DuckDB)"
+    @echo ""
+    @echo "Config structure:"
+    @echo "  lineage:          # Graph database config"
+    @echo "    backend: falkordb|falkordblite|neo4j|postgres-age|arcadedb"
+    @echo "    population:     # Data loading settings"
+    @echo "      model: google/gemini-2.5-flash-lite"
+    @echo "      max_workers: 64"
+    @echo "  data:             # Data warehouse config"
+    @echo "    backend: duckdb|snowflake"
+    @echo "  agent:            # Agent runtime config"
+    @echo "    model: anthropic:claude-sonnet-4-5-20250929"
+    @echo ""
+    @echo "Environment variables:"
+    @echo "  Use \$${VAR_NAME} syntax in config.yml for sensitive data"
+    @echo "  Example: password: \$${NEO4J_PASSWORD}"
+
+
+# ============================================================================
+# Development
+# ============================================================================
+
+# Run tests
+test:
+    uv run pytest
+
+# Run tests with coverage
+test-cov:
+    uv run pytest --cov=src/lineage
+
+# Format code
+fmt:
+    uv run ruff format .
+
+# Lint code
+lint:
+    uv run ruff check .
+
+# Install dependencies
+install:
+    uv sync --all-extras

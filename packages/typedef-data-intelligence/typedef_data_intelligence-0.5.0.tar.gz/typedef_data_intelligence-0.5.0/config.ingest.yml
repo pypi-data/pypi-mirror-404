@@ -1,0 +1,130 @@
+# Default Ingest Configuration
+# This file defines ingest-time settings for loading dbt projects with semantic analysis
+
+# Lineage Backend Configuration (graph database for storing lineage)
+lineage:
+  backend: falkordb
+  host: localhost
+  port: 6379
+  username: ""
+  password: ""
+  graph_name: ${GITHUB_DBT_PROJECT_REPO_NAME}
+
+# Data Backend Configuration (data warehouse for profiling/semantic views)
+data:
+  backend: snowflake
+  account: ${SNOWFLAKE_ACCOUNT}
+  user: ${SNOWFLAKE_USER}
+  database: ${SNOWFLAKE_DATABASE}
+  schema: ${SNOWFLAKE_SCHEMA}
+  private_key_path: ${SNOWFLAKE_PRIVATE_KEY_PATH}
+  role: ${SNOWFLAKE_ROLE}
+  warehouse: ${SNOWFLAKE_WAREHOUSE}
+
+# Population Configuration - All ingest-time settings
+population:
+  # Semantic Analysis Configuration
+  semantic_analysis:
+    enabled: true
+    max_workers: 8
+    model_filter: null # Optional: filter models by substring (e.g., "fct_" for facts only)
+
+    # Cache configuration
+    cache_dir: .lineage_workspace/semantic_cache
+    use_cache: true
+    export_cache: true
+
+    # Batch processing settings (always enabled)
+    batch_size: 500
+
+    # LLM Model Configuration (AWS-style instance sizes)
+    models:
+      micro:
+        type: openai
+        model_name: gpt-5-nano
+        reasoning_effort: minimal
+
+      small:
+        type: openai
+        model_name: gpt-5-nano
+        reasoning_effort: medium
+
+      medium:
+        type: openai
+        model_name: gpt-5-mini
+        reasoning_effort: medium
+
+      large:
+        type: openai
+        model_name: gpt-5
+        reasoning_effort: low
+
+      xlarge:
+        type: openai
+        model_name: gpt-5
+        reasoning_effort: medium
+
+    # Pipeline Configuration - Model and token settings for each pass
+    pipeline:
+      pass_01: # Relations extraction
+        model: large
+        max_output_tokens: 32768
+      pass_02: # Column analysis - column lists are typically compact
+        model: medium
+        max_output_tokens: 16384
+      pass_03: # Join analysis - joins can be complex
+        model: medium
+        max_output_tokens: 32768
+      pass_04: # Filter analysis
+        model: small
+        max_output_tokens: 16384
+      pass_05: # Grouping analysis
+        model: large
+        max_output_tokens: 32768
+      pass_06: # Time dimension analysis
+        model: small
+        max_output_tokens: 8192
+      pass_07: # Window function analysis - window specs are typically compact
+        model: small
+        max_output_tokens: 8192
+      pass_08: # Output shape analysis
+        model: small
+        max_output_tokens: 8192
+      pass_09: # Audit analysis - most audits fit in 8k tokens
+        model: small
+        max_output_tokens: 32768
+      pass_10: # Business semantics - typically fits in 8k, plus room for reasoning
+        model: large
+        max_output_tokens: 16384
+      pass_10a: # Grain analysis
+        model: micro
+        max_output_tokens: 16384
+      pass_11: # Analysis summary - summaries should be concise
+        model: small
+        max_output_tokens: 8192
+
+      # Pipeline settings
+      enable_audit: false
+      audit_dir: null
+
+  # Profiling Configuration
+  profiling:
+    enabled: false
+    max_workers: 8
+    sample_size: 10000
+
+  # Clustering Configuration
+  clustering:
+    enabled: true
+    min_cluster_size: 2
+    similarity_threshold: 0.5
+
+  # Semantic View Loader Configuration
+  semantic_view_loader:
+    enabled: true
+    schema_pattern: null # Optional: e.g., "semantic_*"
+
+# Output Configuration
+output:
+  reports_dir: null
+  artifacts_dir: null
