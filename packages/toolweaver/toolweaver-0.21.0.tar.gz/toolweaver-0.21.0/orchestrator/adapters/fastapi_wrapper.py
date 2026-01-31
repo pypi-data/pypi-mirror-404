@@ -1,0 +1,205 @@
+"""
+FastAPI REST Wrapper Adapter
+
+Exposes ToolWeaver tools as a REST API using FastAPI.
+
+Example:
+    from orchestrator import get_available_tools
+    from orchestrator.adapters import FastAPIAdapter
+
+    tools = get_available_tools()
+    adapter = FastAPIAdapter(tools)
+    app = adapter.create_app()
+
+    # Run: uvicorn main:app --reload --port 8000
+
+    # API Endpoints:
+    # GET  /tools - List all available tools
+    # GET  /tools/{tool_name} - Get tool details
+    # POST /tools/{tool_name}/execute - Execute a tool
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from ..shared.models import ToolDefinition
+
+
+class FastAPIAdapter:
+    """Adapter to expose ToolWeaver tools as FastAPI REST endpoints."""
+
+    def __init__(self, tools: list[ToolDefinition], base_url: str = "/api/v1") -> None:
+        """
+        Initialize adapter with tools.
+
+        Args:
+            tools: List of ToolDefinition objects to expose
+            base_url: Base path for API routes (default: /api/v1)
+        """
+        self.tools = tools
+        self.base_url = base_url
+        self._tool_map = {tool.name: tool for tool in tools}
+
+    def create_app(self, enable_security: bool = False) -> Any:
+        """
+        Create a FastAPI application with tool endpoints.
+
+        Args:
+            enable_security: Whether to enable authentication and rate limiting.
+
+        Returns:
+            FastAPI app instance
+        """
+        try:
+            import json  # noqa: F401
+
+            from fastapi import Depends, FastAPI, HTTPException
+            from fastapi.responses import JSONResponse  # noqa: F401
+        except ImportError as e:
+            raise ImportError(
+                "FastAPI and uvicorn required for REST wrapper. "
+                "Install with: pip install toolweaver[fastapi]"
+            ) from e
+
+        dependencies = []
+        if enable_security:
+            from .._internal.security.auth import verify_api_key
+            from .._internal.security.ratelimit import check_rate_limit
+            # Global dependencies for all routes
+            dependencies = [Depends(verify_api_key), Depends(check_rate_limit)]
+
+        app: Any = FastAPI(
+            title="ToolWeaver REST API",
+            description="REST API for executing ToolWeaver tools",
+            version="1.0.0",
+            dependencies=dependencies,
+        )
+
+        @app.get(f"{self.base_url}/tools")  # type: ignore[untyped-decorator]
+        async def list_tools() -> dict[str, Any]:
+            """List all available tools."""
+            return {
+                "count": len(self.tools),
+                "tools": [
+                    {
+                        "name": tool.name,
+                        "description": tool.description,
+                        "type": tool.type,
+                        "parameters": [
+                            {
+                                "name": p.name,
+                                "type": p.type,
+                                "description": p.description,
+                                "required": p.required,
+                            }
+                            for p in tool.parameters
+                        ],
+                    }
+                    for tool in self.tools
+                ],
+            }
+
+        @app.get(f"{self.base_url}/tools/{{tool_name}}")  # type: ignore[untyped-decorator]
+        async def get_tool(tool_name: str) -> dict[str, Any]:
+            """Get details for a specific tool."""
+            tool = self._tool_map.get(tool_name)
+            if not tool:
+                raise HTTPException(status_code=404, detail=f"Tool '{tool_name}' not found")
+
+            return {
+                "name": tool.name,
+                "description": tool.description,
+                "type": tool.type,
+                "provider": tool.provider,
+                "parameters": [
+                    {
+                        "name": p.name,
+                        "type": p.type,
+                        "description": p.description,
+                        "required": p.required,
+                        "enum": p.enum,
+                    }
+                    for p in tool.parameters
+                ],
+                "metadata": tool.metadata or {},
+            }
+
+        async def _execute_impl(tool_name: str, params: dict[str, Any], user_role: Any | None = None) -> dict[str, Any]:
+            """Internal execution logic with RBAC."""
+            tool = self._tool_map.get(tool_name)
+            if not tool:
+                raise HTTPException(status_code=404, detail=f"Tool '{tool_name}' not found")
+
+            # Phase 9: RBAC Check
+            if enable_security and user_role:
+                from .._internal.security.rbac import UserRole, check_role_access
+
+                req_role_str = tool.required_role
+                if req_role_str:
+                    req_enum = None
+                    if req_role_str.lower() == "admin":
+                        req_enum = UserRole.ADMIN
+                    elif req_role_str.lower() == "user":
+                        req_enum = UserRole.USER
+
+                    if req_enum and not check_role_access([user_role], req_enum):
+                        raise HTTPException(status_code=403, detail=f"Insufficient permissions. Required: {req_role_str}")
+
+            # Validate required parameters
+            required_params = {p.name for p in tool.parameters if p.required}
+            provided_params = set(params.keys())
+            missing = required_params - provided_params
+            if missing:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Missing required parameters: {', '.join(missing)}",
+                )
+
+            try:
+                # Execute tool - assumes tools are registered in plugin registry
+                from ..plugins.registry import get_registry
+
+                registry = get_registry()
+                # Find plugin containing this tool
+                for plugin_name in registry.list():
+                    plugin = registry.get(plugin_name)
+                    tools_dict = {t.get("name"): t for t in plugin.get_tools()}
+                    if tool_name in tools_dict:
+                        result = await plugin.execute(tool_name, params)
+                        return {
+                            "success": True,
+                            "tool": tool_name,
+                            "result": result,
+                        }
+
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Tool '{tool_name}' not registered in any plugin",
+                )
+            except Exception as e:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Tool execution failed: {str(e)}",
+                ) from e
+
+        if enable_security:
+            from .._internal.security.auth import get_current_user_role
+            from .._internal.security.rbac import UserRole as UR
+
+            @app.post(f"{self.base_url}/tools/{{tool_name}}/execute")  # type: ignore[untyped-decorator]
+            async def execute_tool_secured(
+                tool_name: str,
+                params: dict[str, Any],
+                user_role: UR = Depends(get_current_user_role)
+            ) -> dict[str, Any]:
+                return await _execute_impl(tool_name, params, user_role)
+        else:
+            @app.post(f"{self.base_url}/tools/{{tool_name}}/execute")  # type: ignore[untyped-decorator]
+            async def execute_tool_open(
+                tool_name: str,
+                params: dict[str, Any]
+            ) -> dict[str, Any]:
+                 return await _execute_impl(tool_name, params, None)
+
+        return app
