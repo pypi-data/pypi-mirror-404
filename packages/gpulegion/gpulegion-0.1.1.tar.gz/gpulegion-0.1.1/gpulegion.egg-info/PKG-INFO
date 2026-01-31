@@ -1,0 +1,128 @@
+Metadata-Version: 2.4
+Name: gpulegion
+Version: 0.1.1
+Summary: Unified GPU telemetry for Apple Silicon, NVIDIA, and beyond
+Author-email: Raja CSP Raman <raja.csp@gmail.com>
+License: MIT
+Project-URL: Homepage, https://github.com/kactlabs/gpulegion
+Project-URL: Repository, https://github.com/kactlabs/gpulegion
+Project-URL: Issues, https://github.com/kactlabs/gpulegion/issues
+Keywords: gpu,monitoring,apple-silicon,nvidia,telemetry,m1,m2,m3,m4,m5
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: MacOS
+Classifier: Operating System :: POSIX :: Linux
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: System :: Monitoring
+Classifier: Topic :: Scientific/Engineering :: Artificial Intelligence
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Dynamic: license-file
+
+# gpulegion
+
+**Unified GPU telemetry for Apple Silicon, NVIDIA, and beyond.**
+
+[![PyPI version](https://badge.fury.io/py/gpulegion.svg)](https://badge.fury.io/py/gpulegion)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+
+## Why gpulegion?
+
+Existing Python GPU monitoring tools like `GPUtil` only support NVIDIA GPUs. If you're developing on Apple Silicon (M1-M5), you're out of luck.
+
+**gpulegion** fills that gap with a simple, cross-platform API:
+
+| Tool | Apple Silicon | NVIDIA | Programmatic API |
+|------|---------------|--------|------------------|
+| GPUtil | ❌ | ✅ | ✅ |
+| gputop | ❌ | ✅ | ⚠️ (CLI-first) |
+| **gpulegion** | ✅ | ✅ | ✅ |
+
+## Installation
+
+```bash
+pip install gpulegion
+```
+
+## Quick Start
+
+```python
+import gpulegion as gl
+
+# Check if GPU monitoring is available
+if gl.is_available():
+    print(f"GPU Usage: {gl.usage()}%")
+    print(f"GPU Power: {gl.power()}W")
+    print(f"Device: {gl.device()}")
+else:
+    print("No GPU detected")
+```
+
+## API Reference
+
+### Core Functions
+
+- `backends()` → List of available backend names
+- `is_available()` → True if GPU monitoring is supported
+- `usage()` → GPU utilization percentage (0-100) or None
+- `power()` → GPU power consumption in watts or None
+- `memory()` → Dict with `used_mb` and `total_mb` or None
+- `device()` → Dict with vendor, model, and device info or None
+
+### Design Philosophy
+
+- **Never crash**: Returns `None` when data unavailable
+- **Minimal dependencies**: No heavy ML frameworks required
+- **Cross-platform**: Works on macOS (Apple Silicon), Linux (NVIDIA), and gracefully degrades elsewhere
+
+## Platform Support
+
+### Apple Silicon (M1-M5)
+
+Requires passwordless `sudo` access to `powermetrics`:
+
+```bash
+# Add to /etc/sudoers.d/powermetrics
+your_username ALL=(ALL) NOPASSWD: /usr/bin/powermetrics
+```
+
+### NVIDIA
+
+Requires `nvidia-smi` (comes with NVIDIA drivers).
+
+## Example Output
+
+```python
+>>> import gpulegion as gl
+>>> gl.device()
+{'vendor': 'Apple', 'model': 'Apple M2 Pro', 'arch': 'arm64'}
+
+>>> gl.usage()
+34.2
+
+>>> gl.power()
+12.8
+```
+
+## Roadmap
+
+- [x] Apple Silicon support
+- [x] NVIDIA support
+- [ ] AMD support
+- [ ] Intel discrete GPU support
+- [ ] Multi-GPU support
+- [ ] CLI tool
+
+## Contributing
+
+Contributions welcome! This library is intentionally minimal - we prioritize reliability over features.
+
+## License
+
+MIT
