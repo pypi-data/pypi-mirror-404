@@ -1,0 +1,160 @@
+{% load datetime_formatting %}
+{% load truncatepath %}
+{% load static_url %}
+{% url 'ui:playbook' playbook.id as playbook_url %}
+
+<div class="card ara-playbook-card">
+  <div class="ara-status-strip ara-status-strip-{{ playbook.status }}"></div>
+  <div class="card-header bg-body-tertiary ara-playbook-header">
+    <div class="ara-playbook-header-top">
+      <div class="ara-playbook-title-group">
+        <a href="{% static_url playbook_url %}" class="ara-playbook-title-link" title="View playbook report">
+          <i class="bi bi-box-arrow-up-right"></i>
+          <h3 class="ara-playbook-title">Playbook #{{ playbook.id }}</h3>
+        </a>
+        {% include "partials/playbook_status_icon.html" with status=playbook.status %}
+      </div>
+    </div>
+    <div class="ara-playbook-path">
+      {% if playbook.name is not None %}
+        {% if static_generation %}
+          {{ playbook.name | truncatechars:50 }}: {{ playbook.path | truncatepath:150 }}
+        {% else %}
+        <a href="{% url 'ui:index' %}?name={{ playbook.name }}">{{ playbook.name | truncatechars:50 }}</a>: <a href="{% url 'ui:index' %}?path={{ playbook.path }}">{{ playbook.path | truncatepath:150 }}</a>
+        {% endif %}
+      {% else %}
+        {% if static_generation %}
+          {{ playbook.path | truncatepath:200 }}
+        {% else %}
+          <a href="{% url 'ui:index' %}?path={{ playbook.path }}">{{ playbook.path | truncatepath:200 }}</a>
+        {% endif %}
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="card-body">
+    <div class="ara-info-grid">
+      <!-- Execution Section -->
+      <div class="ara-info-section">
+        <div class="ara-info-section-header">
+          <div class="ara-info-section-title">
+            <i class="bi bi-caret-right-square-fill"></i>
+            Execution
+          </div>
+          <button type="button" class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-1" data-bs-toggle="modal" data-bs-target="#cli_{{ playbook.id }}" title="View Ansible CLI arguments">
+            <i class="bi bi-terminal"></i>
+            CLI
+          </button>
+        </div>
+        <div class="ara-info-row">
+          <span class="ara-info-label">Date</span>
+          <span class="ara-info-value" title="Date at which the playbook started">{{ playbook.started | format_date }}</span>
+        </div>
+        <div class="ara-info-row">
+          <span class="ara-info-label">Duration</span>
+          <span class="ara-info-value" title="Duration of the playbook (HH:MM:SS.ms)">{{ playbook.duration | format_duration }}</span>
+        </div>
+        <div class="ara-info-row">
+          <span class="ara-info-label">Controller</span>
+          <span class="ara-info-value" title="Host that ran the playbook">{{ playbook.controller | default_if_none:"n/a" }}</span>
+        </div>
+        <div class="ara-info-row">
+          <span class="ara-info-label">User</span>
+          <span class="ara-info-value" title="User that ran the playbook">{{ playbook.user | default_if_none:"n/a" }}</span>
+        </div>
+      </div>
+
+      <!-- Versions Section -->
+      <div class="ara-info-section">
+        <div class="ara-info-section-title">
+          <i class="bi bi-code-square"></i>
+          Versions
+        </div>
+        <div class="ara-info-row">
+          <span class="ara-info-label">Ansible</span>
+          <span class="ara-info-value" title="Version of ansible(-core) that ran the playbook">{{ playbook.ansible_version }}</span>
+        </div>
+        <div class="ara-info-row">
+          <span class="ara-info-label">ara</span>
+          <span class="ara-info-value" title="Version of the ara client (callback) and API server that recorded the playbook">{{ playbook.client_version | default_if_none:"n/a" }} / {{ playbook.server_version }}</span>
+        </div>
+        <div class="ara-info-row">
+          <span class="ara-info-label">Python</span>
+          <span class="ara-info-value" title="Version of python used by ansible(-core) and the ara callback">{{ playbook.python_version | default_if_none:"n/a" }}</span>
+        </div>
+      </div>
+
+      <!-- Summary Section -->
+      <div class="ara-info-section">
+        <div class="ara-info-section-title">
+          <i class="bi bi-bar-chart-line-fill"></i>
+          Summary
+        </div>
+        <div class="ara-stats-grid">
+          <div class="ara-stat-item" title="Number of hosts involved in the playbook">
+            <span class="ara-stat-value">{{ playbook.items.hosts }}</span>
+            <span class="ara-stat-label">Hosts</span>
+          </div>
+          <div class="ara-stat-item" title="Number of tasks run in the playbook">
+            <span class="ara-stat-value">{{ playbook.items.tasks }}</span>
+            <span class="ara-stat-label">Tasks</span>
+          </div>
+          <div class="ara-stat-item" title="Number of results recorded from the playbook">
+            <span class="ara-stat-value">{{ playbook.items.results }}</span>
+            <span class="ara-stat-label">Results</span>
+          </div>
+          <div class="ara-stat-item" title="Number of plays involved in the playbook">
+            <span class="ara-stat-value">{{ playbook.items.plays }}</span>
+            <span class="ara-stat-label">Plays</span>
+          </div>
+          <div class="ara-stat-item" title="Number of files recorded from the playbook">
+            <span class="ara-stat-value">{{ playbook.items.files }}</span>
+            <span class="ara-stat-label">Files</span>
+          </div>
+          <div class="ara-stat-item" title="Number of ara_record keys recorded in the playbook">
+            <span class="ara-stat-value">{{ playbook.items.records }}</span>
+            <span class="ara-stat-label">Records</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Labels footer -->
+  {% if playbook.labels %}
+  <div class="card-footer text-center" title="Playbook labels">
+    {% for label in playbook.labels %}
+      <span class="btn btn-outline-success ara-label" style="cursor:default; user-select: text;">{{ label.name }}</span>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+
+<!-- CLI Arguments Modal -->
+<div class="modal fade" id="cli_{{ playbook.id }}" tabindex="-1" aria-labelledby="cli_{{ playbook.id }}" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h1 class="modal-title fs-5">Playbook <a href="{% static_url playbook_url %}">#{{ playbook.id }}</a>: CLI Arguments</h1>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" style="text-align:left;">
+        <ul class="list-group list-group-flush">
+          <li class="list-group-item d-flex justify-content-between align-items-start">
+            <div class="ms-2 me-auto">
+              <div class="fw-bold">Date</div>
+              {{ playbook.started | format_date }}
+            </div>
+          </li>
+          <li class="list-group-item d-flex justify-content-between align-items-start">
+            <div class="ms-2 me-auto">
+              <div class="fw-bold">Path</div>
+              {{ playbook.path | truncatepath:250 }}
+            </div>
+          </li>
+        </ul>
+        {% include "partials/cli_arguments.html" with arguments=playbook.arguments %}
+      </div>
+    </div>
+  </div>
+</div>
