@@ -1,0 +1,723 @@
+% You are an expert Software Test Engineer. Your goal is to generate tests based on the intended behavior described in a prompt and demonstrated in an example file.
+
+% Here a description of what the code is supposed to do and was the prompt that generated the code: <prompt_that_generated_code>{prompt_that_generated_code}</prompt_that_generated_code>
+
+% Here is an example showing how the module should be used: <example_usage>{example}</example_usage>
+
+% File path information:
+ - The example file is located at: <example_file_path>{source_file_path}</example_file_path>
+ - The test file will be saved at: <test_file_path>{test_file_path}</test_file_path>
+ - The module name (without extension) is: <module_name>{module_name}</module_name>
+
+% EXISTING TESTS (if provided - your output will be APPENDED to this file):
+<existing_tests>{existing_tests}</existing_tests>
+
+% If existing tests are provided above:
+    - Generate ONLY NEW test functions (your output will be appended to the existing file)
+    - Do NOT include import statements (they already exist in the file)
+    - Do NOT duplicate any existing test function names
+    - Maintain consistent style with existing tests (fixtures, naming conventions)
+    - Focus on testing functionality NOT already covered by existing tests
+
+% Follow these rules:
+    - CRITICAL: Analyze the EXAMPLE to understand the API (function names, parameters, return values)
+    - CRITICAL: Import statements must match the module structure shown in the example
+    - CRITICAL: Test the intended function names and behavior based on the prompt
+    - CRITICAL (Python only): Example files may have module-level `sys.modules[...] = MagicMock()` for standalone execution. DO NOT copy this into tests - it pollutes pytest's module cache and breaks other test files. Use @pytest.fixture with types.ModuleType and __path__ = [] instead.
+    - The module name for the code under test will have the same name as the function name
+    - The unit test should be in {language}. If Python, use pytest.
+    - Use individual test functions for each case to make it easier to identify which specific cases pass or fail.
+    - Use the description of the functionality in the prompt to generate tests with useful tests with good code coverage.
+    - Focus on testing the INTENDED FUNCTIONALITY, not implementation details.
+    - NEVER access internal implementation details (variables/functions starting with underscore) in your tests.
+    - Setup and teardown methods should only use public APIs and environment variables, never reset internal module state directly.
+    - Design tests to be independent of implementation details.
+    - For test isolation, use fixtures and mocking of external dependencies rather than manipulating internal module state. In general minimize the amount of mocking needed so that the tests are more robust to changes in the code under test and more code is tested.
+    - Know that the generated test will be in a different directory (`tests`) than the module (in directory `pdd`) it is calling and will need an absolute reference. The module file name will be same as the function name.
+    - Created files should be in the `output` directory.
+    - Data files (language_format.csv and llm_model.csv) already exist in the PDD_PATH/`data` directory. Do not write over them. It already contains data for popular languages and LLM models and can be used for tests.
+    - The PDD_PATH environment variable is already set.
+
+% PYTEST TEST ISOLATION AND ANTI-POLLUTION RULES:
+% CRITICAL: Generated tests MUST be isolated and not pollute state for other tests. Follow these rules strictly:
+
+% 1. ENVIRONMENT VARIABLES:
+    - ALWAYS use monkeypatch.setenv() or monkeypatch.delenv() instead of os.environ["VAR"] = "value"
+    - NEVER use direct os.environ manipulation - it persists beyond the test and pollutes other tests
+    - BAD:  os.environ["API_KEY"] = "test_key"  # POLLUTION: persists after test ends
+    - GOOD: monkeypatch.setenv("API_KEY", "test_key")  # Auto-cleaned by pytest
+
+% 2. MOCKING EXTERNAL DEPENDENCIES:
+    - Use context managers or monkeypatch for mocks - they auto-cleanup after the test
+    - Prefer monkeypatch.setattr() over unittest.mock.patch() decorators at module level
+    - BAD:  @patch('module.func') at module/class level  # Can leak if exception occurs
+    - GOOD: monkeypatch.setattr('module.func', mock_func)  # Always cleaned up
+    - GOOD: with patch('module.func') as mock:  # Context manager ensures cleanup
+
+% 3. FIXTURE CLEANUP WITH YIELD:
+    - Use yield-based fixtures with cleanup code after yield for any resources
+    - Prefer function-scoped fixtures over module or session scope to ensure isolation
+    - BAD:  @pytest.fixture(scope="module") without cleanup  # State leaks between tests
+    - GOOD: @pytest.fixture with yield and cleanup after yield  # Always cleans up
+    - Example of proper fixture:
+        @pytest.fixture
+        def temp_resource():
+            resource = setup_resource()
+            yield resource
+            resource.cleanup()  # Always runs after test, even on failure
+
+% 4. SYS.MODULES MANIPULATION:
+    - AVOID manipulating sys.modules directly whenever possible
+    - If unavoidable, ALWAYS save and restore in try/finally or fixture with yield
+    - BAD:  sys.modules["module"] = mock_module  # Pollutes all subsequent tests
+    - GOOD: Use a fixture that saves, mocks, and restores:
+        @pytest.fixture
+        def mock_module():
+            saved = sys.modules.get("module")
+            sys.modules["module"] = MagicMock()
+            yield
+            if saved is not None:
+                sys.modules["module"] = saved
+            elif "module" in sys.modules:
+                del sys.modules["module"]
+
+% 5. FILE SYSTEM OPERATIONS:
+    - ALWAYS use the tmp_path fixture for creating temporary files and directories
+    - NEVER create files in the working directory or fixed paths
+    - BAD:  with open("test_output.txt", "w") as f: ...  # Leaves file behind
+    - GOOD: def test_file(tmp_path): (tmp_path / "test_output.txt").write_text(...)
+
+% 6. GLOBAL/MODULE STATE:
+    - Never modify global variables or module-level state directly in tests
+    - Use monkeypatch.setattr() for any module-level variables that need changing
+    - Reset any singleton instances using fixtures with proper teardown
+
+% SUMMARY OF GOOD PATTERNS:
+    - Use tmp_path fixture for file operations
+    - Use monkeypatch fixture for environment variables and attributes
+    - Use pytest.raises() as context manager for exception testing
+    - Prefer function-scoped fixtures over module or session scope
+    - Use yield in fixtures to ensure cleanup runs even on test failure
+
+% 7. MODULE-LEVEL SYS.MODULES FOR IMPORT-TIME DEPENDENCIES:
+    - Sometimes you must mock modules BEFORE importing the code under test
+      (e.g., when decorators or top-level imports need mocking)
+    - ALWAYS save original values, apply mocks, load module, then RESTORE immediately
+    - BAD:  sys.modules.update(mocks); exec_module(...)  # No cleanup - pollutes all tests!
+    - GOOD: See PATTERN 7 in pytest_isolation_example.py for the full save/restore pattern
+
+% 8. SYS.STDOUT AND SYS.STDERR MANIPULATION:
+    - Code under test may wrap sys.stdout/stderr (e.g., for output capture, logging, CLI tools)
+    - If wrappers aren't restored, subsequent tests see corrupted streams and fail mysteriously
+    - ALWAYS save and restore streams in fixtures when testing CLI or output-capturing code
+    - BAD:  sys.stdout = custom_stream  # Persists and corrupts subsequent tests
+    - GOOD: Use a fixture that saves, replaces, and restores:
+        @pytest.fixture
+        def captured_output():
+            import io
+            original_stdout = sys.stdout
+            original_stderr = sys.stderr
+            sys.stdout = io.StringIO()
+            sys.stderr = io.StringIO()
+            yield sys.stdout, sys.stderr
+            sys.stdout = original_stdout
+            sys.stderr = original_stderr
+
+    - When testing Click CLI commands with CliRunner:
+      - CliRunner isolates streams during invoke(), but code that wraps streams
+        and exits early (e.g., ctx.exit(0)) may leave streams wrapped
+      - Add defensive cleanup in conftest.py for CLI test modules:
+        @pytest.fixture(autouse=True)
+        def restore_streams():
+            original_stdout = sys.stdout
+            original_stderr = sys.stderr
+            yield
+            # Restore if streams were replaced with wrappers
+            if sys.stdout is not original_stdout:
+                sys.stdout = original_stdout
+            if sys.stderr is not original_stderr:
+                sys.stderr = original_stderr
+
+    - See PATTERN 8 in pytest_isolation_example.py for concrete examples
+
+% 9. NEVER USE patcher.start() AT MODULE LEVEL WITHOUT IMMEDIATE stop():
+    - patch.dict(sys.modules, ...).start() at module level is EXTREMELY DANGEROUS
+    - If you forget patcher.stop(), ALL subsequent tests in the ENTIRE pytest run see mocked modules
+    - This is the #1 cause of mysterious test failures that only happen when running the full suite
+
+    - BAD (caused 70 test failures in our codebase):
+        patcher = patch.dict(sys.modules, module_mocks)
+        patcher.start()  # NEVER STOPPED - pollutes entire test suite!
+        from my_module import my_func
+        # All subsequent test files see mocked sys.modules forever!
+
+    - GOOD: Use save/restore pattern that cleans up IMMEDIATELY after import:
+        _saved = {{}}
+        for name in module_mocks:
+            _saved[name] = sys.modules.get(name)
+            sys.modules[name] = module_mocks[name]
+
+        from my_module import my_func  # Import with mocks active
+
+        # RESTORE IMMEDIATELY after import - don't wait for tests!
+        for name in module_mocks:
+            if _saved[name] is not None:
+                sys.modules[name] = _saved[name]
+            elif name in sys.modules:
+                del sys.modules[name]
+
+% 10. TOP-LEVEL IMPORTS VS DEFERRED IMPORTS:
+    - Top-level imports (e.g., `from module import func` at file start) bind names at import time
+    - Patching sys.modules AFTER import doesn't affect already-bound names!
+
+    - SCENARIO: Code under test has top-level import:
+        # In pdd/commands/fix.py (code under test)
+        from pdd.core.errors import handle_error  # Binds at import time
+
+    - BAD: Patching sys.modules in fixture - TOO LATE:
+        with patch.dict(sys.modules, {{"pdd.core.errors": mock}}):
+            # handle_error in fix.py is still the ORIGINAL, not mock!
+            result = runner.invoke(fix, args)
+            mock.handle_error.assert_called()  # FAILS - original was called
+
+    - GOOD: Patch the bound name directly in the module where it was imported:
+        with patch("pdd.commands.fix.handle_error", mock_func):
+            result = runner.invoke(fix, args)
+            mock_func.assert_called()  # PASSES - we patched the bound name
+
+% 11. WHEN TO USE FIXTURE vs MODULE-LEVEL MOCKING:
+    - PREFER fixture-based mocking - pytest handles cleanup automatically
+    - ONLY use module-level mocking when you MUST mock BEFORE importing
+      (e.g., decorators that run at import time, top-level code that executes on import)
+
+    - Module-level mocking rules:
+      1. Mock ONLY for the import phase
+      2. RESTORE immediately after import completes
+      3. Use fixtures for test-time mocking (during test execution)
+
+    - NEVER leave module-level mocks active "for all tests in this file"
+      It will pollute OTHER test files that run after yours!
+
+    - Example decision tree:
+      Q: Does the code under test have decorators or top-level code that needs mocking?
+      YES → Use module-level save/mock/import/restore pattern (PATTERN 7, Section 9)
+      NO  → Use fixture-based mocking with patch() context manager
+
+% 12. RESTORING MUTABLE CONTAINERS (DICTS, LISTS):
+    - When saving/restoring shared mutable containers, use IN-PLACE operations, not reference assignment
+    - Other modules may hold references to the original object - replacing the reference doesn't update them
+    - This applies to: dicts, lists, sets, and any mutable object shared across modules
+
+    - BAD (reference assignment - causes test pollution):
+        @pytest.fixture(autouse=True)
+        def restore_commands():
+            original = cli.commands.copy()  # shallow copy
+            yield
+            cli.commands = original  # ❌ Replaces reference, but other modules still see old object!
+
+    - GOOD (in-place restoration):
+        @pytest.fixture(autouse=True)
+        def restore_commands():
+            original = cli.commands.copy()
+            yield
+            cli.commands.clear()           # ✅ Modify the SAME object
+            cli.commands.update(original)  # ✅ Other modules see the restored state
+
+    - For lists:
+        BAD:  my_list = original_list      # Reference replacement
+        GOOD: my_list.clear(); my_list.extend(original_list)  # In-place
+
+    - For sets:
+        BAD:  my_set = original_set        # Reference replacement
+        GOOD: my_set.clear(); my_set.update(original_set)     # In-place
+
+    - WHY THIS MATTERS:
+        Module A: cli.commands = {{}}        # Creates dict, holds reference
+        Module B: from A import cli        # B now references SAME dict object
+        Test:     cli.commands = backup    # A.cli.commands points to backup
+                                           # But B's reference still points to original!
+        Result:   Tests in B see corrupted state → flaky tests
+
+% 13. PYTEST-XDIST AND MODULE IMPORTS:
+    - When running with pytest-xdist (-n), tests share module state within each worker
+    - Modules imported by earlier tests remain cached in sys.modules
+    - ALWAYS import modules at file/module level, NEVER inside test functions or patch contexts
+    - This ensures consistent import state regardless of test execution order
+
+    - BAD (causes flaky tests with xdist):
+        def test_something():
+            with patch("module.func") as mock:
+                from package import cli  # ❌ Import inside patch context
+                runner.invoke(cli.cli, args)
+                mock.assert_called()  # May fail depending on worker state!
+
+    - GOOD (consistent behavior with xdist):
+        from package import cli  # ✅ Module-level import - always consistent
+
+        def test_something():
+            with patch("module.func") as mock:
+                runner.invoke(cli.cli, args)  # Uses already-imported module
+                mock.assert_called()  # Reliable assertion
+
+    - WHY THIS MATTERS:
+      - In single-process pytest: Imports inside tests work (state is fresh each run)
+      - In xdist workers: Module may already be cached from earlier tests
+      - Import behavior becomes non-deterministic based on test execution order
+      - Tests pass individually but fail when run in parallel with other tests
+
+    - EXCEPTION: If you MUST delay import (e.g., to avoid circular imports):
+        @pytest.fixture
+        def cli_module():
+            import importlib
+            import pdd.cli
+            importlib.reload(pdd.cli)  # Force fresh import
+            yield pdd.cli
+
+<isolation_example>
+"""
+Example code patterns demonstrating proper test isolation to prevent test pollution.
+
+This file provides reference implementations of CORRECT patterns that should be used
+in generated tests. These patterns prevent test pollution and ensure tests are independent.
+
+IMPORTANT: This is a context file for the LLM, not a runnable test file.
+"""
+
+import os
+import sys
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+
+# =============================================================================
+# PATTERN 1: Environment Variable Handling with monkeypatch
+# =============================================================================
+
+def test_set_env_var_with_monkeypatch(monkeypatch):
+    """GOOD: Use monkeypatch.setenv() for setting env vars.
+
+    monkeypatch automatically restores the original value after the test,
+    preventing pollution of subsequent tests.
+    """
+    monkeypatch.setenv("TEST_API_KEY", "test_key_123")
+    assert os.environ["TEST_API_KEY"] == "test_key_123"
+    # Automatically cleaned up after test
+
+
+def test_delete_env_var_with_monkeypatch(monkeypatch):
+    """GOOD: Use monkeypatch.delenv() for removing env vars."""
+    monkeypatch.setenv("TEMP_VAR_TO_DELETE", "value")
+    monkeypatch.delenv("TEMP_VAR_TO_DELETE")
+    assert "TEMP_VAR_TO_DELETE" not in os.environ
+
+
+def test_multiple_env_vars(monkeypatch):
+    """GOOD: Set multiple env vars safely with monkeypatch."""
+    monkeypatch.setenv("VAR_ONE", "value1")
+    monkeypatch.setenv("VAR_TWO", "value2")
+    monkeypatch.setenv("VAR_THREE", "value3")
+    # All automatically cleaned up
+
+
+# =============================================================================
+# PATTERN 2: Mocking with monkeypatch and context managers
+# =============================================================================
+
+def test_mock_function_with_monkeypatch(monkeypatch):
+    """GOOD: Use monkeypatch.setattr() for mocking functions."""
+    def mock_getcwd():
+        return "/mock/path"
+
+    monkeypatch.setattr(os, "getcwd", mock_getcwd)
+    assert os.getcwd() == "/mock/path"
+    # Original function automatically restored after test
+
+
+def test_mock_with_context_manager():
+    """GOOD: Use patch as context manager for scoped mocking."""
+    with patch("os.path.exists") as mock_exists:
+        mock_exists.return_value = True
+        assert os.path.exists("/fake/nonexistent/path") is True
+    # Mock is automatically removed when context exits
+
+
+# =============================================================================
+# PATTERN 3: File System Operations with tmp_path
+# =============================================================================
+
+def test_create_temp_file(tmp_path):
+    """GOOD: Use tmp_path fixture for temporary files."""
+    test_file = tmp_path / "test_output.txt"
+    test_file.write_text("test content")
+    assert test_file.exists()
+    assert test_file.read_text() == "test content"
+    # tmp_path is automatically cleaned up by pytest
+
+
+def test_create_temp_directory_structure(tmp_path):
+    """GOOD: Create directory structures in tmp_path."""
+    subdir = tmp_path / "subdir" / "nested"
+    subdir.mkdir(parents=True)
+    config_file = subdir / "config.json"
+    config_file.write_text('{{"key": "value"}}')
+    assert config_file.exists()
+
+
+# =============================================================================
+# PATTERN 4: Fixtures with Proper Cleanup
+# =============================================================================
+
+@pytest.fixture
+def resource_with_cleanup():
+    """GOOD: Fixture with proper cleanup using yield.
+
+    The cleanup code after yield always runs, even if the test fails.
+    """
+    # Setup
+    resource = {{"initialized": True, "data": []}}
+    yield resource
+    # Cleanup - always runs
+    resource["initialized"] = False
+    resource["data"].clear()
+
+
+@pytest.fixture
+def mock_module_with_cleanup():
+    """GOOD: Fixture for sys.modules with save/restore.
+
+    This pattern ensures sys.modules is always restored to its original
+    state after the test, preventing pollution.
+    """
+    module_name = "test_mock_module"
+    saved = sys.modules.get(module_name)
+
+    mock_module = MagicMock()
+    sys.modules[module_name] = mock_module
+
+    yield mock_module
+
+    # Cleanup - restore original state
+    if saved is not None:
+        sys.modules[module_name] = saved
+    elif module_name in sys.modules:
+        del sys.modules[module_name]
+
+
+def test_with_resource_cleanup(resource_with_cleanup):
+    """Test using fixture with automatic cleanup."""
+    assert resource_with_cleanup["initialized"] is True
+    resource_with_cleanup["data"].append("test_item")
+
+
+def test_with_mock_module_cleanup(mock_module_with_cleanup):
+    """Test using sys.modules fixture with cleanup."""
+    assert "test_mock_module" in sys.modules
+
+
+# =============================================================================
+# PATTERN 5: Exception Testing with Context Manager
+# =============================================================================
+
+def test_exception_with_context_manager():
+    """GOOD: Use pytest.raises() as context manager."""
+    with pytest.raises(ValueError) as exc_info:
+        raise ValueError("expected error message")
+    assert "expected error message" in str(exc_info.value)
+
+
+def test_exception_with_match():
+    """GOOD: Use match parameter for regex matching."""
+    with pytest.raises(ValueError, match=r"invalid.*value"):
+        raise ValueError("invalid input value provided")
+
+
+# =============================================================================
+# PATTERN 6: Combining Multiple Isolation Techniques
+# =============================================================================
+
+def test_combined_env_and_file(monkeypatch, tmp_path):
+    """GOOD: Combine monkeypatch and tmp_path for full isolation."""
+    config_path = tmp_path / "config"
+    config_path.mkdir()
+    monkeypatch.setenv("CONFIG_DIR", str(config_path))
+
+    config_file = config_path / "settings.json"
+    config_file.write_text('{{"debug": true}}')
+
+    assert os.environ["CONFIG_DIR"] == str(config_path)
+    assert config_file.exists()
+    # Both automatically cleaned up
+
+
+def test_combined_mock_and_env(monkeypatch):
+    """GOOD: Combine function mocking with environment variables."""
+    monkeypatch.setattr(os.path, "isfile", lambda x: True)
+    monkeypatch.setenv("TEST_MODE", "true")
+
+    assert os.path.isfile("/any/path") is True
+    assert os.environ["TEST_MODE"] == "true"
+    # Both automatically cleaned up
+
+
+# =============================================================================
+# PATTERN 7: Module-Level sys.modules for Import-Time Dependencies
+# =============================================================================
+#
+# When you need to mock modules BEFORE importing code under test
+# (e.g., for decorators or top-level imports), use this pattern.
+#
+# This is necessary when the code under test has decorators or module-level
+# imports that you need to mock. Unlike fixture-based mocking, this happens
+# at test file load time, before any test functions run.
+#
+# CRITICAL: You MUST restore original modules after loading, or you will
+# pollute sys.modules for all other test files during collection!
+#
+# Example usage (place at module level, outside any test function):
+#
+# import importlib.util
+# from unittest.mock import MagicMock
+#
+# # Step 1: Define mocks for dependencies that need mocking at import time
+# _mock_decorator = lambda f: f  # Pass-through decorator
+# _mock_dependency = MagicMock(some_decorator=_mock_decorator)
+# _module_mocks = {{
+#     "some.dependency": _mock_dependency,
+# }}
+#
+# # Step 2: Save originals BEFORE patching
+# _original_modules = {{key: sys.modules.get(key) for key in _module_mocks}}
+#
+# # Step 3: Apply mocks to sys.modules
+# sys.modules.update(_module_mocks)
+#
+# # Step 4: Load the module under test using importlib
+# _module_path = os.path.join(os.path.dirname(__file__), "..", "src", "module.py")
+# _module_path = os.path.abspath(_module_path)
+# _spec = importlib.util.spec_from_file_location("my_module", _module_path)
+# _module = importlib.util.module_from_spec(_spec)
+# sys.modules["my_module"] = _module
+# _spec.loader.exec_module(_module)
+# function_to_test = _module.function_to_test
+#
+# # Step 5: RESTORE originals immediately after load
+# # This is CRITICAL to avoid polluting other test files!
+# for key, original in _original_modules.items():
+#     if original is None:
+#         sys.modules.pop(key, None)
+#     else:
+#         sys.modules[key] = original
+#
+# # Now you can write normal test functions using function_to_test
+# def test_something():
+#     result = function_to_test()
+#     assert result == expected
+
+
+# =============================================================================
+# PATTERN 8: sys.stdout/sys.stderr Stream Restoration
+# =============================================================================
+#
+# When testing code that wraps or redirects sys.stdout/sys.stderr (e.g., CLI
+# tools with output capture, logging wrappers), you must ensure streams are
+# restored after each test. Failure to do so corrupts output for all subsequent
+# tests, causing mysterious failures where output appears in wrong places.
+#
+# This is particularly important for Click CLI testing where:
+# - Code may wrap streams with OutputCapture or similar wrappers
+# - Early exits (ctx.exit(0)) may bypass normal cleanup paths
+# - CliRunner isolation can be bypassed by stream wrappers that persist
+
+import io
+
+
+@pytest.fixture
+def captured_streams():
+    """GOOD: Fixture for safe stream capture with automatic restoration.
+
+    Use this when you need to capture stdout/stderr in tests.
+    Streams are always restored, even if the test fails.
+    """
+    original_stdout = sys.stdout
+    original_stderr = sys.stderr
+
+    captured_stdout = io.StringIO()
+    captured_stderr = io.StringIO()
+    sys.stdout = captured_stdout
+    sys.stderr = captured_stderr
+
+    yield captured_stdout, captured_stderr
+
+    # Cleanup - always restore original streams
+    sys.stdout = original_stdout
+    sys.stderr = original_stderr
+
+
+@pytest.fixture(autouse=True)
+def restore_streams_after_test():
+    """GOOD: Autouse fixture for CLI tests to prevent stream pollution.
+
+    Place this in conftest.py for test modules that invoke CLI commands.
+    Detects if streams were replaced with wrappers and restores originals.
+
+    This provides defense-in-depth: even if code under test fails to
+    restore streams (e.g., due to early exit), this fixture ensures
+    subsequent tests see clean streams.
+    """
+    original_stdout = sys.stdout
+    original_stderr = sys.stderr
+
+    yield
+
+    # Restore if streams were replaced (e.g., by OutputCapture wrappers)
+    if sys.stdout is not original_stdout:
+        sys.stdout = original_stdout
+    if sys.stderr is not original_stderr:
+        sys.stderr = original_stderr
+
+
+def test_with_captured_streams(captured_streams):
+    """Test using safe stream capture fixture."""
+    stdout, stderr = captured_streams
+    print("captured output")
+    assert "captured output" in stdout.getvalue()
+    # Streams automatically restored after test
+
+
+def test_cli_with_stream_safety(restore_streams_after_test):
+    """Test CLI that may wrap streams without proper cleanup.
+
+    The autouse fixture ensures streams are restored even if:
+    - The CLI wraps sys.stdout with a custom class (like OutputCapture)
+    - An early exit (ctx.exit(0)) bypasses normal cleanup
+    - An exception occurs during execution
+    """
+    # Example: CLI invocation that might wrap streams
+    # from click.testing import CliRunner
+    # runner = CliRunner()
+    # result = runner.invoke(cli, ["--some-flag"])
+    # assert result.exit_code == 0
+    pass
+
+
+# =============================================================================
+# PATTERN 9: ANTI-PATTERN - patcher.start() Without stop()
+# =============================================================================
+#
+# This is the #1 cause of test pollution! NEVER do this:
+#
+# --------- BAD CODE - DO NOT USE ---------
+# from unittest.mock import patch, MagicMock
+#
+# module_mocks = {{
+#     "some.module": MagicMock(),
+#     "another.module": MagicMock(),
+# }}
+#
+# patcher = patch.dict(sys.modules, module_mocks)
+# patcher.start()  # <-- DANGER: Never stopped!
+#
+# from code_under_test import function_to_test
+#
+# # Tests run... but patcher is NEVER stopped!
+# # All subsequent test files in the pytest run see mocked modules!
+# --------- END BAD CODE ---------
+#
+# The correct approach (PATTERN 7 above) saves and restores immediately:
+#
+# --------- GOOD CODE ---------
+# _saved = {{}}
+# for name in module_mocks:
+#     _saved[name] = sys.modules.get(name)
+#     sys.modules[name] = module_mocks[name]
+#
+# from code_under_test import function_to_test
+#
+# # RESTORE IMMEDIATELY - before any tests run!
+# for name in module_mocks:
+#     if _saved[name] is not None:
+#         sys.modules[name] = _saved[name]
+#     elif name in sys.modules:
+#         del sys.modules[name]
+# --------- END GOOD CODE ---------
+
+
+# =============================================================================
+# PATTERN 10: Top-Level Imports vs Deferred Imports
+# =============================================================================
+#
+# When code under test has top-level imports like:
+#     from pdd.core.errors import handle_error
+#
+# The name "handle_error" is bound at import time. Patching sys.modules
+# in a test fixture is TOO LATE - the name is already bound!
+#
+# --------- BAD CODE - DOES NOT WORK ---------
+# @pytest.fixture
+# def mock_deps():
+#     mock_errors = MagicMock()
+#     # This patches sys.modules, but handle_error is already bound!
+#     with patch.dict(sys.modules, {{"pdd.core.errors": mock_errors}}):
+#         yield {{"handle_error": mock_errors.handle_error}}
+#
+# def test_something(mock_deps):
+#     result = call_code_that_uses_handle_error()
+#     # FAILS! The original handle_error was called, not the mock
+#     mock_deps["handle_error"].assert_called_once()
+# --------- END BAD CODE ---------
+#
+# --------- GOOD CODE ---------
+# @pytest.fixture
+# def mock_deps():
+#     mock_handle_error = MagicMock()
+#     # Patch the name directly in the module where it was imported
+#     with patch("pdd.commands.fix.handle_error", mock_handle_error):
+#         yield {{"handle_error": mock_handle_error}}
+#
+# def test_something(mock_deps):
+#     result = call_code_that_uses_handle_error()
+#     # PASSES! We patched the bound name directly
+#     mock_deps["handle_error"].assert_called_once()
+# --------- END GOOD CODE ---------
+
+
+# =============================================================================
+# PATTERN 11: When to Use Module-Level vs Fixture Mocking
+# =============================================================================
+#
+# Decision tree:
+#
+# Q: Does code under test have decorators or top-level code needing mocks?
+#    (e.g., @track_cost decorator, module-level initialization)
+#
+# YES → Use module-level save/mock/import/restore (PATTERN 7)
+#       - Mock before import
+#       - Restore IMMEDIATELY after import
+#       - Use fixtures for additional test-time mocking
+#
+# NO  → Use fixture-based mocking (PATTERN 2, 4)
+#       - pytest handles cleanup automatically
+#       - Cleaner and safer
+#
+# NEVER leave module-level mocks active for "all tests in this file"!
+# They will pollute other test files that run after yours.
+
+</isolation_example>
+
+
+<instructions>
+    1. FIRST: Carefully analyze the EXAMPLE to understand:
+        - How to import the module (exact import statements)
+        - What functions/classes are exposed
+        - How they are called (parameters, return values)
+    2. SECOND: Analyze the prompt that describes the intended functionality and edge cases.
+    3. THIRD: For each edge case explain whether it is better to do the test using Z3 formal verification or unit tests.
+    4. FOURTH: Develop a detailed test plan that will ensure the intended functionality is correct. This should involve both Z3 formal verification and unit tests.
+    5. FIFTH: Write the test file with:
+        a) The first part of the test file should be the detailed test plan from step 4 above in comments.
+        b) Import statements matching the module structure from the example
+        c) Tests for the intended function names and behavior from the prompt
+        d) Z3 formal verification tests that are runnable as unit tests.
+</instructions>

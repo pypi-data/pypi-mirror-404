@@ -1,0 +1,1035 @@
+<pdd-reason>Generates complete architecture.json with proper priority ordering, dependencies, and context_urls from prior analysis.</pdd-reason>
+<pdd-interface>
+{{
+  "type": "module",
+  "module": {{
+    "functions": [
+      {{"name": "generate_architecture", "signature": "(issue_content: str, step1-5_outputs: str)", "returns": "str (valid JSON array matching architecture schema)"}}
+    ]
+  }}
+}}
+</pdd-interface>
+<pdd-dependency>agentic_arch_step5_research_deps_LLM.prompt</pdd-dependency>
+% You are an expert software architect. Your task is to generate the complete architecture.json based on all previous analysis and research.
+
+% Context
+
+You are working on step 6 of 12 in an agentic architecture workflow. All analysis and research is complete. Now generate the final architecture.json.
+
+% Architecture Schema Reference
+
+<architecture_schema>
+---
+name: architecture/architecture_json
+description: Unified architecture template for multiple tech stacks
+version: 1.0.0
+tags: [architecture, template, json]
+language: json
+output: architecture.json
+post_process_python: ./pdd/render_mermaid.py
+post_process_args:
+  - "{{INPUT_FILE}}"
+  - "{{APP_NAME}}"
+  - "{{OUTPUT_HTML}}"
+variables:
+  APP_NAME:
+    required: false
+    type: string
+    description: Optional app name for context.
+    example: Shop
+  PRD_FILE:
+    required: true
+    type: path
+    description: Primary product requirements document (PRD) describing scope and goals.
+    example_paths: [PRD.md, docs/specs.md, docs/product/prd.md]
+    example_content: |
+      Title: Order Management MVP
+      Goals: Enable customers to create and track orders end-to-end.
+      Key Features:
+        - Create Order: id, user_id, items[], total, status
+        - View Order: details page with status timeline
+        - List Orders: filter by status, date, user
+      Non-Functional Requirements:
+        - P95 latency < 300ms for read endpoints
+        - Error rate < 0.1%
+  TECH_STACK_FILE:
+    required: false
+    type: path
+    description: Tech stack overview (languages, frameworks, infrastructure, and tools).
+    example_paths: [docs/tech_stack.md, docs/architecture/stack.md]
+    example_content: |
+      Backend: Python (FastAPI), Postgres (SQLAlchemy), PyTest
+      Frontend: Next.js (TypeScript), shadcn/ui, Tailwind CSS
+      API: REST
+      Auth: Firebase Auth (GitHub Device Flow), JWT for API
+      Infra: Vercel (frontend), Cloud Run (backend), Cloud SQL (Postgres)
+      Observability: OpenTelemetry traces, Cloud Logging
+  DOC_FILES:
+    required: false
+    type: list
+    description: Additional documentation files (comma/newline-separated).
+    example_paths: [docs/ux.md, docs/components.md]
+    example_content: |
+      Design overview, patterns and constraints
+  INCLUDE_FILES:
+    required: false
+    type: list
+    description: Specific source files to include (comma/newline-separated).
+    example_paths: [src/app.py, src/api.py, frontend/app/layout.tsx, frontend/app/page.tsx]
+usage:
+  generate:
+    - name: Minimal (PRD only)
+      command: pdd generate --template architecture/architecture_json -e PRD_FILE=docs/specs.md --output architecture.json
+    - name: With tech stack overview
+      command: pdd generate --template architecture/architecture_json -e PRD_FILE=docs/specs.md -e TECH_STACK_FILE=docs/tech_stack.md --output architecture.json
+
+discover:
+  enabled: false
+  max_per_pattern: 5
+  max_total: 10
+
+output_schema:
+  type: array
+  items:
+    type: object
+    required: [reason, description, dependencies, priority, filename, filepath]
+    properties:
+      reason: { type: string }
+      description: { type: string }
+      dependencies: { type: array, items: { type: string } }
+      priority: { type: integer, minimum: 1 }
+      filename: { type: string }
+      filepath: { type: string }
+      tags: { type: array, items: { type: string } }
+      context_urls:
+        type: array
+        items:
+          type: object
+          required: [url, purpose]
+          properties:
+            url: { type: string }
+            purpose: { type: string }
+      interface:
+        type: object
+        properties:
+          type: { type: string, enum: [component, page, module, api, graphql, cli, job, message, config] }
+          component: { type: object }
+          page:
+            type: object
+            properties:
+              route: { type: string }
+              params:
+                type: array
+                items:
+                  type: object
+                  required: [name, type]
+                  properties:
+                    name: { type: string }
+                    type: { type: string }
+                    description: { type: string }
+              dataSources:
+                type: array
+                items:
+                  type: object
+                  required: [kind, source]
+                  properties:
+                    kind: { type: string, enum: [api, query, stream, file, cache, message, job, other] }
+                    source: { type: string }
+                    method: { type: string }
+                    description: { type: string }
+                    auth: { type: string }
+                    inputs: { type: array, items: { type: string } }
+                    outputs: { type: array, items: { type: string } }
+                    refreshInterval: { type: string }
+                    notes: { type: string }
+              layout: { type: object }
+          module: { type: object }
+          api: { type: object }
+          graphql: { type: object }
+          cli: { type: object }
+          job: { type: object }
+          message: { type: object }
+          config: { type: object }
+---
+
+Purpose: Produce an architecture JSON that enumerates prompt files to generate code files for the project.
+
+<PRD_FILE>[File not found: ${PRD_FILE}]</PRD_FILE>
+<TECH_STACK_FILE>[File not found: ${TECH_STACK_FILE}]</TECH_STACK_FILE>
+<DOC_FILES>[File not found: ${DOC_FILES}]</DOC_FILES>
+
+<INCLUDE_FILES>[File not found: ${INCLUDE_FILES}]</INCLUDE_FILES>
+
+INSTRUCTIONS:
+- Use only the facts from the included documents and files. Do not invent technologies or filenames.
+- If TECH_STACK_FILE is absent, infer a reasonable tech stack from the PRD and included files; state key assumptions within each item's description.
+- Output a single top-level JSON array of items. Each item must include:
+  - reason (briefly explain why this code module needs to exist), description, dependencies (filenames), priority (1 = highest), filename, filepath, optional tags.
+  - interface: include only the applicable sub-object (component, page, module, api, graphql, cli, job, message, or config). Omit all non-applicable sub-objects entirely.
+  - When interface.type is "page", each entry in `dataSources` must be an object with at least `kind` and `source` (e.g., URL or identifier). The `kind` field MUST be exactly one of: `"api"`, `"query"`, `"stream"`, `"file"`, `"cache"`, `"message"`, `"job"`, or `"other"`. Do not invent new values like `"api/mutation"`; instead, use `"api"` (for any HTTP/REST/GraphQL endpoint) or `"other"` and describe details such as queries vs. mutations in `description` or `notes`. Provide `method`, `description`, and any other useful metadata when known.
+- context_urls (optional): An array of {{url, purpose}} objects associating web documentation references with this module. These are converted to `<web>` tags during prompt generation, enabling the LLM to fetch relevant API documentation. Populate with official docs, tutorials, or code examples relevant to the module's implementation.
+- Valid JSON only. No comments or trailing commas.
+
+OUTPUT FORMAT - CRITICAL: Return a raw JSON array, NOT an object with "items" or "data" wrapper:
+```json
+[
+  {
+    "reason": "Core data models needed by all other modules",
+    "description": "Defines Order, User, and Item data models with validation",
+    "dependencies": [],
+    "priority": 1,
+    "filename": "models_Python.prompt",
+    "filepath": "src/models.py",
+    "tags": ["backend", "data"],
+    "interface": {
+      "type": "module",
+      "module": {
+        "functions": [
+          {"name": "Order", "signature": "class Order(BaseModel)", "returns": "Order instance"}
+        ]
+      }
+    }
+  },
+  {
+    "reason": "API endpoints for order management",
+    "description": "REST API for creating, reading, updating orders",
+    "dependencies": ["models_Python.prompt"],
+    "priority": 2,
+    "filename": "orders_api_Python.prompt",
+    "filepath": "src/api/orders.py",
+    "tags": ["backend", "api"],
+    "interface": {
+      "type": "api",
+      "api": {
+        "endpoints": [
+          {"method": "POST", "path": "/orders", "auth": "jwt"},
+          {"method": "GET", "path": "/orders/{id}", "auth": "jwt"}
+        ]
+      }
+    }
+  }
+]
+```
+WRONG (do NOT do this):
+```json
+{"items": [...]}  // WRONG - no wrapper objects!
+{"data": [...]}   // WRONG - no wrapper objects!
+{"type": "array", "items": [...]}  // WRONG - this is schema, not output!
+```
+
+INTERFACE TYPES (emit only applicable):
+- page: route (string), params? (array of {name, type, description?}), dataSources? (array), layout? (object)
+- component: props (array of {name, type, required?}), emits? (array), context? (array)
+- module: functions (array of {name, signature, returns?, errors?, sideEffects?})
+- api: endpoints (array of {method, path, auth?, requestSchema?, responseSchema?, errors?})
+- graphql: sdl? (string) or operations {queries?[], mutations?[], subscriptions?[]}
+- cli: commands (array of {name, args?[], flags?[], exitCodes?[]}), io? {stdin?, stdout?}
+- job: trigger {schedule? | event?}, inputs? (array), outputs? (array), retryPolicy? (string)
+- message: topics (array of {name, direction: "publish"|"subscribe", schema?, qos?})
+- config: keys (array of {name, type, default?, required?, source: "env"|"file"|"secret"})
+
+FRAMEWORK DETECTION (do this first):
+Before generating architecture, detect the framework from PRD/tech stack:
+- Next.js App Router: Look for "app router", "app/", "Next.js 13+", "Next.js 14", "Next.js 15"
+- Next.js Pages Router: Look for "pages router", "pages/", "Next.js 12" or older
+- Nuxt 3: Look for "Nuxt", "nuxt.config", "Vue"
+- SvelteKit: Look for "SvelteKit", "+page.svelte", "Svelte"
+- Standard (Python, Go, Rust, etc.): No special file naming requirements
+
+For frameworks with strict file naming conventions (Next.js, Nuxt, SvelteKit), you MUST follow their required filenames.
+
+FILENAME CONVENTIONS:
+- The "filename" field is the prompt filename: <base>_<Language>.prompt
+- Use DESCRIPTIVE basenames that capture the module's purpose and context
+- The basename should be unique and meaningful so prompts are self-documenting
+- CRITICAL: The filename field must NOT contain slashes (/). Use underscores (_) to separate path components.
+  - WRONG: "api/courses/route_TypeScript.prompt" (slashes create nested directories)
+  - CORRECT: "api_courses_route_TypeScript.prompt" (underscores keep prompt flat)
+
+**VALID LANGUAGE SUFFIXES** (MUST use exactly one of these - case-sensitive PascalCase):
+- **TypeScript projects**: `TypeScript` (.ts) or `TypeScriptReact` (.tsx)
+- **JavaScript projects**: `JavaScript` (.js) or `JavaScriptReact` (.jsx)
+- **Python projects**: `Python` (.py)
+- **Go projects**: `Go` (.go)
+- **Rust projects**: `Rust` (.rs)
+- **Prisma schemas**: `Prisma` (.prisma)
+- **Other**: `Java`, `C#`, `Ruby`, `PHP`, `Swift`, `Kotlin`, `Scala`, `SQL`, `Shell`, `YAML`, `JSON`, `HTML`, `CSS`, `SCSS`, `Svelte`, `Vue`
+
+**WRONG language suffixes** (DO NOT use these invented names):
+- ❌ `NextJS`, `Next`, `Nextjs` - Use `TypeScript` or `TypeScriptReact` instead
+- ❌ `React`, `ReactJS` - Use `TypeScriptReact` or `JavaScriptReact` instead
+- ❌ `Node`, `NodeJS` - Use `TypeScript` or `JavaScript` instead
+- ❌ `FastAPI`, `Flask`, `Django` - Use `Python` instead
+- ❌ `Express`, `NestJS` - Use `TypeScript` or `JavaScript` instead
+
+Examples for Next.js App Router (use descriptive names with path context):
+  ✓ "api_courses_route_TypeScript.prompt" - API route for courses endpoint
+  ✓ "api_lessons_id_route_TypeScript.prompt" - API route for lessons with dynamic [id]
+  ✓ "dashboard_page_TypeScriptReact.prompt" - Dashboard page component
+  ✓ "app_layout_TypeScriptReact.prompt" - Root app layout
+  ✓ "auth_middleware_TypeScript.prompt" - Authentication middleware
+
+Examples for standard projects (Python, Go, etc.):
+  ✓ "orders_Python.prompt" - Orders module
+  ✓ "api_routes_Python.prompt" - API routes module
+  ✓ "models_Python.prompt" - Data models
+
+Keep names consistent across dependencies - if module A depends on B, use the same naming style.
+
+FILEPATH CONVENTIONS:
+- The "filepath" field specifies the FULL output path including filename
+- Use framework-appropriate paths and filenames
+
+For Next.js App Router (STRICT naming - file MUST be route.ts, page.tsx, layout.tsx):
+- API routes: app/api/{path}/route.ts
+  Example: filepath="app/api/courses/route.ts", filepath="app/api/lessons/[id]/route.ts"
+- Pages: app/{path}/page.tsx
+  Example: filepath="app/dashboard/page.tsx", filepath="app/orders/[id]/page.tsx"
+- Layouts: app/{path}/layout.tsx
+  Example: filepath="app/layout.tsx", filepath="app/dashboard/layout.tsx"
+- Middleware: middleware.ts (at project root)
+  Example: filepath="middleware.ts"
+
+For standard projects:
+- Use descriptive filenames matching the prompt basename
+  Example: filename="orders_Python.prompt" → filepath="src/orders.py"
+  Example: filename="api_routes_Python.prompt" → filepath="src/api/routes.py"
+
+PATH-FILENAME RELATIONSHIP:
+- For Next.js/Nuxt/SvelteKit: The filepath uses framework-required filenames (route.ts, page.tsx)
+  while the prompt filename remains descriptive for context
+- For standard projects: The filepath filename should match the prompt basename
+  (e.g., orders_Python.prompt → orders.py)
+
+Use forward slashes (/) for path separators regardless of OS.
+Follow standard directory structures for the framework (e.g., app/ for Next.js 13+, src/ for typical Python projects).
+
+DEPENDENCY RULES:
+- The "dependencies" array must list other items by their prompt filenames (the "filename" values), not code filenames.
+- Do not reference files that are not part of this array unless they were explicitly provided via INCLUDE_FILES/DOC_FILES.
+- Avoid cycles; if a cycle is necessary, justify it in the description and clarify initialization order.
+
+PRIORITY AND ORDERING:
+- Use unique integer priorities starting at 1 without gaps (1,2,3,...).
+- Sort the top-level array by ascending priority.
+
+TAGS (optional):
+- Use short, lower-case tags for slicing (e.g., ["frontend","nextjs"], ["backend","api"], ["config"]).
+
+CONTENT GUIDANCE:
+- Descriptions must be architectural and actionable: responsibilities, interfaces, error handling, cross-cutting concerns.
+- For API items, outline endpoints (method, path, auth) and high-level request/response shapes.
+- For page/component items, include the route, key props, and data sources.
+
+DO NOT INCLUDE the schema or these conventions in the output; return only the JSON array.
+
+</architecture_schema>
+
+% Inputs
+
+- GitHub Issue URL: {issue_url}
+- Repository: {repo_owner}/{repo_name}
+- Issue Number: {issue_number}
+
+% Issue Content (PRD)
+<issue_content>
+{issue_content}
+</issue_content>
+
+% Previous Step Outputs
+<step1_output>
+{step1_output}
+</step1_output>
+
+<step2_output>
+{step2_output}
+</step2_output>
+
+<step3_output>
+{step3_output}
+</step3_output>
+
+<step4_output>
+{step4_output}
+</step4_output>
+
+<step5_output>
+{step5_output}
+</step5_output>
+
+% Your Task
+
+Generate a complete, valid architecture.json following these rules:
+
+1. **Output format:** A raw JSON array (NOT wrapped in an object)
+
+2. **Required fields per entry:**
+   - `reason`: Why this module needs to exist
+   - `description`: Architectural responsibilities, interfaces, error handling
+   - `dependencies`: Array of prompt filenames this module depends on
+   - `priority`: Integer starting at 1, sequential without gaps
+   - `filename`: PDD convention `<base>_<Language>.prompt` (see VALID LANGUAGE SUFFIXES below)
+   - `filepath`: Framework-appropriate output path
+
+3. **Optional fields:**
+   - `tags`: Lower-case categorization tags
+   - `context_urls`: Array of `{{url, purpose}}` objects from step 5 research
+   - `interface`: Object with `type` and type-specific sub-object
+
+4. **Priority ordering:**
+   - Must form a valid topological sort of the dependency graph
+   - If A depends on B, then B.priority < A.priority
+   - Sequential integers: 1, 2, 3, ... (no gaps)
+
+5. **VALID LANGUAGE SUFFIXES** (CRITICAL - use EXACTLY one of these):
+   - For TypeScript/JavaScript projects: `TypeScript`, `TypeScriptReact`, `JavaScript`, `JavaScriptReact`
+   - For Python projects: `Python`
+   - For other languages: `Go`, `Rust`, `Java`, `Prisma`, `SQL`, `YAML`, etc.
+
+   **WRONG suffixes (DO NOT USE):**
+   - ❌ `NextJS`, `Next`, `Nextjs` → Use `TypeScript` or `TypeScriptReact`
+   - ❌ `React`, `ReactJS` → Use `TypeScriptReact` or `JavaScriptReact`
+   - ❌ `Node`, `NodeJS` → Use `TypeScript` or `JavaScript`
+   - ❌ `FastAPI`, `Flask` → Use `Python`
+
+6. **Filename conventions:**
+   - `<descriptive_base>_<Language>.prompt`
+   - Language is the PROGRAMMING LANGUAGE, not the framework name
+
+7. **Interface types:**
+   - api: endpoints array with method, path, auth
+   - module: functions array with name, signature, returns
+   - page: route, params, dataSources
+   - component: props, emits, context
+   - config: keys with name, type, source
+   - cli, job, message, graphql as appropriate
+
+% Output
+
+1. **Write architecture.json to disk**
+   Save the JSON array directly to `architecture.json` in the current working directory:
+   - The file must contain ONLY the valid JSON array
+   - No markdown fencing, no comments, no wrapper objects
+   - Validate the JSON is syntactically correct before writing
+
+2. **Create project scaffolding files**
+   Based on the tech stack confirmed in Step 2 and the module design from Step 4, create ALL necessary files to make the project runnable after code generation.
+
+   **Required for ALL projects:**
+   - `.gitignore` - Appropriate ignore patterns for the tech stack
+   - `README.md` - Project description, setup instructions, architecture overview
+
+   **Dependency management (based on tech stack):**
+   - Python: `requirements.txt` or `pyproject.toml` with all dependencies from Step 5
+   - Node.js/TypeScript: `package.json` with scripts (dev, build, test, start)
+   - TypeScript projects: `tsconfig.json` with appropriate compiler options
+   - Go: `go.mod` with module path and dependencies
+   - Rust: `Cargo.toml` with package info and dependencies
+   - Java: `pom.xml` or `build.gradle`
+   - Monorepo: Root workspace config (pnpm-workspace.yaml, turbo.json, etc.) + per-app configs
+
+   **Container/deployment (if applicable):**
+   - `Dockerfile` - Multi-stage build appropriate for the stack
+   - `docker-compose.yml` - If the project needs multiple services (database, cache, etc.)
+
+   **CI/CD:**
+   - `.github/workflows/ci.yml` - Basic workflow for lint, test, build
+
+   **Framework-specific configs:**
+   - Next.js: `next.config.js` or `next.config.ts`
+   - Vite: `vite.config.ts`
+   - Tailwind: `tailwind.config.js`, `postcss.config.js`
+   - ESLint: `.eslintrc.json` or `eslint.config.js`
+   - Prettier: `.prettierrc`
+   - Database migrations: `alembic.ini`, `prisma/schema.prisma`, etc.
+
+   **Use your judgment:** Only create files that make sense for this specific project. Don't create files that won't be used. Consider what the PRD requires and what the tech stack needs.
+
+3. **Post summary to GitHub**
+   Use `gh issue comment` to post a summary to issue #{issue_number}:
+
+```
+gh issue comment {issue_number} --repo {repo_owner}/{repo_name} --body "..."
+```
+
+```markdown
+## Step 6: Architecture & Scaffolding Generated
+
+**Status:** Generation Complete
+
+### Architecture Summary
+- Total modules: [N]
+- Priority range: 1-[max]
+- Technologies: [list]
+
+### Module Overview
+| Priority | Filename | Filepath | Dependencies |
+|----------|----------|----------|--------------|
+| 1 | [filename] | [filepath] | [] |
+
+### Scaffolding Files Created
+| File | Purpose |
+|------|---------|
+| package.json | Node.js dependencies and scripts |
+| Dockerfile | Container build configuration |
+| ... | ... |
+
+---
+*Proceeding to Step 7: Validate*
+```
+
+4. **Report ALL files created**
+   Output on its own line at the end, listing ALL files (architecture + scaffolding):
+   `FILES_CREATED: architecture.json, package.json, .gitignore, README.md, Dockerfile, ...`
+
+% Scaffolding Decision Guide
+
+Use this matrix to determine which files to create based on the confirmed tech stack:
+
+| Tech Stack | Required Scaffolding Files |
+|------------|---------------------------|
+| Python (FastAPI/Flask/Django) | requirements.txt OR pyproject.toml, Dockerfile, .gitignore, README.md |
+| Node.js (Express/NestJS) | package.json, Dockerfile, .gitignore, README.md |
+| TypeScript (any) | package.json, tsconfig.json, Dockerfile, .gitignore, README.md |
+| React/Next.js | package.json, tsconfig.json, next.config.js, tailwind.config.js, .gitignore, README.md |
+| Go (Gin/Echo/Fiber) | go.mod, Dockerfile, .gitignore, README.md |
+| Rust | Cargo.toml, Dockerfile, .gitignore, README.md |
+| Full-stack monorepo | Root package.json, pnpm-workspace.yaml OR turbo.json, per-app configs, docker-compose.yml |
+
+**Always include:**
+- README.md with: project description, prerequisites, installation, running locally, architecture overview
+- .gitignore appropriate for the tech stack (node_modules, __pycache__, .env, etc.)
+- Dockerfile if containerization is appropriate
+- docker-compose.yml if multiple services are needed (DB, Redis, etc.)
+- CI workflow (.github/workflows/ci.yml) for automated testing
+
+% Important
+
+- Write the JSON to `architecture.json` file directly - do NOT output JSON to stdout
+- Write ALL scaffolding files directly to disk at their appropriate paths
+- The JSON must be valid (no comments, no trailing commas)
+- Sort the array by ascending priority
+- Ensure all dependency references exist in the array
+- Include context_urls from step 5 where available
+- Always post your findings as a GitHub comment
+- Always output `FILES_CREATED:` with the complete list of ALL files created
+
+% ============================================================================
+% VERIFIED WORKING EXAMPLE - FOLLOW THIS PATTERN EXACTLY
+% ============================================================================
+
+This is a complete, verified working example for a Next.js project.
+Your architecture.json MUST follow this exact pattern for filename and filepath.
+
+<verified_working_example>
+% Complete Working Example: Next.js Task Notes Application
+% This is a verified, working example that passes pdd sync validation.
+% Use this as a reference when generating architecture.json and .pddrc for Next.js projects.
+
+% ============================================================================
+% PROJECT OVERVIEW
+% ============================================================================
+
+A Next.js 14 App Router project with:
+- Prisma for database (PostgreSQL)
+- TypeScript throughout
+- App Router pages and API routes
+- React components
+
+% ============================================================================
+% ARCHITECTURE.JSON (VERIFIED WORKING)
+% ============================================================================
+
+```json
+[
+  {
+    "reason": "Prisma schema defines the database structure for tasks and categories with proper relationships",
+    "description": "Database schema using Prisma ORM with Task and Category models. Tasks have title, content, status, priority, and belong to a category.",
+    "dependencies": [],
+    "priority": 1,
+    "filename": "prisma_schema_Prisma.prompt",
+    "filepath": "prisma/schema.prisma",
+    "tags": ["database", "prisma", "schema"],
+    "interface": {
+      "type": "config",
+      "config": {
+        "keys": [
+          {"name": "DATABASE_URL", "type": "string", "required": true, "source": "env"}
+        ]
+      }
+    }
+  },
+  {
+    "reason": "Prisma client singleton for database connections across the application",
+    "description": "TypeScript module exporting a singleton Prisma client instance. Handles connection pooling and prevents multiple instances in development.",
+    "dependencies": ["prisma_schema_Prisma.prompt"],
+    "priority": 2,
+    "filename": "prisma_client_TypeScript.prompt",
+    "filepath": "lib/prisma.ts",
+    "tags": ["database", "prisma", "client"],
+    "interface": {
+      "type": "module",
+      "module": {
+        "functions": [
+          {"name": "prisma", "signature": "export const prisma: PrismaClient", "returns": "PrismaClient instance"}
+        ]
+      }
+    }
+  },
+  {
+    "reason": "Shared TypeScript types for tasks and categories used across frontend and API",
+    "description": "Type definitions for Task, Category, TaskStatus, and TaskPriority. Includes request/response types for API operations.",
+    "dependencies": [],
+    "priority": 3,
+    "filename": "types_TypeScript.prompt",
+    "filepath": "lib/types.ts",
+    "tags": ["types", "shared"],
+    "interface": {
+      "type": "module",
+      "module": {
+        "functions": [
+          {"name": "Task", "signature": "interface Task", "returns": "Task type"},
+          {"name": "Category", "signature": "interface Category", "returns": "Category type"}
+        ]
+      }
+    }
+  },
+  {
+    "reason": "Root layout provides the app shell with navigation and global providers",
+    "description": "Next.js App Router root layout with global styles, metadata, navigation sidebar, and React Query provider.",
+    "dependencies": ["types_TypeScript.prompt"],
+    "priority": 4,
+    "filename": "root_layout_TypeScriptReact.prompt",
+    "filepath": "app/layout.tsx",
+    "tags": ["frontend", "layout", "nextjs"],
+    "interface": {
+      "type": "page",
+      "page": {
+        "route": "/",
+        "params": [],
+        "dataSources": []
+      }
+    }
+  },
+  {
+    "reason": "Home page displays dashboard with task summary and quick actions",
+    "description": "Main landing page showing task statistics, recent tasks, and quick action buttons. Server component with parallel data fetching.",
+    "dependencies": ["types_TypeScript.prompt", "api_tasks_route_TypeScript.prompt"],
+    "priority": 5,
+    "filename": "home_page_TypeScriptReact.prompt",
+    "filepath": "app/page.tsx",
+    "tags": ["frontend", "page", "nextjs"],
+    "interface": {
+      "type": "page",
+      "page": {
+        "route": "/",
+        "params": [],
+        "dataSources": [
+          {"kind": "api", "source": "/api/tasks", "method": "GET"}
+        ]
+      }
+    }
+  },
+  {
+    "reason": "Tasks list page with filtering, sorting, and pagination",
+    "description": "Page displaying all tasks with category filter, status filter, priority sort, and pagination.",
+    "dependencies": ["types_TypeScript.prompt", "api_tasks_route_TypeScript.prompt", "task_card_component_TypeScriptReact.prompt"],
+    "priority": 6,
+    "filename": "tasks_page_TypeScriptReact.prompt",
+    "filepath": "app/tasks/page.tsx",
+    "tags": ["frontend", "page", "nextjs"],
+    "interface": {
+      "type": "page",
+      "page": {
+        "route": "/tasks",
+        "params": [
+          {"name": "category", "type": "string"},
+          {"name": "status", "type": "string"},
+          {"name": "page", "type": "number"}
+        ],
+        "dataSources": [
+          {"kind": "api", "source": "/api/tasks", "method": "GET"}
+        ]
+      }
+    }
+  },
+  {
+    "reason": "Task detail page with full content view and edit capabilities",
+    "description": "Dynamic route page displaying single task details with inline editing and status updates.",
+    "dependencies": ["types_TypeScript.prompt", "api_tasks_id_route_TypeScript.prompt"],
+    "priority": 7,
+    "filename": "task_detail_page_TypeScriptReact.prompt",
+    "filepath": "app/tasks/[id]/page.tsx",
+    "tags": ["frontend", "page", "nextjs", "dynamic"],
+    "interface": {
+      "type": "page",
+      "page": {
+        "route": "/tasks/[id]",
+        "params": [
+          {"name": "id", "type": "string"}
+        ],
+        "dataSources": [
+          {{"kind": "api", "source": "/api/tasks/{{id}}", "method": "GET"}}
+        ]
+      }
+    }
+  },
+  {
+    "reason": "Categories page for managing task categories",
+    "description": "Page for viewing and managing categories with task counts and color picker.",
+    "dependencies": ["types_TypeScript.prompt", "api_categories_route_TypeScript.prompt"],
+    "priority": 8,
+    "filename": "categories_page_TypeScriptReact.prompt",
+    "filepath": "app/categories/page.tsx",
+    "tags": ["frontend", "page", "nextjs"],
+    "interface": {
+      "type": "page",
+      "page": {
+        "route": "/categories",
+        "params": [],
+        "dataSources": [
+          {"kind": "api", "source": "/api/categories", "method": "GET"}
+        ]
+      }
+    }
+  },
+  {
+    "reason": "Reusable task card component for displaying task preview",
+    "description": "Client component rendering task preview card with title, status badge, priority indicator, and category tag.",
+    "dependencies": ["types_TypeScript.prompt"],
+    "priority": 9,
+    "filename": "task_card_component_TypeScriptReact.prompt",
+    "filepath": "components/TaskCard.tsx",
+    "tags": ["frontend", "component", "ui"],
+    "interface": {
+      "type": "component",
+      "component": {
+        "props": [
+          {"name": "task", "type": "Task", "required": true},
+          {"name": "onStatusChange", "type": "(status: TaskStatus) => void", "required": false}
+        ],
+        "emits": ["statusChange", "click"]
+      }
+    }
+  },
+  {
+    "reason": "Task form component for creating and editing tasks",
+    "description": "Form component with controlled inputs for task title, content, category, priority, and due date.",
+    "dependencies": ["types_TypeScript.prompt"],
+    "priority": 10,
+    "filename": "task_form_component_TypeScriptReact.prompt",
+    "filepath": "components/TaskForm.tsx",
+    "tags": ["frontend", "component", "form"],
+    "interface": {
+      "type": "component",
+      "component": {
+        "props": [
+          {"name": "initialData", "type": "Partial<Task>", "required": false},
+          {"name": "categories", "type": "Category[]", "required": true},
+          {"name": "onSubmit", "type": "(data: CreateTaskInput) => Promise<void>", "required": true}
+        ],
+        "emits": ["submit", "cancel"]
+      }
+    }
+  },
+  {
+    "reason": "API route for listing and creating tasks",
+    "description": "Next.js API route handler for GET (list with filters) and POST (create) operations.",
+    "dependencies": ["prisma_client_TypeScript.prompt", "types_TypeScript.prompt"],
+    "priority": 11,
+    "filename": "api_tasks_route_TypeScript.prompt",
+    "filepath": "app/api/tasks/route.ts",
+    "tags": ["backend", "api", "nextjs"],
+    "interface": {
+      "type": "api",
+      "api": {
+        "endpoints": [
+          {"method": "GET", "path": "/api/tasks", "auth": "none", "responseSchema": "{ tasks: Task[], total: number }"},
+          {"method": "POST", "path": "/api/tasks", "auth": "none", "requestSchema": "CreateTaskInput", "responseSchema": "Task"}
+        ]
+      }
+    }
+  },
+  {
+    "reason": "API route for single task operations (read, update, delete)",
+    "description": "Dynamic API route for task CRUD operations by ID.",
+    "dependencies": ["prisma_client_TypeScript.prompt", "types_TypeScript.prompt"],
+    "priority": 12,
+    "filename": "api_tasks_id_route_TypeScript.prompt",
+    "filepath": "app/api/tasks/[id]/route.ts",
+    "tags": ["backend", "api", "nextjs", "dynamic"],
+    "interface": {
+      "type": "api",
+      "api": {
+        "endpoints": [
+          {"method": "GET", "path": "/api/tasks/[id]", "auth": "none", "responseSchema": "Task"},
+          {"method": "PATCH", "path": "/api/tasks/[id]", "auth": "none", "requestSchema": "Partial<Task>", "responseSchema": "Task"},
+          {"method": "DELETE", "path": "/api/tasks/[id]", "auth": "none", "responseSchema": "{ success: boolean }"}
+        ]
+      }
+    }
+  },
+  {
+    "reason": "API route for category management",
+    "description": "API route for listing categories with task counts and creating new categories.",
+    "dependencies": ["prisma_client_TypeScript.prompt", "types_TypeScript.prompt"],
+    "priority": 13,
+    "filename": "api_categories_route_TypeScript.prompt",
+    "filepath": "app/api/categories/route.ts",
+    "tags": ["backend", "api", "nextjs"],
+    "interface": {
+      "type": "api",
+      "api": {
+        "endpoints": [
+          {"method": "GET", "path": "/api/categories", "auth": "none", "responseSchema": "{ categories: CategoryWithCount[] }"},
+          {"method": "POST", "path": "/api/categories", "auth": "none", "requestSchema": "{ name: string, color?: string }", "responseSchema": "Category"}
+        ]
+      }
+    }
+  }
+]
+```
+
+% ============================================================================
+% .PDDRC CONFIGURATION (VERIFIED WORKING)
+% ============================================================================
+
+```yaml
+version: "1.0"
+
+contexts:
+  # ============================================================
+  # DATABASE / PRISMA
+  # ============================================================
+
+  prisma_schema:
+    paths: ["*prisma_schema*"]
+    defaults:
+      outputs:
+        code:
+          path: "prisma/schema.prisma"
+
+  prisma_client:
+    paths: ["*prisma_client*"]
+    defaults:
+      outputs:
+        code:
+          path: "lib/prisma.ts"
+
+  # ============================================================
+  # SHARED TYPES
+  # ============================================================
+
+  types:
+    paths: ["*types*"]
+    defaults:
+      outputs:
+        code:
+          path: "lib/types.ts"
+
+  # ============================================================
+  # PAGES (Next.js App Router)
+  # ============================================================
+
+  root_layout:
+    paths: ["*root_layout*"]
+    defaults:
+      outputs:
+        code:
+          path: "app/layout.tsx"
+
+  home_page:
+    paths: ["*home_page*"]
+    defaults:
+      outputs:
+        code:
+          path: "app/page.tsx"
+
+  tasks_page:
+    paths: ["*tasks_page*"]
+    defaults:
+      outputs:
+        code:
+          path: "app/tasks/page.tsx"
+
+  task_detail_page:
+    paths: ["*task_detail_page*"]
+    defaults:
+      outputs:
+        code:
+          path: "app/tasks/[id]/page.tsx"
+
+  categories_page:
+    paths: ["*categories_page*"]
+    defaults:
+      outputs:
+        code:
+          path: "app/categories/page.tsx"
+
+  # ============================================================
+  # COMPONENTS
+  # ============================================================
+
+  task_card_component:
+    paths: ["*task_card_component*"]
+    defaults:
+      outputs:
+        code:
+          path: "components/TaskCard.tsx"
+
+  task_form_component:
+    paths: ["*task_form_component*"]
+    defaults:
+      outputs:
+        code:
+          path: "components/TaskForm.tsx"
+
+  # ============================================================
+  # API ROUTES
+  # ============================================================
+
+  api_tasks_route:
+    paths: ["*api_tasks_route*"]
+    defaults:
+      outputs:
+        code:
+          path: "app/api/tasks/route.ts"
+
+  api_tasks_id_route:
+    paths: ["*api_tasks_id_route*"]
+    defaults:
+      outputs:
+        code:
+          path: "app/api/tasks/[id]/route.ts"
+
+  api_categories_route:
+    paths: ["*api_categories_route*"]
+    defaults:
+      outputs:
+        code:
+          path: "app/api/categories/route.ts"
+
+  # ============================================================
+  # DEFAULT FALLBACK
+  # ============================================================
+  # CRITICAL: prompts_dir goes ONLY here, not in other contexts!
+
+  default:
+    defaults:
+      prompts_dir: "prompts/"
+      generate_output_path: "src/"
+```
+
+% ============================================================================
+% PROMPT FILES (FLAT DIRECTORY STRUCTURE)
+% ============================================================================
+
+All prompt files are placed FLAT in the `prompts/` directory:
+
+```
+prompts/
+├── prisma_schema_Prisma.prompt
+├── prisma_client_TypeScript.prompt
+├── types_TypeScript.prompt
+├── root_layout_TypeScriptReact.prompt
+├── home_page_TypeScriptReact.prompt
+├── tasks_page_TypeScriptReact.prompt
+├── task_detail_page_TypeScriptReact.prompt
+├── categories_page_TypeScriptReact.prompt
+├── task_card_component_TypeScriptReact.prompt
+├── task_form_component_TypeScriptReact.prompt
+├── api_tasks_route_TypeScript.prompt
+├── api_tasks_id_route_TypeScript.prompt
+└── api_categories_route_TypeScript.prompt
+```
+
+% ============================================================================
+% VERIFICATION RESULTS (CONFIRMED WORKING)
+% ============================================================================
+
+Running the verification script:
+
+```python
+from pdd.sync_determine_operation import get_pdd_file_paths
+
+modules = [
+    ('prisma_schema', 'prisma', 'prisma_schema'),
+    ('prisma_client', 'typescript', 'prisma_client'),
+    ('types', 'typescript', 'types'),
+    ('root_layout', 'typescriptreact', 'root_layout'),
+    ('home_page', 'typescriptreact', 'home_page'),
+    ('tasks_page', 'typescriptreact', 'tasks_page'),
+    ('task_detail_page', 'typescriptreact', 'task_detail_page'),
+    ('categories_page', 'typescriptreact', 'categories_page'),
+    ('task_card_component', 'typescriptreact', 'task_card_component'),
+    ('task_form_component', 'typescriptreact', 'task_form_component'),
+    ('api_tasks_route', 'typescript', 'api_tasks_route'),
+    ('api_tasks_id_route', 'typescript', 'api_tasks_id_route'),
+    ('api_categories_route', 'typescript', 'api_categories_route'),
+]
+
+for basename, language, context in modules:
+    result = get_pdd_file_paths(basename, language, 'prompts', context_override=context)
+    print(f"{{basename}}: {{result.get('code')}}")
+```
+
+**Output (all paths correct):**
+```
+prisma_schema: prisma/schema.prisma
+prisma_client: lib/prisma.ts
+types: lib/types.ts
+root_layout: app/layout.tsx
+home_page: app/page.tsx
+tasks_page: app/tasks/page.tsx
+task_detail_page: app/tasks/[id]/page.tsx
+categories_page: app/categories/page.tsx
+task_card_component: components/TaskCard.tsx
+task_form_component: components/TaskForm.tsx
+api_tasks_route: app/api/tasks/route.ts
+api_tasks_id_route: app/api/tasks/[id]/route.ts
+api_categories_route: app/api/categories/route.ts
+```
+
+% ============================================================================
+% KEY PATTERNS TO FOLLOW
+% ============================================================================
+
+1. **Filename format**: `{{descriptive_name}}_{{Language}}.prompt`
+   - Use underscores, NOT slashes
+   - Language is PascalCase: `TypeScript`, `TypeScriptReact`, `Prisma`
+
+2. **Basename extraction**:
+   - `home_page_TypeScriptReact.prompt` → basename = `home_page`
+   - `api_tasks_id_route_TypeScript.prompt` → basename = `api_tasks_id_route`
+
+3. **Context naming**: Use basename as context name
+   - filename `home_page_TypeScriptReact.prompt` → context name `home_page`
+
+4. **paths pattern**: Use `["*{{basename}}*"]`
+   - Context `home_page` → paths `["*home_page*"]`
+
+5. **outputs.code.path**: Use EXACT filepath from architecture.json
+   - filepath `app/page.tsx` → `outputs.code.path: "app/page.tsx"`
+
+6. **prompts_dir**: ONLY in `default` context
+   - Never duplicate in other contexts
+
+% ============================================================================
+% COMMANDS TO RUN
+% ============================================================================
+
+```bash
+# Sync individual modules
+pdd sync prisma_schema    # → prisma/schema.prisma
+pdd sync home_page        # → app/page.tsx
+pdd sync api_tasks_route  # → app/api/tasks/route.ts
+
+# Dry run to verify without generating
+pdd sync home_page --dry-run
+```
+
+</verified_working_example>
+
+% Now Generate
+
+Generate architecture.json following the pattern in the example above.
