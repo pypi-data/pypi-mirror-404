@@ -1,0 +1,209 @@
+"""Tests for agr.handle module."""
+
+import pytest
+
+from agr.exceptions import InvalidHandleError
+from agr.handle import (
+    ParsedHandle,
+    installed_name_to_toml_handle,
+    parse_handle,
+)
+
+
+class TestParseHandle:
+    """Tests for parse_handle function."""
+
+    def test_remote_user_skill(self):
+        """Parse user/skill format."""
+        h = parse_handle("kasperjunge/commit")
+        assert h.username == "kasperjunge"
+        assert h.name == "commit"
+        assert h.repo is None
+        assert h.is_remote
+        assert not h.is_local
+
+    def test_remote_user_repo_skill(self):
+        """Parse user/repo/skill format."""
+        h = parse_handle("maragudk/skills/collaboration")
+        assert h.username == "maragudk"
+        assert h.repo == "skills"
+        assert h.name == "collaboration"
+        assert h.is_remote
+        assert not h.is_local
+
+    def test_local_dot_slash(self):
+        """Parse ./path format as local."""
+        h = parse_handle("./my-skill")
+        assert h.is_local
+        assert not h.is_remote
+        assert h.name == "my-skill"
+        assert h.local_path is not None
+
+    def test_local_dot_dot_slash(self):
+        """Parse ../path format as local."""
+        h = parse_handle("../other/skill")
+        assert h.is_local
+        assert h.name == "skill"
+
+    def test_empty_raises(self):
+        """Empty handle raises error."""
+        with pytest.raises(InvalidHandleError):
+            parse_handle("")
+
+    def test_whitespace_only_raises(self):
+        """Whitespace-only handle raises error."""
+        with pytest.raises(InvalidHandleError):
+            parse_handle("   ")
+
+    def test_simple_name_raises(self):
+        """Simple name without username raises error."""
+        with pytest.raises(InvalidHandleError):
+            parse_handle("commit")
+
+    def test_too_many_segments_raises(self):
+        """More than 3 segments raises error."""
+        with pytest.raises(InvalidHandleError):
+            parse_handle("a/b/c/d")
+
+    def test_parse_handle_rejects_double_hyphen_in_username(self):
+        """Username containing -- raises error."""
+        with pytest.raises(InvalidHandleError, match="contains reserved sequence"):
+            parse_handle("user--name/skill")
+
+    def test_parse_handle_rejects_double_hyphen_in_repo(self):
+        """Repo containing -- raises error."""
+        with pytest.raises(InvalidHandleError, match="contains reserved sequence"):
+            parse_handle("user/repo--name/skill")
+
+    def test_parse_handle_rejects_double_hyphen_in_skill(self):
+        """Skill name containing -- raises error."""
+        with pytest.raises(InvalidHandleError, match="contains reserved sequence"):
+            parse_handle("user/skill--name")
+
+    def test_parse_handle_allows_single_hyphen(self):
+        """Single hyphens are allowed in all components."""
+        h = parse_handle("user-name/my-skill")
+        assert h.username == "user-name"
+        assert h.name == "my-skill"
+
+    def test_parse_handle_allows_single_hyphen_in_repo(self):
+        """Single hyphens are allowed in repo name."""
+        h = parse_handle("user/my-repo/skill")
+        assert h.repo == "my-repo"
+
+    def test_parse_handle_rejects_double_hyphen_in_local_skill(self, tmp_path):
+        """Local skill directory containing -- raises error."""
+        # Create a directory with -- in the name
+        bad_skill = tmp_path / "my--skill"
+        bad_skill.mkdir()
+
+        with pytest.raises(InvalidHandleError, match="contains reserved sequence"):
+            parse_handle(str(bad_skill))
+
+
+class TestParsedHandle:
+    """Tests for ParsedHandle methods."""
+
+    def test_to_toml_handle_simple(self):
+        """to_toml_handle for user/skill."""
+        h = ParsedHandle(username="kasperjunge", name="commit")
+        assert h.to_toml_handle() == "kasperjunge/commit"
+
+    def test_to_toml_handle_with_repo(self):
+        """to_toml_handle for user/repo/skill."""
+        h = ParsedHandle(username="maragudk", repo="skills", name="collaboration")
+        assert h.to_toml_handle() == "maragudk/skills/collaboration"
+
+    def test_to_toml_handle_local(self):
+        """to_toml_handle for local path."""
+        from pathlib import Path
+
+        # Path("./my-skill") normalizes to "my-skill"
+        h = ParsedHandle(is_local=True, name="my-skill", local_path=Path("./my-skill"))
+        assert h.to_toml_handle() == "my-skill"
+
+    def test_to_toml_handle_local_with_subdir(self):
+        """to_toml_handle for local path with subdirectory."""
+        from pathlib import Path
+
+        h = ParsedHandle(
+            is_local=True, name="skill", local_path=Path("./path/to/skill")
+        )
+        assert h.to_toml_handle() == "path/to/skill"
+
+    def test_to_installed_name_simple(self):
+        """to_installed_name for user/skill."""
+        h = ParsedHandle(username="kasperjunge", name="commit")
+        assert h.to_installed_name() == "kasperjunge--commit"
+
+    def test_to_installed_name_with_repo(self):
+        """to_installed_name for user/repo/skill."""
+        h = ParsedHandle(username="maragudk", repo="skills", name="collaboration")
+        assert h.to_installed_name() == "maragudk--skills--collaboration"
+
+    def test_to_installed_name_local(self):
+        """to_installed_name for local skill."""
+        h = ParsedHandle(is_local=True, name="my-skill")
+        assert h.to_installed_name() == "local--my-skill"
+
+    def test_get_github_repo_simple(self):
+        """get_github_repo for user/skill defaults repo."""
+        h = ParsedHandle(username="kasperjunge", name="commit")
+        user, repo = h.get_github_repo()
+        assert user == "kasperjunge"
+        assert repo == "agent-resources"
+
+    def test_get_github_repo_explicit(self):
+        """get_github_repo with explicit repo."""
+        h = ParsedHandle(username="maragudk", repo="skills", name="collaboration")
+        user, repo = h.get_github_repo()
+        assert user == "maragudk"
+        assert repo == "skills"
+
+    def test_get_github_repo_local_raises(self):
+        """get_github_repo for local handle raises."""
+        h = ParsedHandle(is_local=True, name="my-skill")
+        with pytest.raises(InvalidHandleError):
+            h.get_github_repo()
+
+
+class TestInstalledNameToTomlHandle:
+    """Tests for installed_name_to_toml_handle function."""
+
+    def test_simple(self):
+        """Convert kasperjunge--commit to kasperjunge/commit."""
+        assert (
+            installed_name_to_toml_handle("kasperjunge--commit") == "kasperjunge/commit"
+        )
+
+    def test_with_repo(self):
+        """Convert maragudk--skills--collaboration to maragudk/skills/collaboration."""
+        assert (
+            installed_name_to_toml_handle("maragudk--skills--collaboration")
+            == "maragudk/skills/collaboration"
+        )
+
+    def test_local(self):
+        """Convert local--my-skill to my-skill."""
+        assert installed_name_to_toml_handle("local--my-skill") == "my-skill"
+
+    def test_no_separator(self):
+        """Handle without separator returns as-is."""
+        assert installed_name_to_toml_handle("simple") == "simple"
+
+    def test_legacy_colon_simple(self):
+        """Backward compatibility: colon format still parses (user:skill)."""
+        assert (
+            installed_name_to_toml_handle("kasperjunge:commit") == "kasperjunge/commit"
+        )
+
+    def test_legacy_colon_with_repo(self):
+        """Backward compatibility: colon format still parses (user:repo:skill)."""
+        assert (
+            installed_name_to_toml_handle("maragudk:skills:collaboration")
+            == "maragudk/skills/collaboration"
+        )
+
+    def test_legacy_colon_local(self):
+        """Backward compatibility: colon format still parses (local:skill)."""
+        assert installed_name_to_toml_handle("local:my-skill") == "my-skill"
