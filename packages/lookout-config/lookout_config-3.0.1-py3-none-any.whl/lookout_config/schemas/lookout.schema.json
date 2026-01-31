@@ -1,0 +1,411 @@
+{
+  "$defs": {
+    "AuthCredential": {
+      "properties": {
+        "username": {
+          "description": "Username for authentication",
+          "title": "Username",
+          "type": "string"
+        },
+        "hashed_password": {
+          "description": "BCrypt hash of password for authentication",
+          "title": "Hashed Password",
+          "type": "string"
+        }
+      },
+      "required": [
+        "username",
+        "hashed_password"
+      ],
+      "title": "AuthCredential",
+      "type": "object"
+    },
+    "Camera": {
+      "description": "Physical camera housing/mount that can host multiple camera sensors.\n\nRepresents the physical hardware unit including PTZ mechanisms.\nMultiple sensors (color, thermal, etc.) can share the same PTZ control.",
+      "properties": {
+        "name": {
+          "description": "Physical camera housing identifier (e.g., 'bow', 'stern', 'port')",
+          "title": "Name",
+          "type": "string"
+        },
+        "with_ptz": {
+          "default": false,
+          "description": "Whether we should launch a PTZ driver",
+          "title": "With Ptz",
+          "type": "boolean"
+        },
+        "sensors": {
+          "description": "List of camera sensors mounted in this housing",
+          "items": {
+            "$ref": "#/$defs/CameraSensor"
+          },
+          "title": "Sensors",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "Camera",
+      "type": "object"
+    },
+    "CameraSensor": {
+      "description": "Individual camera sensor within a physical camera housing.\n\nRepresents a logical camera stream (e.g., color, thermal) that shares\nthe same physical mounting point and PTZ control with other sensors.",
+      "properties": {
+        "name": {
+          "description": "Sensor identifier used in ROS topics and frame IDs. This should be prefixed with the camera housing name",
+          "title": "Name",
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/$defs/CameraSensorType",
+          "default": "color",
+          "description": "Type of camera sensor/modality"
+        },
+        "with_camera_info": {
+          "default": true,
+          "description": "Whether to launch camera_info publisher for this sensor",
+          "title": "With Camera Info",
+          "type": "boolean"
+        },
+        "with_pipeline": {
+          "default": true,
+          "description": "Whether to launch the pipeline",
+          "title": "With Pipeline",
+          "type": "boolean"
+        },
+        "with_image_compressor": {
+          "default": true,
+          "description": "Whether to launch the image compressor",
+          "title": "With Image Compressor",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "CameraSensor",
+      "type": "object"
+    },
+    "CameraSensorType": {
+      "description": "Supported camera sensor types for different sensor modalities.",
+      "enum": [
+        "color",
+        "ir"
+      ],
+      "title": "CameraSensorType",
+      "type": "string"
+    },
+    "DiscoveryEasy": {
+      "properties": {
+        "type": {
+          "const": "easy",
+          "default": "easy",
+          "title": "Type",
+          "type": "string"
+        },
+        "base_address": {
+          "default": "127.0.0.1",
+          "description": "Base address for easy discovery",
+          "title": "Base Address",
+          "type": "string"
+        },
+        "ros_domain_id": {
+          "default": 0,
+          "description": "ROS domain ID",
+          "title": "Ros Domain Id",
+          "type": "integer"
+        }
+      },
+      "title": "DiscoveryEasy",
+      "type": "object"
+    },
+    "DiscoveryFastDDS": {
+      "properties": {
+        "type": {
+          "const": "fastdds",
+          "default": "fastdds",
+          "title": "Type",
+          "type": "string"
+        },
+        "with_discovery_server": {
+          "default": true,
+          "description": "Run the discovery server. It will bind to 0.0.0.0:11811",
+          "title": "With Discovery Server",
+          "type": "boolean"
+        },
+        "discovery_server_ip": {
+          "default": "0.0.0.0",
+          "description": "IP/host/interface of the discovery server. Assumes port of 11811",
+          "title": "Discovery Server Ip",
+          "type": "string"
+        },
+        "own_ip": {
+          "default": "0.0.0.0",
+          "description": "IP/host/interface address of the primary network interface. This is where DDS traffic will route to.",
+          "title": "Own Ip",
+          "type": "string"
+        }
+      },
+      "title": "DiscoveryFastDDS",
+      "type": "object"
+    },
+    "DiscoverySimple": {
+      "properties": {
+        "type": {
+          "const": "simple",
+          "default": "simple",
+          "title": "Type",
+          "type": "string"
+        },
+        "ros_domain_id": {
+          "default": 0,
+          "description": "ROS domain ID",
+          "title": "Ros Domain Id",
+          "type": "integer"
+        },
+        "own_ip": {
+          "default": "0.0.0.0",
+          "description": "IP/host/interface address of the primary network interface. This is where DDS traffic will route to.",
+          "title": "Own Ip",
+          "type": "string"
+        },
+        "discovery_range": {
+          "default": "localhost",
+          "description": "Discovery range: 'localhost' sets ROS_AUTOMATIC_DISCOVERY_RANGE to LOCALHOST, 'subnet' sets it to SUBNET.",
+          "enum": [
+            "subnet",
+            "localhost"
+          ],
+          "title": "Discovery Range",
+          "type": "string"
+        }
+      },
+      "title": "DiscoverySimple",
+      "type": "object"
+    },
+    "DiscoveryZenoh": {
+      "properties": {
+        "type": {
+          "const": "zenoh",
+          "default": "zenoh",
+          "title": "Type",
+          "type": "string"
+        },
+        "with_discovery_server": {
+          "default": true,
+          "description": "Run the zenoh router",
+          "title": "With Discovery Server",
+          "type": "boolean"
+        },
+        "discovery_server_ip": {
+          "default": "0.0.0.0",
+          "description": "IP/host/interface of the discovery server.",
+          "title": "Discovery Server Ip",
+          "type": "string"
+        }
+      },
+      "title": "DiscoveryZenoh",
+      "type": "object"
+    },
+    "GeolocationMode": {
+      "enum": [
+        "none",
+        "relative_bearing",
+        "absolute_bearing",
+        "range_bearing"
+      ],
+      "title": "GeolocationMode",
+      "type": "string"
+    },
+    "LogLevel": {
+      "enum": [
+        "info",
+        "debug"
+      ],
+      "title": "LogLevel",
+      "type": "string"
+    },
+    "Mode": {
+      "enum": [
+        "simulator",
+        "hardware",
+        "stubs",
+        "rosbag"
+      ],
+      "title": "Mode",
+      "type": "string"
+    },
+    "PositioningSystem": {
+      "enum": [
+        "none",
+        "septentrio_ins",
+        "advanced_navigation_ins",
+        "pos_mv",
+        "nmea_2000_sat_compass",
+        "nmea_2000_compass",
+        "nmea_0183_sat_compass",
+        "nmea_0183_compass"
+      ],
+      "title": "PositioningSystem",
+      "type": "string"
+    },
+    "Proxy": {
+      "properties": {
+        "enabled": {
+          "default": true,
+          "description": "Whether the proxy is enabled",
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "http_port": {
+          "default": 80,
+          "description": "HTTP port for the proxy server",
+          "title": "Http Port",
+          "type": "integer"
+        },
+        "https_port": {
+          "default": 443,
+          "description": "HTTPS port for the proxy server",
+          "title": "Https Port",
+          "type": "integer"
+        },
+        "auth_credentials": {
+          "description": "List of authentication credentials",
+          "items": {
+            "$ref": "#/$defs/AuthCredential"
+          },
+          "title": "Auth Credentials",
+          "type": "array"
+        }
+      },
+      "title": "Proxy",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "namespace_vessel": {
+      "default": "vessel_1",
+      "description": "ROS namespace for the vessel",
+      "title": "Namespace Vessel",
+      "type": "string"
+    },
+    "gama_vessel": {
+      "default": false,
+      "description": "Whether this is running on a Gama vessel",
+      "title": "Gama Vessel",
+      "type": "boolean"
+    },
+    "mode": {
+      "$ref": "#/$defs/Mode",
+      "default": "hardware",
+      "description": "Operating mode for the system"
+    },
+    "log_level": {
+      "$ref": "#/$defs/LogLevel",
+      "default": "info",
+      "description": "Logging verbosity level"
+    },
+    "cameras": {
+      "items": {
+        "$ref": "#/$defs/Camera"
+      },
+      "title": "Cameras",
+      "type": "array"
+    },
+    "geolocation_mode": {
+      "$ref": "#/$defs/GeolocationMode",
+      "default": "none",
+      "description": "Method for determining target geolocations"
+    },
+    "positioning_system": {
+      "$ref": "#/$defs/PositioningSystem",
+      "default": "none",
+      "description": "Type of positioning/navigation system to use"
+    },
+    "components": {
+      "description": "Dynamic component configurations generated from ROS parameters",
+      "title": "Components"
+    },
+    "prod": {
+      "default": true,
+      "description": "Whether to run in production mode with optimized settings",
+      "title": "Prod",
+      "type": "boolean"
+    },
+    "proxy": {
+      "$ref": "#/$defs/Proxy",
+      "description": "Configuration for the proxy server"
+    },
+    "log_directory": {
+      "default": "~/greenroom/lookout/logs",
+      "description": "Directory path for storing log files",
+      "title": "Log Directory",
+      "type": "string"
+    },
+    "models_directory": {
+      "default": "~/greenroom/lookout/models",
+      "description": "Directory path for AI/ML model files",
+      "title": "Models Directory",
+      "type": "string"
+    },
+    "recording_directory": {
+      "default": "~/greenroom/lookout/recordings",
+      "description": "Directory path for storing video recordings",
+      "title": "Recording Directory",
+      "type": "string"
+    },
+    "discovery": {
+      "discriminator": {
+        "mapping": {
+          "easy": "#/$defs/DiscoveryEasy",
+          "fastdds": "#/$defs/DiscoveryFastDDS",
+          "simple": "#/$defs/DiscoverySimple",
+          "zenoh": "#/$defs/DiscoveryZenoh"
+        },
+        "propertyName": "type"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/DiscoveryZenoh"
+        },
+        {
+          "$ref": "#/$defs/DiscoveryFastDDS"
+        },
+        {
+          "$ref": "#/$defs/DiscoverySimple"
+        },
+        {
+          "$ref": "#/$defs/DiscoveryEasy"
+        }
+      ],
+      "title": "Discovery"
+    },
+    "use_ais_web_receiver": {
+      "default": false,
+      "description": "Whether to run the AIS web receiver node",
+      "title": "Use Ais Web Receiver",
+      "type": "boolean"
+    },
+    "use_rosbag_scheduler": {
+      "default": false,
+      "description": "Whether to run the rosbag scheduler node",
+      "title": "Use Rosbag Scheduler",
+      "type": "boolean"
+    },
+    "use_chips": {
+      "default": false,
+      "description": "Whether to run the object chipper node",
+      "title": "Use Chips",
+      "type": "boolean"
+    },
+    "use_demo_banner": {
+      "default": true,
+      "description": "Whether to display the demo banner in the UI",
+      "title": "Use Demo Banner",
+      "type": "boolean"
+    }
+  },
+  "title": "LookoutConfig",
+  "type": "object"
+}
