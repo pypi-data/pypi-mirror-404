@@ -1,0 +1,1284 @@
+# Graph Schema Definition for Lineage System v2
+# Single source of truth for all backends (KùzuDB, Neo4j, Postgres AGE)
+#
+# BREAKING CHANGES in v2:
+# - Separated logical dbt entities from physical warehouse entities
+# - Renamed Business* → Inferred* (LLM-derived semantics)
+# - Renamed SemanticView* → Native* (warehouse-declared semantics)
+# - ALL relationships now use pair-based validation
+# - Added multi-environment support
+#
+# This schema defines:
+# - Node types with their properties (using Python types)
+# - Relationship types with source/target nodes and properties
+#
+# Types are Python-based and mapped to backend-specific types:
+# - Python: str, int, bool, float, list[str], dict, list[dict]
+# - KùzuDB: STRING, INT64, BOOL, DOUBLE, STRING[], MAP, MAP[]
+# - Neo4j/Cypher: String, Integer, Boolean, Float, List, Map
+#
+# Backends use schema_loader to generate appropriate DDL
+
+version: "2.0"
+
+# ==============================================================================
+# NODE TYPES
+# ==============================================================================
+
+nodes:
+  # ----------------------------------------------------------------------------
+  # dbt Logical Metadata (LOGICAL - from dbt project)
+  # ----------------------------------------------------------------------------
+
+  DbtModel:
+    domain: dbt_logical
+    core: true
+    description: "dbt models - LOGICAL definitions (no physical warehouse properties)"
+    properties:
+      id: { type: str, primary_key: true }
+      name: { type: str }
+      search_tokenized_name: { type: str }
+      materialization: { type: str } # table, view, incremental, ephemeral (logical concept)
+      unique_id: { type: str }
+      description: { type: str }
+      original_path: { type: str }
+      source_path: { type: str }
+      compiled_path: { type: str }
+      checksum: { type: str } # Raw model SQL checksum from manifest (legacy incremental signal)
+      model_fingerprint: { type: str } # Incremental gating fingerprint (initially compiled SQL canonical hash)
+      fingerprint_type: { type: str } # Fingerprint method: canonical, fallback, seed, raw_checksum
+      fingerprint_dialect: { type: str } # SQL dialect used for fingerprint computation
+      raw_sql: { type: str } # Original SQL from .sql file
+      compiled_sql: { type: str } # Compiled SQL after dbt processing
+      canonical_sql: { type: str } # Clean, physically-agnostic SQL (stripped db/catalog)
+      qualified_sql: { type: str } # Schema-qualified, fully resolved SQL (preserves physical references)
+    notes: |
+      Physical properties (database, schema, relation_name) moved to PhysicalRelation.
+      Linked via BUILDS edge with environment property.
+    fulltext_index:
+      fields:
+        [
+          "name",
+          "search_tokenized_name",
+          "description",
+          "compiled_sql",
+          "raw_sql",
+        ]
+
+  DbtSource:
+    domain: dbt_logical
+    description: "dbt sources - LOGICAL definitions"
+    properties:
+      id: { type: str, primary_key: true }
+      name: { type: str }
+      search_tokenized_name: { type: str }
+      loader: { type: str }
+      unique_id: { type: str }
+      description: { type: str }
+      source_fingerprint: { type: str } # Fingerprint hash based on schema location and columns
+      fingerprint_type: { type: str } # Fingerprint method (always 'source' for DbtSource)
+    notes: |
+      Physical properties (database, schema, identifier) moved to PhysicalRelation.
+    fulltext_index:
+      fields: ["name", "search_tokenized_name", "description"]
+
+  DbtColumn:
+    domain: dbt_logical
+    core: true
+    description: "Columns from dbt models/sources - LOGICAL definitions"
+    properties:
+      id: { type: str, primary_key: true }
+      name: { type: str }
+      search_tokenized_name: { type: str }
+      parent_id: { type: str }
+      parent_label: { type: str }
+      description: { type: str }
+      data_type: { type: str } # Logical data type from schema.yml
+    notes: |
+      Represents logical column definition. Physical columns stored in PhysicalColumn.
+    fulltext_index:
+      fields: ["name", "search_tokenized_name"]
+
+  DbtTest:
+    domain: dbt_logical
+    description: "dbt data tests - generic (unique, not_null, etc.) and singular (custom SQL)"
+    properties:
+      id: { type: str, primary_key: true }
+      name: { type: str }
+      unique_id: { type: str }
+      description: { type: str }
+      test_type: { type: str } # "generic" or "singular"
+      test_name: { type: str } # Generic test macro name (unique, not_null, accepted_values, relationships)
+      column_name: { type: str } # Column being tested (column-scoped generic tests)
+      model_id: { type: str } # Primary model/source being tested
+      referenced_model_id: { type: str } # For relationship tests: the "to" target
+      severity: { type: str } # "error" or "warn"
+      tags: { type: "list[str]" }
+      where_clause: { type: str }
+      store_failures: { type: bool }
+      test_kwargs: { type: str } # JSON-encoded test kwargs for generic tests
+      original_path: { type: str }
+      compiled_sql: { type: str }
+      test_fingerprint: { type: str } # SHA-256 fingerprint for change detection
+      fingerprint_type: { type: str } # Always "test_config" for DbtTest
+    fulltext_index:
+      fields: ["name", "test_name", "column_name", "model_id"]
+
+  DbtUnitTest:
+    domain: dbt_logical
+    description: "dbt unit tests (v1.8+) - validate model logic with mocked inputs"
+    properties:
+      id: { type: str, primary_key: true }
+      name: { type: str }
+      unique_id: { type: str }
+      description: { type: str }
+      model_id: { type: str } # Model being tested
+      given: { type: str } # JSON-encoded input definitions (mocked data)
+      expect: { type: str } # JSON-encoded expected output
+      overrides: { type: str } # JSON-encoded model overrides
+      tags: { type: "list[str]" }
+      test_fingerprint: { type: str } # SHA-256 fingerprint for change detection
+    fulltext_index:
+      fields: ["name", "model_id"]
+
+  DbtMacro:
+    description: "dbt macros - LOGICAL macro definitions"
+    properties:
+      id: { type: str, primary_key: true }
+      name: { type: str }
+      search_tokenized_name: { type: str }
+      unique_id: { type: str }
+      description: { type: str }
+      package_name: { type: str }
+      original_path: { type: str }
+      source_path: { type: str }
+      macro_sql: { type: str }
+    notes: |
+      Represents macro definitions from dbt manifest. Used for dependency tracing
+      and future incremental invalidation (macro-aware fingerprints).
+    fulltext_index:
+      fields: ["name", "search_tokenized_name", "description"]
+
+  # ----------------------------------------------------------------------------
+  # Physical Warehouse Entities (PHYSICAL - actual warehouse tables/views)
+  # ----------------------------------------------------------------------------
+
+  PhysicalTable:
+    domain: physical
+    core: true
+    description: "Physical table in warehouse"
+    properties:
+      id: { type: str, primary_key: true } # Format: physical://{environment}/{fqn}
+      name: { type: str }
+      fqn: { type: str } # Fully qualified name (database.schema.table)
+      search_tokenized_name: { type: str }
+      database: { type: str }
+      schema_name: { type: str }
+      relation_name: { type: str }
+      warehouse_type: { type: str } # snowflake, bigquery, duckdb, etc.
+      environment: { type: str } # dev, staging, prod, etc.
+      materialization_strategy: { type: str } # full-refresh, incremental, etc.
+      created_at: { type: str }
+      updated_at: { type: str }
+    fulltext_index:
+      fields: ["name", "search_tokenized_name", "fqn"]
+
+  PhysicalView:
+    domain: physical
+    description: "Physical view in warehouse"
+    properties:
+      id: { type: str, primary_key: true }
+      name: { type: str }
+      fqn: { type: str }
+      search_tokenized_name: { type: str }
+      database: { type: str }
+      schema_name: { type: str }
+      relation_name: { type: str }
+      warehouse_type: { type: str }
+      environment: { type: str }
+      materialization_strategy: { type: str }
+      created_at: { type: str }
+      updated_at: { type: str }
+    fulltext_index:
+      fields: ["name", "search_tokenized_name", "fqn"]
+
+  PhysicalMaterializedView:
+    domain: physical
+    description: "Physical materialized view in warehouse"
+    properties:
+      id: { type: str, primary_key: true }
+      name: { type: str }
+      fqn: { type: str }
+      search_tokenized_name: { type: str }
+      database: { type: str }
+      schema_name: { type: str }
+      relation_name: { type: str }
+      warehouse_type: { type: str }
+      environment: { type: str }
+      materialization_strategy: { type: str }
+      created_at: { type: str }
+      updated_at: { type: str }
+    fulltext_index:
+      fields: ["name", "search_tokenized_name", "fqn"]
+
+  PhysicalIncrementalModel:
+    domain: physical
+    description: "Physical incrementally-maintained table"
+    properties:
+      id: { type: str, primary_key: true }
+      name: { type: str }
+      fqn: { type: str }
+      search_tokenized_name: { type: str }
+      database: { type: str }
+      schema_name: { type: str }
+      relation_name: { type: str }
+      warehouse_type: { type: str }
+      environment: { type: str }
+      materialization_strategy: { type: str }
+      created_at: { type: str }
+      updated_at: { type: str }
+    fulltext_index:
+      fields: ["name", "search_tokenized_name", "fqn"]
+
+  PhysicalEphemeral:
+    domain: physical
+    description: "Physical ephemeral model (CTE)"
+    properties:
+      id: { type: str, primary_key: true }
+      name: { type: str }
+      fqn: { type: str }
+      search_tokenized_name: { type: str }
+      database: { type: str }
+      schema_name: { type: str }
+      relation_name: { type: str }
+      warehouse_type: { type: str }
+      environment: { type: str }
+      materialization_strategy: { type: str }
+      created_at: { type: str }
+      updated_at: { type: str }
+    fulltext_index:
+      fields: ["name", "search_tokenized_name", "fqn"]
+
+  PhysicalColumn:
+    domain: physical
+    description: "Column in physical warehouse relation"
+    properties:
+      id: { type: str, primary_key: true }
+      name: { type: str }
+      search_tokenized_name: { type: str }
+      fqn: { type: str } # Fully qualified name (database.schema.table.column)
+      parent_id: { type: str } # PhysicalRelation ID
+      data_type: { type: str } # Actual warehouse data type
+      nullable: { type: bool }
+      default_value: { type: str }
+    fulltext_index:
+      fields: ["name", "search_tokenized_name"]
+
+  # ----------------------------------------------------------------------------
+  # OpenLineage Runtime
+  # ----------------------------------------------------------------------------
+
+  Dataset:
+    domain: runtime
+    description: "OpenLineage dataset nodes"
+    properties:
+      id: { type: str, primary_key: true }
+      name: { type: str }
+      namespace: { type: str }
+      dataset_type: { type: str }
+
+  Job:
+    domain: runtime
+    description: "OpenLineage job nodes"
+    properties:
+      id: { type: str, primary_key: true }
+      name: { type: str }
+      namespace: { type: str }
+      job_type: { type: str }
+
+  Run:
+    domain: runtime
+    description: "OpenLineage run nodes (job executions)"
+    properties:
+      id: { type: str, primary_key: true }
+      job_id: { type: str }
+      status: { type: str }
+      start_time: { type: str }
+      end_time: { type: str }
+      duration_ms: { type: int }
+      error_info: { type: str }
+
+  Error:
+    domain: runtime
+    description: "Recurring error patterns"
+    properties:
+      id: { type: str, primary_key: true }
+      error_type: { type: str }
+      pattern: { type: str }
+      message: { type: str }
+      first_seen: { type: str }
+      last_seen: { type: str }
+      occurrence_count: { type: int }
+      resolution_status: { type: str }
+
+  # ----------------------------------------------------------------------------
+  # Inferred Semantic Metadata (LLM-derived from SQL analysis)
+  # ----------------------------------------------------------------------------
+
+  InferredSemanticModel:
+    domain: semantic_inferred
+    core: true
+    description: "LLM-inferred semantic model (container for semantic metadata)"
+    properties:
+      id: { type: str, primary_key: true }
+      name: { type: str }
+      search_tokenized_name: { type: str }
+      model_id: { type: str } # Parent DbtModel ID
+      analyzed_at: { type: str }
+      analysis_version: { type: str }
+      has_aggregations: { type: bool }
+      has_time_window: { type: bool }
+      has_window_functions: { type: bool }
+      grain_human: { type: str }
+      intent: { type: str }
+      analysis_summary: { type: str }
+    fulltext_index:
+      fields: ["intent", "analysis_summary", "search_tokenized_name"]
+
+  InferredMeasure:
+    domain: semantic_inferred
+    description: "LLM-inferred aggregated business metrics"
+    properties:
+      id: { type: str, primary_key: true }
+      name: { type: str }
+      search_tokenized_name: { type: str }
+      semantic_model_id: { type: str } # Parent InferredSemanticModel ID
+      expr: { type: str }
+      agg_function: { type: str }
+      source_alias: { type: str }
+    fulltext_index:
+      fields: ["name", "search_tokenized_name", "expr"]
+
+  InferredDimension:
+    domain: semantic_inferred
+    description: "LLM-inferred non-aggregated business attributes"
+    properties:
+      id: { type: str, primary_key: true }
+      name: { type: str }
+      search_tokenized_name: { type: str }
+      semantic_model_id: { type: str }
+      source: { type: str }
+      is_pii: { type: bool }
+    fulltext_index:
+      fields: ["name", "search_tokenized_name", "source"]
+
+  InferredFact:
+    domain: semantic_inferred
+    description: "LLM-inferred factual data points"
+    properties:
+      id: { type: str, primary_key: true }
+      name: { type: str }
+      search_tokenized_name: { type: str }
+      semantic_model_id: { type: str }
+      source: { type: str }
+      description: { type: str }
+    fulltext_index:
+      fields: ["name", "search_tokenized_name", "description"]
+
+  InferredSegment:
+    domain: semantic_inferred
+    description: "LLM-inferred filter rules and business logic"
+    properties:
+      id: { type: str, primary_key: true }
+      name: { type: str }
+      semantic_model_id: { type: str }
+      rule: { type: str }
+      clause: { type: str }
+
+  TimeWindow:
+    domain: semantic_inferred
+    description: "Time range filters"
+    properties:
+      id: { type: str, primary_key: true }
+      name: { type: str }
+      semantic_model_id: { type: str }
+      column_qualified: { type: str }
+      start_value: { type: str }
+      end_value: { type: str }
+      end_exclusive: { type: bool }
+      granularity: { type: str }
+
+  TimeAttribute:
+    domain: semantic_inferred
+    description: "Time-based filter attributes"
+    properties:
+      id: { type: str, primary_key: true }
+      name: { type: str }
+      semantic_model_id: { type: str }
+      column_qualified: { type: str }
+      filter_expr: { type: str }
+
+  JoinEdge:
+    domain: semantic_inferred
+    description: "Join relationships between models"
+    properties:
+      id: { type: str, primary_key: true }
+      name: { type: str }
+      semantic_model_id: { type: str }
+      join_type: { type: str }
+      left_alias: { type: str }
+      right_alias: { type: str }
+      equi_condition: { type: str }
+      effective_type: { type: str }
+      normalized_equi_condition: { type: str }
+      scope: { type: str }
+      left_model_id: { type: str }
+      right_model_id: { type: str }
+      confidence: { type: str }
+
+  WindowFunction:
+    domain: semantic_inferred
+    description: "Window/analytic functions"
+    properties:
+      id: { type: str, primary_key: true }
+      name: { type: str }
+      semantic_model_id: { type: str }
+      func: { type: str }
+      partition_by: { type: str }
+      order_by: { type: str }
+      frame: { type: str }
+
+  InferredRelation:
+    domain: semantic_inferred
+    description: "SQL relation usage (tables/views/CTEs) discovered in analysis"
+    properties:
+      id: { type: str, primary_key: true }
+      name: { type: str }
+      semantic_model_id: { type: str }
+      alias: { type: str }
+      base: { type: str }
+      kind: { type: str }
+      scope: { type: str }
+      is_temp: { type: bool }
+      confidence: { type: str }
+
+  InferredFilter:
+    domain: semantic_inferred
+    description: "Filter predicates (WHERE/HAVING/QUALIFY) identified in analysis"
+    properties:
+      id: { type: str, primary_key: true }
+      name: { type: str }
+      semantic_model_id: { type: str }
+      predicate: { type: str }
+      clause: { type: str }
+      scope: { type: str }
+      alias: { type: str }
+
+  InferredGroupingScope:
+    domain: semantic_inferred
+    description: "Per-scope grouping analysis (result grain, measures, etc.)"
+    properties:
+      id: { type: str, primary_key: true }
+      name: { type: str }
+      semantic_model_id: { type: str }
+      scope: { type: str }
+      is_aggregated: { type: bool }
+      group_by: { type: str }
+      result_grain: { type: str }
+      measures: { type: str }
+
+  InferredSelectItem:
+    domain: semantic_inferred
+    description: "SELECT items with classification (dimension/measure)"
+    properties:
+      id: { type: str, primary_key: true }
+      name: { type: str }
+      semantic_model_id: { type: str }
+      scope: { type: str }
+      expr: { type: str }
+      alias: { type: str }
+      kind: { type: str }
+      source_aliases: { type: str }
+
+  InferredTimeScope:
+    domain: semantic_inferred
+    description: "Time semantics per scope (time buckets, windows, columns)"
+    properties:
+      id: { type: str, primary_key: true }
+      name: { type: str }
+      semantic_model_id: { type: str }
+      scope: { type: str }
+      time_scope: { type: str }
+      normalized_time_scope: { type: str }
+      time_buckets: { type: str }
+      time_columns: { type: str }
+
+  InferredWindowScope:
+    domain: semantic_inferred
+    description: "Window function usage per scope"
+    properties:
+      id: { type: str, primary_key: true }
+      name: { type: str }
+      semantic_model_id: { type: str }
+      scope: { type: str }
+      windows: { type: str }
+
+  InferredOutputShape:
+    domain: semantic_inferred
+    description: "Output shape analysis per scope (ORDER BY, LIMIT, set ops)"
+    properties:
+      id: { type: str, primary_key: true }
+      name: { type: str }
+      semantic_model_id: { type: str }
+      scope: { type: str }
+      order_by: { type: str }
+      limit: { type: int }
+      offset: { type: int }
+      select_distinct: { type: bool }
+      set_ops: { type: str }
+
+  InferredAuditFinding:
+    domain: semantic_inferred
+    description: "Audit findings from validation pass"
+    properties:
+      id: { type: str, primary_key: true }
+      name: { type: str }
+      semantic_model_id: { type: str }
+      code: { type: str }
+      severity: { type: str }
+      message: { type: str }
+      where: { type: str }
+      context: { type: str }
+
+  InferredAuditPatch:
+    domain: semantic_inferred
+    description: "Suggested patches from audit analysis"
+    properties:
+      id: { type: str, primary_key: true }
+      name: { type: str }
+      semantic_model_id: { type: str }
+      op: { type: str }
+      path: { type: str }
+      value: { type: str }
+      rationale: { type: str }
+
+  InferredGrainToken:
+    domain: semantic_inferred
+    description: "Grain humanization tokens"
+    properties:
+      id: { type: str, primary_key: true }
+      name: { type: str }
+      semantic_model_id: { type: str }
+      input_expr: { type: str }
+      normalized_term: { type: str }
+      is_measure: { type: bool }
+      dropped: { type: bool }
+
+  # ----------------------------------------------------------------------------
+  # Native Semantic Metadata (warehouse-declared semantic layers)
+  # ----------------------------------------------------------------------------
+
+  NativeSemanticModel:
+    domain: semantic_native
+    description: "Warehouse-native semantic model (Snowflake, Databricks, BigQuery, etc.)"
+    properties:
+      id: { type: str, primary_key: true }
+      name: { type: str }
+      database_name: { type: str }
+      schema_name: { type: str }
+      provider: { type: str }
+      owner: { type: str }
+      comment: { type: str }
+      created_on: { type: str }
+      raw_metadata: { type: str }
+      synonyms: { type: "list[str]" }
+
+  NativeMeasure:
+    domain: semantic_native
+    description: "Warehouse-declared metric/measure"
+    properties:
+      id: { type: str, primary_key: true }
+      name: { type: str }
+      model_id: { type: str } # Parent NativeSemanticModel ID
+      semantic_table_name: { type: str }
+      expression: { type: str }
+      aggregation: { type: str }
+      data_type: { type: str }
+      description: { type: str }
+      format: { type: str }
+      synonyms: { type: "list[str]" }
+
+  NativeDimension:
+    domain: semantic_native
+    description: "Warehouse-declared dimension/attribute"
+    properties:
+      id: { type: str, primary_key: true }
+      name: { type: str }
+      model_id: { type: str }
+      semantic_table_name: { type: str }
+      expression: { type: str }
+      data_type: { type: str }
+      description: { type: str }
+      is_time_dimension: { type: bool }
+      time_granularity: { type: str }
+      synonyms: { type: "list[str]" }
+
+  NativeFact:
+    domain: semantic_native
+    description: "Warehouse-declared row-level fact"
+    properties:
+      id: { type: str, primary_key: true }
+      name: { type: str }
+      model_id: { type: str }
+      semantic_table_name: { type: str }
+      expression: { type: str }
+      data_type: { type: str }
+      description: { type: str }
+      synonyms: { type: "list[str]" }
+
+  NativeBaseTable:
+    domain: semantic_native
+    description: "Base table referenced by native semantic model"
+    properties:
+      id: { type: str, primary_key: true }
+      name: { type: str }
+      model_id: { type: str }
+      base_table_database_name: { type: str }
+      base_table_schema_name: { type: str }
+      base_table_name: { type: str }
+      synonyms: { type: "list[str]" }
+      primary_key: { type: "list[str]" }
+
+  # ----------------------------------------------------------------------------
+  # Join Clustering
+  # ----------------------------------------------------------------------------
+
+  JoinCluster:
+    domain: clustering
+    description: "Groups of models with similar join patterns"
+    properties:
+      id: { type: str, primary_key: true }
+      cluster_id: { type: str }
+      pattern: { type: str }
+      model_count: { type: int }
+
+  # ----------------------------------------------------------------------------
+  # Data Profiling
+  # ----------------------------------------------------------------------------
+
+  TableProfile:
+    domain: profiling
+    description: "Table-level profiling statistics"
+    properties:
+      id: { type: str, primary_key: true }
+      database_name: { type: str }
+      schema_name: { type: str }
+      table_name: { type: str }
+      row_count: { type: int }
+      profiled_at: { type: str }
+
+  ColumnProfile:
+    domain: profiling
+    description: "Column-level profiling statistics"
+    properties:
+      id: { type: str, primary_key: true }
+      column_name: { type: str }
+      data_type: { type: str }
+      null_count: { type: int }
+      distinct_count: { type: int }
+      min_value: { type: str }
+      max_value: { type: str }
+      avg_value: { type: str }
+      top_values: { type: str }
+
+  # ----------------------------------------------------------------------------
+  # Other Nodes
+  # ----------------------------------------------------------------------------
+
+  DataRequestTicket:
+    domain: tickets
+    description: "Data request tracking"
+    properties:
+      id: { type: str, primary_key: true }
+      title: { type: str }
+      description: { type: str }
+      requested_data: { type: str }
+      business_justification: { type: str }
+      requester: { type: str }
+      status: { type: str }
+      priority: { type: str }
+      created_at: { type: str }
+      assigned_to: { type: str }
+
+# ==============================================================================
+# RELATIONSHIP TYPES
+# ==============================================================================
+
+relationships:
+  # ----------------------------------------------------------------------------
+  # Logical dbt Relationships
+  # ----------------------------------------------------------------------------
+
+  DEPENDS_ON:
+    domain: dbt_logical
+    description: "Model-to-model or model-to-source dependencies"
+    pairs:
+      - from: DbtModel
+        to: DbtModel
+      - from: DbtModel
+        to: DbtSource
+    multiplicity: MANY_MANY
+    properties:
+      type: { type: str }
+      direct: { type: bool }
+
+  MATERIALIZES:
+    domain: dbt_logical
+    description: "Logical model/source owns logical columns"
+    pairs:
+      - from: DbtModel
+        to: DbtColumn
+      - from: DbtSource
+        to: DbtColumn
+    multiplicity: MANY_MANY
+    properties: {}
+
+  USES_MACRO:
+    description: "dbt model uses a macro"
+    pairs:
+      - from: DbtModel
+        to: DbtMacro
+    multiplicity: MANY_MANY
+    properties: {}
+
+  CALLS_MACRO:
+    description: "dbt macro calls another macro"
+    pairs:
+      - from: DbtMacro
+        to: DbtMacro
+    multiplicity: MANY_MANY
+    properties: {}
+
+  HAS_TEST:
+    domain: dbt_logical
+    description: "Model or source has a data test"
+    pairs:
+      - from: DbtModel
+        to: DbtTest
+      - from: DbtSource
+        to: DbtTest
+    multiplicity: MANY_MANY
+    properties: {}
+
+  HAS_UNIT_TEST:
+    domain: dbt_logical
+    description: "Model has a unit test"
+    pairs:
+      - from: DbtModel
+        to: DbtUnitTest
+    multiplicity: MANY_MANY
+    properties: {}
+
+  TESTS_COLUMN:
+    domain: dbt_logical
+    description: "Data test tests a specific column"
+    pairs:
+      - from: DbtTest
+        to: DbtColumn
+    multiplicity: MANY_MANY
+    properties: {}
+
+  TEST_REFERENCES:
+    domain: dbt_logical
+    description: "Relationship test references another model/source"
+    pairs:
+      - from: DbtTest
+        to: DbtModel
+      - from: DbtTest
+        to: DbtSource
+    multiplicity: MANY_MANY
+    properties:
+      referenced_field: { type: str } # The field in the referenced model
+
+  # ----------------------------------------------------------------------------
+  # Physical Relationships
+  # ----------------------------------------------------------------------------
+
+  BUILDS:
+    domain: physical
+    description: "Logical dbt entity builds physical warehouse relation"
+    pairs:
+      - from: DbtModel
+        to: PhysicalTable
+      - from: DbtModel
+        to: PhysicalView
+      - from: DbtModel
+        to: PhysicalMaterializedView
+      - from: DbtModel
+        to: PhysicalIncrementalModel
+      - from: DbtModel
+        to: PhysicalEphemeral
+      - from: DbtSource
+        to: PhysicalTable
+      - from: DbtSource
+        to: PhysicalView
+    multiplicity: MANY_MANY
+    properties:
+      environment: { type: str }
+      materialization_strategy: { type: str }
+      deployed_at: { type: str }
+
+  HAS_COLUMN:
+    domain: physical
+    description: "Physical relation has physical columns"
+    pairs:
+      - from: PhysicalTable
+        to: PhysicalColumn
+      - from: PhysicalView
+        to: PhysicalColumn
+      - from: PhysicalMaterializedView
+        to: PhysicalColumn
+      - from: PhysicalIncrementalModel
+        to: PhysicalColumn
+    multiplicity: MANY_MANY
+    properties: {}
+
+  # ----------------------------------------------------------------------------
+  # Data Lineage (consolidated)
+  # ----------------------------------------------------------------------------
+
+  DERIVES_FROM:
+    domain: lineage
+    description: "Entity derives from source data (consolidated data lineage)"
+    pairs:
+      - from: DbtColumn
+        to: DbtColumn
+      - from: PhysicalColumn
+        to: DbtColumn
+      - from: InferredMeasure
+        to: DbtColumn
+      - from: InferredDimension
+        to: DbtColumn
+      - from: InferredFact
+        to: DbtColumn
+      - from: NativeMeasure
+        to: DbtColumn
+      - from: NativeDimension
+        to: DbtColumn
+      - from: NativeFact
+        to: DbtColumn
+    properties:
+      confidence: { type: str }
+      transformation: { type: str }
+    multiplicity: MANY_MANY
+
+  # ----------------------------------------------------------------------------
+  # OpenLineage Relationships
+  # ----------------------------------------------------------------------------
+
+  READS:
+    domain: runtime
+    description: "Job reads dataset"
+    pairs:
+      - from: Job
+        to: Dataset
+    multiplicity: MANY_MANY
+    properties:
+      run_id: { type: str }
+
+  WRITES:
+    domain: runtime
+    description: "Job writes dataset"
+    pairs:
+      - from: Job
+        to: Dataset
+    multiplicity: MANY_MANY
+    properties:
+      run_id: { type: str }
+
+  INSTANCE_OF:
+    domain: runtime
+    description: "Run is instance of job"
+    pairs:
+      - from: Run
+        to: Job
+    multiplicity: MANY_MANY
+    properties:
+      edge_id: { type: str }
+
+  SAME_AS:
+    domain: runtime
+    description: "Dataset refers to physical warehouse entity"
+    pairs:
+      - from: Dataset
+        to: PhysicalTable
+      - from: Dataset
+        to: PhysicalView
+      - from: Dataset
+        to: PhysicalMaterializedView
+      - from: Dataset
+        to: PhysicalIncrementalModel
+    multiplicity: MANY_MANY
+    properties:
+      confidence: { type: str, enum: [direct, high, medium, low] } # Confidence enum
+      match_method: { type: str }
+
+  EXECUTES:
+    domain: runtime
+    description: "Job executes logical dbt model"
+    pairs:
+      - from: Job
+        to: DbtModel
+    multiplicity: MANY_MANY
+    properties: {}
+
+  HAS_ERROR:
+    domain: runtime
+    description: "Run has error"
+    pairs:
+      - from: Run
+        to: Error
+    multiplicity: MANY_MANY
+    properties:
+      occurred_at: { type: str }
+
+  BLOCKS:
+    domain: runtime
+    description: "Error blocks job"
+    pairs:
+      - from: Error
+        to: Job
+    multiplicity: MANY_MANY
+    properties: {}
+
+  CAUSED_BY_DS:
+    domain: runtime
+    description: "Error caused by dataset"
+    pairs:
+      - from: Error
+        to: Dataset
+    multiplicity: MANY_MANY
+    properties:
+      confidence: { type: float }
+      hypothesis: { type: str }
+
+  CAUSED_BY_COL:
+    domain: runtime
+    description: "Error caused by column"
+    pairs:
+      - from: Error
+        to: DbtColumn
+    multiplicity: MANY_MANY
+    properties:
+      confidence: { type: float }
+      hypothesis: { type: str }
+
+  # ----------------------------------------------------------------------------
+  # Inferred Semantic Relationships (LLM-derived)
+  # ----------------------------------------------------------------------------
+
+  HAS_INFERRED_SEMANTICS:
+    domain: semantic_inferred
+    description: "Model has inferred semantic metadata"
+    pairs:
+      - from: DbtModel
+        to: InferredSemanticModel
+    multiplicity: MANY_MANY
+    properties: {}
+
+  HAS_MEASURE:
+    domain: semantic_inferred
+    description: "Semantic model has measure"
+    pairs:
+      - from: InferredSemanticModel
+        to: InferredMeasure
+      - from: NativeSemanticModel
+        to: NativeMeasure
+    multiplicity: MANY_MANY
+    properties:
+      output_alias: { type: str }
+
+  HAS_DIMENSION:
+    domain: semantic_inferred
+    description: "Semantic model has dimension"
+    pairs:
+      - from: InferredSemanticModel
+        to: InferredDimension
+      - from: NativeSemanticModel
+        to: NativeDimension
+    multiplicity: MANY_MANY
+    properties:
+      output_alias: { type: str }
+
+  HAS_FACT:
+    domain: semantic_inferred
+    description: "Semantic model has fact"
+    pairs:
+      - from: InferredSemanticModel
+        to: InferredFact
+      - from: NativeSemanticModel
+        to: NativeFact
+    multiplicity: MANY_MANY
+    properties: {}
+
+  HAS_SEGMENT:
+    domain: semantic_inferred
+    description: "Inferred semantic model has segment"
+    pairs:
+      - from: InferredSemanticModel
+        to: InferredSegment
+    multiplicity: MANY_MANY
+    properties: {}
+
+  HAS_TIME_WINDOW:
+    domain: semantic_inferred
+    description: "Inferred semantic model has time window"
+    pairs:
+      - from: InferredSemanticModel
+        to: TimeWindow
+    multiplicity: MANY_MANY
+    properties: {}
+
+  HAS_TIME_ATTRIBUTE:
+    domain: semantic_inferred
+    description: "Inferred semantic model has time attribute"
+    pairs:
+      - from: InferredSemanticModel
+        to: TimeAttribute
+    multiplicity: MANY_MANY
+    properties: {}
+
+  HAS_JOIN_EDGE:
+    domain: semantic_inferred
+    description: "Inferred semantic model has join edge"
+    pairs:
+      - from: InferredSemanticModel
+        to: JoinEdge
+    multiplicity: MANY_MANY
+    properties: {}
+
+  HAS_WINDOW_FUNCTION:
+    domain: semantic_inferred
+    description: "Inferred semantic model has window function"
+    pairs:
+      - from: InferredSemanticModel
+        to: WindowFunction
+    multiplicity: MANY_MANY
+    properties: {}
+
+  HAS_RELATION:
+    domain: semantic_inferred
+    description: "Inferred semantic model uses relation alias"
+    pairs:
+      - from: InferredSemanticModel
+        to: InferredRelation
+    multiplicity: MANY_MANY
+    properties: {}
+
+  RESOLVES_TO_MODEL:
+    domain: semantic_inferred
+    description: "Resolved relation alias maps to dbt model"
+    pairs:
+      - from: InferredRelation
+        to: DbtModel
+    multiplicity: MANY_ONE
+    properties:
+      confidence: { type: str }
+
+  HAS_FILTER:
+    domain: semantic_inferred
+    description: "Inferred semantic model has filter predicate"
+    pairs:
+      - from: InferredSemanticModel
+        to: InferredFilter
+    multiplicity: MANY_MANY
+    properties: {}
+
+  FILTERS_RELATION:
+    domain: semantic_inferred
+    description: "Filter predicate applies to relation alias"
+    pairs:
+      - from: InferredFilter
+        to: InferredRelation
+    multiplicity: MANY_ONE
+    properties: {}
+
+  HAS_GROUPING_SCOPE:
+    domain: semantic_inferred
+    description: "Inferred semantic model has grouping scope"
+    pairs:
+      - from: InferredSemanticModel
+        to: InferredGroupingScope
+    multiplicity: MANY_MANY
+    properties: {}
+
+  HAS_SELECT_ITEM:
+    domain: semantic_inferred
+    description: "Grouping scope has select item"
+    pairs:
+      - from: InferredGroupingScope
+        to: InferredSelectItem
+    multiplicity: MANY_MANY
+    properties: {}
+
+  HAS_TIME_SCOPE:
+    domain: semantic_inferred
+    description: "Inferred semantic model has time scope"
+    pairs:
+      - from: InferredSemanticModel
+        to: InferredTimeScope
+    multiplicity: MANY_MANY
+    properties: {}
+
+  HAS_WINDOW_SCOPE:
+    domain: semantic_inferred
+    description: "Inferred semantic model has window scope"
+    pairs:
+      - from: InferredSemanticModel
+        to: InferredWindowScope
+    multiplicity: MANY_MANY
+    properties: {}
+
+  HAS_OUTPUT_SHAPE:
+    domain: semantic_inferred
+    description: "Inferred semantic model has output shape"
+    pairs:
+      - from: InferredSemanticModel
+        to: InferredOutputShape
+    multiplicity: MANY_MANY
+    properties: {}
+
+  HAS_AUDIT_FINDING:
+    domain: semantic_inferred
+    description: "Inferred semantic model has audit finding"
+    pairs:
+      - from: InferredSemanticModel
+        to: InferredAuditFinding
+    multiplicity: MANY_MANY
+    properties: {}
+
+  HAS_AUDIT_PATCH:
+    domain: semantic_inferred
+    description: "Inferred semantic model has audit patch"
+    pairs:
+      - from: InferredSemanticModel
+        to: InferredAuditPatch
+    multiplicity: MANY_MANY
+    properties: {}
+
+  HAS_GRAIN_TOKEN:
+    domain: semantic_inferred
+    description: "Inferred semantic model has grain token"
+    pairs:
+      - from: InferredSemanticModel
+        to: InferredGrainToken
+    multiplicity: MANY_MANY
+    properties: {}
+
+  # ----------------------------------------------------------------------------
+  # Native Semantic Relationships (warehouse-declared)
+  # ----------------------------------------------------------------------------
+
+  DRAWS_FROM:
+    domain: semantic_native
+    description: "Native semantic model draws from dbt model"
+    pairs:
+      - from: NativeSemanticModel
+        to: DbtModel
+    multiplicity: MANY_MANY
+    properties: {}
+
+  HAS_SEMANTIC_TABLE:
+    domain: semantic_native
+    description: "Native semantic model has base table"
+    pairs:
+      - from: NativeSemanticModel
+        to: NativeBaseTable
+    multiplicity: MANY_MANY
+    properties: {}
+
+  # ----------------------------------------------------------------------------
+  # Join Clustering Relationships
+  # ----------------------------------------------------------------------------
+
+  JOINS_WITH:
+    domain: clustering
+    description: "Model joins with another via join edge"
+    pairs:
+      - from: DbtModel
+        to: JoinEdge
+    multiplicity: MANY_MANY
+    properties: {}
+
+  IN_JOIN_CLUSTER:
+    domain: clustering
+    description: "Model in join cluster"
+    pairs:
+      - from: DbtModel
+        to: JoinCluster
+    multiplicity: MANY_MANY
+    properties: {}
+
+  INFERRED_JOINS_WITH:
+    domain: clustering
+    description: "Dbt model participates in inferred join edge"
+    pairs:
+      - from: DbtModel
+        to: JoinEdge
+      - from: DbtSource
+        to: JoinEdge
+    multiplicity: MANY_MANY
+    properties:
+      confidence: { type: str }
+
+  JOINS_LEFT_MODEL:
+    domain: clustering
+    description: "Join edge links to resolved left model"
+    pairs:
+      - from: JoinEdge
+        to: DbtModel
+      - from: JoinEdge
+        to: DbtSource
+    multiplicity: MANY_ONE
+    properties: {}
+
+  JOINS_RIGHT_MODEL:
+    domain: clustering
+    description: "Join edge links to resolved right model"
+    pairs:
+      - from: JoinEdge
+        to: DbtModel
+      - from: JoinEdge
+        to: DbtSource
+    multiplicity: MANY_ONE
+    properties: {}
+
+  # ----------------------------------------------------------------------------
+  # Profiling Relationships
+  # ----------------------------------------------------------------------------
+
+  HAS_PROFILE:
+    domain: profiling
+    description: "Physical entity has profile"
+    pairs:
+      - from: PhysicalTable
+        to: TableProfile
+      - from: PhysicalView
+        to: TableProfile
+      - from: PhysicalMaterializedView
+        to: TableProfile
+      - from: PhysicalIncrementalModel
+        to: TableProfile
+      - from: PhysicalColumn
+        to: ColumnProfile
+    multiplicity: MANY_MANY
+    properties: {}
+
+  HAS_COLUMN_PROFILE:
+    domain: profiling
+    description: "Table profile has column profile"
+    pairs:
+      - from: TableProfile
+        to: ColumnProfile
+    multiplicity: MANY_MANY
+    properties: {}
