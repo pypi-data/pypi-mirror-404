@@ -1,0 +1,164 @@
+Metadata-Version: 2.4
+Name: isagellm-protocol
+Version: 0.4.0.5
+Summary: sageLLM protocol types and validation (Protocol v0.1)
+Author: IntelliStream Team
+License: Proprietary - IntelliStream
+Classifier: Development Status :: 3 - Alpha
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Requires-Python: ==3.11.*
+Description-Content-Type: text/markdown
+Requires-Dist: pydantic>=2.0.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0.0; extra == "dev"
+Requires-Dist: pytest-cov>=4.0.0; extra == "dev"
+Requires-Dist: ruff>=0.8.0; extra == "dev"
+Requires-Dist: mypy>=1.0.0; extra == "dev"
+Requires-Dist: pre-commit>=3.0.0; extra == "dev"
+Requires-Dist: isage-pypi-publisher>=0.2.0; extra == "dev"
+
+# sagellm-protocol
+
+## Protocol Compliance (Mandatory)
+
+- This repository defines Protocol v0.1 as the source of truth.
+- Any globally shared definitions (fields, error codes, metrics, IDs, schemas) MUST be added here before use.
+
+[![CI](https://github.com/intellistream/sagellm-protocol/workflows/CI/badge.svg)](https://github.com/intellistream/sagellm-protocol/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
+[![Pydantic v2](https://img.shields.io/badge/pydantic-v2-e92063.svg)](https://docs.pydantic.dev/2.0/)
+[![Code Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen.svg)](docs/TESTING.md)
+
+Type definitions and validation for sageLLM inference engine.
+
+- **Package**: `isagellm-protocol`
+- **Import**: `sagellm_protocol`
+- **Python**: 3.10+
+
+## Installation
+
+```bash
+pip install isagellm-protocol
+```
+
+For development:
+
+```bash
+git clone git@github.com:intellistream/sagellm-protocol.git
+cd sagellm-protocol
+pip install -e ".[dev]"
+```
+
+## Features
+
+- Request/Response type definitions
+- Streaming event types (start/delta/end)
+- Performance metrics with validation
+- Error types and error codes
+- Timestamp tracking
+- KV cache lifecycle hooks
+- Pydantic v2 validation
+
+## Quick Start
+
+```python
+from sagellm_protocol import Request, Response, Metrics, ErrorCode
+
+# 创建请求
+req = Request(
+    request_id="req-001",
+    trace_id="trace-001",
+    model="llama2-7b",
+    prompt="Hello, world!",
+    max_tokens=128,
+    stream=False,
+    temperature=0.7,
+)
+
+# 创建响应
+metrics = Metrics(
+    ttft_ms=45.2,
+    tbt_ms=12.5,
+    throughput_tps=80.0,
+    peak_mem_mb=24576,
+    error_rate=0.0,
+)
+
+resp = Response(
+    request_id="req-001",
+    trace_id="trace-001",
+    output_text="Hi there!",
+    output_tokens=[42, 17],
+    finish_reason="stop",
+    metrics=metrics,
+)
+```
+
+For more examples, see [examples/basic_usage.py](examples/basic_usage.py).
+
+## API Reference
+
+### Core Types
+- `Request` / `Response` - Request and response objects
+- `Metrics` - Performance metrics
+- `StreamEvent` - Streaming event types
+- `Error` / `ErrorCode` - Error handling
+- `Timestamps` - Timestamp tracking
+- `KVAllocateParams` / `KVHandle` - KV cache management
+
+## Development
+
+Run tests:
+```bash
+pytest tests/ -v
+```
+
+Format and lint:
+```bash
+ruff format .
+ruff check . --fix
+```
+
+Type check:
+```bash
+mypy src/sagellm_protocol
+```
+
+## 🔄 贡献指南
+
+请遵循以下工作流程：
+
+1. **创建 Issue** - 描述问题/需求
+   ```bash
+   gh issue create --title "[Bug] 描述" --label "bug,sagellm-protocol"
+   ```
+
+2. **开发修复** - 在本地 `fix/#123-xxx` 分支解决
+   ```bash
+   git checkout -b fix/#123-xxx origin/main-dev
+   # 开发、测试...
+   pytest -v
+   ruff format . && ruff check . --fix
+   ```
+
+3. **发起 PR** - 提交到 `main-dev` 分支
+   ```bash
+   gh pr create --base main-dev --title "Fix: 描述" --body "Closes #123"
+   ```
+
+4. **合并** - 审批后合并到 `main-dev`
+
+更多详情见 [.github/copilot-instructions.md](.github/copilot-instructions.md)
+
+## Documentation
+
+For more details:
+- [Testing Guide](docs/TESTING.md)
+- [Contributing Guidelines](CONTRIBUTING.md)
+
+## License
+
+Proprietary - IntelliStream
