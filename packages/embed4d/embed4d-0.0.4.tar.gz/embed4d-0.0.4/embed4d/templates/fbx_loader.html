@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FBX / GLB Viewer</title>
+<style>
+  body { margin:0; overflow:hidden; background:#121212; }
+  #canvas-container { width:100vw; height:100vh; display:block; }
+  #file-input { position:absolute; top:10px; left:10px; z-index:1000; }
+</style>
+</head>
+<body>
+<input type="file" id="file-input" accept=".glb,.gltf,.fbx">
+<div id="canvas-container"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/fflate@0.7.4/umd/index.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FBXLoader.js"></script>
+
+<script>
+let scene, camera, renderer, controls, model;
+
+init();
+animate();
+
+function init() {
+  const container = document.getElementById('canvas-container');
+
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x121212);
+
+  camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 500);
+  camera.position.set(0, 2, 5);
+
+  renderer = new THREE.WebGLRenderer({antialias:true});
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.shadowMap.enabled = true;
+  renderer.outputEncoding = THREE.sRGBEncoding;
+  container.appendChild(renderer.domElement);
+
+  controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+
+  const ambient = new THREE.AmbientLight(0xffffff, 0.6);
+  scene.add(ambient);
+
+  const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+  dirLight.position.set(3,5,3);
+  dirLight.castShadow = true;
+  scene.add(dirLight);
+
+  const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(20,20),
+    new THREE.MeshStandardMaterial({color:0x222222, roughness:0.8, metalness:0})
+  );
+  ground.rotation.x = -Math.PI/2;
+  ground.position.y = 0;
+  ground.receiveShadow = true;
+  scene.add(ground);
+
+  window.addEventListener('resize', onWindowResize, false);
+  document.getElementById('file-input').addEventListener('change', loadFile);
+}
+
+function onWindowResize() {
+  camera.aspect = window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+function loadFile(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const ext = file.name.split('.').pop().toLowerCase();
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    if (model) {
+      scene.remove(model);
+      disposeModel(model);
+      model = null;
+    }
+
+    if (ext === 'fbx') {
+      const loader = new THREE.FBXLoader();
+      model = loader.parse(e.target.result);
+      fixFBXMaterials(model);
+      scene.add(model);
+      model.traverse(c => { if(c.isMesh){ c.castShadow=true; c.receiveShadow=true; } });
+    } else if (ext === 'glb' || ext === 'gltf') {
+      const loader = new THREE.GLTFLoader();
+      loader.parse(e.target.result, '', function(gltf){
+        model = gltf.scene;
+        fixGLTFMaterials(model);
+        scene.add(model);
+        model.traverse(c => { if(c.isMesh){ c.castShadow=true; c.receiveShadow=true; } });
+      }, function(err){ console.error(err); alert('Failed to parse GLB/GLTF'); });
+    } else {
+      alert('Unsupported file type: ' + ext);
+    }
+  };
+
+  if (ext === 'fbx') reader.readAsArrayBuffer(file);
+  else reader.readAsArrayBuffer(file);
+}
+
+function disposeModel(obj) {
+  obj.traverse(child => {
+    if (child.geometry) child.geometry.dispose();
+    if (child.material) {
+      if (Array.isArray(child.material)) child.material.forEach(m => m.dispose());
+      else child.material.dispose();
+    }
+  });
+}
+
+function fixFBXMaterials(obj) {
+  obj.traverse(child => {
+    if (child.isMesh && child.material) {
+      let mats = Array.isArray(child.material)? child.material : [child.material];
+      mats.forEach(mat => {
+        if(mat.map){ mat.map.encoding=THREE.sRGBEncoding; mat.map.needsUpdate=true; }
+        mat.side = THREE.DoubleSide;
+        mat.needsUpdate = true;
+      });
+    }
+  });
+}
+
+function fixGLTFMaterials(obj) {
+  obj.traverse(child => {
+    if (child.isMesh && child.material) {
+      let mats = Array.isArray(child.material)? child.material : [child.material];
+      mats.forEach(mat => {
+        if(mat.map){ mat.map.encoding=THREE.sRGBEncoding; mat.map.needsUpdate=true; }
+        mat.side = THREE.DoubleSide;
+        mat.needsUpdate = true;
+      });
+    }
+  });
+}
+</script>
+</body>
+</html>
