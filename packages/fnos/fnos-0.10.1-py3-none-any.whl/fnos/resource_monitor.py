@@ -1,0 +1,121 @@
+# Copyright 2025 Timandes White
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import json
+import asyncio
+import logging
+from .client import FnosClient
+
+# 创建logger实例
+logger = logging.getLogger(__name__)
+
+
+class ResourceMonitor:
+    def __init__(self, client: FnosClient):
+        """
+        初始化ResourceMonitor类
+        
+        Args:
+            client: FnosClient实例
+        """
+        self.client = client
+    
+    async def cpu(self, timeout: float = 10.0) -> dict:
+        """
+        请求CPU资源监控信息
+        
+        Args:
+            timeout: 请求超时时间（秒），默认为10.0秒
+            
+        Returns:
+            dict: 服务器返回的结果
+        """
+        # 使用FnoClient的新方法发送请求并等待响应
+        response = await self.client.request_payload_with_response("appcgi.resmon.cpu", {}, timeout)
+        return response
+    
+    async def gpu(self, timeout: float = 10.0) -> dict:
+        """
+        请求GPU资源监控信息
+        
+        Args:
+            timeout: 请求超时时间（秒），默认为10.0秒
+            
+        Returns:
+            dict: 服务器返回的结果
+        """
+        # 使用FnoClient的新方法发送请求并等待响应
+        response = await self.client.request_payload_with_response("appcgi.resmon.gpu", {}, timeout)
+        return response
+    
+    async def memory(self, timeout: float = 10.0) -> dict:
+        """
+        请求内存资源监控信息
+        
+        Args:
+            timeout: 请求超时时间（秒），默认为10.0秒
+            
+        Returns:
+            dict: 服务器返回的结果
+        """
+        # 使用FnoClient的新方法发送请求并等待响应
+        response = await self.client.request_payload_with_response("appcgi.resmon.mem", {}, timeout)
+        return response
+    
+    async def disk(self, timeout: float = 10.0) -> dict:
+        """
+        请求磁盘资源监控信息
+        
+        Args:
+            timeout: 请求超时时间（秒），默认为10.0秒
+            
+        Returns:
+            dict: 服务器返回的结果
+        """
+        # 使用FnoClient的新方法发送请求并等待响应
+        response = await self.client.request_payload_with_response("appcgi.resmon.disk", {}, timeout)
+        return response
+    
+    async def net(self, timeout: float = 10.0) -> dict:
+        """
+        请求网络资源监控信息
+        
+        Args:
+            timeout: 请求超时时间（秒），默认为10.0秒
+            
+        Returns:
+            dict: 服务器返回的结果
+        """
+        # 使用FnoClient的新方法发送请求并等待响应
+        response = await self.client.request_payload_with_response("appcgi.resmon.net", {}, timeout)
+        return response
+    
+    async def general(self, timeout: float = 10.0, items: list = None) -> dict:
+        """
+        请求通用资源监控信息
+        
+        Args:
+            timeout: 请求超时时间（秒），默认为10.0秒
+            items: 要查询的资源监控项列表，默认为["storeSpeed","netSpeed","cpuBusy","memPercent"]
+            
+        Returns:
+            dict: 服务器返回的结果
+        """
+        if items is None:
+            items = ["storeSpeed", "netSpeed", "cpuBusy", "memPercent"]
+        
+        payload = {"item": items}
+        # 使用FnoClient的新方法发送请求并等待响应
+        response = await self.client.request_payload_with_response("appcgi.resmon.gen", payload, timeout)
+        return response
