@@ -1,0 +1,21 @@
+[project]
+name = "${project_name}"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "Ramon Willer",email = "willer.ramon@gmail.com"}
+]
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "fastapi[standard] (>=0.128.0,<0.129.0)"
+]
+
+[tool.poetry]
+packages = [
+    { include = "app" }
+]
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
