@@ -1,0 +1,173 @@
+from __future__ import annotations
+
+from collections.abc import Mapping
+from typing import Any, TypeVar
+from uuid import UUID
+
+from attrs import define as _attrs_define
+from attrs import field as _attrs_field
+
+from ..models.e_platform_type import EPlatformType
+from ..types import UNSET, Unset
+
+T = TypeVar("T", bound="AgentBackupObjectModel")
+
+
+@_attrs_define
+class AgentBackupObjectModel:
+    """Backup object created by Veeam Agent.
+
+    Attributes:
+        id (UUID): ID of the object.
+        platform_name (EPlatformType): Platform type.
+        name (str | Unset): Name of the object.
+        type_ (str | Unset): Type of the object.
+        platform_id (UUID | Unset): ID of the platform where the object was created. The value is always
+            *00000000-0000-0000-0000-000000000000* except for custom platforms.
+        restore_points_count (int | Unset): Number of restore points.
+        last_run_failed (bool | Unset): If `true`, the last run of the backup job failed.
+        bios_uuid (str | Unset): BIOS UUID of the physical machine.
+        protection_group_ids (list[UUID] | Unset): Array of protection group IDs.
+        computer_id (UUID | Unset): ID of the backed-up computer.
+    """
+
+    id: UUID
+    platform_name: EPlatformType
+    name: str | Unset = UNSET
+    type_: str | Unset = UNSET
+    platform_id: UUID | Unset = UNSET
+    restore_points_count: int | Unset = UNSET
+    last_run_failed: bool | Unset = UNSET
+    bios_uuid: str | Unset = UNSET
+    protection_group_ids: list[UUID] | Unset = UNSET
+    computer_id: UUID | Unset = UNSET
+    additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        id = str(self.id)
+
+        platform_name = self.platform_name.value
+
+        name = self.name
+
+        type_ = self.type_
+
+        platform_id: str | Unset = UNSET
+        if not isinstance(self.platform_id, Unset):
+            platform_id = str(self.platform_id)
+
+        restore_points_count = self.restore_points_count
+
+        last_run_failed = self.last_run_failed
+
+        bios_uuid = self.bios_uuid
+
+        protection_group_ids: list[str] | Unset = UNSET
+        if not isinstance(self.protection_group_ids, Unset):
+            protection_group_ids = []
+            for protection_group_ids_item_data in self.protection_group_ids:
+                protection_group_ids_item = str(protection_group_ids_item_data)
+                protection_group_ids.append(protection_group_ids_item)
+
+        computer_id: str | Unset = UNSET
+        if not isinstance(self.computer_id, Unset):
+            computer_id = str(self.computer_id)
+
+        field_dict: dict[str, Any] = {}
+        field_dict.update(self.additional_properties)
+        field_dict.update(
+            {
+                "id": id,
+                "platformName": platform_name,
+            }
+        )
+        if name is not UNSET:
+            field_dict["name"] = name
+        if type_ is not UNSET:
+            field_dict["type"] = type_
+        if platform_id is not UNSET:
+            field_dict["platformId"] = platform_id
+        if restore_points_count is not UNSET:
+            field_dict["restorePointsCount"] = restore_points_count
+        if last_run_failed is not UNSET:
+            field_dict["lastRunFailed"] = last_run_failed
+        if bios_uuid is not UNSET:
+            field_dict["biosUuid"] = bios_uuid
+        if protection_group_ids is not UNSET:
+            field_dict["protectionGroupIds"] = protection_group_ids
+        if computer_id is not UNSET:
+            field_dict["computerId"] = computer_id
+
+        return field_dict
+
+    @classmethod
+    def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+        d = dict(src_dict)
+        id = UUID(d.pop("id"))
+
+        platform_name = EPlatformType(d.pop("platformName"))
+
+        name = d.pop("name", UNSET)
+
+        type_ = d.pop("type", UNSET)
+
+        _platform_id = d.pop("platformId", UNSET)
+        platform_id: UUID | Unset
+        if isinstance(_platform_id, Unset):
+            platform_id = UNSET
+        else:
+            platform_id = UUID(_platform_id)
+
+        restore_points_count = d.pop("restorePointsCount", UNSET)
+
+        last_run_failed = d.pop("lastRunFailed", UNSET)
+
+        bios_uuid = d.pop("biosUuid", UNSET)
+
+        _protection_group_ids = d.pop("protectionGroupIds", UNSET)
+        protection_group_ids: list[UUID] | Unset = UNSET
+        if _protection_group_ids is not UNSET:
+            protection_group_ids = []
+            for protection_group_ids_item_data in _protection_group_ids:
+                protection_group_ids_item = UUID(protection_group_ids_item_data)
+
+                protection_group_ids.append(protection_group_ids_item)
+
+        _computer_id = d.pop("computerId", UNSET)
+        computer_id: UUID | Unset
+        if isinstance(_computer_id, Unset):
+            computer_id = UNSET
+        else:
+            computer_id = UUID(_computer_id)
+
+        agent_backup_object_model = cls(
+            id=id,
+            platform_name=platform_name,
+            name=name,
+            type_=type_,
+            platform_id=platform_id,
+            restore_points_count=restore_points_count,
+            last_run_failed=last_run_failed,
+            bios_uuid=bios_uuid,
+            protection_group_ids=protection_group_ids,
+            computer_id=computer_id,
+        )
+
+        agent_backup_object_model.additional_properties = d
+        return agent_backup_object_model
+
+    @property
+    def additional_keys(self) -> list[str]:
+        return list(self.additional_properties.keys())
+
+    def __getitem__(self, key: str) -> Any:
+        return self.additional_properties[key]
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        self.additional_properties[key] = value
+
+    def __delitem__(self, key: str) -> None:
+        del self.additional_properties[key]
+
+    def __contains__(self, key: str) -> bool:
+        return key in self.additional_properties
