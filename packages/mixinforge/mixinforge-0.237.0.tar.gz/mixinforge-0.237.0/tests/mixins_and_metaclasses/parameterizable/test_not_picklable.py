@@ -1,0 +1,27 @@
+import pickle
+
+from mixinforge import NotPicklableMixin
+
+import pytest
+
+def test_not_picklable():
+    npo = NotPicklableMixin()
+
+    # Test dunder methods directly
+    with pytest.raises(TypeError):
+        npo.__reduce__()
+    with pytest.raises(TypeError):
+        _ = npo.__getstate__()
+    with pytest.raises(TypeError):
+        npo.__setstate__({"key": "value"})
+
+    # Test pickling via pickle.dumps(), which calls __reduce__()
+    with pytest.raises(TypeError):
+        pickle.dumps(npo)
+
+    # Test that a subclass is also not picklable
+    class MyNotPicklableMixin(NotPicklableMixin):
+        pass
+    mnpo = MyNotPicklableMixin()
+    with pytest.raises(TypeError):
+        pickle.dumps(mnpo)
