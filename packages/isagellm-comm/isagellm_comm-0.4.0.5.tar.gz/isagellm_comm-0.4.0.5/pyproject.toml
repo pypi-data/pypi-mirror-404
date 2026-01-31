@@ -1,0 +1,90 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "isagellm-comm"
+version = "0.4.0.5"
+description = "Communication Layer for sageLLM distributed inference"
+readme = "README.md"
+requires-python = "==3.11.*"
+license = { text = "Private" }
+authors = [{ name = "IntelliStream Team", email = "shuhao_zhang@hust.edu.cn" }]
+keywords = [
+    "llm",
+    "inference",
+    "communication",
+    "nccl",
+    "hccl",
+    "domestic-hardware",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+]
+
+dependencies = [
+    "isagellm-protocol>=0.4.0.0,<0.5.0",
+    # NOTE: comm 不依赖 backend（L1 平行层原则）
+    # comm 和 backend 是平行的硬件抽象层，不应相互依赖
+    "pydantic>=2.0.0",
+]
+
+[project.entry-points."sagellm.comm_backends"]
+gloo = "sagellm_comm.gloo_backend:create_gloo_backend"
+nccl = "sagellm_comm.backends.nccl:create_nccl_backend"
+hccl = "sagellm_comm.backends.hccl:create_hccl_backend"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "mypy>=1.0.0",
+    "ruff>=0.1.0",
+    "isage-pypi-publisher>=0.2.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/intellistream/sagellm-comm"
+Repository = "https://github.com/intellistream/sagellm-comm"
+Issues = "https://github.com/intellistream/sagellm-comm/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+markers = [
+    "unit: Unit tests",
+    "integration: Integration tests",
+    "topology: Topology discovery tests (Task1.1)",
+    "collective: Collective operations tests (Task1.2)",
+    "overlap: Compute/comm overlap tests (Task1.4)",
+    "domestic: Domestic hardware tests (Task1.5)",
+]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.package-data]
+"*" = ["*.pyc", "*.pyo", "__pycache__/*", "*.so", "*.pyd", "*.dylib"]
