@@ -1,0 +1,311 @@
+# cmdop
+
+Python SDK for CMDOP browser automation and server control.
+
+## Architecture
+
+```
+Your Code ──── Cloud Relay ──── Agent (on server)
+                    │
+        Outbound only, works through any NAT/firewall
+```
+
+## Install
+
+```bash
+pip install cmdop
+```
+
+## Connection
+
+```python
+from cmdop import CMDOPClient, AsyncCMDOPClient
+
+# Local (direct IPC to running agent)
+client = CMDOPClient.local()
+
+# Remote (via cloud relay)
+client = CMDOPClient.remote(api_key="cmd_xxx")
+
+# Async
+async with AsyncCMDOPClient.local() as client:
+    await client.files.read("/etc/hostname")
+```
+
+## Browser
+
+```python
+from cmdop.services.browser.models import WaitUntil
+
+with client.browser.create_session(headless=False) as s:
+    s.navigate("https://shop.com", wait_until=WaitUntil.NETWORKIDLE)
+
+    # Core methods
+    s.click("button.buy", move_cursor=True)
+    s.type("input[name=q]", "search term")
+    s.wait_for(".results")
+    s.execute_script("return document.title")
+    s.screenshot()
+    s.get_state()        # URL + title
+    s.get_page_info()    # Full page info
+    s.get_cookies()
+    s.set_cookies([...])
+
+# Fast mode: block images and media for faster page loads
+with client.browser.create_session(
+    block_images=True,
+    block_media=True,
+) as s:
+    s.navigate("https://shop.com/catalog")
+    items = s.dom.extract(".product-title")
+```
+
+**`create_session` parameters:**
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `start_url` | `None` | Initial URL to navigate to |
+| `provider` | `"camoufox"` | Browser provider (`"camoufox"` or `"rod"`) |
+| `profile_id` | `None` | Profile ID for session persistence (cookies, localStorage) |
+| `headless` | `False` | Run browser without UI |
+| `width` | `1280` | Viewport width |
+| `height` | `800` | Viewport height |
+| `block_images` | `False` | Disable loading images (set at launch, cannot change at runtime) |
+| `block_media` | `False` | Disable loading audio/video (set at launch, cannot change at runtime) |
+
+**WaitUntil options:**
+| Value | Description |
+|-------|-------------|
+| `LOAD` | Wait for load event (default) |
+| `DOMCONTENTLOADED` | Wait for DOMContentLoaded |
+| `NETWORKIDLE` | Wait until network is idle (best for SPA) |
+| `COMMIT` | Return immediately (fastest) |
+
+### Capabilities
+
+**`s.scroll`** - Scrolling
+```python
+s.scroll.js("down", 500)           # JS scroll (works on complex sites)
+s.scroll.native("down", 500)       # Browser API scroll
+s.scroll.to_bottom()               # Scroll to page bottom
+s.scroll.to_element(".item")       # Scroll element into view
+s.scroll.info()                    # Get scroll position/dimensions
+
+# Smart infinite scroll with extraction
+items = s.scroll.infinite(
+    extract_fn=lambda: extract_new_items(),
+    limit=100,
+    max_scrolls=50,
+    scroll_amount=800,
+)
+```
+
+**`s.input`** - Input
+```python
+s.input.click_js(".btn")           # JS click (reliable)
+s.input.click_all("See more")      # Click all matching elements
+s.input.key("Escape")              # Press key
+s.input.key("Enter", ".input")     # Press key on element
+s.input.hover(".tooltip")          # Native hover
+s.input.hover_js(".tooltip")       # JS hover
+s.input.mouse_move(500, 300)       # Move cursor to coordinates
+```
+
+**`s.timing`** - Delays
+```python
+s.timing.wait(500)                 # Wait ms
+s.timing.seconds(2)                # Wait seconds
+s.timing.random(0.5, 1.5)          # Random delay
+s.timing.timeout(fn, 10, cleanup)  # Run with timeout
+```
+
+**`s.dom`** - DOM operations
+```python
+s.dom.html(".container")           # Get HTML
+s.dom.text(".title")               # Get text
+s.dom.extract(".items", "href")    # Get attr list
+s.dom.select("#country", "US")     # Dropdown select
+s.dom.close_modal()                # Close dialogs/popups
+```
+
+**`s.fetch`** - HTTP from browser (bypass CORS, inherit cookies)
+```python
+s.fetch.json("/api/items")               # Fetch JSON
+s.fetch.all(["/api/a", "/api/b"])        # Parallel fetch
+s.fetch.execute("return fetch(...)")     # Custom JS
+```
+
+**`s.network`** - Traffic capture
+```python
+s.network.enable(max_exchanges=1000)
+s.navigate(url)
+
+# Get exchanges
+exchanges = s.network.get_all()
+api = s.network.last("/api/data")
+data = api.json_body()
+
+# Filter
+posts = s.network.filter(
+    url_pattern="/api/posts",
+    methods=["GET", "POST"],
+    status_codes=[200],
+    resource_types=["xhr", "fetch"],
+)
+
+# Convenience
+s.network.api_calls("/api/")       # XHR/Fetch matching pattern
+s.network.last_json("/api/data")   # JSON body directly
+s.network.wait_for("/api/", 5000)  # Wait for request
+s.network.export_har()             # Export to HAR
+s.network.stats()                  # Capture statistics
+s.network.clear()                  # Clear captured
+s.network.disable()
+```
+
+**`s.visual`** - Browser overlay (requires CMDOP extension)
+```python
+s.visual.toast("Loading...")           # Show toast
+s.visual.clear_toasts()                # Clear all toasts
+s.visual.countdown(30, "Click!")       # Countdown timer
+s.visual.highlight(".element")         # Highlight element
+s.visual.hide_highlight()              # Hide highlight
+s.visual.click(100, 200)               # Show click effect
+s.visual.move(0, 0, 100, 200)          # Show cursor trail
+s.visual.set_state("busy")             # idle/active/busy
+```
+
+## NetworkAnalyzer
+
+Discover API endpoints by capturing traffic while user interacts.
+
+```python
+from cmdop import CMDOPClient
+from cmdop.helpers import NetworkAnalyzer
+
+client = CMDOPClient.local()
+with client.browser.create_session(headless=False) as b:
+    analyzer = NetworkAnalyzer(b)
+
+    snapshot = analyzer.capture(
+        "https://example.com/cars",
+        wait_seconds=30,
+        countdown_message="Click pagination!",
+        min_size=100,       # Ignore tracking pixels
+        max_size=500_000,   # Ignore heavy assets
+        same_origin=True,   # Only same domain
+    )
+
+    # Get best data API
+    if snapshot.api_requests:
+        best = snapshot.best_api()
+        print(best.url)
+        print(best.item_count)
+        print(best.data_key)        # "data", "items", etc.
+        print(best.item_fields)     # Field names
+        print(best.to_curl())       # curl command
+        print(best.to_httpx())      # Python httpx code
+
+    # All captured
+    for req in snapshot.api_requests:
+        print(f"{req.method} {req.url} → {req.item_count} items")
+```
+
+**NetworkSnapshot:**
+- `api_requests` - Requests with data arrays
+- `json_requests` - Other JSON responses
+- `cookies` - Session cookies
+- `total_requests`, `total_bytes`
+
+**RequestSnapshot:**
+- `url`, `method`, `headers`, `body`, `cookies`
+- `status`, `content_type`, `size`
+- `data_key`, `item_count`, `item_fields`, `sample_response`
+- `to_curl()`, `to_httpx()`
+
+## Agent
+
+Run AI tasks with typed output:
+
+```python
+from pydantic import BaseModel
+
+class Health(BaseModel):
+    status: str
+    cpu: float
+    issues: list[str]
+
+result = client.agent.run("Check server health", output_schema=Health)
+health: Health = result.output  # Typed!
+```
+
+## Terminal
+
+```python
+session = client.terminal.create()
+client.terminal.send_input(session.session_id, "ls -la\n")
+output = client.terminal.get_history(session.session_id)
+client.terminal.resize(session.session_id, 120, 40)
+client.terminal.send_signal(session.session_id, "SIGINT")
+client.terminal.close(session.session_id)
+```
+
+## Files
+
+```python
+# Local IPC - session_id not required
+client.files.list("/var/log")
+client.files.read("/etc/nginx/nginx.conf")
+client.files.write("/tmp/config.json", b'{"key": "value"}')
+
+# Remote - session_id required
+session = client.terminal.get_active_session()
+client.files.set_session_id(session.session_id)  # Set once
+client.files.list("/var/log")
+client.files.read("/etc/nginx/nginx.conf")
+
+# Or pass session_id directly to each call
+client.files.list("/var/log", session_id=session.session_id)
+```
+
+**Files methods:**
+```python
+client.files.list("/path", include_hidden=True)  # List directory
+client.files.read("/path/file.txt")              # Read file
+client.files.write("/path/file.txt", b"data")    # Write file
+client.files.delete("/path", recursive=True)     # Delete file/dir
+client.files.copy("/src", "/dst")                # Copy
+client.files.move("/old", "/new")                # Move/rename
+client.files.mkdir("/new/dir")                   # Create directory
+client.files.info("/path")                       # Get file info
+```
+
+## SDKBaseModel
+
+Auto-cleaning Pydantic model:
+
+```python
+from cmdop import SDKBaseModel
+
+class Product(SDKBaseModel):
+    __base_url__ = "https://shop.com"
+    name: str = ""    # "  iPhone 15  \n" → "iPhone 15"
+    price: int = 0    # "$1,299.00" → 1299
+    rating: float = 0 # "4.5 stars" → 4.5
+    url: str = ""     # "/p/123" → "https://shop.com/p/123"
+
+products = Product.from_list(raw["items"])  # Auto dedupe + filter
+```
+
+## Logging
+
+```python
+from cmdop import get_logger
+
+log = get_logger(__name__)
+log.info("Starting")  # Rich console + file output
+```
+
+## Requirements
+
+- Python 3.10+
+- CMDOP agent running locally or API key for remote
