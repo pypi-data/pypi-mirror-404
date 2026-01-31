@@ -1,0 +1,29 @@
+"""Custom exceptions for agr."""
+
+
+class AgrError(Exception):
+    """Base exception for agr errors."""
+
+
+class RepoNotFoundError(AgrError):
+    """Raised when the remote repo doesn't exist."""
+
+
+class AuthenticationError(AgrError):
+    """Raised when authentication fails for a remote repo."""
+
+
+class SkillNotFoundError(AgrError):
+    """Raised when the skill doesn't exist in the repo."""
+
+
+class ConfigError(AgrError):
+    """Raised when agr.toml has issues (not found or invalid)."""
+
+
+class InvalidHandleError(AgrError):
+    """Raised when a handle cannot be parsed."""
+
+
+class InvalidLocalPathError(AgrError):
+    """Raised when a local skill path is invalid."""

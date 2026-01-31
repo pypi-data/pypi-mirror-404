@@ -1,0 +1,279 @@
+"""Skill validation and SKILL.md handling."""
+
+import re
+from enum import Enum
+from pathlib import Path, PurePosixPath
+
+
+class ResourceType(Enum):
+    """Resource types supported by agr."""
+
+    SKILL = "skill"
+    # Future: INSTRUCTION = "instruction"
+
+
+# Marker file for skills
+SKILL_MARKER = "SKILL.md"
+
+# Directories to exclude from skill discovery
+EXCLUDED_DIRS = {
+    ".git",
+    "node_modules",
+    "__pycache__",
+    ".venv",
+    "venv",
+    ".tox",
+    "vendor",
+    "build",
+    "dist",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+}
+
+
+def _is_excluded_path(path: Path, repo_dir: Path) -> bool:
+    """Check if a path should be excluded from skill discovery.
+
+    Args:
+        path: Path to check
+        repo_dir: Root of the repository (to detect root-level SKILL.md)
+
+    Returns:
+        True if the path should be excluded
+    """
+    # Exclude root-level SKILL.md (parent is the repo itself)
+    if path.parent == repo_dir:
+        return True
+
+    # Exclude paths containing excluded directories
+    return any(part in EXCLUDED_DIRS for part in path.parts)
+
+
+def is_valid_skill_dir(path: Path) -> bool:
+    """Check if a directory is a valid skill (contains SKILL.md).
+
+    Args:
+        path: Path to check
+
+    Returns:
+        True if the path is a directory containing SKILL.md
+    """
+    if not path.is_dir():
+        return False
+    return (path / SKILL_MARKER).exists()
+
+
+def find_skill_in_repo(repo_dir: Path, skill_name: str) -> Path | None:
+    """Find a skill directory in a downloaded repo.
+
+    Searches recursively for any directory containing SKILL.md where the
+    directory name matches the skill name. Excludes common non-skill
+    directories (.git, node_modules, __pycache__, etc.).
+
+    Results are sorted by path depth (shallowest first) for deterministic
+    behavior when multiple matches exist.
+
+    Args:
+        repo_dir: Path to extracted repository
+        skill_name: Name of the skill to find
+
+    Returns:
+        Path to skill directory if found, None otherwise
+    """
+    matches: list[Path] = []
+
+    for skill_md in repo_dir.rglob(SKILL_MARKER):
+        if _is_excluded_path(skill_md, repo_dir):
+            continue
+        if skill_md.parent.name == skill_name:
+            matches.append(skill_md.parent)
+
+    if not matches:
+        return None
+
+    # Return shallowest match for deterministic behavior
+    return min(matches, key=lambda p: len(p.parts))
+
+
+def find_skill_in_repo_listing(
+    paths: list[str], skill_name: str
+) -> PurePosixPath | None:
+    """Find a skill directory from a git file listing.
+
+    Args:
+        paths: List of file paths from git (posix-style).
+        skill_name: Name of the skill to find.
+
+    Returns:
+        Path to skill directory (posix-style, relative), or None if not found.
+    """
+    matches: list[PurePosixPath] = []
+
+    for rel in paths:
+        rel_path = PurePosixPath(rel)
+        if rel_path.name != SKILL_MARKER:
+            continue
+        if len(rel_path.parts) == 1:
+            # Root-level SKILL.md is not a skill directory
+            continue
+        if any(part in EXCLUDED_DIRS for part in rel_path.parts):
+            continue
+        if rel_path.parent.name == skill_name:
+            matches.append(rel_path.parent)
+
+    if not matches:
+        return None
+
+    return min(matches, key=lambda p: len(p.parts))
+
+
+def discover_skills_in_repo(repo_dir: Path) -> list[tuple[str, Path]]:
+    """Discover all skills in a repository.
+
+    Finds all directories containing SKILL.md anywhere in the repo,
+    excluding common non-skill directories (.git, node_modules, etc.).
+
+    When duplicate skill names exist, the shallowest path is returned.
+    Results are sorted alphabetically by skill name.
+
+    Args:
+        repo_dir: Path to extracted repository
+
+    Returns:
+        List of (skill_name, skill_path) tuples, deduplicated by name
+    """
+    # Collect all skills, keyed by name (shallowest path wins)
+    skills_by_name: dict[str, Path] = {}
+
+    for skill_md in repo_dir.rglob(SKILL_MARKER):
+        if _is_excluded_path(skill_md, repo_dir):
+            continue
+
+        skill_dir = skill_md.parent
+        skill_name = skill_dir.name
+
+        # Keep shallowest path for duplicate names
+        if skill_name not in skills_by_name:
+            skills_by_name[skill_name] = skill_dir
+        elif len(skill_dir.parts) < len(skills_by_name[skill_name].parts):
+            skills_by_name[skill_name] = skill_dir
+
+    # Return sorted by name for deterministic output
+    return sorted(skills_by_name.items(), key=lambda x: x[0])
+
+
+def update_skill_md_name(skill_dir: Path, new_name: str) -> None:
+    """Update the name field in SKILL.md.
+
+    Args:
+        skill_dir: Path to skill directory containing SKILL.md
+        new_name: New name to set in frontmatter
+    """
+    skill_md = skill_dir / SKILL_MARKER
+    if not skill_md.exists():
+        return
+
+    content = skill_md.read_text()
+
+    # Check if file has YAML frontmatter
+    if not content.startswith("---"):
+        # No frontmatter, add it
+        new_content = f"---\nname: {new_name}\n---\n\n{content}"
+        skill_md.write_text(new_content)
+        return
+
+    # Split by frontmatter delimiter
+    parts = content.split("---", 2)
+    if len(parts) < 3:
+        # Malformed frontmatter
+        new_content = f"---\nname: {new_name}\n---\n\n{content}"
+        skill_md.write_text(new_content)
+        return
+
+    frontmatter = parts[1]
+    body = parts[2]
+
+    # Update or add name in frontmatter
+    lines = frontmatter.strip().split("\n")
+    new_lines = []
+    name_found = False
+
+    for line in lines:
+        if re.match(r"^\s*name\s*:", line):
+            new_lines.append(f"name: {new_name}")
+            name_found = True
+        else:
+            new_lines.append(line)
+
+    if not name_found:
+        new_lines.insert(0, f"name: {new_name}")
+
+    new_frontmatter = "\n".join(new_lines)
+    new_content = f"---\n{new_frontmatter}\n---{body}"
+    skill_md.write_text(new_content)
+
+
+def validate_skill_name(name: str) -> bool:
+    """Validate a skill name.
+
+    Valid names: alphanumeric, hyphens, underscores.
+
+    Args:
+        name: Skill name to validate
+
+    Returns:
+        True if valid
+    """
+    if not name:
+        return False
+    return bool(re.match(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$", name))
+
+
+def create_skill_scaffold(name: str, base_dir: Path | None = None) -> Path:
+    """Create a skill scaffold with SKILL.md.
+
+    Args:
+        name: Skill name
+        base_dir: Directory to create skill in (defaults to cwd)
+
+    Returns:
+        Path to created skill directory
+
+    Raises:
+        ValueError: If name is invalid
+        FileExistsError: If skill directory already exists
+    """
+    if not validate_skill_name(name):
+        raise ValueError(
+            f"Invalid skill name '{name}': must be alphanumeric with hyphens/underscores"
+        )
+
+    base = base_dir or Path.cwd()
+    skill_dir = base / name
+
+    if skill_dir.exists():
+        raise FileExistsError(f"Directory '{name}' already exists")
+
+    skill_dir.mkdir(parents=True)
+
+    # Create SKILL.md with scaffold content
+    skill_md = skill_dir / SKILL_MARKER
+    skill_md.write_text(f"""---
+name: {name}
+---
+
+# {name}
+
+Description of what this skill does.
+
+## When to use
+
+Describe when Claude should use this skill.
+
+## Instructions
+
+Provide detailed instructions for Claude here.
+""")
+
+    return skill_dir
