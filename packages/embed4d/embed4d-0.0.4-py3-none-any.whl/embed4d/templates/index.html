@@ -1,0 +1,1123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>3D Model Viewer</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/fflate@0.7.4/umd/index.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FBXLoader.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; background: linear-gradient(135deg, #1a1a2e, #0a0a0a, #1a1a2e); color: white; overflow: hidden; }
+    .container { display: flex; flex-direction: column; height: 100vh; min-height: 0; }
+    .pulse-dot { width: 8px; height: 8px; background: #3b82f6; border-radius: 50%; animation: pulse 2s infinite; }
+    @keyframes pulse {
+      from { opacity: 1; }
+      to { opacity: 0.5; }
+    }
+    .viewer { flex: 1; position: relative; min-height: 0; }
+    #canvas-container { width: 100%; height: 100%; }
+
+    /* Center upload overlay (from embed4d) */
+    .upload-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; z-index: 999; pointer-events: none; opacity: 0; transition: opacity 0.3s; }
+    .upload-overlay.active { pointer-events: all; opacity: 1; }
+    .upload-prompt { background: rgba(0,0,0,0.85); backdrop-filter: blur(20px); border: 2px dashed rgba(255,255,255,0.3); border-radius: 16px; padding: 3rem 4rem; text-align: center; cursor: pointer; transition: all 0.3s; }
+    .upload-prompt:hover { border-color: rgba(59,130,246,0.6); background: rgba(0,0,0,0.9); transform: scale(1.02); }
+    .upload-prompt svg { width: 64px; height: 64px; fill: #3b82f6; margin: 0 auto 1rem; display: block; }
+    .upload-prompt h3 { font-size: 1.5rem; margin-bottom: 0.5rem; color: white; }
+    .upload-prompt p { color: #9ca3af; font-size: 0.875rem; }
+    .upload-overlay.dragging .upload-prompt { border-color: #3b82f6; background: rgba(59,130,246,0.1); transform: scale(1.05); }
+    input[type="file"] { display: none; }
+
+    /* Floating controls panel */
+    .controls {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.75);
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 12px;
+      padding: 0.75rem 1rem;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+      z-index: 1000;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s;
+      /* Prevent toolbar from overflowing on small screens */
+      max-width: min(560px, calc(100vw - 32px));
+      width: auto;
+    }
+    .controls.active { opacity: 1; pointer-events: all; }
+    .controls.hidden { opacity: 0; pointer-events: none; }
+    .controls-inner {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      justify-content: center;
+    }
+    .controls-row {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .controls-row-main {
+      flex: 1 1 auto;
+    }
+
+    /* Playback controls */
+    .playback-bar {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex: 1 1 auto;
+    }
+    .btn { display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; background: rgba(255,255,255,0.1); border: none; border-radius: 8px; color: white; font-size: 0.875rem; cursor: pointer; transition: all 0.3s; }
+    .btn:hover { background: rgba(255,255,255,0.2); }
+    .btn:active { background: rgba(255,255,255,0.3); transform: scale(0.95); }
+    #ground-toggle-btn { border: 2px solid rgba(255,255,255,0.4) !important; }
+    #ground-toggle-btn:hover { border-color: rgba(255,255,255,0.6) !important; }
+    .playback-slider { width: 200px; height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; outline: none; cursor: pointer; display: none; position: relative; }
+    .playback-slider::-webkit-slider-thumb { appearance: none; width: 12px; height: 12px; background: #3b82f6; border-radius: 50%; cursor: pointer; }
+    .playback-slider::-moz-range-thumb { width: 12px; height: 12px; background: #3b82f6; border-radius: 50%; cursor: pointer; border: none; }
+
+    /* Tooltip for slider */
+    .slider-tooltip { position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%) translateY(-8px); background: rgba(0,0,0,0.9); color: white; padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; white-space: nowrap; pointer-events: none; opacity: 0; transition: opacity 0.2s; z-index: 1001; }
+    .playback-bar:hover .slider-tooltip { opacity: 1; }
+
+    /* Speed dropdown */
+    .speed-select { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; color: white; padding: 0.5rem 0.75rem; font-size: 0.875rem; cursor: pointer; outline: none; transition: all 0.3s; min-width: 70px; }
+    .speed-select:hover { background: rgba(255,255,255,0.15); }
+    .speed-select option { background: #1a1a2e; color: white; }
+
+    .info { color: #9ca3af; font-size: 0.75rem; display: none; }
+    #shortcutsOverlay {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      background: rgba(0,0,0,0.75);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 11px;
+      line-height: 1.4;
+      max-width: 280px;
+      z-index: 1500;
+    }
+
+    #shortcutsOverlay code {
+      background: rgba(255,255,255,0.15);
+      padding: 2px 4px;
+      border-radius: 4px;
+    }
+
+    #shortcutsHint {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      background: rgba(0,0,0,0.6);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 8px;
+      padding: 6px 10px;
+      font-size: 11px;
+      cursor: pointer;
+      z-index: 1500;
+      display: none;
+      opacity: 0.8;
+    }
+    #shortcutsHint:hover {
+      opacity: 1;
+    }
+
+    /* Mobile layout for toolbar */
+    @media (max-width: 600px) {
+      .controls {
+        bottom: 12px;
+        padding: 0.6rem 0.75rem;
+        max-width: calc(100vw - 24px);
+      }
+      .controls-inner {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.5rem;
+      }
+      .controls-row {
+        justify-content: center;
+        flex-wrap: nowrap;
+        min-width: 0;
+      }
+      .controls-row-main {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+      .controls-row-main .playback-bar {
+        flex: 1 1 auto;
+        min-width: 0;
+      }
+      .playback-slider {
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+        flex: 1 1 auto;
+      }
+      .controls-row-secondary {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        flex-wrap: nowrap;
+      }
+      .speed-select {
+        min-width: 60px;
+        font-size: 0.75rem;
+        padding: 0.4rem 0.5rem;
+      }
+      .btn {
+        width: 32px;
+        height: 32px;
+        flex-shrink: 0;
+      }
+    }
+
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="viewer">
+      <div id="canvas-container"></div>
+      <!-- Floating Controls Panel -->
+      <div class="controls" id="controls">
+        <div class="controls-inner">
+
+          <div class="controls-row controls-row-main">
+            <!-- Play / Pause -->
+            <button class="btn" id="play-btn" title="Play / Pause">
+              <span id="play-text">▶</span>
+            </button>
+
+            <!-- Timeline -->
+            <div class="playback-bar">
+              <input type="range" id="playback-slider" class="playback-slider" min="0" max="100" value="0">
+              <div class="slider-tooltip" id="slider-tooltip">0:00</div>
+            </div>
+          </div>
+
+          <div class="controls-row controls-row-secondary">
+            <!-- Speed -->
+            <select id="speed-select" class="speed-select">
+              <option value="0.25">0.25x</option>
+              <option value="0.5">0.5x</option>
+              <option value="1" selected>1x</option>
+              <option value="1.5">1.5x</option>
+              <option value="2">2x</option>
+            </select>
+
+            <!-- Ground -->
+            <button class="btn" id="ground-toggle-btn" title="Toggle ground">🌐</button>
+
+            <!-- Skeleton -->
+            <button class="btn" id="skeleton-toggle-btn" title="Toggle skeleton" style="display:none;">🦴</button>
+
+            <!-- Fullscreen -->
+            <button class="btn" id="fullscreen-btn" title="Fullscreen">⛶</button>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Center upload overlay -->
+      <div class="upload-overlay active" id="upload-overlay">
+        <div class="upload-prompt" id="upload-prompt">
+          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20M12,19L8,15H10.5V12H13.5V15H16L12,19Z"/>
+          </svg>
+          <h3>Load 3D Model</h3>
+          <p>Click to browse or drag & drop a GLB/GLTF/FBX file</p>
+        </div>
+        <input type="file" id="file-input" accept=".glb,.gltf,.fbx">
+      </div>
+      <!-- Floating shortcuts legend over canvas -->
+      <div id="shortcutsOverlay">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+          <strong style="font-size:11px;">Keyboard & Mouse</strong>
+          <span style="opacity:0.7; font-size:10px;">Press <code>?</code> to hide</span>
+        </div>
+
+        <ul style="padding-left: 16px; margin: 2px 0 6px 0;">
+          <li><code>k</code> - Pause playback</li>
+          <li><code>f</code> - Toggle fullscreen</li>
+          <li><code>g</code> - Toggle ground</li>
+          <li><code>b</code> - Toggle skeleton</li>
+          <li><code>arrowleft</code> - Rewind 1 frame</li>
+          <li><code>arrowright</code> - Forward 1 frame</li>
+          <li><code>0</code> - Reset playback</li>
+        </ul>
+
+        <div style="opacity:0.75;">
+          <div>Mouse:</div>
+          <ul style="padding-left: 16px; margin: 2px 0 0 0;">
+            <li>Drag background - orbit</li>
+            <li>Wheel - zoom</li>
+            <li>Click bone sphere - select bone & mesh</li>
+            <li>Click mesh - select driving bone & mesh</li>
+            <li>Click marker - edit marker</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Minimized hint button -->
+      <div id="shortcutsHint">⌨ Show Shortcuts</div>
+
+    </div>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+  <script>
+    // ---------- Global State ----------
+    var controls, orbitControls;
+    var animationClips = [];
+    var speed = 1;
+    var loopEnabled = true;
+    var clock = new THREE.Clock();
+    var isPlaying = false;
+    var isRotating = false;
+    var currentTime = 0;
+    var animationDuration = 0;
+    var action;
+    var mixer;
+    var model;
+    var scene;
+    var camera;
+    var isDragging = false;
+    var renderer;
+    var fps = 30; // Default FPS for frame calculation
+    var ground = null;
+    var groundOpacityState = 0; // 0 = full, 1 = semi-transparent, 2 = transparent
+    var skeletonHelper = null;
+    var showSkeleton = false;
+    var isFullscreen = false;
+    var controlsHideTimeout = null;
+
+    function setUIState(hasModel) {
+      var uploadOverlay = document.getElementById('upload-overlay');
+      var controlsEl = document.getElementById('controls');
+      if (!uploadOverlay || !controlsEl) return;
+      uploadOverlay.classList.toggle('active', !hasModel);
+      controlsEl.classList.toggle('active', !!hasModel);
+    }
+
+    function init() {
+      var container = document.getElementById('canvas-container');
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x12131a);
+      scene.fog = new THREE.Fog(0x0d0e13, 10, 50);
+
+      camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 200);
+      camera.up.set(0, 1, 0);
+      camera.position.set(0, 3, 8);
+      camera.lookAt(new THREE.Vector3(0, 1, 0));
+
+      renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true });
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.4;
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      renderer.setSize(container.clientWidth, container.clientHeight);
+      renderer.setPixelRatio(window.devicePixelRatio);
+      container.appendChild(renderer.domElement);
+
+      // --- Orbit Controls ---
+      orbitControls = new THREE.OrbitControls(camera, renderer.domElement);
+      orbitControls.enableDamping = true;
+      orbitControls.dampingFactor = 0.06;
+      orbitControls.minDistance = 0.5;
+      orbitControls.maxDistance = 100;
+      orbitControls.target.set(0, 1, 0);
+
+      // --- Optimized lighting for white/gray skeleton ---
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+      scene.add(ambientLight);
+
+      const hemisphereLight = new THREE.HemisphereLight(0xffffff, 0x222222, 1.5);
+      hemisphereLight.position.set(0, 2, 0);
+      scene.add(hemisphereLight);
+
+      const directionalLight = new THREE.DirectionalLight(0xffffff, 2.0);
+      directionalLight.position.set(3, 5, 4);
+      directionalLight.castShadow = true;
+      directionalLight.shadow.mapSize.width = 2048;
+      directionalLight.shadow.mapSize.height = 2048;
+      directionalLight.shadow.camera.near = 0.5;
+      directionalLight.shadow.camera.far = 200;
+      directionalLight.shadow.camera.left = -10;
+      directionalLight.shadow.camera.right = 10;
+      directionalLight.shadow.camera.top = 10;
+      directionalLight.shadow.camera.bottom = -10;
+      directionalLight.shadow.bias = -0.0001;
+      scene.add(directionalLight);
+
+      const fillLight = new THREE.DirectionalLight(0xffffff, 0.8);
+      fillLight.position.set(-3, 3, -2);
+      scene.add(fillLight);
+
+      const rimLight = new THREE.DirectionalLight(0xffffff, 0.7);
+      rimLight.position.set(0, 4, -5);
+      scene.add(rimLight);
+
+      const topLight = new THREE.DirectionalLight(0xffffff, 0.6);
+      topLight.position.set(0, 8, 0);
+      scene.add(topLight);
+
+      const bgCanvas = document.createElement('canvas');
+      bgCanvas.width = 1;
+      bgCanvas.height = 256;
+
+      const ctx = bgCanvas.getContext('2d');
+      const gradient = ctx.createLinearGradient(0, 0, 0, 256);
+      gradient.addColorStop(0, '#0a0b0f');
+      gradient.addColorStop(1, '#050608');
+
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, 1, 256);
+
+      const bgTexture = new THREE.CanvasTexture(bgCanvas);
+      scene.background = bgTexture;
+      scene.fog = new THREE.Fog(0x050608, 15, 80);
+
+      // --- Ground & Grid ---
+      addHelpers();
+
+      // Initialize ground toggle button state
+      updateGroundButtonState();
+
+      window.addEventListener('resize', onResize);
+      document.getElementById('play-btn').addEventListener('click', togglePlay);
+      document.getElementById('ground-toggle-btn').addEventListener('click', toggleGroundVisibility);
+      document.getElementById('skeleton-toggle-btn').addEventListener('click', toggleSkeletonVisibility);
+      document.getElementById('fullscreen-btn').addEventListener('click', toggleFullscreen);
+
+      // Keyboard shortcuts
+      window.addEventListener('keydown', handleKeyPress);
+
+      // Mouse move for fullscreen mode - show/hide controls
+      window.addEventListener('mousemove', handleMouseMove);
+
+      // Upload overlay / file input
+      var uploadOverlay = document.getElementById('upload-overlay');
+      var uploadPrompt = document.getElementById('upload-prompt');
+      var fileInput = document.getElementById('file-input');
+      if (uploadPrompt && fileInput) {
+        uploadPrompt.addEventListener('click', function() { fileInput.click(); });
+        fileInput.addEventListener('change', loadModelFromFile);
+      }
+
+      // Prevent default drag behaviors - required for drop to work
+      window.addEventListener('dragover', function(e) { e.preventDefault(); });
+      window.addEventListener('drop', function(e) { e.preventDefault(); });
+
+      // Drag enter/over - show overlay highlight
+      window.addEventListener('dragenter', function(e) {
+        if (!uploadOverlay) return;
+        uploadOverlay.classList.add('dragging');
+        uploadOverlay.classList.add('active');
+      });
+      window.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        if (!uploadOverlay) return;
+        uploadOverlay.classList.add('dragging');
+        uploadOverlay.classList.add('active');
+      });
+      // Drag leave - if a model is loaded, hide overlay again
+      window.addEventListener('dragleave', function(e) {
+        if (!uploadOverlay) return;
+        if (e.clientX === 0 && e.clientY === 0) {
+          uploadOverlay.classList.remove('dragging');
+          if (model) uploadOverlay.classList.remove('active');
+        }
+      });
+      // Handle dropped files
+      window.addEventListener('drop', function(e) {
+        if (!uploadOverlay) return;
+        e.preventDefault();
+        uploadOverlay.classList.remove('dragging');
+
+        var dt = e.dataTransfer;
+        if (!dt || !dt.files || dt.files.length === 0) {
+          if (model) uploadOverlay.classList.remove('active');
+          return;
+        }
+
+        var file = dt.files[0];
+        var name = (file && file.name) ? file.name.toLowerCase() : '';
+        if (!name.endsWith('.glb') && !name.endsWith('.gltf') && !name.endsWith('.fbx')) {
+          alert('Please drop a valid GLB, GLTF, or FBX file');
+          if (model) uploadOverlay.classList.remove('active');
+          return;
+        }
+
+        var url = URL.createObjectURL(file);
+        loadModelFromURL(url, file.name);
+        if (fileInput) fileInput.value = '';
+      });
+
+      // Speed dropdown
+      var speedSelect = document.getElementById('speed-select');
+      speedSelect.addEventListener('change', function() {
+        speed = parseFloat(this.value);
+      });
+
+      var slider = document.getElementById('playback-slider');
+      slider.addEventListener('input', onSliderInput);
+      slider.addEventListener('mousemove', updateSliderTooltip);
+
+      // Load model from URL parameter or Gradio-injected placeholder (GLB/GLTF/FBX)
+      var urlParams = new URLSearchParams(window.location.search);
+      var glbBase64 = urlParams.get('data') || '{{GLB_BASE64}}';
+      var embeddedModelFormat = '{{MODEL_FORMAT}}';
+      if (glbBase64 && glbBase64.length > 100) {
+        console.log('Loading ' + embeddedModelFormat.toUpperCase() + ' from base64 data, length:', glbBase64.length);
+        if (embeddedModelFormat === 'fbx') {
+          var dataUrl = 'data:application/octet-stream;base64,' + glbBase64;
+          loadFBX(dataUrl);
+        } else {
+          var dataUrl = 'data:model/gltf-binary;base64,' + glbBase64;
+          loadModelFromURL(dataUrl);
+        }
+        setUIState(true);
+      } else if (glbBase64 === '{{GLB_BASE64}}') {
+        console.log('Placeholder not replaced - no model data provided');
+        setUIState(false);
+      }
+
+      animate();
+    }
+
+    // Chessboard ground functions
+    function createBaseChessboard(
+      grid_size = 50,
+      divisions = 50,
+      white = "#ffffff",
+      black = "#3a3a3a",
+      texture_size = 1024
+    ) {
+      var adjusted_texture_size = Math.floor(texture_size / divisions) * divisions;
+      var canvas = document.createElement("canvas");
+      canvas.width = canvas.height = adjusted_texture_size;
+      var context = canvas.getContext("2d");
+      context.imageSmoothingEnabled = false;
+
+      var step = adjusted_texture_size / divisions;
+      for (var i = 0; i < divisions; i++) {
+        for (var j = 0; j < divisions; j++) {
+          context.fillStyle = (i + j) % 2 === 0 ? white : black;
+          context.fillRect(i * step, j * step, step, step);
+        }
+      }
+
+      var texture = new THREE.CanvasTexture(canvas);
+      texture.wrapS = THREE.RepeatWrapping;
+      texture.wrapT = THREE.RepeatWrapping;
+      texture.magFilter = THREE.NearestFilter;
+      texture.minFilter = THREE.NearestFilter;
+      texture.generateMipmaps = false;
+
+      var planeGeometry = new THREE.PlaneGeometry(grid_size, grid_size);
+      var planeMaterial = new THREE.MeshStandardMaterial({
+        map: texture,
+        side: THREE.DoubleSide,
+        roughness: 0.9,
+        metalness: 0.1,
+        transparent: false,
+        opacity: 1.0,
+      });
+
+      var plane = new THREE.Mesh(planeGeometry, planeMaterial);
+      plane.receiveShadow = true;
+      return plane;
+    }
+
+    function getChessboardXZ(...args) {
+      var plane = createBaseChessboard(...args);
+      plane.rotation.x = -Math.PI / 2;
+      return plane;
+    }
+
+    function addHelpers() {
+      ground = getChessboardXZ(200, 80, '#0a0a0a', '#050505', 2048);
+      ground.position.y = -0.01;
+      ground.name = 'ground';
+      ground.receiveShadow = true;
+      scene.add(ground);
+    }
+
+    function updateGroundButtonState() {
+      var btn = document.getElementById('ground-toggle-btn');
+      if (!btn) return;
+
+      var states = ['Full', 'Semi-transparent', 'Transparent'];
+      var icons = ['🌐', '🌓', '🌑'];
+      var opacities = ['1.0', '0.5', '0.0'];
+
+      btn.innerHTML = icons[groundOpacityState];
+      btn.title = 'Ground: ' + states[groundOpacityState] + ' (Opacity: ' + opacities[groundOpacityState] + ')';
+      btn.style.opacity = groundOpacityState === 0 ? '1.0' : (groundOpacityState === 1 ? '0.6' : '0.3');
+    }
+
+    function toggleGroundVisibility() {
+      if (!ground) return;
+
+      groundOpacityState = (groundOpacityState + 1) % 3;
+
+      ground.traverse(function(child) {
+        if (child.isMesh && child.material) {
+          if (groundOpacityState === 0) {
+            child.material.opacity = 1.0;
+            child.material.transparent = false;
+          } else if (groundOpacityState === 1) {
+            child.material.opacity = 0.5;
+            child.material.transparent = true;
+          } else {
+            child.material.opacity = 0.0;
+            child.material.transparent = true;
+          }
+          child.material.needsUpdate = true;
+        }
+      });
+
+      updateGroundButtonState();
+    }
+
+    function toggleSkeletonVisibility() {
+      showSkeleton = !showSkeleton;
+
+      if (skeletonHelper) {
+        skeletonHelper.visible = showSkeleton;
+      }
+
+      var btn = document.getElementById('skeleton-toggle-btn');
+      if (btn) {
+        btn.style.opacity = showSkeleton ? '1.0' : '0.5';
+        btn.title = showSkeleton ? 'Hide Skeleton' : 'Show Skeleton';
+      }
+    }
+
+    function toggleFullscreen() {
+      // Check if we're in a webview with API support
+      var webviewApi = null;
+      if (typeof window !== 'undefined' && window.pywebview && window.pywebview.api) {
+        webviewApi = window.pywebview.api;
+      } else if (typeof pywebview !== 'undefined' && pywebview.api) {
+        webviewApi = pywebview.api;
+      }
+
+      if (webviewApi && typeof webviewApi.toggle_fullscreen === 'function') {
+        // Use webview API for fullscreen
+        var promise = webviewApi.toggle_fullscreen();
+        if (promise && typeof promise.then === 'function') {
+          promise.then(function(newState) {
+            if (typeof newState === 'boolean') {
+              isFullscreen = newState;
+            } else {
+              isFullscreen = !isFullscreen;
+            }
+            if (isFullscreen) {
+              startControlsHideTimer();
+            } else {
+              showControls();
+              clearControlsHideTimer();
+            }
+          }).catch(function() {
+            // Fall through to browser API on error
+            useBrowserFullscreen();
+          });
+        } else {
+          // Not a promise, handle synchronously
+          var newState = promise;
+          isFullscreen = typeof newState === 'boolean' ? newState : !isFullscreen;
+          if (isFullscreen) {
+            startControlsHideTimer();
+          } else {
+            showControls();
+            clearControlsHideTimer();
+          }
+        }
+        return;
+      }
+
+      // Fallback to browser Fullscreen API
+      useBrowserFullscreen();
+    }
+
+    function useBrowserFullscreen() {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().then(function() {
+          isFullscreen = true;
+          startControlsHideTimer();
+        }).catch(function() {
+          // Browser fullscreen not supported or failed
+        });
+      } else {
+        if (document.exitFullscreen) {
+          document.exitFullscreen().then(function() {
+            isFullscreen = false;
+            showControls();
+            clearControlsHideTimer();
+          });
+        }
+      }
+    }
+
+    function handleKeyPress(e) {
+      // Ignore if typing in an input
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') {
+        return;
+      }
+
+      switch(e.key.toLowerCase()) {
+        case ' ':
+        case 'k':
+          e.preventDefault();
+          if (mixer && action) togglePlay();
+          break;
+        case 'f':
+          e.preventDefault();
+          toggleFullscreen();
+          break;
+        case 'g':
+          e.preventDefault();
+          toggleGroundVisibility();
+          break;
+        case 'b':
+          e.preventDefault();
+          if (skeletonHelper) toggleSkeletonVisibility();
+          break;
+        case 'arrowleft':
+          e.preventDefault();
+          if (mixer && action) {
+            var newTime = Math.max(0, action.time - 1 / fps);
+            action.time = newTime;
+            mixer.update(0);
+          }
+          break;
+        case 'arrowright':
+          e.preventDefault();
+          if (mixer && action) {
+            var newTime = Math.min(animationDuration, action.time + 1 / fps);
+            action.time = newTime;
+            mixer.update(0);
+          }
+          break;
+        case ',':
+          e.preventDefault();
+          if (mixer && action) {
+            var frameTime = 1 / fps;
+            action.time = Math.max(0, action.time - frameTime);
+            mixer.update(0);
+          }
+          break;
+        case '.':
+          e.preventDefault();
+          if (mixer && action) {
+            var frameTime = 1 / fps;
+            action.time = Math.min(animationDuration, action.time + frameTime);
+            mixer.update(0);
+          }
+          break;
+        case '0':
+          e.preventDefault();
+          if (mixer && action) {
+            action.time = 0;
+            mixer.update(0);
+          }
+          break;
+      }
+    }
+
+    function handleMouseMove() {
+      if (isFullscreen) {
+        showControls();
+        startControlsHideTimer();
+      }
+    }
+
+    function showControls() {
+      var controlsEl = document.getElementById('controls');
+      if (controlsEl && model) {
+        controlsEl.classList.remove('hidden');
+      }
+    }
+
+    function hideControls() {
+      if (isFullscreen) {
+        var controlsEl = document.getElementById('controls');
+        if (controlsEl) {
+          controlsEl.classList.add('hidden');
+        }
+      }
+    }
+
+    function startControlsHideTimer() {
+      clearControlsHideTimer();
+      controlsHideTimeout = setTimeout(function() {
+        hideControls();
+      }, 3000);
+    }
+
+    function clearControlsHideTimer() {
+      if (controlsHideTimeout) {
+        clearTimeout(controlsHideTimeout);
+        controlsHideTimeout = null;
+      }
+    }
+
+    // Listen for fullscreen changes
+    document.addEventListener('fullscreenchange', function() {
+      if (!document.fullscreenElement) {
+        isFullscreen = false;
+        showControls();
+        clearControlsHideTimer();
+      }
+    });
+
+    function animate() {
+      requestAnimationFrame(animate);
+      var delta = clock.getDelta();
+
+      if (mixer && action) {
+        mixer.update(delta * speed);
+        if (!loopEnabled) action.setLoop(THREE.LoopOnce);
+        else action.setLoop(THREE.LoopRepeat);
+
+        updateTimelineUI();
+      }
+
+      orbitControls.update();
+      if (isRotating && model && !mixer) model.rotation.y += 0.005;
+      renderer.render(scene, camera);
+    }
+
+    function loadModelFromURL(url, filename = '') {
+      // Handle data URLs (base64 GLB)
+      if (url.startsWith('data:model/gltf')) {
+        loadGLTF(url);
+        return;
+      }
+
+      var ext = '';
+
+      if (filename) {
+        ext = filename.split('.').pop().toLowerCase();
+      } else if (url.startsWith('blob:')) {
+        // blob URLs have no extension → assume GLB by default
+        console.warn('Blob URL without filename, assuming GLB');
+        loadGLTF(url);
+        return;
+      } else {
+        ext = url.split('.').pop().toLowerCase();
+      }
+
+      if (ext === 'glb' || ext === 'gltf') {
+        loadGLTF(url);
+      } else if (ext === 'fbx') {
+        loadFBX(url);
+      } else {
+        alert('Unsupported format: ' + ext);
+      }
+    }
+
+
+    // =========================
+    // GLTF
+    // =========================
+    function loadGLTF(url) {
+      var loader = new THREE.GLTFLoader();
+      loader.load(url, function (gltf) {
+        handleLoadedModel(gltf.scene, gltf.animations);
+      });
+    }
+
+    // =========================
+    // FBX
+    // =========================
+    function fixFBXMaterials(obj) {
+      obj.traverse(function(child) {
+        if (child.isMesh && child.material) {
+          var mats = Array.isArray(child.material) ? child.material : [child.material];
+          mats.forEach(function(mat) {
+            if (mat.map) {
+              mat.map.encoding = THREE.sRGBEncoding;
+              mat.map.needsUpdate = true;
+            }
+            mat.side = THREE.DoubleSide;
+            mat.needsUpdate = true;
+          });
+        }
+      });
+    }
+
+    function loadFBX(url) {
+      var loader = new THREE.FBXLoader();
+      loader.load(url, function (object) {
+        fixFBXMaterials(object);
+
+        // ---- Best-effort unit detection ----
+        var scale = detectFBXScale(object);
+        object.scale.setScalar(scale);
+
+        handleLoadedModel(object, object.animations || []);
+      });
+    }
+
+    // =========================
+    // Unified post-processing
+    // =========================
+    function handleLoadedModel(loadedModel, animations) {
+      clearModel();
+
+      model = loadedModel;
+      scene.add(model);
+
+      model.traverse(function(child) {
+        if (child.isMesh) {
+          child.castShadow = true;
+          child.receiveShadow = true;
+        }
+      });
+
+      // Skeleton
+      var hasArmature = false;
+      model.traverse(function(child) {
+        if (child.isSkinnedMesh && child.skeleton) {
+          hasArmature = true;
+        }
+      });
+
+      if (hasArmature) {
+        if (skeletonHelper) scene.remove(skeletonHelper);
+        skeletonHelper = new THREE.SkeletonHelper(model);
+        skeletonHelper.visible = showSkeleton;
+        scene.add(skeletonHelper);
+        document.getElementById('skeleton-toggle-btn').style.display = 'flex';
+      } else {
+        document.getElementById('skeleton-toggle-btn').style.display = 'none';
+      }
+
+      // Animations
+      animationClips = animations;
+      if (animationClips.length > 0) {
+        setupAnimations();
+        document.getElementById('playback-slider').style.display = 'block';
+        document.getElementById('play-btn').style.display = 'flex';
+        document.getElementById('speed-select').style.display = 'block';
+      } else {
+        hideAnimationUI();
+      }
+
+      setUIState(true);
+    }
+
+    // =========================
+    // FBX unit detection
+    // =========================
+    function detectFBXScale(object) {
+
+      // Case 1: Some exporters provide this
+      if (object.userData && object.userData.unitScaleFactor) {
+        var f = object.userData.unitScaleFactor;
+        console.log('FBX unitScaleFactor:', f);
+        return 1 / f;
+      }
+
+      // Case 2: Heuristic via bounding box
+      var box = new THREE.Box3().setFromObject(object);
+      var size = new THREE.Vector3();
+      box.getSize(size);
+
+      var maxDim = Math.max(size.x, size.y, size.z);
+      console.log('FBX bbox max dimension:', maxDim);
+
+      // Heuristic guesses
+      if (maxDim > 1000) return 0.001; // mm → m
+      if (maxDim > 100)  return 0.01;  // cm → m
+      if (maxDim > 10)   return 0.1;   // dm → m
+
+      return 1; // already meters
+    }
+
+    function setupAnimations() {
+      mixer = new THREE.AnimationMixer(model);
+      playClip(animationClips[0].name);
+    }
+
+    function playClip(name) {
+      if (action) action.stop();
+      var clip = THREE.AnimationClip.findByName(animationClips, name);
+      action = mixer.clipAction(clip);
+      animationDuration = clip.duration;
+      action.play();
+      isPlaying = true;
+      document.getElementById('play-text').textContent = '⏸';
+    }
+
+    function hideAnimationUI() {
+      document.getElementById('playback-slider').style.display = 'none';
+      document.getElementById('play-btn').style.display = 'none';
+    }
+
+    function onResize() {
+      var container = document.getElementById('canvas-container');
+      camera.aspect = container.clientWidth / container.clientHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(container.clientWidth, container.clientHeight);
+    }
+
+    function loadModelFromFile(event) {
+      var file = event.target.files[0];
+      if (!file) return;
+      var url = URL.createObjectURL(file);
+      loadModelFromURL(url, file.name);
+    }
+
+    function togglePlay() {
+      if (!mixer || !action) return;
+      isPlaying = !isPlaying;
+      if (isPlaying) {
+        action.paused = false;
+        document.getElementById('play-text').textContent = '⏸';
+      } else {
+        action.paused = true;
+        document.getElementById('play-text').textContent = '▶';
+      }
+    }
+
+    function onSliderInput(e) {
+      if (!mixer || !action) return;
+      var progress = parseFloat(e.target.value) / 100;
+      currentTime = progress * animationDuration;
+      action.time = currentTime;
+      mixer.update(0);
+      updateSliderTooltip(e);
+    }
+
+    function updateSliderTooltip(e) {
+      if (!mixer || !action || animationDuration === 0) return;
+      var slider = document.getElementById('playback-slider');
+      var tooltip = document.getElementById('slider-tooltip');
+      var progress = parseFloat(slider.value) / 100;
+      var current = progress * animationDuration;
+      var total = animationDuration;
+
+      var formatTime = function(seconds) {
+        var mins = Math.floor(seconds / 60);
+        var secs = Math.floor(seconds % 60);
+        return mins + ':' + (secs < 10 ? '0' : '') + secs;
+      };
+
+      var currentFrame = Math.floor(current * fps);
+      var totalFrames = Math.floor(total * fps);
+
+      tooltip.textContent = formatTime(current) + ' / ' + formatTime(total) + ' (Frame ' + currentFrame + ' / ' + totalFrames + ')';
+      tooltip.style.left = (progress * 100) + '%';
+      tooltip.style.transform = 'translateX(-50%) translateY(-8px)';
+    }
+
+    function clearModel() {
+      if (!model) return;
+
+      scene.remove(model);
+
+      if (skeletonHelper) {
+        scene.remove(skeletonHelper);
+        skeletonHelper = null;
+      }
+
+      if (model.traverse) {
+        model.traverse(function(child) {
+          if (child.geometry) child.geometry.dispose();
+          if (child.material) {
+            if (Array.isArray(child.material)) {
+              child.material.forEach(mat => mat.dispose());
+            } else {
+              child.material.dispose();
+            }
+          }
+        });
+      }
+
+      model = null;
+      mixer = null;
+      action = null;
+      animationClips = [];
+      animationDuration = 0;
+      currentTime = 0;
+      setUIState(false);
+
+      document.getElementById('skeleton-toggle-btn').style.display = 'none';
+    }
+
+    function updateTimelineUI() {
+      if (!mixer || !action || animationDuration === 0) return;
+
+      if (!isDragging) {
+        var progress = (action.time % animationDuration) / animationDuration;
+        var slider = document.getElementById('playback-slider');
+        slider.value = progress * 100;
+
+        var tooltip = document.getElementById('slider-tooltip');
+        var formatTime = function(seconds) {
+          var mins = Math.floor(seconds / 60);
+          var secs = Math.floor(seconds % 60);
+          return mins + ':' + (secs < 10 ? '0' : '') + secs;
+        };
+        var currentFrame = Math.floor(action.time * fps);
+        var totalFrames = Math.floor(animationDuration * fps);
+        tooltip.textContent = formatTime(action.time) + ' / ' + formatTime(animationDuration) + ' (Frame ' + currentFrame + ' / ' + totalFrames + ')';
+        tooltip.style.left = (progress * 100) + '%';
+      }
+    }
+
+    // =========================
+    // Shortcuts Help Overlay
+    // =========================
+    const shortcutsOverlay = document.getElementById('shortcutsOverlay');
+    const shortcutsHint = document.getElementById('shortcutsHint');
+
+    // Safe init
+    if (shortcutsOverlay && shortcutsHint) {
+      shortcutsOverlay.style.display = 'none';
+      shortcutsHint.style.display = 'block';
+
+      // Toggle with ? (Shift + /)
+      document.addEventListener('keydown', (e) => {
+        // Ignore if typing
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+        if (e.key === '?' || (e.shiftKey && e.key === '/')) {
+          e.preventDefault();
+
+          const hidden = shortcutsOverlay.style.display === 'none';
+          shortcutsOverlay.style.display = hidden ? 'block' : 'none';
+          shortcutsHint.style.display = hidden ? 'none' : 'block';
+        }
+      });
+
+      // Click hint to restore
+      shortcutsHint.addEventListener('click', () => {
+        shortcutsOverlay.style.display = 'block';
+        shortcutsHint.style.display = 'none';
+      });
+    }
+
+
+    init();
+  </script>
+
+</body>
+</html>
