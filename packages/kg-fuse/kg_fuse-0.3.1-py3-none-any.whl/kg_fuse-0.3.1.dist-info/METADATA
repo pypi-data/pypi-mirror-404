@@ -1,0 +1,140 @@
+Metadata-Version: 2.4
+Name: kg-fuse
+Version: 0.3.1
+Summary: FUSE filesystem for Knowledge Graph - mount your knowledge graph as a filesystem
+Project-URL: Homepage, https://github.com/aaronsb/knowledge-graph-system
+Project-URL: Repository, https://github.com/aaronsb/knowledge-graph-system.git
+Project-URL: Documentation, https://github.com/aaronsb/knowledge-graph-system/blob/main/docs/guides/FUSE_FILESYSTEM.md
+Project-URL: Issues, https://github.com/aaronsb/knowledge-graph-system/issues
+Author: Aaron Bockelie
+License-Expression: MIT
+Keywords: filesystem,fuse,knowledge-graph,semantic-search
+Classifier: Development Status :: 4 - Beta
+Classifier: Environment :: Console
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: POSIX :: Linux
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: System :: Filesystems
+Requires-Python: >=3.11
+Requires-Dist: httpx>=0.27.0
+Requires-Dist: pyfuse3>=3.3.0
+Requires-Dist: tomli-w>=1.0.0
+Requires-Dist: trio>=0.25.0
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0.0; extra == 'dev'
+Description-Content-Type: text/markdown
+
+# Knowledge Graph FUSE Driver
+
+Mount the knowledge graph as a filesystem.
+
+## Installation
+
+### Prerequisites
+
+**System FUSE library** (required):
+```bash
+sudo pacman -S fuse3       # Arch
+sudo apt install fuse3     # Debian/Ubuntu
+sudo dnf install fuse3     # Fedora
+```
+
+**kg CLI** (for OAuth setup):
+```bash
+npm install -g @aaronsb/kg-cli
+```
+
+### Install kg-fuse
+
+```bash
+pipx install kg-fuse
+```
+
+### Upgrade
+
+```bash
+pipx upgrade kg-fuse
+```
+
+## Setup
+
+Create OAuth credentials (one-time):
+
+```bash
+kg oauth create --for fuse
+```
+
+This writes credentials to `~/.config/kg-fuse/config.toml`.
+
+## Usage
+
+```bash
+# Mount (reads credentials from config)
+kg-fuse /mnt/knowledge
+
+# Or run in foreground for debugging
+kg-fuse /mnt/knowledge -f
+```
+
+Unmount:
+
+```bash
+fusermount -u /mnt/knowledge
+# or just Ctrl+C if running in foreground
+```
+
+### Manual Credentials
+
+You can also pass credentials directly:
+
+```bash
+kg-fuse /mnt/knowledge \
+  --api-url https://kg.example.com/api \
+  --client-id YOUR_CLIENT_ID \
+  --client-secret YOUR_SECRET
+```
+
+## Filesystem Structure
+
+```
+/mnt/knowledge/
+├── ontology-a/          # Each ontology is a directory
+│   ├── doc1.md          # Documents in that ontology
+│   └── doc2.md
+└── ontology-b/
+    └── doc3.md
+```
+
+### Read: Browse Documents
+
+```bash
+ls /mnt/knowledge/                    # List ontologies
+ls /mnt/knowledge/my-ontology/        # List documents
+cat /mnt/knowledge/my-ontology/doc.md # Read document
+```
+
+### Write: Ingest Documents (future)
+
+```bash
+cp report.pdf /mnt/knowledge/my-ontology/
+# File "disappears" into ingestion pipeline
+# Creates job, extracts concepts, links to graph
+```
+
+## Debug Mode
+
+```bash
+kg-fuse /mnt/knowledge --debug -f
+```
+
+## Architecture
+
+The FUSE driver is an independent client that:
+- Authenticates via OAuth (like CLI, MCP server)
+- Makes HTTP requests to the API server
+- Caches directory listings (30s TTL)
+- Defaults to `localhost:8000` if unconfigured (fail-safe: won't accidentally query external endpoints)
+
+See ADR-069 for full design rationale.
