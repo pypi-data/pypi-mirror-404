@@ -1,0 +1,182 @@
+Metadata-Version: 2.4
+Name: x402-xrpl
+Version: 0.1.4
+Summary: XRPL implementation of x402 payments (presigned Payment scheme) with client + FastAPI/Starlette helpers
+Author: Facilitator Team
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: fastapi<0.116,>=0.115
+Requires-Dist: uvicorn[standard]<0.31,>=0.30
+Requires-Dist: xrpl-py>=4.1.0
+Requires-Dist: pydantic<3,>=2
+Requires-Dist: python-dotenv<2,>=1
+Requires-Dist: requests<3,>=2
+Requires-Dist: prometheus-client<0.22,>=0.21
+Requires-Dist: redis<6,>=5
+Requires-Dist: httpx>=0.28.1
+Requires-Dist: cryptography>=45.0.6
+Requires-Dist: openai<2,>=1
+
+# x402 XRPL Python SDK
+
+This package provides a small, spec‑aligned SDK for working with x402 payments over XRPL in this repository. It is designed to be reusable by both **buyer clients** (creating `PAYMENT-SIGNATURE` headers) and **seller/resource servers** (verifying and settling via a facilitator).
+
+**Note**: The XRPL `exact` flow in this repo is the **presigned `Payment` tx blob** scheme.
+
+For an overview of the scheme and end-to-end flow, see: `app/docs/xrpl-exact/presigned-payment/README.md`.
+
+---
+
+## Install (PyPI)
+
+```bash
+pip install x402-xrpl
+```
+
+Note: the PyPI name uses a hyphen, but the import name uses an underscore:
+
+```python
+import x402_xrpl
+```
+
+---
+
+## Quickstart: Buyer Client (requests-style)
+
+If you want the UX of `x402_requests(...)` (auto-handle 402), use `x402_xrpl.clients.requests`:
+
+```python
+import requests
+from xrpl.wallet import Wallet
+
+from x402_xrpl.clients.requests import x402_requests
+from x402_xrpl.clients.base import decode_payment_response
+
+XRPL_RPC = "https://s.altnet.rippletest.net:51234/"
+RESOURCE_URL = "http://127.0.0.1:8080/xrpl-demo/resource"
+
+wallet = Wallet.from_seed("…demo seed…")
+
+session: requests.Session = x402_requests(
+    wallet,
+    rpc_url=XRPL_RPC,
+    # Optional filters so most users don't write a custom selector:
+    network_filter="xrpl:1",
+    scheme_filter="exact",
+)
+
+resp = session.get(RESOURCE_URL, timeout=180)
+print(resp.status_code, resp.text)
+
+if "PAYMENT-RESPONSE" in resp.headers:
+    settlement = decode_payment_response(resp.headers["PAYMENT-RESPONSE"])
+    print("settled tx:", settlement.get("transaction"))
+```
+
+---
+
+## Quickstart: Protecting a FastAPI Route with `require_payment` (recommended)
+
+To protect a route (e.g. `/ai-news`) with XRPL x402 payments using an ergonomic wrapper:
+
+```python
+from fastapi import FastAPI
+
+from x402_xrpl.server import require_payment
+
+app = FastAPI()
+
+app.middleware("http")(
+    require_payment(
+        path="/ai-news",
+        price="1000",  # XRP drops; for IOUs use the XRPL value string (e.g. "1.25")
+        pay_to_address="rhaDe3NBxgUSLL12N5Sxpii2xy8vSyXNG6",
+        network="xrpl:1",
+        asset="XRP",
+        facilitator_url="http://127.0.0.1:8011",
+        resource="demo:ai-news",
+        description="AI news feed (paid)",
+    )
+)
+```
+
+### XRPL SourceTag (analytics)
+
+By default, this SDK issues `PaymentRequirements.extra["sourceTag"] = 804681468` and buyer clients will sign XRPL `Payment` transactions with `SourceTag = 804681468` (so XRPL can query/aggregate these payments on-ledger).
+
+To override the tag for your app, pass your own value in `extra`:
+
+```python
+app.middleware("http")(
+    require_payment(
+        # ...
+        extra={"sourceTag": 123},
+    )
+)
+```
+
+---
+
+**IOU notes** (non-XRP assets):
+
+- Set `reqs.asset` to the XRPL currency code (**MUST** be 3 chars or 40-hex).
+- Provide the issuer as `reqs.extra["issuer"]` (classic address).
+- Set `reqs.amount` to the XRPL issued-currency `value` string (e.g. `"1"`, `"1.25"`).
+
+If you want a human-friendly display string (or an opt-in conversion of a symbol like `"RLUSD"` into a 40-hex code), use the currency helpers:
+
+```python
+from x402_xrpl.xrpl_currency import display_currency_code, resolve_currency_code
+
+asset = "524C555344000000000000000000000000000000"
+print(display_currency_code(asset))  # "RLUSD" (best-effort)
+
+# Opt-in convenience (only use if your app has a trusted mapping/intent):
+asset_hex = resolve_currency_code("RLUSD", allow_utf8_symbol=True)
+```
+
+---
+
+## Quickstart: Calling a Facilitator Directly
+
+If you already have:
+
+- A `PAYMENT-SIGNATURE` header value (`payment_header`), and
+- A `PaymentRequirements` instance (`reqs`)
+
+you can talk to the XRPL facilitator directly:
+
+```python
+from x402_xrpl.facilitator import FacilitatorClient, FacilitatorClientOptions
+
+client = FacilitatorClient(
+    FacilitatorClientOptions(
+        base_url="http://127.0.0.1:8011",
+    )
+)
+
+# Optional: discover supported scheme/network pairs
+supported = client.supported()
+for kind in supported.kinds:
+    print("facilitator supports:", kind.scheme, kind.network)
+
+# Verify
+verify_result = client.verify(
+    payment_header=payment_header,
+    payment_requirements=reqs,
+)
+if not verify_result.is_valid:
+    raise RuntimeError(f"verify failed: {verify_result.invalid_reason}")
+
+# Settle
+settle_result = client.settle(
+    payment_header=payment_header,
+    payment_requirements=reqs,
+)
+if not settle_result.success:
+    raise RuntimeError(f"settle failed: {settle_result.error_reason}")
+
+print("settled on", settle_result.network, "tx:", settle_result.transaction)
+```
+
+For async flows, use `AsyncFacilitatorClient` instead and `await` the same methods.
