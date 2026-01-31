@@ -1,0 +1,166 @@
+Metadata-Version: 2.4
+Name: git-rewrite
+Version: 0.4.0
+Summary: Git history rewriting tools - sanitise, flatten submodules, and remap references
+Project-URL: Repository, https://gitlab.com/cyberassessmentlabs/public/tools/git-rewrite
+Project-URL: Documentation, https://git-rewrite.surge.sh
+Author: CyberAssessmentLabs
+License-Expression: MIT
+License-File: LICENSE
+Keywords: git,history,rewrite,sanitise,submodules
+Classifier: Development Status :: 4 - Beta
+Classifier: Environment :: Console
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.14
+Classifier: Topic :: Software Development :: Version Control :: Git
+Requires-Python: >=3.14
+Description-Content-Type: text/markdown
+
+# git-rewrite
+
+Git history rewriting tools - sanitise, flatten submodules, and remap references.
+
+## Installation
+
+```bash
+uv sync
+```
+
+## Usage
+
+### Scan for Sensitive Words
+
+Scan a repository for dirty words without making any changes:
+
+```bash
+uv run git-rewrite scan -r /path/to/repo -c config.json
+```
+
+Options:
+- `-r, --repo` - Path to the git repository
+- `-c, --config` - Path to JSON config file
+- `-v, --verbose` - Show verbose output
+
+### Sanitise Repository
+
+Rewrite history to remove sensitive words:
+
+```bash
+uv run git-rewrite sanitise -r /path/to/repo -o /path/to/output -c config.json
+```
+
+Options:
+- `-r, --repo` - Path to source repository
+- `-o, --output` - Path for output repository
+- `-c, --config` - Path to JSON config file
+- `-d, --default` - Default replacement word (default: REDACTED)
+- `-m, --commit-map` - Path to write commit mapping file
+- `-s, --submodule-map` - Path to submodule commit mapping file
+- `--delete` - Delete output directory if exists
+- `--sample-config` - Print sample config and exit
+- `-v, --verbose` - Show verbose output
+
+#### Sample Configuration
+
+```json
+{
+    "words": ["secretword", "internalname", "sensitiveid"],
+    "word_mapping": {
+        "secretword": "publicword",
+        "internalname": "externalname"
+    },
+    "email_mapping": {
+        "john smith": "jsmith@example.com",
+        "jane doe": "jdoe@example.com"
+    },
+    "exclude_files": [
+        "package-lock.json",
+        "yarn.lock"
+    ]
+}
+```
+
+### Flatten Submodules
+
+Flatten submodules into the main repository:
+
+```bash
+# Scan for submodules only
+uv run git-rewrite flatten -r /path/to/repo --scan-only
+
+# Flatten submodules
+uv run git-rewrite flatten -r /path/to/repo -o /path/to/output
+```
+
+Options:
+- `-r, --repo` - Path to source repository
+- `-o, --output` - Path for output repository
+- `-m, --commit-map` - Path to write commit mapping file
+- `--scan-only` - Only scan and list submodules
+- `--delete` - Delete output directory if exists
+- `-v, --verbose` - Show verbose output
+
+### Remap Submodule References
+
+Update submodule commit references in a repository:
+
+```bash
+uv run git-rewrite remap -r /path/to/repo -o /path/to/output -m mapping.txt
+```
+
+Options:
+- `-r, --repo` - Path to source repository
+- `-o, --output` - Path for output repository
+- `-m, --commit-map` - Path to commit mapping file
+- `--submodule-path` - Specific submodule path to remap
+- `--url-rewrite OLD NEW` - Rewrite URL in .gitmodules (can repeat)
+- `--delete` - Delete output directory if exists
+- `-v, --verbose` - Show verbose output
+
+## Workflow Example
+
+A typical workflow for cleaning up and flattening a repository:
+
+```bash
+# 1. Scan for sensitive words
+uv run git-rewrite scan -r ./myrepo -c dirty-words.json
+
+# 2. Sanitise the repository
+uv run git-rewrite sanitise -r ./myrepo -o ./myrepo-clean -c dirty-words.json \
+    -m commit-map.txt
+
+# 3. Flatten submodules in the cleaned repo
+uv run git-rewrite flatten -r ./myrepo-clean -o ./myrepo-flat -m submodule-map.txt
+
+# 4. Update consumer repositories to use new submodule commits
+uv run git-rewrite remap -r ./consumer-repo -o ./consumer-updated \
+    -m submodule-map.txt --submodule-path libs/mylib
+```
+
+## Development
+
+```bash
+# Install dependencies
+make install
+
+# Run linting and type checking
+make check
+
+# Auto-format code
+make format
+
+# Build wheel
+make build
+```
+
+## Requirements
+
+- Python 3.14+
+- Git
+
+## Licence
+
+MIT
