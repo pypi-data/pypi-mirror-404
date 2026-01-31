@@ -1,0 +1,74 @@
+name: Code Quality
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  quality:
+    name: Code Quality Checks
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v5
+
+    - name: Set up Python
+      run: uv python install 3.12
+
+    - name: Install dependencies
+      run: uv sync --all-extras
+
+    - name: Check code formatting with ruff
+      run: |
+        uv run ruff format --check src/ tests/
+        echo "✅ Code formatting is correct"
+
+    - name: Lint with ruff
+      run: |
+        uv run ruff check src/ tests/
+        echo "✅ Linting passed"
+
+    - name: Type check with mypy
+      run: |
+        uv run mypy src/
+        echo "✅ Type checking passed"
+
+    - name: Check for security issues
+      run: |
+        # Install safety for dependency security checks
+        uv pip install safety
+        uv pip freeze | uv run safety check --stdin || true
+        echo "⚠️  Security check complete (warnings only)"
+
+  docstrings:
+    name: Documentation Quality
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v5
+
+    - name: Set up Python
+      run: uv python install 3.12
+
+    - name: Install dependencies
+      run: uv sync --all-extras
+
+    - name: Check docstring coverage
+      run: |
+        uv pip install interrogate
+        uv run interrogate -v src/mixref --fail-under 80
+        echo "✅ Docstring coverage meets requirement"
+
+    - name: Validate Sphinx documentation
+      run: |
+        cd docs
+        uv run sphinx-build -W --keep-going -b html source build/html
+        echo "✅ Documentation builds without warnings"
