@@ -1,0 +1,195 @@
+[project]
+name = "bossanova"
+requires-python = ">=3.11"
+version = "0.1.0.dev4"
+authors = [
+    {name = "Eshin Jolly"},
+]
+description = "Bridging statistical cultures with some jazz"
+readme = "README.md"
+license = "MIT"
+classifiers = [
+    "Programming Language :: Python :: 3.11",
+    "Operating System :: OS Independent",
+    "Intended Audience :: Science/Research",
+]
+keywords = ["statistics", "multi-level-modeling", "regression", "analysis"]
+dependencies = [
+    "jax>=0.8.0",
+    "joblib>=1.3.0",
+    "nlopt>=2.9.0",
+    "numpy>=2.3.4",
+    "pandas>=2.0.0",
+    "polars>=1.0.0",
+    "pyarrow>=14.0.0",
+    "scikit-sparse>=0.4.16",
+    "scipy>=1.14.0",
+    "tqdm>=4.66.0",
+]
+
+# [project.urls]
+# Homepage = "https://github.com/ejolly/bossanova"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[[tool.uv.index]]
+name = "testpypi"
+url = "https://test.pypi.org/simple/"
+publish-url = "https://test.pypi.org/legacy/"
+explicit = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["bossanova"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"bossanova/py.typed" = "bossanova/py.typed"
+
+[tool.hatch.build.targets.sdist]
+include = ["bossanova/**", "README.md", "LICENSE"]
+
+[tool.ruff]
+exclude = ["*.ipynb"]
+
+[tool.ruff.lint]
+ignore = ["W292","E501", "E731", "E741"]
+
+# ty type checker configuration
+# ty is still early/strict - suppress common false positives from:
+# - Optional attrs used after _check_fitted() guarantees non-None
+# - jax/numpy/polars type stub limitations
+[tool.ty.rules]
+invalid-method-override = "ignore"  # Intentional: model subclasses have different fit() signatures
+unresolved-import = "ignore"      # External libraries may lack stubs
+unresolved-attribute = "ignore"   # External library members
+no-matching-overload = "ignore"   # numpy/polars/jax overload resolution
+invalid-argument-type = "ignore"  # Optional attrs passed after _check_fitted()
+invalid-return-type = "ignore"    # Optional attrs returned after _check_fitted()
+not-subscriptable = "ignore"      # Subscripting Optional attrs after _check_fitted()
+invalid-assignment = "ignore"     # jax Array <-> numpy ndarray assignments
+unsupported-operator = "ignore"   # Operations on Optional attrs after _check_fitted()
+possibly-missing-attribute = "ignore"  # Method calls on Optional attrs after _check_fitted()
+
+[tool.pytest.ini_options]
+markers = [
+    "api: API-level tests for public interfaces",
+    "redteam: Red team adversarial tests for edge cases and robustness",
+    "viz: Visualization tests",
+]
+filterwarnings = [
+    # SWIG-generated bindings in nlopt lack __module__ attributes
+    # This is an upstream issue in the SWIG-generated C extensions
+    "ignore:builtin type Swig.*has no __module__ attribute:DeprecationWarning",
+    "ignore:builtin type swigvarlink has no __module__ attribute:DeprecationWarning",
+    # Expected warnings in edge-case tests (singular fits, boundary conditions)
+    "ignore:Var\\(var_contrast\\) is near zero:UserWarning",
+    "ignore:Singular fit.*variance component:UserWarning",
+    "ignore:Model failed to converge with.*negative eigenvalue:UserWarning",
+    "ignore:Hessian is not positive definite:RuntimeWarning",
+    "ignore:divide by zero encountered:RuntimeWarning",
+    "ignore:Only \\d+/\\d+ bootstrap iterations succeeded:RuntimeWarning",
+]
+
+[tool.pixi.workspace]
+channels = ["conda-forge"]
+platforms = ["osx-arm64", "linux-64"]
+
+[tool.pixi.pypi-dependencies]
+bossanova = { path = ".", editable = true }
+
+[tool.pixi.tasks]
+
+[tool.pixi.feature.dev.dependencies]
+ruff = "==0.14.0"
+pytest = "*"
+jupyter-book = ">=1.0.4.post1,<2"
+ipykernel = ">=6.29.5,<7"
+vulture = ">=2.14"
+pyright = ">=1.1.400"
+ast-grep = ">=0.40"
+ty = ">=0.0.8,<0.0.9"
+uv = ">=0.6"
+
+[tool.pixi.feature.dev.tasks]
+
+# === Core Workflow ===
+lint = "ruff check --fix bossanova/ && ruff format bossanova/ && ty check bossanova/"
+test = "pytest -v --tb=short tests/bossanova_tests --ignore=tests/bossanova_tests/recovery"
+parity = """python tests/bossanova_parity/runner.py --model lm --verbose && \
+python tests/bossanova_parity/runner.py --model glm --verbose && \
+python tests/bossanova_parity/runner.py --model lmer --verbose && \
+python tests/bossanova_parity/runner.py --model glmer --verbose \
+    --exclude grouseticks_three_term_correlated \
+    --exclude grouseticks_three_term_uncorrelated && \
+python tests/bossanova_parity/runner.py --model emmeans --verbose && \
+python tests/bossanova_parity/runner.py --model compare --verbose"""
+parity-slow = """python tests/bossanova_parity/runner.py --model lmer_bootstrap --verbose && \
+python tests/bossanova_parity/runner.py --model glmer_bootstrap --verbose && \
+python tests/bossanova_parity/runner.py --model glmer --verbose \
+    --test grouseticks_three_term_correlated \
+    --test grouseticks_three_term_uncorrelated"""
+parity-insteval = "python tests/bossanova_benchmarks/insteval/parity/run_parity.py"
+
+# === Targeted Module Tests ===
+test-lm = "pytest -v --tb=short tests/bossanova_tests/lm"
+test-glm = "pytest -v --tb=short tests/bossanova_tests/glm"
+test-lmer = "pytest -v --tb=short tests/bossanova_tests/lmer"
+test-glmer = "pytest -v --tb=short tests/bossanova_tests/glmer"
+test-marginal = "pytest -v --tb=short tests/bossanova_tests/marginal"
+
+# === Targeted Parity Tests ===
+parity-lm = "python tests/bossanova_parity/runner.py --model lm --verbose"
+parity-glm = "python tests/bossanova_parity/runner.py --model glm --verbose"
+parity-lmer = "python tests/bossanova_parity/runner.py --model lmer --verbose"
+parity-glmer = "python tests/bossanova_parity/runner.py --model glmer --verbose"
+
+# === Other ===
+test-pyodide = "uv build --wheel && cd tests/pyodide && npm install --silent && node test_runner.mjs"
+
+# Documentation (MyST + Sphinx)
+docs-build = "cd bossanova-docs && sphinx-build -b html . _build/html"
+docs-serve = "npx serve bossanova-docs/_build/html"
+docs-clean = "rm -r bossanova-docs/_build/ && rm -r bossanova-docs/**/.jupyter_cache 2>/dev/null; echo 'Cleaned docs build artifacts'"
+kernel = "python -m ipykernel install --user --name=\"$(basename $(pwd))\" --display-name=\"$(basename $(pwd))\""
+
+# === Build & Publish ===
+build = "uv build"
+build-check = { cmd = "uv build --no-sources", description = "Verify build works without local sources" }
+publish-testpypi = { cmd = "bash -c 'set -a && source .env.testpypi && set +a && uv publish --index testpypi'", description = "Publish to TestPyPI" }
+publish-testpypi-dry = { cmd = "bash -c 'set -a && source .env.testpypi && set +a && uv publish --index testpypi --dry-run'", description = "Dry-run publish to TestPyPI" }
+publish = { cmd = "bash -c 'set -a && source .env.pypi && set +a && uv publish'", description = "Publish to PyPI" }
+publish-dry = { cmd = "bash -c 'set -a && source .env.pypi && set +a && uv publish --dry-run'", description = "Dry-run publish to PyPI" }
+release-testpypi = { cmd = "bash -c 'set -a && source .env.testpypi && set +a && uv build && uv publish --index testpypi'", description = "Build and publish to TestPyPI" }
+release = { cmd = "bash -c 'set -a && source .env.pypi && set +a && uv build && uv publish'", description = "Build and publish to PyPI" }
+
+[tool.pixi.environments]
+default = { features = ["dev"], solve-group = "default" }
+
+[tool.pixi.dependencies]
+nodejs = ">=20.0.0"
+nlopt = ">=2.10.0,<3"
+statsmodels = ">=0.14.5,<0.15"
+r-lmertest = ">=3.1_3,<4"
+r-base = ">=4.5.2,<4.6"
+r-emmeans = ">=2.0.0,<3"
+r-tidyverse = ">=2.0.0,<3"
+r-broom = ">=1.0.10,<2"
+"r-broom.mixed" = ">=0.2.9.6,<0.3"
+r-report = ">=0.6.2,<0.7"
+matplotlib = ">=3.10.8,<4"
+seaborn = ">=0.13.2,<0.14"
+r-boot = ">=1.3_32,<2"
+r-profmem = ">=0.7.0,<1"
+pyyaml = ">=6.0,<7"
+# Documentation (MyST + Sphinx)
+myst-nb = ">=1.2.0"
+sphinx-book-theme = ">=1.1.0"
+furo = ">=2024.0.0"
+sphinx-design = ">=0.6.0"
+jupytext = ">=1.16.0"
+ty = ">=0.0.8,<0.0.9"
+pydata-sphinx-theme = ">=0.15.4,<0.16"
+
+[dependency-groups]
+dev = [ "build>=1.2.2.post1,<2", "sphinx-autodoc2>=0.5.0,<0.6"]
