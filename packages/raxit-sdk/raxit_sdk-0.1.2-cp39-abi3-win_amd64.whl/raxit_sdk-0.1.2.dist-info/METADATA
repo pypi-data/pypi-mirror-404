@@ -1,0 +1,225 @@
+Metadata-Version: 2.4
+Name: raxit-sdk
+Version: 0.1.2
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: License :: OSI Approved :: Apache Software License
+Classifier: Programming Language :: Rust
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Topic :: Software Development :: Libraries
+Classifier: Topic :: Security
+Summary: RAXIT SDK - Runtime AI eXecution Integrity & Trust
+Keywords: security,ai,agents,static-analysis,trust
+Home-Page: https://github.com/raxitlabs/ai-security
+Author-email: RAXIT Labs <info@raxitlabs.com>
+License: MIT OR Apache-2.0
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown; charset=UTF-8; variant=GFM
+Project-URL: Documentation, https://github.com/raxitlabs/ai-security/tree/main/src/ai-security-sdk
+Project-URL: Homepage, https://github.com/raxitlabs/ai-security
+Project-URL: Repository, https://github.com/raxitlabs/ai-security
+
+# RAXIT SDK
+
+Runtime AI eXecution Integrity & Trust - Security scanning SDK for AI agent applications.
+
+## Overview
+
+RAXIT SDK is a static analysis tool that scans AI agent codebases and generates an Agent Assets Schema for security analysis, compliance checking, and runtime enforcement. It implements the A2AS (Agentic AI Runtime Security) framework developed collaboratively by AWS, Google, Meta, Cisco, and other major tech companies.
+
+## Features
+
+- **12+ Framework Extractors**: LangGraph, CrewAI, AutoGen, Swarm, PydanticAI, LlamaIndex, Google ADK, and more
+- **Security Analysis**: Semgrep/CodeQL rules for trust boundary detection
+- **CaMeL Provenance**: Agent asset metadata with data flow tracking
+- **CLI Tools**: `raxit init`, `raxit migrate`, `raxit status`
+- **Incremental Scanning**: xxhash-based cache for fast re-scans
+- **Trust Boundary Detection**: Meta's "Rule of Two" compliance checking
+- **Graph Topology Extraction**: Complete LangGraph structure analysis
+
+## Installation
+
+### Python (TestPyPI - Beta)
+
+```bash
+pip install -i https://test.pypi.org/simple/ raxit-sdk
+```
+
+### TypeScript/Node.js (npm - Beta)
+
+```bash
+npm install @raxit/raxit@beta
+```
+
+### Rust (crates.io)
+
+```toml
+[dependencies]
+raxit-core = "0.1"
+```
+
+### From Source (Development)
+
+Using UV (recommended):
+
+```bash
+cd src/ai-security-sdk
+uv venv
+uv pip install -e ".[dev]"
+```
+
+Using pip:
+
+```bash
+pip install -e ".[dev]"
+```
+
+## Quick Start
+
+```bash
+# Scan your agent project
+cd /path/to/your/agent/project
+raxit init
+
+# View generated assets
+cat .raxit/assets.yaml
+```
+
+## Usage
+
+### Scanning a Project
+
+```bash
+raxit init [directory] --output .raxit/assets.yaml
+```
+
+Options:
+- `--output` / `-o`: Output file path (default: `.raxit/assets.yaml`)
+- `--format`: Output format (`yaml` or `json`, default: `yaml`)
+- `--workers`: Number of parallel workers for scanning
+- `--incremental`: Enable incremental scanning with cache
+- `--sign`: Sign the schema with HMAC-SHA256
+- `--detect-trust`: Enable trust boundary detection
+
+### Schema Migration
+
+```bash
+raxit migrate .raxit/assets.yaml --target-version 0.8.0
+```
+
+### Status Check
+
+```bash
+raxit status
+```
+
+Shows tool version, dependencies, and configuration.
+
+## Architecture
+
+```
+raxit_sdk/
+├── cli/          # Command-line interface
+├── parser/       # AST parsing and framework extractors
+│   ├── extractors/   # Framework-specific extractors (12+ frameworks)
+│   └── analyzers/    # Cross-cutting analysis (secrets, networks, memory, etc.)
+├── schema/       # Pydantic models for Agent Assets Schema
+├── trust/        # Security analysis (Semgrep, CodeQL, Joern)
+├── decorators/   # Trust decorators for agent code
+└── integrity/    # Cryptographic signing and verification
+```
+
+## Supported Frameworks
+
+The SDK can extract agent metadata from these frameworks:
+
+- **LangGraph** - StateGraph, nodes, edges, conditional routing
+- **CrewAI** - Agents, tasks, crews, pipelines
+- **AutoGen** - Agents, tools, group chats
+- **OpenAI Agents** - Agent SDK
+- **Swarm** - Multi-agent orchestration
+- **PydanticAI** - Type-safe agents
+- **LlamaIndex** - FunctionAgent, ReActAgent
+- **Google ADK** - Sequential/parallel/loop agents
+- **n8n** - Workflow automation (JSON)
+- **AgentChat** - Conversational agents
+- **Strands** - Custom framework
+- **Generic** - Custom agent implementations
+
+## Examples
+
+See `examples/` directory for sample agent projects across multiple frameworks:
+
+- `examples/langgraph/` - LangGraph examples
+- `examples/crewai/` - CrewAI examples
+- `examples/custom/` - Custom agent implementations
+- And more...
+
+## Development
+
+### Running Tests
+
+```bash
+# All tests
+uv run pytest tests/ -v
+
+# Specific test suite
+uv run pytest tests/test_extractors/ -v
+uv run pytest tests/test_integration/ -v
+```
+
+### Code Quality
+
+```bash
+# Lint
+uv run ruff check raxit_sdk/
+
+# Type check
+uv run mypy raxit_sdk/
+```
+
+## Trust Boundary Analysis
+
+RAXIT implements Meta's "Rule of Two" for trust boundary detection:
+
+A component is **non-compliant** if it has ALL three properties:
+- [A] Processes untrusted input
+- [B] Has sensitive access (credentials, data, systems)
+- [C] Performs external actions (network, files, processes)
+
+Use `raxit init --detect-trust` to enable this analysis. Requires Semgrep and optionally Joern for deep taint analysis.
+
+## Agent Assets Schema
+
+The generated schema includes:
+
+- **Manifest**: Metadata about the scan
+- **Agents**: AI agents with roles, tools, and models
+- **Tools**: Functions and capabilities
+- **Models**: LLM configurations
+- **Graphs**: LangGraph topologies
+- **DataFlows**: CaMeL provenance tracking
+- **Networks**: External API endpoints
+- **Memory**: Vector stores and databases
+- **Secrets**: Detected credentials (names only)
+- **Boundaries**: Trust boundary analysis
+- **Guardrails**: Security controls
+- **Audit**: Security findings
+
+## License
+
+Proprietary - raxIT Labs
+
+## Contact
+
+For questions and support: engineering@raxit.io
+
+
+
