@@ -1,0 +1,24 @@
+ARG PYTHON_VERSION=310
+ARG BASE_IMAGE=mirror.gcr.io/rayproject/ray:latest-py${PYTHON_VERSION}-cpu
+FROM $BASE_IMAGE
+
+USER 0
+RUN chgrp -R 0 /home/ray && \
+    chmod -R g=u /home/ray
+USER 1000
+
+# Copy source code
+COPY --chown=1000:0 ./ ado
+
+## Install ado
+RUN cd ado && \
+    uv pip install --system -r requirements.txt && \
+    uv pip install --system \
+    '.'
+
+## Install ray-tune operator
+RUN cd ado && \
+    uv pip install --system \
+    'plugins/operators/ray_tune/'
+
+CMD ado -h
