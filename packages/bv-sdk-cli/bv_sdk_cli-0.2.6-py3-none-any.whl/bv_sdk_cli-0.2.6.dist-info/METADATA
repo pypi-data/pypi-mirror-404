@@ -1,0 +1,552 @@
+Metadata-Version: 2.4
+Name: bv-sdk-cli
+Version: 0.2.6
+Summary: CLI for the Bot Velocity RPA & Agentic Platform
+Author: Bot Velocity Team
+License: Proprietary
+Keywords: agentic,bot-velocity,cli,rpa
+Requires-Python: >=3.10
+Requires-Dist: bv-runtime>=0.2.6
+Requires-Dist: pyyaml>=6.0
+Requires-Dist: requests>=2.32
+Requires-Dist: typer>=0.12
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0; extra == 'dev'
+Description-Content-Type: text/markdown
+
+# BV SDK CLI
+
+A Typer-based developer CLI for building, validating, and publishing deterministic automation packages for the Bot Velocity platform.
+
+## 1. Overview
+
+- **Purpose**: Provide automation developers and platform integrators with local-first tooling to author Python automations, validate their contracts, build `.bvpackage` artifacts, and optionally publish them to Orchestrator.
+- **How it differs from the runner**: The SDK CLI runs on developer machines. It sets `BV_SDK_RUN=1` when invoking code so that `bv.runtime.*` is allowed. The production Runner uses long-lived robot tokens and never relies on the developer auth file or the local SDK commands.
+- **Relationship to bv-runtime and bv-orchestrator**: `bv-runtime` is a runtime helper library that projects depend on (added by default in the generated config). The CLI can talk to Orchestrator only in developer mode via the HTTP client.
+
+## 2. Installation
+
+```bash
+pip install bv-sdk-cli
+```
+
+**Requirements:**
+- Python 3.10+
+- Dependencies: `typer>=0.12`, `pyyaml>=6.0`, `requests>=2.32`, `bv-runtime>=0.1.0`
+
+After installation, the `bv` command is available:
+
+```bash
+bv --help
+```
+
+## 3. Quick Start
+
+### Create a New RPA Project
+
+```bash
+# Initialize project
+bv init --name "MyRpaBot" --type rpa
+
+# Build the package (generates requirements.lock)
+bv build
+
+# Install dependencies in your venv
+pip install -r requirements.lock
+
+# Run locally
+bv run --entry main
+```
+
+### Create a New Agent Project
+
+```bash
+bv init --name "MyAgent" --type agent
+bv build
+pip install -r requirements.lock
+bv run --entry main
+```
+
+## 4. Project Philosophy
+
+- **Local-first design**: All core flows (init, validate, build, run) operate purely on local files. Only auth, assets, queues, and publish-orchestrator touch the network.
+- **Deterministic builds**: Builds always generate a fresh `requirements.lock` using a throwaway virtual environment (`.bv_tmp_venv`) and package a fixed set of files. Given the same inputs, contents are stable (ZIP timestamps follow the current clock, so byte-for-byte reproducibility is not guaranteed).
+- **Separation of dev vs runtime concerns**: SDK auth (human, short-lived) is stored in `~/.bv/auth.json`. Runner-mode auth comes from environment variables (`BV_BASE_URL`, `BV_ROBOT_TOKEN`, `BV_ROBOT_NAME`) and bypasses the local auth file. The runtime helpers in `bv.runtime` refuse to run unless `BV_SDK_RUN=1` is set by `bv run`.
+
+## 5. Project Structure
+
+After running `bv init`, your project looks like:
+
+```
+my-project/
+├── bvproject.yaml    # Project configuration (required)
+├── main.py           # Main entrypoint module
+├── dist/             # Build output directory
+└── requirements.lock # Generated during build (pinned dependencies)
+```
+
+### bvproject.yaml Schema
+
+```yaml
+project:
+  name: MyProject
+  type: rpa              # or 'agent'
+  version: 0.0.0
+  description: A simple BV project
+  entrypoints:
+    - name: main
+      command: main:main
+      default: true
+  venv_dir: .venv
+  python_version: "3.10"
+  dependencies:
+    - bv-runtime
+    - httpx
+    - pandas>=2.0
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | Yes | Project identifier |
+| `type` | Yes | `rpa` or `agent` |
+| `version` | Yes | Semantic version (0.0.0) |
+| `description` | No | Human-readable description |
+| `entrypoints` | Yes | List of callable functions |
+| `venv_dir` | No | Virtual environment directory |
+| `python_version` | No | Target Python version |
+| `dependencies` | Yes | List of pip packages |
+
+## 6. Commands Reference
+
+### `bv init`
+
+Initialize a new project in the current directory.
+
+```bash
+bv init --name "MyProject" --type rpa [--python-version 3.10] [--keep-main]
+```
+
+| Option | Required | Description |
+|--------|----------|-------------|
+| `--name` | Yes | Project name |
+| `--type` | Yes | `rpa` or `agent` |
+| `--python-version` | No | Python version to record (default: 3.8) |
+| `--keep-main` | No | Don't overwrite existing main.py |
+
+**Creates:**
+- `bvproject.yaml` - Project configuration
+- `main.py` - Sample entrypoint (unless `--keep-main`)
+- `dist/` - Output directory
+
+---
+
+### `bv validate`
+
+Validate project configuration and structure.
+
+```bash
+bv validate [--config bvproject.yaml] [--project-root .]
+```
+
+**Checks:**
+- `bvproject.yaml` exists and is valid YAML
+- `main.py` exists and has valid Python syntax
+- Entrypoint functions are defined
+- Version is valid semver format
+- Project type is `rpa` or `agent`
+
+---
+
+### `bv build`
+
+Build a `.bvpackage` from the project.
+
+```bash
+bv build [--config bvproject.yaml] [--output path.bvpackage] [--dry-run]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--config` | Path to bvproject.yaml (default: current dir) |
+| `--output` | Custom output path (default: `dist/<name>-<version>.bvpackage`) |
+| `--dry-run` | Compute target path without building |
+
+**Process:**
+1. Validates project configuration
+2. Creates temporary venv (`.bv_tmp_venv`)
+3. Resolves and locks dependencies to `requirements.lock`
+4. Packages files into ZIP archive
+
+**Package contents:**
+- `bvproject.yaml`
+- `main.py`
+- `requirements.lock`
+- `manifest.json`
+- `entry-points.json`
+
+---
+
+### `bv run`
+
+Run a configured entrypoint locally.
+
+```bash
+bv run [--config bvproject.yaml] [--entry entrypoint_name]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--config` | Path to bvproject.yaml |
+| `--entry` | Entrypoint name to run (uses default if omitted) |
+
+**Behavior:**
+- Sets `BV_SDK_RUN=1` to enable `bv.runtime.*` APIs
+- Prepends project root to `sys.path`
+- Invokes the entrypoint function without arguments
+
+**Note:** You must install dependencies manually before running:
+```bash
+pip install -r requirements.lock
+```
+
+---
+
+### `bv publish local`
+
+Publish a package locally with version bump.
+
+```bash
+bv publish local [--config bvproject.yaml] [--output-dir published] [--major|--minor|--patch] [--dry-run]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--output-dir` | Publish directory (default: `published/`) |
+| `--major` | Bump major version (1.0.0 -> 2.0.0) |
+| `--minor` | Bump minor version (1.0.0 -> 1.1.0) |
+| `--patch` | Bump patch version (default, 1.0.0 -> 1.0.1) |
+| `--dry-run` | Compute targets without copying |
+
+**Process:**
+1. Bumps version in `bvproject.yaml`
+2. Regenerates `requirements.lock`
+3. Builds `.bvpackage`
+4. Copies to `<publish_dir>/<name>/<version>/`
+
+---
+
+### `bv publish orchestrator`
+
+Publish a package to BV Orchestrator.
+
+```bash
+bv publish orchestrator [--config bvproject.yaml] [--major|--minor|--patch]
+```
+
+**Prerequisites:**
+- Must be authenticated via `bv auth login`
+
+**Process:**
+1. Bumps version in `bvproject.yaml`
+2. Regenerates `requirements.lock`
+3. Builds `.bvpackage`
+4. Sends preflight check to `/api/packages/preflight`
+5. Uploads package to `/api/packages/upload`
+
+---
+
+### `bv auth login`
+
+Authenticate for SDK developer mode.
+
+```bash
+bv auth login --base-url https://cloud.botvelocity.com
+```
+
+| Option | Description |
+|--------|-------------|
+| `--base-url` | Orchestrator base URL (recommended) |
+| `--api-url` | Legacy: API base URL |
+| `--ui-url` | Legacy: UI base URL |
+
+**Process:**
+1. Starts SDK auth session with orchestrator
+2. Opens browser to `#/sdk-auth?session_id=...`
+3. Polls for completion
+4. Stores credentials in `~/.bv/auth.json`
+
+---
+
+### `bv auth status`
+
+Show current authentication status.
+
+```bash
+bv auth status
+```
+
+**Output:**
+- Login state (logged in / expired / not logged in)
+- Base URL, API URL, UI URL
+- Expiration time
+- Username
+- Machine name
+
+---
+
+### `bv auth logout`
+
+Delete local authentication.
+
+```bash
+bv auth logout
+```
+
+Removes `~/.bv/auth.json`.
+
+---
+
+### `bv assets list`
+
+List assets from Orchestrator (developer mode).
+
+```bash
+bv assets list [--search keyword]
+```
+
+Returns JSON array of assets. Secrets/credentials are masked.
+
+---
+
+### `bv assets get`
+
+Get a specific asset by name.
+
+```bash
+bv assets get ASSET_NAME
+```
+
+Returns JSON object. Secrets/credentials are masked.
+
+---
+
+### `bv queues list`
+
+List available queues.
+
+```bash
+bv queues list
+```
+
+Returns JSON array of queue names.
+
+---
+
+### `bv queues put`
+
+Enqueue an item to a queue.
+
+```bash
+bv queues put QUEUE_NAME --input payload.json
+```
+
+The input file must contain a JSON object.
+
+---
+
+### `bv queues get`
+
+Dequeue the next available item.
+
+```bash
+bv queues get QUEUE_NAME
+```
+
+Returns the item as JSON or `null` if queue is empty.
+
+## 7. Build & Publish Lifecycle
+
+### Version Management
+
+| Command | Version Bump |
+|---------|--------------|
+| `bv build` | Never bumps |
+| `bv publish local` | Bumps before build |
+| `bv publish orchestrator` | Bumps before build |
+
+**Important:** Version bumps are applied to `bvproject.yaml` immediately and persist even if subsequent steps fail.
+
+### Deterministic Packaging
+
+- Dependencies are locked via `requirements.lock` generated from a fresh temp venv
+- Package contents are fixed: `bvproject.yaml`, `main.py`, `requirements.lock`, `manifest.json`, `entry-points.json`
+- ZIP metadata uses current timestamps (byte-for-byte reproducibility not guaranteed)
+
+## 8. Developer Mode vs Runner Mode
+
+### Developer Mode (SDK CLI)
+
+- Uses short-lived user token stored in `~/.bv/auth.json`
+- Created by `bv auth login`
+- Used by `bv assets`, `bv queues`, `bv publish orchestrator`
+- **Never embed in production**
+
+### Runner Mode
+
+- Uses robot tokens provided via runtime context
+- Context is set by the BV Runner before execution
+- Bypasses `~/.bv/auth.json`
+- Used in production by the BV Runner
+
+### Runtime Access Boundaries
+
+Runtime APIs require initialization via `bv run`:
+- `bv run` initializes the runtime context before execution
+- Direct `python main.py` execution does not initialize context
+- Attempting to use runtime APIs without initialization raises `RuntimeError`
+
+## 9. Environment Variables
+
+> **Important:** Environment variables must not be used to configure platform URLs.
+> The CLI stores `base_url` in `~/.bv/auth.json` and derives the API URL internally.
+> Legacy environment variables (`BV_BASE_URL`, `BV_ORCHESTRATOR_URL`, `API_URL`, `UI_URL`) are not supported.
+
+The SDK CLI does not read URL configuration from environment variables. All routing
+originates from the persisted `base_url` in `~/.bv/auth.json`, set during `bv auth login`.
+
+## 10. Common Mistakes & Gotchas
+
+### Entrypoint Import Errors
+
+`bv run` prepends the project root only. Ensure:
+- `command` format is `module:function`
+- Module is importable from project root
+- Dependencies are installed in active environment
+
+### Version Not Bumping on Build
+
+`bv build` never bumps versions. Use `bv publish local` or `bv publish orchestrator` for version bumps.
+
+### Package Missing Source Files
+
+The current builder only includes:
+- `bvproject.yaml`
+- `main.py`
+- `requirements.lock`
+- `manifest.json`
+- `entry-points.json`
+
+Additional source files must be imported from `main.py` or you need to extend the builder.
+
+### Runtime APIs Failing
+
+If you see `RuntimeError: bv.runtime APIs require BV_SDK_RUN=1`:
+- Use `bv run --entry main` instead of `python main.py`
+- Or set `BV_SDK_RUN=1` manually for testing
+
+### Dependency Resolution Failing
+
+`requirements.lock` is regenerated on every build using pip. If resolution fails:
+- Check that packages exist on PyPI
+- Configure private index if needed
+- Ensure network connectivity
+
+## 11. Typical Workflows
+
+### Development Workflow
+
+```bash
+# 1. Initialize project
+bv init --name "InvoiceBot" --type rpa
+
+# 2. Edit main.py with your automation logic
+
+# 3. Build to generate requirements.lock
+bv build
+
+# 4. Install dependencies
+python -m venv .venv
+.venv\Scripts\activate  # Windows
+pip install -r requirements.lock
+
+# 5. Test locally
+bv run --entry main
+
+# 6. Iterate on code and re-run
+```
+
+### Publishing Workflow
+
+```bash
+# Authenticate (once)
+bv auth login --base-url https://cloud.botvelocity.com
+
+# Validate before publishing
+bv validate
+
+# Publish to orchestrator (bumps version automatically)
+bv publish orchestrator --minor
+
+# Or publish locally for testing
+bv publish local --output-dir ./releases
+```
+
+### CI/CD Integration
+
+```bash
+# In your CI pipeline:
+bv validate
+bv build
+# Upload dist/*.bvpackage to artifact storage
+```
+
+## 12. File Reference
+
+| File | Created By | Purpose |
+|------|------------|---------|
+| `bvproject.yaml` | `bv init` | Project configuration (source of truth) |
+| `main.py` | `bv init` | Main entrypoint module |
+| `requirements.lock` | `bv build` | Pinned dependencies |
+| `dist/` | `bv init` | Build output directory |
+| `published/` | `bv publish local` | Local publish directory |
+| `~/.bv/auth.json` | `bv auth login` | Developer authentication |
+| `entry-points.json` | Inside package | Entrypoint metadata |
+| `manifest.json` | Inside package | Package metadata |
+
+## 13. Troubleshooting
+
+### "bvproject.yaml not found"
+
+Run `bv init` first, or ensure you're in the correct directory.
+
+### "No default entrypoint found"
+
+Add an entrypoint with `default: true` in `bvproject.yaml`.
+
+### "Module not found" during `bv run`
+
+Ensure dependencies are installed:
+```bash
+pip install -r requirements.lock
+```
+
+### "Auth expired" or "Not logged in"
+
+Re-authenticate:
+```bash
+bv auth login --base-url https://your-orchestrator.com
+```
+
+### Build fails with pip errors
+
+- Check your `dependencies` list in `bvproject.yaml`
+- Ensure package names are correct
+- Check network connectivity to PyPI
+
+## References
+
+- Package contract: `docs/bv-package-contract-v1.md`
+- CLI implementation: `src/bv/cli.py`
+- Validators: `src/bv/validators/project_validator.py`
+- Builder: `src/bv/packaging/builder.py`
+- Lock generator: `src/bv/tools/lock_generator.py`
