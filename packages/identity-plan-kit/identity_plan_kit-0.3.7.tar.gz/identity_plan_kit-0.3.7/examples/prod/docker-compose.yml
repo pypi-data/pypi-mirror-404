@@ -1,0 +1,248 @@
+# =============================================================================
+# Production Docker Compose for IdentityPlanKit
+# =============================================================================
+# Full stack deployment with:
+# - FastAPI application (scalable)
+# - PostgreSQL database with persistence
+# - Redis for distributed state
+# - Nginx reverse proxy with SSL termination
+# - Prometheus for monitoring
+#
+# Usage:
+#   # Start all services
+#   docker-compose -f examples/prod/docker-compose.yml up -d
+#
+#   # Scale app instances
+#   docker-compose -f examples/prod/docker-compose.yml up -d --scale app=3
+#
+#   # View logs
+#   docker-compose -f examples/prod/docker-compose.yml logs -f app
+#
+#   # Run database migrations
+#   docker-compose -f examples/prod/docker-compose.yml exec app alembic upgrade head
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # Application
+  # ---------------------------------------------------------------------------
+  app:
+    build:
+      context: ../..
+      dockerfile: examples/prod/Dockerfile
+    restart: unless-stopped
+    environment:
+      # Database
+      IPK_DATABASE_URL: postgresql+asyncpg://app_user:${DB_PASSWORD}@postgres:5432/identity_plan_kit
+      # Redis
+      IPK_REDIS_URL: redis://redis:6379/0
+      IPK_REQUIRE_REDIS: "true"
+      # Security (loaded from .env file)
+      IPK_SECRET_KEY: ${IPK_SECRET_KEY}
+      # Google OAuth
+      IPK_GOOGLE_CLIENT_ID: ${IPK_GOOGLE_CLIENT_ID}
+      IPK_GOOGLE_CLIENT_SECRET: ${IPK_GOOGLE_CLIENT_SECRET}
+      IPK_GOOGLE_REDIRECT_URI: ${IPK_GOOGLE_REDIRECT_URI}
+      # Environment
+      IPK_ENVIRONMENT: production
+      # Cookies (adjust domain for your setup)
+      IPK_COOKIE_DOMAIN: ${COOKIE_DOMAIN:-.localhost}
+      IPK_COOKIE_SECURE: "true"
+      # Trust proxy headers (nginx)
+      IPK_TRUST_PROXY_HEADERS: "true"
+      # Metrics
+      IPK_ENABLE_METRICS: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - app-network
+    # No ports exposed - nginx handles external traffic
+    expose:
+      - "8000"
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL Database
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: app_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: identity_plan_kit
+      # Performance tuning
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Optional: Custom PostgreSQL configuration
+      # - ./postgres.conf:/etc/postgresql/postgresql.conf
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app_user -d identity_plan_kit"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app-network
+    # Only expose for local development/debugging
+    # ports:
+    #   - "5432:5432"
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 1G
+
+  # ---------------------------------------------------------------------------
+  # Redis (Distributed State)
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 128mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app-network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  # ---------------------------------------------------------------------------
+  # Nginx Reverse Proxy
+  # ---------------------------------------------------------------------------
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro  # Mount SSL certificates
+      - nginx_logs:/var/log/nginx
+    depends_on:
+      - app
+    networks:
+      - app-network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 128M
+
+  # ---------------------------------------------------------------------------
+  # Database Migrations (one-time job)
+  # ---------------------------------------------------------------------------
+  migrations:
+    build:
+      context: ../..
+      dockerfile: examples/prod/Dockerfile
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      IPK_DATABASE_URL: postgresql+asyncpg://app_user:${DB_PASSWORD}@postgres:5432/identity_plan_kit
+      IPK_SECRET_KEY: ${IPK_SECRET_KEY}
+      IPK_GOOGLE_CLIENT_ID: ${IPK_GOOGLE_CLIENT_ID}
+      IPK_GOOGLE_CLIENT_SECRET: ${IPK_GOOGLE_CLIENT_SECRET}
+      IPK_GOOGLE_REDIRECT_URI: ${IPK_GOOGLE_REDIRECT_URI}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - app-network
+    restart: "no"
+    profiles:
+      - migrations
+
+  # ---------------------------------------------------------------------------
+  # Prometheus (Metrics Collection) - Optional
+  # ---------------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:latest
+    restart: unless-stopped
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+    networks:
+      - app-network
+    ports:
+      - "9090:9090"
+    profiles:
+      - monitoring
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  # ---------------------------------------------------------------------------
+  # Grafana (Metrics Visualization) - Optional
+  # ---------------------------------------------------------------------------
+  grafana:
+    image: grafana/grafana:latest
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks:
+      - app-network
+    ports:
+      - "3000:3000"
+    profiles:
+      - monitoring
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  app-network:
+    driver: bridge
+
+# =============================================================================
+# Volumes
+# =============================================================================
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  nginx_logs:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
