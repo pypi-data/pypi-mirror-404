@@ -1,0 +1,293 @@
+/*! 
+  \mainpage Stator Documentation
+  
+  \section frontpage_about About the stator library
+
+  Stator is a Computer Algebra System (CAS) which focuses on using
+  compile-time (template metaprogramming) or runtime stack-allocated
+  algorithms. This means it is really, really, fast (zero overhead, or
+  even a speed-up thanks to compile-time cancellation of terms, when
+  compared to hand coded expressions). Its not as fully featured as a
+  full CAS (such as Mathematica) though yet.
+
+  Not convinced? Take a look at the compile-time example below:
+
+  \dontinclude symbolic_example.cpp
+  \skip Quick example
+  \until //Output: 0.25
+
+  As everything is performed by the compiler via template
+  metaprogramming, only the last substitution can incur any run-time
+  cost. In fact, all of the code above has the same computational cost
+  as writing:
+
+  \code
+  double a = std::sin(2.3 * 2.3)+2*std::cos(2.3 * 2.3);
+  \endcode
+
+  Most modern compilers will also eliminate the cost of this too,
+  leading to zero run-time cost.
+
+  As we have a symbolic representation of the function we transform
+  it. Taking the derivative is also carried out at compile time:
+
+  \until //Output:
+  
+  Basic functionality like this also allows more complex operations,
+  such as creating a truncated sym::taylor_series:
+
+  \until //Output: StackVector{ -
+
+  This creates a sym::Polynomial type, which is a std::array of the
+  coefficients again at compile time; however, solving for the roots
+  for a 5th order polynomial like this one requires iterations thus it
+  must be done at run time; however, both are carried out without
+  dynamic allocation and thus are very fast on any modern compiler.
+
+  This can all be carried out at runtime too:
+  \until dg_dy_rt
+
+  See the \ref symbolic_guide "guide to the symbolic library" for more details on how to use the library.
+
+  \section frontpage_usage Using the stator library
+
+  First, you will need a modern compiler to use stator. In fact, you
+  will need a version of GCC >= 6, clang >= 3.6, and MSVC >= 2015 for
+  all of the library to work. The MSVC compiler has difficulties with
+  deeply templated expressions thus it is not recommended for use with
+  this library.
+
+  The current compiler support on Linux is available at the <a
+  href="https://travis-ci.org/toastedcrumpets/stator">Travis CI
+  page</a>.
+
+  Stator is a header-only C++11 library. In many places it builds upon
+  the Eigen 3 library (http://eigen.tuxfamily.org/), so to use it you
+  must have both added to your compiler include path. For example, on
+  linux
+  
+  \code{.unparsed}
+  g++ -I /path/to/stator/folder -I /path/to/Eigen/folder
+  \endcode
+  
+*/
+
+/*! \namespace sym
+  \brief The stator symbolic math library.
+
+  This namespace encapsulates the symbolic math functionality of
+  stator. This library allows you to perform compile-time operations
+  on mathematical expressions, as well as perform run-time
+  calculations, such as root finding on polynomials.    
+*/
+namespace sym {
+  /*! \namespace sym::detail
+    \brief Namespace containing the details of the implmentation for
+    general stator components.
+  */
+  namespace detail {}
+  
+  /*! \brief Performs a symbolic derivative on the expression.
+   */
+  template<typename Expression>
+  auto derivative(const Expression&);
+
+  /*!
+    \page symbolic_guide Guide to stator::sym
+
+    \brief This is a short introduction to the compile-time symbolic algebra library (see symbolic_example.cpp).
+    
+    To use stator, first include the stator::sym library header file
+    and bring the sym namespace into scope for convenience:
+  
+    \dontinclude symbolic_example.cpp
+    \skipline #include <stator
+    \until using
+    
+    \section sym_guide_var Variables
+
+    Variables are a critical component of a CAS system. Each
+    variable is a placeholder for a future expression and thus needs
+    a unique index to identify it. These are identified in stator
+    either using a single character or an index:
+
+    \until v42
+
+    Expressions using variables (and all derived classes of
+    sym::SymbolicOperator) are not evaluated immediately, but result
+    in symbolic expressions:
+     
+    \until //Output:
+         
+    Variables can be substituted for other variables, for example, we can replace \f$x\f$ with \f$y+2\f$:
+
+    \until //Output:
+
+    To evaluate an expression, all variables (and other symbolic
+    types) must be substituted for non-symbolic values. A final
+    substitution for \f$y=\pi\f$ in the previous expression causes a
+    complete evaluation to a double type:
+
+    \until //Output:
+
+    All of this is evaluated at compile time into the basic floating
+    point operations, which also may be optimised away, thus complex
+    mathematics may be written in a natural way without worrying
+    about computational cost.
+
+    \section sym_guide_const Rational constants
+
+    Stator can work with standard arithmetic terms (integers,
+    floats); however, they only have limited compile-time symbolic
+    support. For example, the following expression cannot be
+    simplified by stator:
+
+    \until //Output:
+
+    The difficulty here is that the compiler cannot deduce the value
+    of an integer or float from its type (which is all the compiler
+    has access to). C++11 gave us std::ratio, which allows rational
+    constants to be encoded as a ratio of two integer values. In
+    stator, this has been extended to give the rational constant
+    type, \ref sym::C. This allows the compiler to perform rational
+    arithmetic at compile time:
+ 
+    \until //Output:
+  
+    When the rational constant type sym::C is used, stator can
+    cancel zero terms. For example, any term multiplied by \ref
+    sym::Null "C<0>" (which has a convenient typedef of \ref
+    sym::Null) is cancelled to zero at compile time:
+
+    \until //Output:
+
+    Equally, any term multiplied by \ref sym::Unity "C<1>" (which has a
+    convenient typedef of \ref sym::Unity), is left unchanged:
+
+    \until //Output:
+      
+    To enable this powerful simplification, \ref sym::C values
+    should be used wherever possible.
+
+    \section sym_guide_calculus Calculus, simplification, and other transformations
+
+    As mathematical expressions are encoded as types, the compiler
+    can apply transformations to them. For example, the derivative
+    can be evaluated at compile-time:
+
+    \until Output
+
+    More complex operations are available, such as Taylor series:
+
+    \until Output
+
+    The output can rapidly become ugly. Fortunately, basic
+    simplification is available via sym::simplify. For example:
+    
+    \until //Output: (x ^ C<5>()) 
+
+    Please note, simplify only exists if there is a simplification
+    to be made and will fail at compile time if there is not. You
+    can also use sym::try_simplify if you do not want missing
+    simplification to be an error.
+
+    The Taylor series expansion above actually has no
+    simplification. However, it can be converted into a Polynomial type, which gives a simpler representation and allows further functional analysis.
+    
+    \section sym_guide_poly Polynomial types
+
+    The sym::expand function attempts to collect the coefficients of
+    a polynomial and create a sym::Polynomial type:
+
+    \until Output: P(
+
+    The output here is a sym::Polynomial type (as indicated by the
+    "P()" wrapper). The sym::Polynomial is simply an array of
+    coefficients, from lowest to highest order:
+   
+    \until Output: -1.33333
+
+    Most importantly, the polynomial type allows further functional
+    analysis, such as determining the roots of the polynomial:
+
+    \until Output: 1.22474
+
+    Here there are three real roots, and they are returned in a \ref
+    stator::orphan::StackVector "StackVector", which is like a
+    std::vector with a fixed maximum size allowing it to be
+    allocated on the stack.
+
+    The library is capable of solving for all of the real roots of
+    arbitrary polynomials but relies on numerical iteration schemes
+    for polynomials of any order greater than three.
+  
+    \section vec_sym_guide Vector expressions
+  
+    The symbolic library also supports Eigen vector/matrix
+    expressions.
+    
+    \until Output
+    
+    You have to be careful though. Eigen preserves the row/column
+    nature of the vectors so operations like multiplication may
+    cause compile errors
+  */
+}
+
+/*! \brief The stator library namespace.
+
+  Although the \ref stator namespace is used for shared functionality
+  (e.g., \ref stator::Exception), most of the code is implemented
+  under the namespaces \ref stator::sym, \ref stator::geometry,
+  and \ref stator::orphan.  
+*/ namespace stator {
+
+     /*! \namespace stator::detail 
+       
+       \brief Namespace containing the details of the implmentation for
+       general stator components.
+     */
+     namespace detail {}
+
+     /*! \namespace stator::numeric
+
+       \brief Numerical routines, such as root-finding, etc.
+     */
+     namespace numeric {}
+     
+     /*! \namespace stator::geometry 
+
+       \brief Geometric types and algorithms for calculating properties
+       (e.g., intersection, volume).
+     */
+     namespace geometry {
+       /*! \brief Compute a Hausdorf measure of the interior of an object.
+
+         The measure returned depends on the dimensionality of the
+         object, a circle will return its area but a sphere will return
+         its volume
+       */
+       template<typename Obj> auto volume(const Obj&);
+
+       /*! \brief Compute a Hausdorf measure of the boundary/boundaries
+         of an object.
+      
+         The measure returned depends on the dimensionality object. For
+         example, a Sphere will return its surface area whereas a circle
+         will return its perimeter.
+       */
+       template<typename Obj> auto area(const Obj&);
+
+       /*! \brief Determine if two objects are intersecting.
+        */
+       bool intersects(const Object1&, const Object2&);
+     } // namespace geometry
+  
+  
+     /*! \namespace stator::orphan
+       \brief Miscellaneous tools and utilities without a particular grouping.
+     */
+     namespace orphan {
+     } // namespace orphan
+
+} // namespace stator
