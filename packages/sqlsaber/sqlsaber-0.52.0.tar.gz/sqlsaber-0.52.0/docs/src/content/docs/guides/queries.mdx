@@ -1,0 +1,334 @@
+---
+title: Running Queries
+description: Learn different ways to query your data with SQLsaber
+---
+
+import { Aside } from "@astrojs/starlight/components";
+
+SQLsaber offers multiple ways to query your database using natural language. This guide covers all the different query modes and their use cases.
+
+### Interactive Mode
+
+Ideal for back and forth conversations about your data.
+
+```bash
+saber
+```
+
+<script
+  src="https://asciinema.org/a/739399.js"
+  id="asciicast-739399"
+  async="true"
+></script>
+
+### Single Query Mode
+
+Run a one-off query without entering interactive mode:
+
+```bash
+saber "How many orders were placed last week?"
+```
+
+Useful for:
+
+- Shell scripting
+- Quick checks
+- Automated reporting
+
+### Stdin Mode
+
+Pipe queries from other commands or files:
+
+```bash
+# From echo
+echo "Count all active customers from last week" | saber
+
+# From file
+cat query.txt | saber
+
+# From other commands
+curl -s https://api.example.com/query | saber
+```
+
+Useful for:
+
+- Shell scripting
+- Batch processing
+- Integration with other tools
+- Automation
+
+### Features
+
+#### Slash Commands
+
+Special commands in interactive mode:
+
+- `/clear` - Clear conversation history
+- `/exit` or `/quit` - Exit SQLsaber
+- `/thinking on` - Enable extended thinking mode
+- `/thinking off` - Disable extended thinking mode
+- `/handoff <goal>` - Start a fresh thread with context from current conversation
+
+```
+> /clear
+Conversation history cleared.
+
+> /thinking on
+✓ Thinking enabled
+
+> /exit
+Goodbye!
+```
+
+#### Table Autocomplete
+
+Type `@` followed by a table name to get autocomplete suggestions:
+
+```
+> Show me all records from @cus[TAB]
+> Show me all records from @customers
+```
+
+Supports schema-aware completions:
+
+```
+> @pub[TAB] → @public.customers
+```
+
+#### Python Sandbox Tool
+
+SQLSaber can optionally run Python code in a secure remote sandbox when a sandbox
+provider is configured. This is useful for quick calculations, stats, or
+data transformations that are easier in Python than in SQL.
+
+To enable it, install the sandbox plugin:
+
+```
+uv tool install --with sqlsaber-sandbox sqlsaber
+```
+
+Supported providers (via the `cased/sandboxes` library):
+
+- Daytona (`DAYTONA_API_KEY`)
+- E2B (`E2B_API_KEY`)
+- Sprites (`SPRITES_TOKEN`)
+- Hopx (`HOPX_API_KEY`)
+- Modal (`MODAL_TOKEN_ID` or `~/.modal.toml`)
+- Cloudflare (`CLOUDFLARE_SANDBOX_BASE_URL` + `CLOUDFLARE_API_TOKEN`)
+
+When at least one provider is configured, the agent can use a `run_python` tool
+to execute Python code in that sandbox. If no provider is configured, the tool
+is not available.
+
+<Aside type="caution">
+  Sandboxed execution is remote and isolated, but still runs arbitrary code.
+  Only enable sandbox providers in environments you trust.
+</Aside>
+
+#### Registering Tools in a Django App
+
+You can register custom tools directly in a Django app using `AppConfig.ready`.
+This is useful for application-specific tools that you don't want to package as
+a standalone plugin.
+
+```python
+# myapp/apps.py
+from django.apps import AppConfig
+
+from sqlsaber.tools.registry import tool_registry
+from myapp.tools import MyCustomTool
+
+
+class MyAppConfig(AppConfig):
+    name = "myapp"
+
+    def ready(self):
+        tool_registry.register(MyCustomTool)
+```
+
+#### Extended Thinking Mode
+
+For complex queries requiring deeper reasoning, enable thinking mode to see step-by-step problem solving process. You can configure different thinking levels to balance cost vs quality.
+
+**Thinking Levels:**
+
+| Level     | Use Case           | Description                           |
+| --------- | ------------------ | ------------------------------------- |
+| `off`     | Disable            | No extended thinking                  |
+| `minimal` | Quick responses    | Minimal reasoning overhead            |
+| `low`     | Light reasoning    | Faster, cheaper                       |
+| `medium`  | Balanced (default) | Good balance of cost and quality      |
+| `high`    | Deep reasoning     | More thorough analysis                |
+| `maximum` | Complex problems   | Highest reasoning depth, highest cost |
+
+**In interactive mode:**
+
+```
+> /thinking
+Thinking: disabled
+
+> /thinking medium
+✓ Thinking: enabled (medium)
+
+> Analyze sales trends and forecast next quarter
+💭 Thinking...
+[reasoning process appears here]
+[followed by final answer]
+
+> /thinking high
+✓ Thinking: enabled (high)
+
+> /thinking off
+✓ Thinking: disabled
+```
+
+**For single queries:**
+
+```bash
+# Enable thinking for complex analysis
+saber --thinking "Compare performance across regions with seasonal adjustments"
+
+# Disable for simple queries
+saber --no-thinking "How many users do we have?"
+```
+
+**Configuring thinking level:**
+
+Use `saber models set` to configure thinking level after selecting a model:
+
+```bash
+saber models set
+# After selecting model, you'll be prompted:
+# ? Configure thinking mode? [Y/n]: y
+# ? Select thinking level: medium (Recommended)
+```
+
+Check current settings with:
+
+```bash
+saber models current
+# Current model: anthropic:claude-sonnet-4-5-20250929
+# Thinking: enabled (medium)
+```
+
+**Provider-specific mapping:**
+
+Each thinking level maps to provider-specific configurations:
+
+- **Anthropic**: `budget_tokens` (1,024 → 100,000)
+- **OpenAI**: `reasoning_effort` (minimal → xhigh)
+- **Google**: `thinking_level` (MINIMAL → HIGH)
+- **Groq**: Binary (any non-off level enables reasoning)
+
+<Aside type="note">
+  Extended thinking is supported for Anthropic, OpenAI, Google, and Groq
+  reasoning models.
+</Aside>
+
+#### Handoff
+
+When your conversation gets long or you want to start fresh while preserving context, use the `/handoff` command:
+
+```
+> /handoff optimize the monthly revenue query for better performance
+```
+
+The handoff:
+
+1. Summarizes your conversation (tables discovered, SQL queries run, key findings)
+2. Presents an editable draft prompt
+3. Ends the current thread and starts fresh with your edited prompt
+
+<Aside type="tip">
+  Use handoff when you want to pivot to a new direction while keeping relevant
+  history.
+</Aside>
+
+#### Dangerous Mode
+
+By default, SQLsaber only allows read-only SELECT queries. To enable write operations, use the `--allow-dangerous` flag:
+
+```bash
+# Single query with write access
+saber --allow-dangerous "Insert a new user with email test@example.com"
+
+# Interactive mode with write access
+saber --allow-dangerous
+```
+
+<Aside type="caution">
+  This mode allows INSERT, UPDATE, DELETE, CREATE, and ALTER operations. Use
+  with caution as these can modify your data.
+</Aside>
+
+**What's allowed in dangerous mode:**
+
+- DML: INSERT, UPDATE, DELETE, MERGE, REPLACE
+- DDL: CREATE, ALTER
+
+**What's always blocked (even in dangerous mode):**
+
+- DROP, TRUNCATE (destructive operations)
+- Transaction control (BEGIN, COMMIT, ROLLBACK)
+- Security operations (GRANT, REVOKE)
+- Database operations (ATTACH, DETACH)
+
+### Database Selection
+
+#### Using Default
+
+If you have a default database configured:
+
+```bash
+saber "Show me sales data"
+```
+
+#### Specifying Database by Name
+
+Use a configured database connection:
+
+```bash
+saber -d prod-db "What's our revenue this month?"
+```
+
+#### Using Files Directly
+
+Work with SQLite, DuckDB, or CSV files directly:
+
+```bash
+# SQLite file
+saber -d "./data/sales.db" "Top selling products"
+
+# DuckDB file
+saber -d "./data/warehouse.duckdb" "Latest partitions"
+
+# CSV file
+saber -d "./customers.csv" "How many customers per state?"
+```
+
+#### Connection Strings
+
+Use connection strings for temporary connections:
+
+```bash
+saber -d "postgresql://user:pass@host:5432/db" "Count all users"
+```
+
+### Connection Issues
+
+```bash
+# Test the connection
+saber db test my-database
+
+# Check database list
+saber db list
+```
+
+### What's Next?
+
+Now that you know how to query effectively:
+
+1. [Set up memory](/guides/memory) for better context
+2. [Learn about conversation threads](/guides/threads)
+3. [Explore the command reference](/reference/commands)
+4. [Configure advanced database settings](/guides/database-setup)
