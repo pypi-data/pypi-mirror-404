@@ -1,0 +1,2 @@
+__version__ = "1.0.0a8"
+CORE_VERSION = "1.0.0-alpha.8"
