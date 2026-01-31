@@ -1,0 +1,32 @@
+name: Publish docs
+
+on:
+  release:
+    types: ["created"]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          fetch-depth: 0 # fetch all commits/branches (otherwise "mike deploy" fails)
+      - uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+        with:
+          python-version: 3.13
+          cache: "pip"
+      - run: pip install -r requirements.txt
+      - uses: actions/cache@9255dc7a253b0ccc959486e2bca901246202afeb # v5.0.1
+        with:
+          path: ~/.cache/uv
+          key: uv-3.13-${{ hashFiles('uv.lock') }}
+      - run: uv sync --frozen
+      - name: git config for "mike deploy"
+        run: |
+          git config --global user.name "${{ github.actor }}"
+          git config --global user.email "${{ github.actor }}@users.noreply.github.com"
+      - name: deploy docs by mike
+        run: |
+          VERSION=$(uv run python scripts/convert_to_pep440_version.py "${{ github.event.release.tag_name }}")
+          uv run mike deploy "$VERSION" latest --update-aliases --push
+          uv run mike set-default latest --push
