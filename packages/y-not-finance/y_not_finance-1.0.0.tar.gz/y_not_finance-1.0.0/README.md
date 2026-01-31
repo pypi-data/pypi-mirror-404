@@ -1,0 +1,173 @@
+# Y-Not-Finance
+
+A comprehensive Python library for fetching financial data, combining Yahoo Finance price data with stock index constituents from multiple sources.
+
+## Features
+
+### 📈 Prices Module
+- **Multi-ticker concurrent fetching** - Fetch data for multiple stocks simultaneously
+- **Automatic retry with exponential backoff** - Resilient to API rate limits
+- **Flexible intervals** - Support for intraday (1m, 5m, 15m, 30m, 1h) and daily+ (1d, 1wk, 1mo) data
+- **Multiple fields** - Open, High, Low, Close, Volume, Adjusted Close
+- **Date range filtering** - Easy-to-use range strings like "1mo", "3mo", "1y"
+
+### 🏢 Constituents Module
+- **Multiple indexes** - S&P 500, NASDAQ, Dow Jones, TSX, and market cap tiers
+- **Unified API** - Single function to access all data sources
+- **Company names included** - Get both ticker symbols and full company names
+- **Automatic pagination** - Handles large datasets seamlessly
+
+## Installation
+
+```bash
+pip install -e .
+```
+
+Or install from requirements:
+```bash
+pip install -r requirements.txt
+```
+
+## Quick Start
+
+### Fetch Price Data
+
+```python
+from y_not_finance import YahooFinanceClient
+
+# Initialize the client
+client = YahooFinanceClient()
+
+# Single ticker
+df = client.get_prices("AAPL", range_str="1mo")
+
+# Multiple tickers
+df = client.get_prices(["AAPL", "MSFT", "GOOGL"], range_str="3mo", fields="close")
+
+# Multiple fields
+df = client.get_prices(
+    ["AAPL", "MSFT"],
+    range_str="1y",
+    interval="1d",
+    fields=["open", "high", "low", "close", "volume"]
+)
+```
+
+### Fetch Index Constituents
+
+```python
+from y_not_finance import get_constituents
+
+# Get S&P 500 constituents
+tickers, description = get_constituents("^SPX", info=True)
+
+# Get TSX constituents
+tickers, description = get_constituents("^GSPTSE", include_benchmark=True)
+
+# Get mega cap stocks
+tickers, description = get_constituents("megacaps")
+```
+
+### Combined Usage
+
+```python
+from y_not_finance import YahooFinanceClient, get_constituents
+
+# Get index constituents
+sp500_tickers, _ = get_constituents("^SPX")
+
+# Fetch prices for all constituents
+client = YahooFinanceClient()
+df = client.get_prices(
+    list(sp500_tickers.keys()),
+    range_str="1mo",
+    fields="adjclose"
+)
+```
+
+## Package Structure
+
+```
+y_not_finance/
+├── __init__.py                 # Main package API
+│
+├── prices/                     # Price data module
+│   ├── __init__.py
+│   ├── client.py              # YahooFinanceClient class
+│   ├── fetcher.py             # HTTP request handling
+│   ├── parser.py              # JSON parsing logic
+│   ├── processor.py           # DataFrame processing
+│   ├── utils.py               # Utility functions
+│   └── constants.py           # Configuration constants
+│
+└── constituents/              # Index constituents module
+    ├── __init__.py
+    ├── client.py              # get_constituents() function
+    ├── config.py              # Index configurations
+    ├── utils.py               # Validation utilities
+    └── scrapers/              # Data source scrapers
+        ├── __init__.py
+        ├── stock_analysis.py  # StockAnalysis.com scraper
+        └── tsx.py             # Globe and Mail TSX scraper
+```
+
+See [PACKAGE_STRUCTURE.md](PACKAGE_STRUCTURE.md) for detailed structure documentation.
+
+## Documentation
+
+- [QUICK_REFERENCE.md](QUICK_REFERENCE.md) - Common tasks and examples
+- [ARCHITECTURE.md](ARCHITECTURE.md) - System architecture overview
+- [PACKAGE_STRUCTURE.md](PACKAGE_STRUCTURE.md) - Package layout details
+
+## Supported Indexes
+
+| Key | Index Name | Source |
+|-----|-----------|--------|
+| ^SPX | S&P 500 Index | StockAnalysis.com |
+| ^DJI | Dow Jones Industrial Average | StockAnalysis.com |
+| ^IXIC | NASDAQ Composite | StockAnalysis.com |
+| ^GSPTSE | S&P/TSX Composite (Canada) | Globe and Mail |
+| megacaps | Mega Cap Stocks | StockAnalysis.com |
+| largecaps | Large Cap Stocks | StockAnalysis.com |
+| midcaps | Mid Cap Stocks | StockAnalysis.com |
+| smallcaps | Small Cap Stocks | StockAnalysis.com |
+| microcaps | Micro Cap Stocks | StockAnalysis.com |
+| nanocaps | Nano Cap Stocks | StockAnalysis.com |
+
+## Examples
+
+See the [examples/](examples/) directory for comprehensive usage examples:
+- `combined_usage.py` - Complete demonstration of all features
+- `basic_usage.py` - Simple price fetching
+- `financial_analysis.py` - Analysis workflows
+- `data_export.py` - Export to CSV/Excel
+
+Run an example:
+```bash
+python examples/combined_usage.py
+```
+
+## Requirements
+
+- Python 3.8+
+- numpy
+- pandas
+- requests
+
+Optional:
+- pyarrow (for Parquet export in examples)
+
+See [requirements.txt](requirements.txt) for complete dependencies.
+
+## License
+
+See [LICENSE](LICENSE) file for details.
+
+## Changelog
+
+### Version 1.0.0
+- Complete restructure into modular package
+- Separated prices and constituents into submodules
+- Improved code organization following best practices
+- Added comprehensive documentation
+- Enhanced error handling and logging
