@@ -1,0 +1,155 @@
+Metadata-Version: 2.4
+Name: rotastellar-intel
+Version: 0.1.1
+Summary: Orbital intelligence and space situational awareness tools
+Project-URL: Homepage, https://rotastellar.com/products/orbital-intelligence
+Project-URL: Documentation, https://rotastellar.com/docs/intel
+Project-URL: Repository, https://github.com/rotastellar/rotastellar-python
+Author-email: Subhadip Mitra <subhadipmitra@rotastellar.com>, RotaStellar Research <research@rotastellar.com>
+Maintainer-email: Subhadip Mitra <subhadipmitra@rotastellar.com>, RotaStellar Research <research@rotastellar.com>
+License: MIT
+License-File: LICENSE
+Keywords: conjunction-analysis,orbital-intelligence,satellite-tracking,sgp4,space,space-situational-awareness,tle
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: Intended Audience :: Science/Research
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Scientific/Engineering :: Astronomy
+Classifier: Topic :: Scientific/Engineering :: GIS
+Classifier: Typing :: Typed
+Requires-Python: >=3.9
+Requires-Dist: rotastellar>=0.1.0
+Provides-Extra: dev
+Requires-Dist: mypy>=1.0; extra == 'dev'
+Requires-Dist: pytest-asyncio>=0.21; extra == 'dev'
+Requires-Dist: pytest>=7.0; extra == 'dev'
+Provides-Extra: sgp4
+Requires-Dist: sgp4>=2.22; extra == 'sgp4'
+Description-Content-Type: text/markdown
+
+# rotastellar-intel
+
+**Orbital Intelligence & Space Situational Awareness**
+
+Track satellites, parse TLEs, analyze conjunctions, and detect orbital patterns.
+
+## Installation
+
+```bash
+pip install rotastellar-intel
+```
+
+## Quick Start
+
+### TLE Parsing
+
+```python
+from rotastellar_intel import TLE
+
+# Parse a Two-Line Element set
+tle_lines = [
+    "ISS (ZARYA)",
+    "1 25544U 98067A   24001.50000000  .00016717  00000-0  10270-3 0  9025",
+    "2 25544  51.6400 208.9163 0006703  40.5765  35.4667 15.49560927421258"
+]
+
+tle = TLE.parse(tle_lines)
+print(f"Satellite: {tle.name}")
+print(f"NORAD ID: {tle.norad_id}")
+print(f"Inclination: {tle.inclination_deg:.2f}°")
+print(f"Period: {tle.orbital_period_minutes:.2f} minutes")
+
+# Get position at epoch
+position = tle.propagate()
+print(f"Position: {position.latitude:.2f}°, {position.longitude:.2f}°")
+```
+
+### Satellite Tracking
+
+```python
+from rotastellar_intel import Tracker, GroundStation
+from rotastellar import Position
+
+# Create a tracker
+tracker = Tracker()
+tracker.add_tle("ISS", tle)
+
+# Get current position
+pos = tracker.get_position("ISS")
+
+# Calculate passes over a ground station
+gs = GroundStation(
+    name="KSC",
+    position=Position(28.5729, -80.6490, 0.0),
+    min_elevation_deg=10.0
+)
+passes = tracker.predict_passes("ISS", gs, hours=24)
+for p in passes:
+    print(f"AOS: {p.aos}, Max El: {p.max_elevation_deg:.1f}°")
+```
+
+### Conjunction Analysis
+
+```python
+from rotastellar_intel import ConjunctionAnalyzer, RiskLevel
+
+analyzer = ConjunctionAnalyzer()
+
+# Analyze collision probability
+conjunction = analyzer.analyze(
+    primary_id="ISS",
+    secondary_id="DEBRIS-12345",
+    miss_distance_km=0.5,
+    relative_velocity_km_s=10.0
+)
+
+print(f"Risk Level: {conjunction.risk_level}")
+print(f"Collision Probability: {conjunction.collision_probability:.2e}")
+
+if conjunction.risk_level == RiskLevel.CRITICAL:
+    print("⚠️  Maneuver recommended!")
+```
+
+### Pattern Detection
+
+```python
+from rotastellar_intel import PatternDetector, PatternType
+
+detector = PatternDetector()
+
+# Detect maneuvers from TLE history
+patterns = detector.detect(satellite_id="STARLINK-1234", days=30)
+
+for pattern in patterns:
+    if pattern.pattern_type == PatternType.ORBIT_RAISE:
+        print(f"Orbit raise detected: +{pattern.delta_altitude_km:.1f} km")
+    elif pattern.pattern_type == PatternType.MANEUVER:
+        print(f"Maneuver: Δv = {pattern.delta_v_m_s:.2f} m/s")
+```
+
+## Features
+
+- **TLE Parsing** — Full Two-Line Element support with SGP4 propagation
+- **Satellite Tracking** — Real-time position and pass prediction
+- **Conjunction Analysis** — Collision probability using NASA CARA methodology
+- **Pattern Detection** — Maneuver detection, anomaly identification
+
+## Links
+
+- **Website:** https://rotastellar.com/products/orbital-intelligence
+- **Documentation:** https://docs.rotastellar.com/sdks/python/intel
+- **Main SDK:** https://pypi.org/project/rotastellar/
+
+## Author
+
+Created by [Subhadip Mitra](mailto:subhadipmitra@rotastellar.com) at [RotaStellar](https://rotastellar.com).
+
+## License
+
+MIT License — Copyright (c) 2026 RotaStellar
