@@ -1,0 +1,239 @@
+"""MCP Client for sandbox PTC execution.
+
+This module uses the official MCP Python SDK to call MCP tools from within
+the E2B sandbox. It provides sync wrappers around the async SDK.
+"""
+
+import asyncio
+import json
+import os
+from typing import Any
+
+import httpx
+from mcp import ClientSession
+from mcp.client.streamable_http import streamable_http_client
+from mcp.client.sse import sse_client
+
+
+def load_config() -> dict[str, Any]:
+    """Load PTC config from ptc_config.json."""
+    config_path = os.path.join(os.path.dirname(__file__), "..", "ptc_config.json")
+    with open(config_path) as f:
+        return json.load(f)
+
+
+_CONFIG: dict[str, Any] | None = None
+
+
+def get_config() -> dict[str, Any]:
+    """Get cached config."""
+    global _CONFIG
+    if _CONFIG is None:
+        _CONFIG = load_config()
+    return _CONFIG
+
+
+def _is_transient_error(exc: BaseException) -> bool:
+    """Return True for retryable network errors."""
+    if isinstance(exc, asyncio.CancelledError):
+        return False
+    # Network-related errors that are retryable
+    if isinstance(exc, (httpx.HTTPError, OSError, ConnectionError, TimeoutError)):
+        return True
+    # MCP SDK wraps network errors in ExceptionGroup from anyio TaskGroups
+    if isinstance(exc, BaseExceptionGroup):
+        return any(_is_transient_error(sub) for sub in exc.exceptions)
+    return False
+
+
+async def _execute_tool_call(
+    url: str,
+    transport: str,
+    headers: dict[str, str] | None,
+    timeout: float,
+    tool_name: str,
+    arguments: dict[str, Any],
+) -> Any:
+    """Execute a single MCP tool call (no retry)."""
+    if transport == "sse":
+        async with sse_client(
+            url=url,
+            timeout=timeout,
+            sse_read_timeout=timeout * 2,
+            headers=headers,
+        ) as (read_stream, write_stream):
+            async with ClientSession(read_stream, write_stream) as session:
+                await session.initialize()
+                result = await session.call_tool(tool_name, arguments)
+                return _normalize_result(result)
+
+    # Default: streamable-http
+    async with httpx.AsyncClient(
+        timeout=httpx.Timeout(timeout),
+        headers=headers,
+    ) as http_client:
+        async with streamable_http_client(
+            url=url,
+            http_client=http_client,
+        ) as (read_stream, write_stream, _):
+            async with ClientSession(read_stream, write_stream) as session:
+                await session.initialize()
+                result = await session.call_tool(tool_name, arguments)
+                return _normalize_result(result)
+
+
+async def _call_tool_async(
+    server_name: str,
+    tool_name: str,
+    arguments: dict[str, Any],
+) -> Any:
+    """Call an MCP tool asynchronously with retry.
+
+    Args:
+        server_name: Name of the MCP server.
+        tool_name: Name of the tool to call.
+        arguments: Arguments to pass to the tool.
+
+    Returns:
+        Normalized tool result.
+
+    Raises:
+        RuntimeError: If all retry attempts fail.
+    """
+    config = get_config()
+    server_config = config["servers"].get(server_name)
+    if not server_config:
+        raise RuntimeError(f"Server '{server_name}' not found in config")
+
+    allowed = server_config.get("allowed_tools")
+    if allowed and tool_name not in allowed:
+        raise PermissionError(f"Tool '{tool_name}' not allowed on server '{server_name}'")
+
+    url = server_config["url"]
+    headers = server_config.get("headers") or None
+    timeout = float(server_config.get("timeout", 60.0))
+    transport = server_config.get("transport", "streamable-http").lower().replace("_", "-")
+    max_retries = 3
+
+    last_error: Exception | None = None
+    backoff = 0.5
+
+    for attempt in range(max_retries):
+        try:
+            return await _execute_tool_call(url, transport, headers, timeout, tool_name, arguments)
+        except Exception as e:
+            last_error = e
+            if attempt < max_retries - 1 and _is_transient_error(e):
+                await asyncio.sleep(backoff)
+                backoff *= 2
+                continue
+            break
+
+    raise RuntimeError(f"MCP tool call failed: {last_error}") from last_error
+
+
+def _run_async(coro):
+    """Run an async coroutine, handling existing event loops (e.g., in Jupyter/E2B).
+
+    Args:
+        coro: The coroutine to run.
+
+    Returns:
+        The result of the coroutine.
+    """
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        # No running loop, use asyncio.run()
+        return asyncio.run(coro)
+
+    # There's a running loop - we need to run in a separate thread
+    import concurrent.futures
+
+    def run_in_new_loop():
+        """Run coroutine in a new event loop in a thread."""
+        new_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(new_loop)
+        try:
+            result = new_loop.run_until_complete(coro)
+            new_loop.run_until_complete(new_loop.shutdown_asyncgens())
+            if hasattr(new_loop, "shutdown_default_executor"):
+                new_loop.run_until_complete(new_loop.shutdown_default_executor())
+            return result
+        finally:
+            new_loop.close()
+
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        future = executor.submit(run_in_new_loop)
+        return future.result()
+
+
+def call_tool(server_name: str, tool_name: str, arguments: dict[str, Any]) -> Any:
+    """Call an MCP tool (sync wrapper).
+
+    This is a synchronous wrapper around the async MCP SDK for easier use
+    in LLM-generated code. Handles both regular scripts and Jupyter/E2B environments.
+
+    Args:
+        server_name: Name of the MCP server.
+        tool_name: Name of the tool to call.
+        arguments: Arguments to pass to the tool.
+
+    Returns:
+        Normalized tool result.
+
+    Raises:
+        RuntimeError: If the tool call fails.
+    """
+    return _run_async(_call_tool_async(server_name, tool_name, arguments))
+
+
+def _normalize_result(result: Any) -> Any:
+    """Normalize MCP tool result.
+
+    Normalization rules:
+    - If result has content array with single text item: return text (JSON-parsed if possible)
+    - Otherwise return structured object with text and non_text lists
+
+    Args:
+        result: MCP CallToolResult object.
+
+    Returns:
+        Normalized result value.
+    """
+    # Handle MCP SDK result object
+    content = getattr(result, "content", [])
+    if not content:
+        return result
+
+    text_contents: list[str] = []
+    non_text_contents: list[Any] = []
+
+    for item in content:
+        item_type = getattr(item, "type", None)
+        if item_type == "text":
+            text_contents.append(getattr(item, "text", ""))
+        else:
+            # Convert non-text content to dict for serialization
+            non_text_contents.append({
+                "type": item_type,
+                **{k: v for k, v in vars(item).items() if k != "type"}
+            })
+
+    # Single text content, no non-text content
+    if len(text_contents) == 1 and not non_text_contents:
+        text = text_contents[0]
+        # Try to parse as JSON
+        stripped = text.strip()
+        if stripped.startswith(("{", "[")):
+            try:
+                return json.loads(text)
+            except json.JSONDecodeError:
+                pass
+        return text
+
+    # Return structured object for complex results
+    return {
+        "text": text_contents,
+        "non_text": non_text_contents,
+    }
