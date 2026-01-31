@@ -1,0 +1,3 @@
+# core.state
+
+::: core.state

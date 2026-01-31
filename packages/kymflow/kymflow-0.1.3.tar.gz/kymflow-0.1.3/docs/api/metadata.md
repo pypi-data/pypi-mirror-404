@@ -1,0 +1,4 @@
+# core.metadata
+
+::: core.metadata
+
