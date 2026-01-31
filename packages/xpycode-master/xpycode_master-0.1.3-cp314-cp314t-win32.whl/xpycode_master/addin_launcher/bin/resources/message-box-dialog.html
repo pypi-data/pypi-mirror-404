@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>XPyCode Message</title>
+    <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .header {
+            padding: 16px 20px;
+            height: 30px;
+            display: flex;
+            line-height: 1.2;
+            align-items: center;
+            gap: 12px;
+        }
+
+            .header > * {
+                margin: 0;
+            }
+
+            .header.info {
+                background-color: #0078d4;
+                color: white;
+            }
+
+            .header.warning {
+                background-color: #ffb900;
+                color: #000;
+            }
+
+            .header.error {
+                background-color: #d13438;
+                color: white;
+            }
+
+        .icon {
+            font-size: 24px;
+        }
+
+        .title {
+            font-size: 18px;
+            font-weight: 600;
+            align-items: center;
+        }
+
+        .content {
+            flex: 1;
+            display:flex;
+            min-height: 0px;
+            padding: 1px;
+            overflow-y: auto;
+            background: #fff;
+            align-items: center;
+        }
+
+        .message {
+            font-size: 14px;
+            color: #333;
+            width: 100%;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            text-align: left;
+        }
+
+        .footer {
+            padding: 16px 20px;
+            background: #f3f3f3;
+            border-top: 1px solid #e0e0e0;
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        .ok-button {
+            padding: 8px 24px;
+            font-size: 14px;
+            background-color: #0078d4;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+            .ok-button:hover {
+                background-color: #106ebe;
+            }
+
+            .ok-button:focus {
+                outline: 2px solid #0078d4;
+                outline-offset: 2px;
+            }
+    </style>
+</head>
+<body>
+    <div class="header info" id="header">
+        <span class="icon" id="icon">ℹ️</span>
+        <span class="title" id="title">XPyCode</span>
+    </div>
+    <div class="content">
+        <p class="message" id="message">Message content</p>
+    </div>
+    <div class="footer">
+        <button class="ok-button" id="okButton">OK</button>
+    </div>
+
+    <script>
+        // Parse URL parameters
+        function getUrlParams() {
+            const params = new URLSearchParams(window.location.search);
+            return {
+                message: params.get('message') || '',
+                title: params.get('title') || 'XPyCode',
+                type: (params.get('type') || 'info').toLowerCase(),
+                encoding: params.get('encoding') || 'base64'  // Default to base64 for backwards compatibility
+            };
+        }
+
+        // Initialize dialog
+        Office.onReady(function() {
+            const params = getUrlParams();
+            
+            // Set title
+            document.getElementById('title').textContent = params.title;
+            
+            // Set message - decode based on encoding parameter
+            let decodedMessage = params.message;
+            if (params.encoding === 'base64') {
+                try {
+                    decodedMessage = decodeURIComponent(atob(params.message));
+                } catch (e) {
+                    try {
+                        decodedMessage = decodeURIComponent(params.message);
+                    } catch (e2) {
+                        decodedMessage = params.message;
+                    }
+                }
+            } else {
+                // URI encoding only
+                try {
+                    decodedMessage = decodeURIComponent(params.message);
+                } catch (e) {
+                    decodedMessage = params.message;
+                }
+            }
+            document.getElementById('message').textContent = decodedMessage;
+            
+            // Set type styling
+            const header = document.getElementById('header');
+            const icon = document.getElementById('icon');
+            
+            header.className = 'header ' + params.type;
+            
+            switch (params.type) {
+                case 'warning':
+                    icon.textContent = '⚠️';
+                    break;
+                case 'error':
+                    icon.textContent = '❌';
+                    break;
+                case 'info':
+                default:
+                    icon.textContent = 'ℹ️';
+                    break;
+            }
+            
+            // OK button closes dialog
+            document.getElementById('okButton').addEventListener('click', function() {
+                Office.context.ui.messageParent(JSON.stringify({ action: 'close' }));
+            });
+            
+            // Also close on Enter key
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter' || e.key === 'Escape') {
+                    Office.context.ui.messageParent(JSON.stringify({ action: 'close' }));
+                }
+            });
+            
+            // Focus the OK button for keyboard accessibility
+            document.getElementById('okButton').focus();
+        });
+    </script>
+</body>
+</html>
