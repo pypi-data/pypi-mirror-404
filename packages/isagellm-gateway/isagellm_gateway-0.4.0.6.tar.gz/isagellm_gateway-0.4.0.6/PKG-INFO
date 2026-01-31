@@ -1,0 +1,381 @@
+Metadata-Version: 2.4
+Name: isagellm-gateway
+Version: 0.4.0.6
+Summary: sageLLM Gateway - OpenAI/Anthropic compatible API Gateway (L6)
+Author-email: IntelliStream Team <intellistream@github.com>
+License: Apache-2.0
+Project-URL: Documentation, https://intellistream.github.io/sagellm-docs/
+Project-URL: Homepage, https://github.com/intellistream/sagellm-gateway
+Project-URL: Issues, https://github.com/intellistream/sagellm-gateway/issues
+Project-URL: Repository, https://github.com/intellistream/sagellm-gateway
+Keywords: sagellm,gateway,llm,openai,anthropic,inference
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: Apache Software License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Scientific/Engineering :: Artificial Intelligence
+Requires-Python: ==3.11.*
+Description-Content-Type: text/markdown
+Requires-Dist: isagellm-protocol<0.5.0,>=0.4.0.0
+Requires-Dist: fastapi<1.0.0,>=0.115.0
+Requires-Dist: uvicorn[standard]<1.0.0,>=0.34.0
+Requires-Dist: pydantic<3.0.0,>=2.10.0
+Requires-Dist: sse-starlette>=1.8.0
+Requires-Dist: httpx<1.0.0,>=0.28.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.4.0; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.21.0; extra == "dev"
+Requires-Dist: pytest-cov>=4.1.0; extra == "dev"
+Requires-Dist: ruff>=0.4.0; extra == "dev"
+Requires-Dist: mypy>=1.7.0; extra == "dev"
+Requires-Dist: isage-pypi-publisher>=0.2.0; extra == "dev"
+
+# sageLLM Gateway
+
+## Protocol Compliance (Mandatory)
+
+- MUST follow Protocol v0.1: https://github.com/intellistream/sagellm-docs/blob/main/docs/specs/protocol_v0.1.md
+- Any globally shared definitions (fields, error codes, metrics, IDs, schemas) MUST be added to Protocol first.
+
+[![CI](https://github.com/intellistream/sagellm-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/intellistream/sagellm-gateway/actions/workflows/ci.yml)
+[![PyPI version](https://badge.fury.io/py/isagellm-gateway.svg)](https://badge.fury.io/py/isagellm-gateway)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit&logoColor=white)](https://github.com/pre-commit/pre-commit)
+
+**isagellm-gateway** - OpenAI/Anthropic Compatible API Gateway for sageLLM
+
+## Overview
+
+OpenAI-compatible API gateway for sageLLM inference engine.
+
+**Features:**
+
+- OpenAI-compatible endpoints (`/v1/chat/completions`, `/v1/models`)
+- Session management with multiple storage backends
+- Control Plane integration (optional)
+
+## Installation
+
+```bash
+# 基础安装
+pip install isagellm-gateway
+
+# 包含 Control Plane 集成
+pip install isagellm-gateway[control-plane]
+
+# 完整功能（包含 Redis 等）
+pip install isagellm-gateway[full]
+```
+
+## 🚀 开发者快速开始
+
+```bash
+git clone git@github.com:intellistream/sagellm-gateway.git
+cd sagellm-gateway
+./quickstart.sh   # 一键安装开发环境（含依赖）
+
+# 或手动安装
+pip install -e ".[dev]"
+```
+
+运行测试：
+
+```bash
+pytest tests/ -v
+```
+
+## Quick Start
+
+### Production Mode
+
+For real inference with Control Plane:
+
+```bash
+pip install 'isagellm-gateway[control-plane]'
+sagellm-gateway --control-plane --port 8080
+```
+
+### 发送请求
+
+```bash
+# Chat Completion
+curl http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "sshleifer/tiny-gpt2",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
+
+# Health Check
+curl http://localhost:8080/health
+
+# List Models
+curl http://localhost:8080/v1/models
+```
+
+## Architecture
+
+```
+┌─────────────────────────────────────────┐
+│         sageLLM Gateway                 │
+│  • OpenAI-compatible API                │
+│  • Session management                   │
+│  • Multiple storage backends            │
+└─────────────────────────────────────────┘
+           │
+           ▼
+┌─────────────────────────────────────────┐
+│     Control Plane (optional)            │
+└─────────────────────────────────────────┘
+           │
+           ▼
+┌─────────────────────────────────────────┐
+│     Inference Backend                   │
+└─────────────────────────────────────────┘
+```
+
+## Configuration
+
+### Environment Variables
+
+| Variable                                    | Description                                       | Default                            |
+| ------------------------------------------- | ------------------------------------------------- | ---------------------------------- |
+| `SAGELLM_GATEWAY_HOST`                      | Server host                                       | `0.0.0.0`                          |
+| `SAGELLM_GATEWAY_PORT`                      | Server port                                       | `8080`                             |
+| `SAGELLM_GATEWAY_SESSION_BACKEND`           | Session storage backend (`memory`/`file`/`redis`) | `memory`                           |
+| `SAGELLM_GATEWAY_SESSION_FILE_PATH`         | File backend path                                 | `~/.sagellm/gateway/sessions.json` |
+| `SAGELLM_GATEWAY_SESSION_FILE_COMPRESS`     | Enable gzip compression for file backend          | `false`                            |
+| `SAGELLM_GATEWAY_SESSION_FILE_AUTO_CLEANUP` | Auto-cleanup expired sessions on load             | `false`                            |
+| `SAGELLM_GATEWAY_SESSION_TTL_MINUTES`       | Session TTL in minutes                            | `1440` (24h)                       |
+| `SAGELLM_GATEWAY_SESSION_REDIS_URL`         | Redis URL for redis backend                       | `redis://localhost:6379/0`         |
+| `SAGELLM_GATEWAY_ENABLE_CONTROL_PLANE`      | Enable Control Plane                              | `false`                            |
+
+### CLI Options
+
+```bash
+sagellm-gateway --help
+
+Options:
+  --host TEXT      Server host [default: 0.0.0.0]
+  --port INTEGER   Server port [default: 8080]
+  --control-plane  Enable Control Plane integration
+  --log-level      Log level (debug/info/warning/error)
+```
+
+## API Reference
+
+### POST /v1/chat/completions
+
+OpenAI 兼容的 Chat Completion 端点。
+
+**Request:**
+
+```json
+{
+  "model": "string",
+  "messages": [{ "role": "user", "content": "Hello!" }],
+  "stream": false,
+  "temperature": 1.0,
+  "max_tokens": null,
+  "session_id": null
+}
+```
+
+**Response:**
+
+```json
+{
+  "id": "chatcmpl-xxx",
+  "object": "chat.completion",
+  "created": 1234567890,
+  "model": "sshleifer/tiny-gpt2",
+  "choices": [
+    {
+      "index": 0,
+      "message": { "role": "assistant", "content": "Hello! How can I help?" },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 10,
+    "completion_tokens": 5,
+    "total_tokens": 15
+  }
+}
+```
+
+### GET /v1/models
+
+列出可用模型。
+
+### GET /health
+
+健康检查端点。
+
+### Session Management
+
+- `GET /sessions` - 列出会话
+- `POST /sessions` - 创建会话
+- `GET /sessions/{id}` - 获取会话详情
+- `DELETE /sessions/{id}` - 删除会话
+- `POST /sessions/{id}/clear` - 清空会话历史
+
+## Session Storage
+
+sageLLM Gateway 支持多种会话存储后端：
+
+### InMemoryStore (默认)
+
+数据存储在内存中，进程退出后丢失。适用于测试和临时场景。
+
+```bash
+export SAGELLM_GATEWAY_SESSION_BACKEND=memory
+```
+
+### FileStore
+
+将会话持久化到 JSON 文件，支持：
+
+- **压缩存储**：使用 gzip 减少磁盘占用
+- **并发安全**：文件锁保证多进程安全
+- **自动清理**：在加载时清理过期会话
+
+```bash
+# 基本使用
+export SAGELLM_GATEWAY_SESSION_BACKEND=file
+export SAGELLM_GATEWAY_SESSION_FILE_PATH=/path/to/sessions.json
+
+# 启用压缩
+export SAGELLM_GATEWAY_SESSION_FILE_COMPRESS=true
+
+# 启用自动清理（24小时过期）
+export SAGELLM_GATEWAY_SESSION_FILE_AUTO_CLEANUP=true
+export SAGELLM_GATEWAY_SESSION_TTL_MINUTES=1440
+```
+
+### RedisStore (可选依赖)
+
+使用 Redis 作为分布式会话存储，支持：
+
+- **连接池**：高效的连接管理
+- **TTL 自动过期**：Redis 原生过期机制
+- **高可用**：适合生产环境
+
+```bash
+# 安装 Redis 依赖
+pip install isagellm-gateway[full]
+
+# 配置
+export SAGELLM_GATEWAY_SESSION_BACKEND=redis
+export SAGELLM_GATEWAY_SESSION_REDIS_URL=redis://localhost:6379/0
+export SAGELLM_GATEWAY_SESSION_TTL_MINUTES=1440
+```
+
+### Session Export/Import
+
+支持会话的导出和导入，便于备份和迁移：
+
+```python
+from sagellm_gateway.session import SessionManager, ChatSession
+
+manager = SessionManager()
+
+# 导出所有会话到文件
+manager.export_all_to_file("/path/to/backup.json")
+
+# 从文件导入会话
+imported, skipped = manager.import_from_file("/path/to/backup.json")
+
+# 导出单个会话
+session = manager.get("session-id")
+json_str = session.export_json()
+
+# 从 JSON 恢复会话
+restored = ChatSession.from_json(json_str)
+```
+
+## Development
+
+### Run Tests
+
+```bash
+pytest -v
+
+# With coverage
+pytest --cov=sagellm_gateway --cov-report=html
+```
+
+### Code Quality
+
+```bash
+ruff format .
+ruff check . --fix
+mypy src/
+```
+
+## CPU Backend Validation
+
+Gateway 验证与联调请使用 CPU backend：
+
+- 通过 Control Plane 启动并注册 CPU 引擎
+- Gateway 仅对接 Control Plane
+
+---
+
+## 📚 Documentation
+
+### 快速链接
+
+- **[部署指南](https://github.com/intellistream/sagellm/blob/main/docs/DEPLOYMENT_GUIDE.md)** - 生产环境部署详解
+- **[故障排查](https://github.com/intellistream/sagellm/blob/main/docs/TROUBLESHOOTING.md)** - 常见问题快速解决
+- **[环境变量](https://github.com/intellistream/sagellm/blob/main/docs/ENVIRONMENT_VARIABLES.md)** - 完整环境变量参考
+
+## 🔄 贡献指南
+
+请遵循以下工作流程：
+
+1. **创建 Issue** - 描述问题/需求
+
+   ```bash
+   gh issue create --title "[Bug] 描述" --label "bug,sagellm-gateway"
+   ```
+
+2. **开发修复** - 在本地 `fix/#123-xxx` 分支解决
+
+   ```bash
+   git checkout -b fix/#123-xxx origin/main-dev
+   # 开发、测试...
+   pytest -v
+   ruff format . && ruff check . --fix
+   ```
+
+3. **发起 PR** - 提交到 `main-dev` 分支
+
+   ```bash
+   gh pr create --base main-dev --title "Fix: 描述" --body "Closes #123"
+   ```
+
+4. **合并** - 审批后合并到 `main-dev`
+
+更多详情见 [.github/copilot-instructions.md](.github/copilot-instructions.md)
+
+### 相关仓库
+
+- [sagellm](https://github.com/intellistream/sagellm) - Umbrella 包 + CLI
+- [sagellm-protocol](https://github.com/intellistream/sagellm-protocol) - 协议定义
+- [sagellm-control-plane](https://github.com/intellistream/sagellm-control-plane) - 控制面
+- [sagellm-backend](https://github.com/intellistream/sagellm-backend) - 后端抽象
+
+---
+
+## License
+
+Apache-2.0
+
+# Test auto-push fix
+
+# Final test
