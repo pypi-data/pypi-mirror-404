@@ -1,0 +1,188 @@
+Metadata-Version: 2.4
+Name: turbo-themes
+Version: 0.12.31
+Summary: Universal design tokens and themes for Python applications
+Project-URL: Homepage, https://github.com/lgtm-hq/turbo-themes
+Project-URL: Repository, https://github.com/lgtm-hq/turbo-themes
+Project-URL: Documentation, https://github.com/lgtm-hq/turbo-themes#readme
+Author: Turbo Coder
+License: MIT
+Keywords: color-schemes,css,design-tokens,themes,theming
+Classifier: Development Status :: 4 - Beta
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Typing :: Typed
+Requires-Python: >=3.10
+Requires-Dist: python-dateutil>=2.8.0
+Provides-Extra: dev
+Requires-Dist: assertpy>=1.1; extra == 'dev'
+Requires-Dist: mypy>=1.8; extra == 'dev'
+Requires-Dist: pytest-cov>=7.0; extra == 'dev'
+Requires-Dist: pytest>=9.0; extra == 'dev'
+Description-Content-Type: text/markdown
+
+# turbo-themes
+
+[![PyPI](https://img.shields.io/pypi/v/turbo-themes)](https://pypi.org/project/turbo-themes/)
+[![Python](https://img.shields.io/badge/python-3.10+-blue)](https://www.python.org/)
+[![License](https://img.shields.io/badge/License-MIT-green)](https://github.com/lgtm-hq/turbo-themes/blob/main/LICENSE)
+
+Universal design tokens and theme management for Python applications.
+
+## Features
+
+- **9 curated themes** from Catppuccin (4 variants), Dracula, GitHub (light/dark), and
+  Bulma (light/dark)
+- **Design tokens** as typed Python dataclasses
+- **CSS variable generation** for web integration
+- **Type-safe** with full type hints and mypy strict mode
+- **Lightweight**: single runtime dependency (python-dateutil)
+
+## Installation
+
+```bash
+pip install turbo-themes
+# or
+uv add turbo-themes
+```
+
+## Quick Start
+
+### Access Theme Colors
+
+```python
+from turbo_themes import THEMES
+
+# Get a specific theme
+mocha = THEMES["catppuccin-mocha"]
+print(mocha.colors.primary)      # "#89b4fa"
+print(mocha.colors.background)   # "#1e1e2e"
+print(mocha.meta.name)           # "Catppuccin Mocha"
+print(mocha.meta.variant)        # "dark"
+```
+
+### Theme Manager
+
+```python
+from turbo_themes import ThemeManager
+
+manager = ThemeManager()
+
+# Set and apply a theme
+manager.set_theme("catppuccin-mocha")
+css_vars = manager.apply_theme_to_css_variables()
+
+# Generate CSS custom properties
+for var_name, value in css_vars.items():
+    print(f"--{var_name}: {value};")
+```
+
+### List Available Themes
+
+```python
+from turbo_themes import THEMES, list_themes
+
+# Get all theme names
+themes = list_themes()
+print(themes)
+# ['bulma-dark', 'bulma-light', 'catppuccin-frappe', 'catppuccin-latte',
+#  'catppuccin-macchiato', 'catppuccin-mocha', 'dracula', 'github-dark', 'github-light']
+
+# Filter by variant
+dark_themes = [name for name, theme in THEMES.items() if theme.meta.variant == "dark"]
+```
+
+## Available Themes
+
+| Theme                  | Variant | Source                                        |
+| ---------------------- | ------- | --------------------------------------------- |
+| `catppuccin-mocha`     | dark    | [catppuccin.com](https://catppuccin.com/)     |
+| `catppuccin-macchiato` | dark    | [catppuccin.com](https://catppuccin.com/)     |
+| `catppuccin-frappe`    | dark    | [catppuccin.com](https://catppuccin.com/)     |
+| `catppuccin-latte`     | light   | [catppuccin.com](https://catppuccin.com/)     |
+| `dracula`              | dark    | [draculatheme.com](https://draculatheme.com/) |
+| `github-dark`          | dark    | [primer.style](https://primer.style/)         |
+| `github-light`         | light   | [primer.style](https://primer.style/)         |
+| `bulma-dark`           | dark    | [bulma.io](https://bulma.io/)                 |
+| `bulma-light`          | light   | [bulma.io](https://bulma.io/)                 |
+
+## Theme Structure
+
+Each theme provides:
+
+```python
+theme.colors.primary       # Primary accent color
+theme.colors.secondary     # Secondary accent color
+theme.colors.background    # Background color
+theme.colors.surface       # Surface/card color
+theme.colors.text          # Primary text color
+theme.colors.text_muted    # Muted/secondary text
+theme.colors.border        # Border color
+theme.colors.error         # Error state color
+theme.colors.warning       # Warning state color
+theme.colors.success       # Success state color
+theme.colors.info          # Info state color
+
+theme.meta.name            # Display name
+theme.meta.variant         # "light" or "dark"
+theme.meta.source          # Source project URL
+```
+
+## Integration Examples
+
+### Flask/Jinja2
+
+```python
+from flask import Flask, render_template
+from turbo_themes import ThemeManager
+
+app = Flask(__name__)
+manager = ThemeManager()
+
+@app.route("/")
+def index():
+    manager.set_theme("catppuccin-mocha")
+    css_vars = manager.apply_theme_to_css_variables()
+    return render_template("index.html", theme_vars=css_vars)
+```
+
+### Django
+
+```python
+from turbo_themes import THEMES
+
+def get_theme_context(theme_name: str) -> dict:
+    theme = THEMES.get(theme_name, THEMES["catppuccin-mocha"])
+    return {
+        "primary_color": theme.colors.primary,
+        "background_color": theme.colors.background,
+        "text_color": theme.colors.text,
+    }
+```
+
+## Multi-Platform
+
+This package is part of the turbo-themes ecosystem:
+
+- **npm**: `@lgtm-hq/turbo-themes` - TypeScript/JavaScript
+- **PyPI**: `turbo-themes` - Python (this package)
+- **RubyGems**: `turbo-themes` - Ruby/Jekyll
+- **Swift**: Via Swift Package Manager
+
+All packages share the same design tokens and color values.
+
+## Links
+
+- [GitHub Repository](https://github.com/lgtm-hq/turbo-themes)
+- [Documentation](https://lgtm-hq.github.io/turbo-themes/)
+- [npm Package](https://www.npmjs.com/package/@lgtm-hq/turbo-themes)
+- [RubyGems Package](https://rubygems.org/gems/turbo-themes)
+
+## License
+
+MIT
