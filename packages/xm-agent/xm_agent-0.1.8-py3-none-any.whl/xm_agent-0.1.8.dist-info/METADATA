@@ -1,0 +1,189 @@
+Metadata-Version: 2.3
+Name: xm-agent
+Version: 0.1.8
+Summary: HTTP API agent for remote model management
+Author: Adam Ladachowski
+Author-email: Adam Ladachowski <adam.ladachowski@gmail.com>
+Requires-Dist: fastapi>=0.115.0
+Requires-Dist: uvicorn[standard]>=0.34.0
+Requires-Dist: httpx>=0.28.0
+Requires-Dist: pydantic-settings>=2.7.0
+Requires-Dist: pytest>=8.0.0 ; extra == 'dev'
+Requires-Dist: pytest-asyncio>=0.25.0 ; extra == 'dev'
+Requires-Python: >=3.12
+Provides-Extra: dev
+Description-Content-Type: text/markdown
+
+# XM Agent
+
+HTTP API agent for remote model management. Runs on RunPod or Linux servers and exposes endpoints for model listing, hashing, downloading, and CivitAI metadata lookup.
+
+## Installation
+
+```bash
+# Using uv
+uv pip install xm-agent
+
+# Or from git
+pip install git+https://github.com/user/xm-agent.git
+
+# Or install locally for development
+cd xm-agent
+uv sync --dev
+```
+
+## Usage
+
+```bash
+# Start the server (default port 8765)
+xm-agent serve
+
+# With custom port and host
+xm-agent serve --port 9000 --host 0.0.0.0
+```
+
+## Configuration
+
+Configuration via environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `XM_AGENT_HOST` | `0.0.0.0` | Server bind address |
+| `XM_AGENT_PORT` | `8765` | Server port |
+| `XM_AGENT_MODELS_PATH` | `/workspace/ComfyUI/models` | Base path for model directories |
+| `CIVITAI_API_KEY` | - | CivitAI API key for gated models |
+
+### RunPod
+
+On RunPod, the agent auto-detects the environment via `RUNPOD_POD_ID` and prints the proxy URL on startup:
+
+```
+XM Agent v0.1.0 starting...
+Listening on 0.0.0.0:8765
+Models path: /workspace/ComfyUI/models
+RunPod detected: abc123xyz
+Proxy URL: https://abc123xyz-8765.proxy.runpod.net
+```
+
+## API Endpoints
+
+### Health
+
+```
+GET /health
+```
+
+Returns server status and version.
+
+```json
+{"status": "ok", "version": "0.1.0", "runpod_url": null}
+```
+
+### Models
+
+```
+GET /models
+```
+
+List all models across all types.
+
+```
+GET /models/{type}
+```
+
+List models of a specific type. Types: `checkpoints`, `loras`, `embeddings`, `vae`, `controlnet`.
+
+```
+GET /models/{type}/{filename}/hash
+```
+
+Compute SHA256 hash of a model file.
+
+```json
+{"hash": "ABC123...", "filename": "my_lora.safetensors"}
+```
+
+```
+DELETE /models/{type}/{filename}
+```
+
+Delete a model file.
+
+### Download
+
+```
+POST /download
+```
+
+Start a model download as a background task.
+
+Request body:
+```json
+{
+  "url": "https://civitai.com/api/download/models/12345",
+  "type": "loras",
+  "filename": "my_lora.safetensors",
+  "expected_hash": "ABC123..."
+}
+```
+
+Response:
+```json
+{"task_id": "abc123def456"}
+```
+
+```
+GET /download/{task_id}
+```
+
+Get download progress.
+
+```json
+{
+  "task_id": "abc123def456",
+  "status": "running",
+  "progress": 45,
+  "speed": "5.2 MB/s",
+  "error": null,
+  "result": null
+}
+```
+
+```
+DELETE /download/{task_id}
+```
+
+Cancel a download.
+
+### Metadata
+
+```
+GET /metadata/{hash}
+```
+
+Look up model metadata on CivitAI by SHA256 hash.
+
+```
+POST /metadata/sync
+```
+
+Sync metadata for all models. Computes hashes and fetches CivitAI metadata. Returns a task ID for progress tracking.
+
+## Development
+
+```bash
+# Install dev dependencies
+uv sync --dev
+
+# Run tests
+uv run pytest
+
+# Run server in development
+uv run xm-agent serve --port 8765
+```
+
+## Security
+
+- Only downloads from allowed domains (CivitAI, HuggingFace)
+- Path traversal protection for model file operations
+- No authentication by default (assumes trusted network/RunPod proxy)
