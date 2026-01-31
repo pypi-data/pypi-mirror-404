@@ -1,0 +1,118 @@
+# Floyd
+
+Floyd is a CLI tool that generates pull request descriptions and commit messages using AI CLI tools — not APIs. It wraps tools like Claude Code, Gemini CLI, and GitHub Copilot CLI to analyze your git changes and produce conventional-commit-style output, then creates PRs via GitHub CLI.
+
+The idea is simple: if you already have an AI CLI tool installed, Floyd can use it to automate the tedious parts of your git workflow without requiring API keys or token management.
+
+## Features
+
+- **Multiple AI providers** — works with Claude, Gemini, or GitHub Copilot CLI tools
+- **PR generation** — analyzes diffs, commits, and file stats to generate PR titles and descriptions
+- **Commit message generation** — generates commit messages from staged changes
+- **Iterative refinement** — refine generated output with natural language feedback before accepting
+- **Configurable** — custom instructions, diff size limits, and model selection per provider
+
+## Prerequisites
+
+- Python 3.14+
+- [Git](https://git-scm.com/)
+- [GitHub CLI (`gh`)](https://cli.github.com/) — for creating pull requests
+- At least one AI CLI tool:
+  - [Claude Code (`claude`)](https://docs.anthropic.com/en/docs/claude-code/cli)
+  - [Gemini CLI (`gemini`)](https://github.com/google-gemini/gemini-cli)
+  - [GitHub Copilot CLI (`copilot`)](https://docs.github.com/en/copilot/github-copilot-in-the-cli)
+
+## Installation
+
+```bash
+pip install floyd-pr-generator
+```
+
+## Configuration
+
+Create a config file at:
+
+- **Linux/macOS**: `~/.config/floyd.toml`
+- **Windows**: `C:\AppData\Roaming\floyd\floyd.toml`
+
+```toml
+[ai]
+provider = "claude"          # "claude", "gemini", or "copilot"
+model = "claude-opus-4-5"   # optional, provider-specific model override
+diff_limit = 50000           # max diff size in chars, -1 for unlimited
+
+# optional per-workflow instructions appended to the AI prompt
+pr_instructions = """
+- Focus on business impact
+- Include breaking changes at the top
+"""
+
+commit_instructions = """
+- Use abbreviated prefixes
+- Keep descriptions concise
+"""
+```
+
+Only `provider` is required. Everything else has sensible defaults.
+
+## Usage
+
+### Generate a pull request
+
+```bash
+floyd pr <target-branch>
+```
+
+This fetches the diff between your current branch and the target, sends it to the configured AI provider, and presents a draft PR for review. You can then create it, refine it with feedback, or cancel.
+
+### Generate a commit message
+
+```bash
+floyd commit
+```
+
+This reads your staged changes (`git diff --cached`), generates a conventional commit message, and lets you review it before committing.
+
+### Workflow
+
+Both commands follow the same interactive loop:
+
+1. Floyd gathers git context (diff, commits, file stats)
+2. The AI provider generates a title and body
+3. You review the draft in a formatted panel
+4. Choose to **accept**, **refine** (with feedback), or **cancel**
+
+## How it works
+
+Floyd shells out to your chosen AI CLI tool with a structured prompt. It does not call any AI API directly — it relies entirely on the CLI tools being installed and authenticated on your system.
+
+The prompt includes your branch name, commit history, diff stats, and the full diff (truncated to `diff_limit` if set). The AI response is parsed for `TITLE:` and `BODY:` markers to extract the generated content.
+
+For PR creation, Floyd calls `gh pr create` with the generated title and body. For commits, it runs `git commit` with the generated message.
+
+## Project structure
+
+```
+floyd/
+├── domain/              # Business entities and exceptions
+│   ├── entities/        # PullRequest, Commit, GitContext, Branch
+│   ├── value_objects/   # ProviderType enum, Branch
+│   └── exceptions/      # Domain-specific errors
+├── application/         # Use cases and port interfaces
+│   ├── services/        # PR generation, environment validation
+│   ├── ports/           # Inbound/outbound interfaces
+│   └── dto/             # Configuration data structures
+└── adapters/            # Infrastructure implementations
+    ├── inbound/cli/     # CLI entry point and terminal UI
+    └── outbound/        # AI, Git, GitHub, and config adapters
+```
+
+## Troubleshooting
+
+**"This directory is not a git repository"** — run Floyd from inside a git repo.
+
+**"The 'claude' command failed to execute"** — make sure the configured AI CLI tool is installed and available in your `PATH`.
+
+**"The branch 'X' does not exist on origin"** — the target branch must exist on the remote. Push it first or use a different branch.
+
+**Config not loading** — verify the file is at `~/.config/floyd.toml` (Linux/macOS) or `C:\AppData\Roaming\floyd\floyd.toml` (Windows) and has valid TOML syntax.
