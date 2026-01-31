@@ -1,0 +1,146 @@
+Metadata-Version: 2.4
+Name: dqflow
+Version: 0.1.0
+Summary: Lightweight, contract-first data quality engine for modern data pipelines
+Project-URL: Homepage, https://github.com/quang/dqflow
+Project-URL: Repository, https://github.com/quang/dqflow
+Project-URL: Issues, https://github.com/quang/dqflow/issues
+Author-email: Quang <nguyenvanquang247@gmail.com>
+License-Expression: MIT
+License-File: LICENSE
+Keywords: data-contracts,data-quality,data-validation,etl,pandas
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Requires-Python: >=3.9
+Requires-Dist: click>=8.0
+Requires-Dist: pandas>=1.5.0
+Requires-Dist: pyyaml>=6.0
+Provides-Extra: dev
+Requires-Dist: mypy>=1.0; extra == 'dev'
+Requires-Dist: pre-commit>=3.0; extra == 'dev'
+Requires-Dist: pytest-cov>=4.0; extra == 'dev'
+Requires-Dist: pytest>=7.0; extra == 'dev'
+Requires-Dist: ruff>=0.1.0; extra == 'dev'
+Description-Content-Type: text/markdown
+
+# dqflow
+
+**dqflow** is a lightweight, contract-first data quality engine for modern data pipelines.
+
+Define explicit expectations for your data (schema, validity, freshness) and **fail fast** when data breaks — before bad data reaches downstream systems.
+
+---
+
+## Why dqflow?
+
+Data quality issues are inevitable — silent failures are not.
+
+Most teams rely on ad-hoc checks, fragile assertions, or heavyweight frameworks that are hard to maintain. dqflow takes a different approach:
+
+* **Contracts over checks** — expectations are explicit and versionable
+* **Pipeline-first** — designed for ETL, ELT, and streaming workflows
+* **Lightweight & Pythonic** — minimal API, easy to embed
+* **Fail fast** — break pipelines intentionally, not silently
+
+---
+
+## Quick example
+
+```python
+from dqflow import Contract, Column
+
+orders = Contract(
+    name="orders",
+    columns={
+        "order_id": Column(str, not_null=True),
+        "amount": Column(float, min=0),
+        "currency": Column(str, allowed=["USD", "EUR"]),
+        "created_at": Column("timestamp", freshness_minutes=60),
+    },
+    rules=[
+        "row_count > 1000",
+        "null_rate(amount) < 0.01",
+    ],
+)
+
+result = orders.validate(df)
+
+if not result.ok:
+    raise Exception(result.summary())
+```
+
+---
+
+## Features (v0.1 scope)
+
+* Contract-as-code (Python & YAML)
+* Column-level checks
+
+  * type validation
+  * not null
+  * min / max
+  * allowed values
+* Table-level checks
+
+  * row count
+  * freshness
+* Structured validation results (JSON-friendly)
+* Pandas engine
+* CLI support
+
+---
+
+## CLI usage
+
+```bash
+dq validate contracts/orders.yaml data/orders.parquet
+```
+
+---
+
+## Supported engines
+
+* ✅ Pandas
+* 🚧 PySpark (planned)
+* 🚧 SQL tables (planned)
+
+---
+
+## Philosophy
+
+* **Explicit is better than implicit**
+* **Bad data should break pipelines early**
+* **Quality rules are part of your system design**
+
+> dqflow is not a full data observability platform.
+> It is a small, opinionated library meant to be embedded directly into pipelines.
+
+---
+
+## Roadmap
+
+* PySpark engine
+* dbt / dlt integrations
+* Incremental & backfill-aware validation
+* Metrics export (Prometheus-compatible)
+
+---
+
+## License
+
+MIT
+
+---
+
+## Status
+
+🚧 Early development (v0.1.0)
+
+APIs may change. Feedback and contributions are welcome.
