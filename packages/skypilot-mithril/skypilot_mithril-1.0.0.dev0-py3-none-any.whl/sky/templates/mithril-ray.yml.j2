@@ -1,0 +1,138 @@
+# Ray cluster config template for Mithril Cloud
+{# QEMU SCSI serial limit is 36 chars; Mithril truncates volume IDs to this length in /dev/disk/by-id #}
+{%- set KUBEVIRT_SERIAL_MAX_LENGTH = 36 -%}
+
+cluster_name: {{cluster_name_on_cloud}}
+
+# The maximum number of workers nodes to launch in addition to the head node.
+max_workers: {{num_nodes - 1}}
+upscaling_speed: {{num_nodes - 1}}
+idle_timeout_minutes: 60
+
+provider:
+  type: external
+  module: sky.provision.mithril
+  region: "{{region}}"
+
+auth:
+  ssh_user: ubuntu
+  ssh_private_key: {{ssh_private_key}}
+
+{%- if docker_image is not none %}
+docker:
+  image: {{docker_image}}
+  container_name: {{docker_container_name}}
+  run_options:
+    - --ulimit nofile=1048576:1048576
+    {%- for run_option in docker_run_options %}
+    - {{run_option}}
+    {%- endfor %}
+  {%- if docker_login_config is not none %}
+  docker_login_config:
+    username: |-
+      {{docker_login_config.username}}
+    password: |-
+      {{docker_login_config.password | indent(6) }}
+    server: |-
+      {{docker_login_config.server}}
+  {%- endif %}
+{%- endif %}
+
+available_node_types:
+  ray_head_default:
+    resources: {}
+    node_config:
+      InstanceType: {{instance_type}}
+      labels: {{labels}}
+      {%- if limit_price is not none %}
+      LimitPrice: {{limit_price}}
+      {%- endif %}
+      {%- if volume_mounts and volume_mounts|length > 0 %}
+      VolumeMounts:
+      {%- for vm in volume_mounts %}
+        - VolumeNameOnCloud: {{ vm.volume_name_on_cloud }}
+          VolumeIdOnCloud: {{ vm.volume_id_on_cloud }}
+          MountPath: {{ vm.path }}
+      {%- endfor %}
+      {%- endif %}
+
+head_node_type: ray_head_default
+
+# Format: `REMOTE_PATH : LOCAL_PATH`
+file_mounts: {
+  "{{sky_ray_yaml_remote_path}}": "{{sky_ray_yaml_local_path}}",
+  "{{sky_remote_path}}/{{sky_wheel_hash}}": "{{sky_local_path}}",
+  "~/.ssh/sky-cluster-key": "{{ssh_private_key}}",
+{%- for remote_path, local_path in credentials.items() %}
+  "{{remote_path}}": "{{local_path}}",
+{%- endfor %}
+}
+
+rsync_exclude: []
+
+initialization_commands: []
+
+# List of shell commands to run to set up nodes.
+# NOTE: these are very performance-sensitive. Each new item opens/closes an SSH
+# connection, which is expensive. Try your best to co-locate commands into fewer
+# items!
+#
+# Increment the following for catching performance bugs easier:
+#   current num items (num SSH connections): 1
+setup_commands:
+  # Disable unattended-upgrades and handle apt-get locks
+  # Install patch utility for Ray
+  # Install conda and Ray
+  # Set system limits for Ray performance (nofile and TasksMax)
+  - {%- for initial_setup_command in initial_setup_commands %}
+    {{ initial_setup_command }}
+    {%- endfor %}
+    sudo systemctl stop unattended-upgrades || true;
+    sudo systemctl disable unattended-upgrades || true;
+    sudo sed -i 's/Unattended-Upgrade "1"/Unattended-Upgrade "0"/g' /etc/apt/apt.conf.d/20auto-upgrades || true;
+    sudo kill -9 `sudo lsof /var/lib/dpkg/lock-frontend | awk '{print $2}' | tail -n 1` || true;
+    sudo pkill -9 apt-get;
+    sudo pkill -9 dpkg;
+    sudo dpkg --configure -a;
+    which patch > /dev/null || sudo apt install -y patch;
+    [ -f /etc/fuse.conf ] && sudo sed -i 's/#user_allow_other/user_allow_other/g' /etc/fuse.conf || (sudo sh -c 'echo "user_allow_other" > /etc/fuse.conf');
+    mkdir -p ~/.ssh; (grep -Pzo -q "Host \*\n  StrictHostKeyChecking no\n  IdentityFile ~/.ssh/sky-cluster-key\n  IdentityFile ~/.ssh/id_rsa" ~/.ssh/config) || printf "Host *\n  StrictHostKeyChecking no\n  IdentityFile ~/.ssh/sky-cluster-key\n  IdentityFile ~/.ssh/id_rsa\n" >> ~/.ssh/config;
+    {{ conda_installation_commands }}
+    {{ ray_skypilot_installation_commands }}
+    sudo bash -c 'rm -rf /etc/security/limits.d; echo "* soft nofile 1048576" >> /etc/security/limits.conf; echo "* hard nofile 1048576" >> /etc/security/limits.conf';
+    sudo grep -e '^DefaultTasksMax' /etc/systemd/system.conf || (sudo bash -c 'echo "DefaultTasksMax=infinity" >> /etc/systemd/system.conf'); sudo systemctl set-property user-$(id -u $(whoami)).slice TasksMax=infinity; sudo systemctl daemon-reload;
+    {{ ssh_max_sessions_config }}
+    {%- if volume_mounts and volume_mounts|length > 0 %}
+    {%- for vm in volume_mounts %}
+    {%- if vm.volume_type == 'mithril-block' %}
+    echo "[DEBUG] Looking for block volume device /dev/disk/by-id/virtio-{{ vm.volume_name_on_cloud[:KUBEVIRT_SERIAL_MAX_LENGTH] }}";
+    echo "[DEBUG] Contents of /dev/disk/by-id/";
+    ls -la /dev/disk/by-id/ 2>&1 || echo "[DEBUG] Failed to list /dev/disk/by-id/";
+    echo "[DEBUG] Attempting ls -1 /dev/disk/by-id/virtio-{{ vm.volume_name_on_cloud[:KUBEVIRT_SERIAL_MAX_LENGTH] }}";
+    ls -1 /dev/disk/by-id/virtio-{{ vm.volume_name_on_cloud[:KUBEVIRT_SERIAL_MAX_LENGTH] }} 2>&1 || true;
+    DEVICE_BY_ID=$(ls -1 /dev/disk/by-id/virtio-{{ vm.volume_name_on_cloud[:KUBEVIRT_SERIAL_MAX_LENGTH] }} 2>/dev/null | head -n 1 || true);
+    echo "[DEBUG] DEVICE_BY_ID=$DEVICE_BY_ID";
+    if [ -z "$DEVICE_BY_ID" ]; then
+      echo "Block volume {{ vm.volume_name_on_cloud[:KUBEVIRT_SERIAL_MAX_LENGTH] }} device not found; skipping.";
+    else
+      if ! sudo blkid "$DEVICE_BY_ID" | grep -q 'TYPE="ext4"'; then
+        echo "Formatting block volume {{ vm.volume_name_on_cloud }} ({{ vm.volume_id_on_cloud }})...";
+        sudo mkfs.ext4 -m 0 -E lazy_itable_init=0,lazy_journal_init=0,discard "$DEVICE_BY_ID";
+      fi;
+      sudo mkdir -p {{ vm.path }};
+      if ! findmnt -rn -T "{{ vm.path }}" >/dev/null 2>&1; then
+        sudo mount "$DEVICE_BY_ID" "{{ vm.path }}";
+      fi;
+      if ! grep -q " {{ vm.path }} " /etc/fstab; then
+        echo "UUID=$(sudo blkid -s UUID -o value "$DEVICE_BY_ID") {{ vm.path }} ext4 defaults,nofail 0 2" | sudo tee -a /etc/fstab;
+      fi;
+      sudo chown $(whoami):$(whoami) {{ vm.path }};
+    fi;
+    {%- else %}
+    sudo mkdir -p {{ vm.path }};
+    sudo sed -i "s|[[:space:]]/mnt/{{ vm.volume_name_on_cloud }}[[:space:]]| {{ vm.path }} |" /etc/fstab;
+    sudo umount /mnt/{{ vm.volume_name_on_cloud }} || true;
+    {%- endif %}
+    {%- endfor %}
+    sudo mount -a;
+    {%- endif %}
