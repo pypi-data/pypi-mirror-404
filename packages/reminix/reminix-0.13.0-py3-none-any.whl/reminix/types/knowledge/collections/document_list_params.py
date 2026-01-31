@@ -1,0 +1,15 @@
+# File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
+
+from __future__ import annotations
+
+from typing_extensions import Literal, TypedDict
+
+__all__ = ["DocumentListParams"]
+
+
+class DocumentListParams(TypedDict, total=False):
+    cursor: str
+
+    limit: float
+
+    status: Literal["pending", "processing", "ready", "failed"]
