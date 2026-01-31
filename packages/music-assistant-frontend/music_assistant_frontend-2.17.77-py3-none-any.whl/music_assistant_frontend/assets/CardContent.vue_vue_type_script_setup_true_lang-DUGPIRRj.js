@@ -1,0 +1,1 @@
+import{c as o}from"./utils-CDN07tui.js";import{d as t,b as n,e as r,ad as c,u as l,h as p}from"./lucide-xmSP9hQT.js";const i=t({__name:"CardContent",props:{class:{}},setup(s){const a=s;return(e,d)=>(r(),n("div",{"data-slot":"card-content",class:c(l(o)("px-6",a.class))},[p(e.$slots,"default")],2))}});export{i as _};
