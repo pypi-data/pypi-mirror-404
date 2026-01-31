@@ -1,0 +1,35 @@
+name: Quality (Ruff + Secrets via UV)
+
+on:
+  pull_request:
+  push:
+    branches: [main, review, master]  # Quality checks only on stable branches
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code (full history for base/head refs)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up UV
+        uses: astral-sh/setup-uv@v4
+
+      # Ruff: verify formatting & lint (read-only; no --fix)
+      # Why: Use 'uv run' instead of 'uvx' to read project's pyproject.toml config
+      - name: Ruff format (check only)
+        run: uv run ruff format --check .
+      - name: Ruff lint (no autofix)
+        run: uv run ruff check .
+
+      # TruffleHog: scan full repository history (fail on verified+unknown secrets)
+      # NOTE: The action automatically adds --fail, --no-update, --github-actions flags
+      - name: Secrets scan (verified+unknown)
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          extra_args: >
+            --results=verified,unknown
+            --exclude-paths=.trufflehog-exclude-paths.txt

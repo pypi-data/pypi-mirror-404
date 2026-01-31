@@ -1,0 +1,279 @@
+[build-system]
+requires = [
+    "hatchling",
+]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+sources = ["src"]
+# Exclude large test data from wheel packages (93MB+ test sessions)
+# These are only available when cloning the repo, not in PyPI/GitHub releases
+# Also exclude ccpm/ (private plugin, separate project)
+exclude = [
+    "tests/sessions/",
+    "tests/**/*.zip",
+    "ccpm/",
+]
+
+[tool.hatch.build.targets.wheel.force-include]
+# Main CLI scripts placed inside their packages to avoid module name conflicts
+"src/svg2fbf.py" = "svg2fbf/main.py"
+"src/svg_viewbox_repair.py" = "svg_viewbox_repair/main.py"
+"src/svg_viewbox_repair/__init__.py" = "svg_viewbox_repair/__init__.py"
+"src/auto_install_deps.py" = "auto_install_deps.py"
+
+[tool.hatch.build.targets.wheel.shared-data]
+"tests/node_scripts" = "share/svg2fbf/node_scripts"
+"tests/package.json" = "share/svg2fbf/package.json"
+
+[tool.hatch.build.targets.sdist]
+# Also exclude from source distributions
+# Also exclude ccpm/ (private plugin, separate project)
+exclude = [
+    "tests/sessions/",
+    "tests/**/*.zip",
+    "ccpm/",
+]
+
+[project]
+name = "svg2fbf"
+version = "0.1.18"
+description = "SVG Frame-by-Frame Animation Generator - Create optimized FBF SVG animations from SVG sequences"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+    { name = "Emasoft", email = "713559+Emasoft@users.noreply.github.com" },
+]
+maintainers = [
+    { name = "Emasoft", email = "713559+Emasoft@users.noreply.github.com" },
+]
+keywords = [
+    "svg",
+    "animation",
+    "fbf",
+    "frame-by-frame",
+    "smil",
+    "vector-animation",
+    "mesh-gradient",
+    "svg2fbf",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Graphics :: Graphics Conversion",
+    "Topic :: Multimedia :: Graphics :: Editors :: Vector-Based",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
+dependencies = [
+    "fonttools>=4.60.1",
+    "lxml>=6.0.2",
+    "numpy>=2.2.0",
+    "python-bidi>=0.6.7",
+    "pyyaml>=6.0",
+    "tomli>=2.0.0; python_version < '3.11'",
+    "tomli-w>=1.2.0",
+]
+
+[project.optional-dependencies]
+text2path = [
+    "svg-text2path>=0.4.3; python_version >= '3.11'",
+]
+
+[project.license]
+text = "Apache-2.0"
+
+[project.urls]
+Homepage = "https://github.com/Emasoft/svg2fbf"
+Documentation = "https://github.com/Emasoft/svg2fbf#readme"
+Repository = "https://github.com/Emasoft/svg2fbf.git"
+Issues = "https://github.com/Emasoft/svg2fbf/issues"
+Changelog = "https://github.com/Emasoft/svg2fbf/blob/main/CHANGELOG.md"
+
+[project.scripts]
+svg2fbf = "svg2fbf.main:cli"
+svg-repair-viewbox = "svg_viewbox_repair.main:cli"
+
+[dependency-groups]
+dev = [
+    "mypy>=1.18.2",
+    "pillow>=10.0.0",
+    "pre-commit>=4.0.0",
+    "pytest>=8.4.2",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=6.0.0",
+    "requests>=2.31.0",
+    "ruff>=0.14.3",
+    "twine>=6.0.0",
+    "watchdog>=6.0.0",
+    "types-pyyaml>=6.0.12.20250915",
+    "git-cliff>=2.10.1",
+]
+
+[tool.pytest.ini_options]
+tmp_path_retention_count = 3
+tmp_path_retention_policy = "failed"
+# Note: --basetemp removed for cross-platform compatibility
+# pytest will use system temp directory (tempfile.gettempdir())
+addopts = """
+    --html-report
+    --image-tolerance=0.04
+    --pixel-tolerance=0.0039
+    --max-frames=50
+    -v
+"""
+minversion = "6.0"
+testpaths = [
+    "tests",
+]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+]
+
+[tool.svg2fbf.test]
+image_tolerance = 0.05
+pixel_tolerance = 0.004
+max_frames = 50
+fps = 1.0
+animation_type = "once"
+precision_digits = 28
+precision_cdigits = 28
+frame_number_format = "frame{:05d}.svg"
+create_session_encoding = "utf-8"
+default_frames = 2
+recursive = false  # Default: scan root level only (not subdirectories)
+
+[tool.ruff]
+line-length = 320           # Wide line length for detailed SVG manipulation code
+target-version = "py310"    # Adjust to your lowest supported Python (py38/py39/py310/py311/...)
+fix = true                  # Enable auto-fix by default (top-level setting!)
+
+[tool.ruff.lint]
+# DEV-FRIENDLY: suppress broad style noise while you iterate;
+# we selectively re-enable a few important checks below.
+extend-ignore = [
+  # --- Stylistic/convention families to reduce early noise ---
+  "E",      # pycodestyle errors (formatting) — we re-enable E501 explicitly below
+  "W",      # pycodestyle warnings (formatting)
+  "C",      # general convention/complexity umbrellas from plugins
+  "I",      # isort (import sorting) — avoid churn from reordering during WIP
+  "N",      # pep8-naming (naming conventions)
+
+  # --- Iterate faster: commonly noisy during WIP ---
+  "F401",   # unused import (re-enable in strict mode)
+  "F841",   # unused local variable (re-enable in strict mode)
+  "E402",   # import not at top of file (ok while spiking)
+  "PLC0415",# import inside function/class body (ok during WIP)
+
+  # --- Temporary stubs / debug / TODO formatting ---
+  "ARG001", # unused function argument
+  "ARG002", # unused method argument
+  "ARG003", # unused class method argument
+  "ARG004", # unused lambda argument
+  "ARG005", # unused **kwargs argument
+  "ERA001", # commented-out code
+  "T201",   # print() allowed for quick debugging
+  "TD001", "TD002", "TD003", "TD004", "TD005", # relaxed TODO rules
+  "RUF100", # unused noqa (cleanup rule)
+]
+
+# KEEP IMPORTANT CHECKS EVEN IN DEV MODE:
+extend-select = [
+  "E501",   # line-too-long (enforce 88 cols to keep diffs tidy)
+  # "F401", "F841", "E402", "PLC0415", # ← Uncomment here if you want to re-enable the no-noisy rule while in dev
+]
+
+# Keep B007 active: marks unused loop variables; prefix intentional throwaways with "_" or "_name".
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = [
+  "T201",   # allow print() in tests
+  "ARG001", # common with pytest fixtures
+  "ARG002", # common with test methods
+]
+"scripts/**" = [
+  "T201",   # allow print() in scripts
+]
+
+[tool.ruff.format]
+quote-style = "double"              # Black uses double quotes
+indent-style = "space"              # Black uses spaces (4)
+skip-magic-trailing-comma = false  # Respect Black's trailing comma behavior
+line-ending = "auto"                # Auto-detect (or use "lf" for Unix)
+docstring-code-format = true        # Format code in docstrings (Black does this)
+docstring-code-line-length = 88     # Match line-length for docstring code
+
+[tool.ruff.lint.isort]
+# Make isort behavior match Black
+force-single-line = false
+force-wrap-aliases = false
+split-on-trailing-comma = true
+
+[tool.mypy]
+# 1) Tell mypy where to look (multiple roots allowed)
+files = ["src","pkg","services","tests"]
+# 2) Skip specific files/dirs by regex (escape dots, anchor with ^ and $)
+exclude = """
+(
+  ^src/svg2fbf\\.py$
+| ^build/
+| ^dist/
+| ^\\.venv/|^venv/|^\\.tox/
+| ^node_modules/
+| \\.egg-info/
+| ^docs/_build/
+)
+"""
+# python_version = "3.10"
+# warn_return_any = true
+# warn_unused_ignores = true
+# warn_redundant_casts = true
+# warn_unused_configs = true
+# disallow_untyped_defs = true
+# disallow_any_generics = true
+# no_implicit_optional = true
+# strict_optional = true
+# check_untyped_defs = true
+# show_error_codes = true
+# pretty = true
+# incremental = true
+#
+# # Enable plugin (uncomment only if you use these libs):
+# # plugins = [
+# #   "pydantic.mypy",                 # For Pydantic v1
+# # ]
+#
+# # Per-module overrides:
+# # [tool.mypy-your_package.*]
+# # disallow_untyped_defs = true
+#
+# # [tool.mypy-tests.*]
+# # ignore_errors = true  # Often appropriate for tests
+
+[tool.coverage.run]
+source = [
+    "src/svg2fbf.py",
+]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]

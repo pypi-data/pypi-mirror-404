@@ -1,0 +1,73 @@
+name: E2E Tests
+
+on:
+  workflow_dispatch:  # Manual trigger
+  pull_request:
+  push:
+    branches: [main, review, master]  # E2E tests only on stable branches
+
+jobs:
+  e2e:
+    name: E2E Tests with Puppeteer
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Chrome
+        id: chrome
+        uses: browser-actions/setup-chrome@v2
+        with:
+          chrome-version: stable
+          install-dependencies: true
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          tool-bin-dir: ~/.local/bin
+
+      - name: Add UV tools to PATH
+        run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Set up Python
+        run: uv python install 3.10
+
+      - name: Build wheel
+        run: uv build
+
+      - name: Install svg2fbf tool
+        run: |
+          uv tool install dist/svg2fbf-*.whl
+          which svg2fbf
+          svg2fbf --version
+
+      - name: Install Puppeteer (no Chromium download)
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: "true"
+        run: npm i puppeteer@latest
+        working-directory: tests
+
+      - name: Configure Puppeteer environment
+        run: |
+          echo "PUPPETEER_EXECUTABLE_PATH=${{ steps.chrome.outputs.chrome-path }}" >> $GITHUB_ENV
+          echo "NODE_PATH=$(npm root):$(npm root -g)" >> $GITHUB_ENV
+        working-directory: tests
+
+      - name: Run E2E tests
+        env:
+          CI: "true"
+        run: uv run pytest tests/ -v --maxfail=5
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-test-results
+          path: tests/results/
