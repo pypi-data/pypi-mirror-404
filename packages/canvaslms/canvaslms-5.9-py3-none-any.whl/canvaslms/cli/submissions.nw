@@ -1,0 +1,2635 @@
+\chapter{The submissions related commands}
+
+This chapter provides the submissions module with its subcommands: [[list]], 
+[[view]], and [[grade]]. The submissions module follows a hierarchical 
+command structure where all submission-related operations are grouped under 
+the main [[submissions]] command.
+
+The [[submissions list]] subcommand lists submissions for assignments, 
+providing an overview of student work and grading status.
+
+The [[submissions view]] subcommand displays detailed information about 
+individual submissions, including attachments, comments, and submission history.
+
+The [[submissions grade]] subcommand allows grading of submissions, either 
+by setting grades and comments programmatically or by opening the Canvas 
+SpeedGrader interface.
+
+We outline the module:
+<<[[submissions.py]]>>=
+import canvasapi.exceptions
+import canvasapi.file
+import canvasapi.submission
+
+import canvaslms.cli
+import canvaslms.cli.assignments as assignments
+import canvaslms.cli.users as users
+import canvaslms.cli.utils
+import canvaslms.hacks.canvasapi
+import canvaslms.hacks.attachment_cache as attachment_cache
+
+import argparse
+import csv
+<<import [[difflib]]>>
+import json
+import logging
+import os
+import pathlib
+import subprocess
+import pypandoc
+import re
+import rich.console
+import rich.markdown
+import rich.json
+import shlex
+import sys
+import tempfile
+import textwrap
+import urllib.request
+import webbrowser
+
+logger = logging.getLogger(__name__)
+
+<<constants>>
+<<functions>>
+
+def add_command(subp):
+  """Adds the submissions command with subcommands to argparse parser subp"""
+  add_submissions_command(subp)
+  add_submission_command(subp)
+
+def add_submissions_command(subp):
+  """Adds the submissions command with subcommands to argparse parser subp"""
+  <<add submissions command with subcommands to subp>>
+
+def add_submission_command(subp):
+  """Adds the submission (singular) command as an alias for submissions view"""
+  <<add submission command to subp>>
+@
+
+
+\section{Testing}
+
+Tests are distributed throughout this chapter, appearing immediately after each implementation to verify correctness.
+
+\subsection{Test structure}
+
+We define the test file structure early, but the actual test implementations appear after their corresponding functionality:
+
+<<test [[submissions.py]]>>=
+"""
+Tests for patiencediff integration in submissions.
+
+These tests verify that the code correctly uses patiencediff when available,
+and falls back to standard difflib when not available.
+"""
+import pytest
+
+from canvaslms.cli.submissions import format_submission_short, speedgrader
+
+<<test functions>>
+@
+
+
+\section{The [[submissions list]] subcommand and its options}
+
+The [[submissions list]] subcommand (previously the standalone [[submissions]] 
+command) lists submissions for assignments. It provides an overview of student 
+work including submission status, grades, and timestamps.
+
+The output follows a CSV format that is compatible with standard UNIX tools, 
+making it suitable for shell scripting and data processing pipelines.
+
+We add the subparser for [[submissions]] with its subcommands. The main
+submissions parser acts as a container for the three subcommands: list, view,
+and grade.
+
+When invoked without a subcommand ([[canvaslms submissions]]), the command
+defaults to [[list]] for convenience, as listing submissions is the most common
+operation. To support this, the main submissions parser includes all the
+arguments needed by the list command, so they are available whether the user
+explicitly types [[submissions list]] or just [[submissions]].
+<<add submissions command with subcommands to subp>>=
+submissions_parser = subp.add_parser("submissions",
+    help="Submission management commands",
+    description="Commands for managing submissions: list, view, and grade.")
+
+# Create subparsers for submissions subcommands
+# Set required=False to allow bare "submissions" command to default to list
+submissions_subp = submissions_parser.add_subparsers(
+    title="submissions subcommands", dest="submissions_subcommand", required=False)
+
+# Set default function for bare "submissions" command (defaults to list)
+submissions_parser.set_defaults(func=submissions_list_command)
+
+# Add arguments for the default list behavior to main parser
+# These are needed when submissions is invoked without a subcommand
+# We suppress help to keep the help output focused on subcommands
+assignments.add_assignment_option(submissions_parser, suppress_help=True)
+add_submission_options(submissions_parser, suppress_help=True)
+submissions_parser.add_argument("-H", "--history", action="store_true",
+  help=argparse.SUPPRESS)
+submissions_parser.add_argument("-l", "--login-id",
+  default=False, action="store_true", help=argparse.SUPPRESS)
+
+<<add submissions list subcommand>>
+<<add submissions view subcommand>>
+<<add submissions grade subcommand>>
+@
+
+The [[list]] subcommand handles listing submissions with various filtering 
+options. It reuses assignment selection logic from the assignments module.
+<<add submissions list subcommand>>=
+# Add list subcommand (was the old "submissions" command)
+list_parser = submissions_subp.add_parser("list",
+    help="List submissions of an assignment",
+    description="Lists submissions of assignment(s). Output format: "
+      "<course code> <assignment name> <user> <grade> "
+      "<submission date> <grade date>")
+list_parser.set_defaults(func=submissions_list_command)
+assignments.add_assignment_option(list_parser)
+add_submission_options(list_parser)
+<<add options for history>>
+<<add options for printing>>
+@
+
+The [[view]] subcommand provides detailed information about individual
+submissions, including attachments and submission history.
+<<add submissions view subcommand>>=
+# Add view subcommand (was the old "submission" command)
+view_parser = submissions_subp.add_parser("view",
+  help="View information about a submission",
+  description="""
+<<submission command description>>
+""")
+view_parser.set_defaults(func=submissions_view_command)
+add_submission_options(view_parser)
+add_view_options(view_parser)
+@
+
+The [[grade]] subcommand allows programmatic grading or opens SpeedGrader
+for interactive grading. It requires submission selection to be mandatory.
+<<add submissions grade subcommand>>=
+# Add grade subcommand (was the old "grade" command)
+grade_parser = submissions_subp.add_parser("grade",
+  help="Grade submissions (hic sunt dracones!)",
+  description="Grades submissions. ***Hic sunt dracones [here be dragons]***: "
+    "the regex matching is very powerful, "
+    "be certain that you match what you think!")
+grade_parser.set_defaults(func=submissions_grade_command)
+add_submission_options(grade_parser, required=True)
+add_grading_options(grade_parser)
+@
+
+
+\section{The [[submission]] command (convenience alias)}
+
+We provide a [[submission]] (singular) command that serves as a direct alias
+for [[submissions view]].
+This serves two important purposes:
+
+\begin{itemize}
+\item \textbf{Backwards compatibility}: Before the refactoring to nested
+  subcommands, the CLI had standalone [[submission]] and [[grade]] commands.
+  By providing this alias, we ensure that existing scripts using
+  [[canvaslms submission]] continue to work without modification, preventing
+  breaking changes for users who haven't migrated to the new
+  [[submissions view]] syntax.
+\item \textbf{Convenience and natural language}: Both singular and plural forms
+  feel natural when working with submissions. The singular form is particularly
+  intuitive when viewing a single submission's details.
+\end{itemize}
+
+The command reuses all the same options and functionality as [[submissions view]],
+simply providing a shorter, more natural command name when working with
+individual submissions.
+
+The options are added via the [[add_view_options]] function, ensuring that any
+options added to [[submissions view]] automatically appear in [[submission]] as
+well, maintaining consistency between the two commands.
+<<add submission command to subp>>=
+submission_parser = subp.add_parser("submission",
+  help="View information about a submission (alias for 'submissions view')",
+  description="""
+<<submission command description>>
+""")
+submission_parser.set_defaults(func=submissions_view_command)
+add_submission_options(submission_parser)
+add_view_options(submission_parser)
+@
+
+
+The [[submissions_list_command]] function implements the core logic for listing 
+submissions. It follows the standard command pattern with three arguments and 
+integrates with the assignments module for assignment selection.
+
+The function processes assignment options and then retrieves and formats 
+submission data for output.
+
+Now, that [[submissions_list_command]] function must take three arguments: 
+[[config]], [[canvas]] and [[args]].
+It must also do the processing for the assignment options using 
+[[process_assignment_option]].
+<<functions>>=
+def submissions_list_command(config, canvas, args):
+  assignment_list = assignments.process_assignment_option(canvas, args)
+  <<get submissions and print them>>
+@
+
+\subsection{Get and print the list of submissions}
+
+We then simply call the appropriate list-submissions function with the 
+[[assignments_list]] object as a parameter.
+However, since we optionally want to include the submission history, we must 
+pass that as an argument to the list-submissions function.
+<<get submissions and print them>>=
+to_include=[]
+if args.history:
+  to_include += ["submission_history"]
+
+if args.ungraded:
+  submissions = list_ungraded_submissions(assignment_list, include=to_include)
+else:
+  submissions = list_submissions(assignment_list, include=to_include)
+<<add options for history>>=
+list_parser.add_argument("-H", "--history", action="store_true",
+  help="Include submission history.")
+@
+
+If any of the group options are set, we filter out the submissions to only 
+include submissions by the users in the groups.
+<<get submissions and print them>>=
+if args.user or args.category or args.group:
+  user_list = users.process_user_or_group_option(canvas, args)
+  submissions = filter_submissions(submissions, user_list)
+@
+
+Now the list [[submissions]] contains all the submissions we want to print.
+However, only the most recent.
+If we want to include the history, we must fetch all the versions of the 
+submissions from each submission object.
+
+The submission history ([[.submission_history]] attribute) contains all 
+versions, including the latest.
+So we turn them into proper submission objects, add them to a list.
+Then we can use this list instead of the original [[submissions]] list.
+This way, we also maintain the ordering.
+<<get submissions and print them>>=
+if args.history:
+  submissions = list(submissions)
+  historical_submissions = []
+  for submission in submissions:
+    for prev_submission in submission.submission_history:
+      prev_submission = canvasapi.submission.Submission(submission._requester,
+                                                        prev_submission)
+      prev_submission.assignment = submission.assignment
+      prev_submission.user = submission.user
+      historical_submissions.append(prev_submission)
+
+  submissions = historical_submissions
+@
+
+Then we will print the most useful attributes of each submission, which the 
+[[format_submission_short]] and
+[[format_submission_short_unique]] functions
+will return preformatted for us.
+<<get submissions and print them>>=
+output = csv.writer(sys.stdout, delimiter=args.delimiter)
+
+# Convert to list and check if empty
+submissions = list(submissions)
+if not submissions:
+  raise canvaslms.cli.EmptyListError(
+    "No submissions found matching the criteria")
+
+for submission in submissions:
+  if args.login_id:
+    output.writerow(format_submission_short_unique(submission))
+  else:
+    output.writerow(format_submission_short(submission))
+@ Now, we must add that option [[args.login_id]].
+<<add options for printing>>=
+list_parser.add_argument("-l", "--login-id",
+  help="Print login ID instead of name.",
+  default=False, action="store_true")
+@
+
+
+\section{Computing the SpeedGrader URL}
+
+Sometimes we want to compute the URL for SpeedGrader for a submission.
+The [[Submission]] objects come with an attribute [[preview_url]].
+(However, previous submissions don't have this, so if it doesn't exist, we use 
+[[None]].)
+We want to turn that one into the SpeedGrader URL.
+The [[preview_url]] looks like this:
+\begin{minted}{text}
+https://canvas.kth.se/courses/26930/assignments/173825/submissions/108849?
+  preview=1&version=5
+\end{minted}
+It should be turned into this:
+\begin{minted}{text}
+https://canvas.kth.se/courses/26930/gradebook/speed_grader?
+  assignment_id=173825&student_id=108849
+\end{minted}
+We use Python's regex abilities to rewrite the URL.
+<<functions>>=
+def speedgrader(submission):
+  """Returns the SpeedGrader URL of the submission"""
+  try:
+    speedgrader_url = submission.preview_url
+  except AttributeError:
+    return None
+
+  speedgrader_url = re.sub("assignments/",
+    "gradebook/speed_grader?assignment_id=",
+    speedgrader_url)
+
+  speedgrader_url = re.sub("/submissions/",
+    "&student_id=",
+    speedgrader_url)
+
+  speedgrader_url = re.sub(r"\?preview.*$", "", speedgrader_url)
+
+  return speedgrader_url
+@
+
+\subsection{Verifying [[speedgrader]] URL generation}
+
+The [[speedgrader]] function transforms a preview URL into a SpeedGrader URL.
+This is critical for providing direct links to the grading interface.
+
+Let's verify the URL transformation works correctly:
+
+<<test functions>>=
+class TestSpeedgraderURL:
+    """Test speedgrader() URL transformation"""
+
+    def test_transforms_preview_url_to_speedgrader(self):
+        """Should convert preview URL to SpeedGrader format"""
+        from unittest.mock import MagicMock
+        
+        submission = MagicMock()
+        submission.preview_url = "https://canvas.kth.se/courses/26930/assignments/173825/submissions/108849?preview=1"
+        
+        result = speedgrader(submission)
+        
+        assert result == "https://canvas.kth.se/courses/26930/gradebook/speed_grader?assignment_id=173825&student_id=108849"
+
+    def test_returns_none_when_no_preview_url(self):
+        """Should return None when submission has no preview_url"""
+        from unittest.mock import MagicMock
+        
+        submission = MagicMock(spec=[])  # No preview_url attribute
+        
+        result = speedgrader(submission)
+        
+        assert result is None
+@
+
+
+\section{The [[submissions view]] subcommand and its options}
+
+Here we provide a subcommand [[submissions view]] which deals with an individual 
+submission.
+<<submission command description>>=
+Prints data about matching submissions, including submission and grading time, 
+and any text-based attachments.
+
+We also need the corresponding function.
+For now, we only print the most relevant data of a submission.
+<<functions>>=
+def submissions_view_command(config, canvas, args):
+  <<enable history when diff is requested>>
+  
+  submission_list = process_submission_options(canvas, args)
+
+  <<get and print the submission data>>
+@
+
+Then we can fetch the submission, format it to markdown ([[format_submission]]) 
+and then print it.
+We use the [[rich]] package to print it.
+This prints the markdown output of [[format_submission]] nicer in the terminal.
+It also adds syntax highlighting for the source code attachments.
+However, we need to adapt the use of styles to the pager to be used.
+If stdout is not a terminal, we don't use [[rich]], then we simply print the 
+raw markdown.
+
+However, we might want to write all data to the output directory.
+In that case, we don't print anything to stdout.
+
+Finally, we might also want to open the directory of files, either in a shell 
+or in the system file manager.
+We'll open the directory in the file manager so that the user can explore the 
+files while reading the output (containing the grading and comments).
+So we must open this first, then we can proceed.
+
+When we spawn a shell, we don't want to do anything else.
+But open in the file manager we can do no matter what the user wants to do, if 
+they pipe the output or skip the output altogether.
+<<get and print the submission data>>=
+console = rich.console.Console()
+<<create [[tmpdir]]>>
+for submission in submission_list:
+  <<let [[subdir]] be the subdir for [[submission]]'s files>>
+  output = format_submission(submission,
+                             history=args.history,
+                             tmpdir=tmpdir/subdir,
+                             json_format=args.json,
+                             <<args for diff option>>)
+
+  <<write [[output]] to file in [[tmpdir/subdir]]>>
+
+  if args.open == "open":
+    <<open [[tmpdir/subdir]] for the user>>
+  elif args.open == "all":
+    <<open all files in [[tmpdir/subdir]] for the user>>
+
+  if <<condition that [[args.open]] tells us to spawn a shell>>:
+    <<spawn shell in [[tmpdir/subdir]] for the user>>
+  elif args.output_dir:
+    pass
+  elif sys.stdout.isatty():
+    <<check if we should use styles>>
+    with console.pager(styles=styles):
+      <<print [[output]] using [[console.print]]>>
+  else:
+    print(output)
+@ Note that we use the theme [[manni]] for the code, as this works well in both 
+dark and light terminals.
+
+If we specify the [[output_dir]] we want to write the output to files and not
+have it printed to stdout.
+The [[-o/--output-dir]] option is added by [[add_view_options]].
+
+We also have the open option, that has a choice of a few alternatives.
+The [[--open]] option is added by [[add_view_options]] with these choices:
+[[open]], [[all]], and the shell choices defined in [[choices_for_shells]].
+<<condition that [[args.open]] tells us to spawn a shell>>=
+args.open in choices_for_shells
+<<constants>>=
+<<define [[choices_for_shells]]>>
+@
+
+Finally, we can add the [[json]] option to the [[submission]] command.
+The [[--json]] option is added by [[add_view_options]].
+<<print [[output]] using [[console.print]]>>=
+if args.json:
+  console.print(rich.json.JSON(output))
+else:
+  console.print(rich.markdown.Markdown(output,
+                                       code_theme="manni"))
+@
+
+\subsection{Specifying an output directory}
+
+If the user specified an output directory, we will not create a temporary 
+directory, but rather let [[tmpdir]] be the output directory.
+<<create [[tmpdir]]>>=
+if args.output_dir:
+  tmpdir = pathlib.Path(args.output_dir)
+else:
+  tmpdir = pathlib.Path(tempfile.mkdtemp())
+@
+
+Finally, we can then write the output to a file in the output directory.
+We need to structure the files in some way.
+We have a list of submissions for various students.
+The submissions can be submissions for various assignments (in assignment 
+groups) in various courses.
+The two most interesting options are:
+\begin{enumerate}
+\item to group by student, that is the student is the top level directory, 
+[[student/course/assignment]]; or
+\item to group by course, that is we get [[course/assignment/student]].
+\end{enumerate}
+This affects both
+[[<<write [[output]] to file in [[args.output_dir]]>>]]
+and
+[[<<[[tmpdir]] for [[format_submission]]>>]].
+
+We'll introduce an option that lets us choose between these two options.
+The [[--sort-order]] option is added by [[add_view_options]].
+<<let [[subdir]] be the subdir for [[submission]]'s files>>=
+if args.sort_order == "student":
+  subdir = f"{submission.user.login_id}" \
+           f"/{submission.assignment.course.course_code}" \
+           f"/{submission.assignment.name}"
+else:
+  subdir = f"{submission.assignment.course.course_code}" \
+           f"/{submission.assignment.name}" \
+           f"/{submission.user.login_id}"
+
+(tmpdir / subdir).mkdir(parents=True, exist_ok=True)
+<<write [[output]] to file in [[tmpdir/subdir]]>>=
+if args.json:
+  filename = "metadata.json"
+  output = json.dumps(output, indent=2)
+else:
+  filename = "metadata.md"
+with open(tmpdir/subdir/filename, "w") as f:
+  f.write(output)
+@
+
+\subsection{Opening the directory containing the files}
+
+Sometimes we want to open the directory.
+There are several ways we can do this.
+We can open the directory with the system file explorer, that way the user can 
+open files while reading the stdout output using a pager.
+<<open [[tmpdir/subdir]] for the user>>=
+subprocess.run(["open", tmpdir/subdir])
+@
+
+If we instead want to open all files contained in the directory, we can need to 
+iterate all the files and open them one by one.
+<<open all files in [[tmpdir/subdir]] for the user>>=
+for file in (tmpdir/subdir).iterdir():
+  subprocess.run(["open", file])
+@
+
+We can also spawn a shell in the directory so that the user can work with the 
+files, for instance run the Python code in the case of a Python lab submission.
+Now, we could spawn a sub-shell of the user's shell,
+we'll let this be the [[shell]] option.
+Another approach would be to run a Docker image and mount the directory in the
+container.
+This would be the [[docker]] option.
+<<define [[choices_for_shells]]>>=
+choices_for_shells = ["shell", "docker"]
+<<spawn shell in [[tmpdir/subdir]] for the user>>=
+if args.open == "shell":
+  <<spawn sub-shell in [[tmpdir/subdir]] for the user>>
+elif args.open == "docker":
+  <<run a Docker container with [[tmpdir/subdir]] mounted in the container>>
+@
+
+In both cases, we want to print some useful info for the user, so that they can 
+more easily orient themselves.
+In the case of the sub-shell, we print a message and then spawn the shell in 
+the directory.
+At exit, we print a message that the shell has terminated and that the files 
+are left in the directory, so the user can go back without executing the 
+command again.
+<<spawn sub-shell in [[tmpdir/subdir]] for the user>>=
+print(f"---> Spawning a shell ({os.environ['SHELL']}) in {tmpdir/subdir}")
+
+subprocess.run([
+  "sh", "-c", f"cd '{tmpdir/subdir}' && exec {os.environ['SHELL']}"
+])
+
+print(f"<--- canvaslms submission shell terminated.\n"
+      f"---- Files left in {tmpdir/subdir}.")
+@
+
+We want to do the same for Docker.
+However, this is a bit more complicated.
+We need to know which image to use and which command to run in the container.
+We also need to know any other options that we might want to pass to Docker.
+<<run a Docker container with [[tmpdir/subdir]] mounted in the container>>=
+print(f"---> Running a Docker container, files mounted in /mnt.")
+
+cmd = [
+  "docker", "run", "-it", "--rm"
+]
+if args.docker_args:
+  cmd += args.docker_args
+cmd += [
+  "-v", f"{tmpdir/subdir}:/mnt",
+  args.docker_image, args.docker_cmd
+]
+
+subprocess.run(cmd)
+
+print(f"<--- canvaslms submission Docker container terminated.\n"
+      f"---- Files left in {tmpdir/subdir}.\n"
+      f"---- To rerun the container, run:\n"
+      f"`{' '.join(map(shlex.quote, cmd))}`")
+@
+
+This requires us to add an option for the Docker image to use and an option for
+the command to run in the Docker container.
+The [[--docker-image]] and [[--docker-cmd]] options are added by [[add_view_options]].
+
+For the last argument, [[args.docker_args]], we want to be able to pass any 
+arguments to the Docker command.
+This should be a list of strings, so we can just pass it on to the 
+[[subprocess.run]] function.
+
+Using the [[argparse.REMAINDER]] option, we can pass the rest of the command 
+line to the Docker command.
+This is useful since it saves us a lot of problems with escaping options that 
+we want to pass to Docker, instead of our argparser to parse it.
+Normally, if we want to pass [[-e LADOK_USER]] to Docker, our argparser would
+pick up that [[-e]] as an option, unless escaped.
+The [[--docker-args]] option is added by [[add_view_options]] using
+[[argparse.REMAINDER]] to capture all remaining arguments.
+
+
+\subsection{Check if we should use styles}
+
+By default, [[rich.console.Console]] uses the [[pydoc.pager]], which uses the 
+system pager (as determined by environment variables etc.).
+The default usually can't handle colours, so [[rich]] doesn't use colours when 
+paging.
+We want to check if [[less -r]] or [[less -R]] is set as the pager, in that 
+case we can use styles.
+<<check if we should use styles>>=
+pager = ""
+if "MANPAGER" in os.environ:
+  pager = os.environ["MANPAGER"]
+elif "PAGER" in os.environ:
+  pager = os.environ["PAGER"]
+
+styles = False
+if "less" in pager and ("-R" in pager or "-r" in pager):
+  styles = True
+<<submission command description>>=
+Uses MANPAGER or PAGER environment variables for the pager to page output. If 
+the `-r` or `-R` flag is passed to `less`, it uses colours in the output. That 
+is, set `PAGER=less -r` or `PAGER=less -R` to get coloured output from this 
+command.
+
+@
+
+\subsection{Optional history}
+
+Now, let's turn to that [[args.history]] argument.
+We want to exclude it sometimes, for instance, when we want to get to the 
+comments only.
+So we default to off, since it's only occasionally that we want to see the
+history.
+The [[-H/--history]] and [[--diff]] options are added by [[add_view_options]].
+
+
+\section{Selecting a submission on the command line}%
+\label{submission-options}
+
+We now provide a function to set up the command-line options to select a 
+particular submission along with a function to process those options.
+For this we need
+\begin{itemize}
+\item an assignment,
+\item a user or group,
+\item to know if we aim for all or just ungraded submissions.
+\end{itemize}
+We add the [[required]] parameter to specify if we want to have required 
+arguments, \eg for the [[grade]] command.
+<<functions>>=
+def add_submission_options(parser, required=False, suppress_help=False):
+  """Adds submission selection options to argparse parser
+
+  Args:
+    parser: The argparse parser to add options to
+    required: Whether to require submission filter options (default: False)
+    suppress_help: If True, hide these options from help output (default: False)
+  """
+  try:
+    assignments.add_assignment_option(parser, required=required, suppress_help=suppress_help)
+  except argparse.ArgumentError:
+    pass
+
+  try:
+    users.add_user_or_group_option(parser, required=required, suppress_help=suppress_help)
+  except argparse.ArgumentError:
+    pass
+
+  submissions_parser = parser.add_argument_group("filter submissions")
+  try: # to protect from this option already existing in add_assignment_option
+    submissions_parser.add_argument("-U", "--ungraded", action="store_true",
+      help=argparse.SUPPRESS if suppress_help else "Only ungraded submissions.")
+  except argparse.ArgumentError:
+    pass
+
+def add_grading_options(parser):
+  """Adds grading options to argparse parser
+
+  These options are shared between 'submissions grade' and 'grade' commands.
+
+  Args:
+    parser: The argparse parser to add options to
+  """
+  grade_options = parser.add_argument_group(
+    "arguments to set the grade and/or comment, "
+    "if none given, opens SpeedGrader")
+  grade_options.add_argument("-g", "--grade",
+    help="The grade to set for the submissions")
+  grade_options.add_argument("-m", "--message",
+    help="A comment to the student")
+  parser.add_argument("-v", "--verbose",
+    action="store_true", default=False,
+    help="Prints information about what is being graded")
+
+def add_view_options(parser):
+  """Adds submission viewing options to argparse parser
+
+  These options are shared between 'submissions view' and 'submission' commands.
+
+  Args:
+    parser: The argparse parser to add options to
+  """
+  parser.add_argument("-o", "--output-dir",
+    required=False, default=None,
+    help="Write output to files in directory the given directory. "
+         "If not specified, print to stdout. "
+         "If specified, do not print to stdout.")
+
+  parser.add_argument("--json", required=False,
+    action="store_true", default=False,
+    help="Print output as JSON, otherwise Markdown.")
+
+  parser.add_argument("-H", "--history", action="store_true",
+    help="Include submission history.")
+
+  <<add diff-related options>>
+
+  parser.add_argument("--open", required=False,
+    nargs="?", default=None, const="open",
+    choices=["open", "all"]+choices_for_shells,
+    help="Open the directory containing the files using "
+         "the default file manager (`open`). "
+         "With `open`, the pager will be used to display the output as usual. "
+         "With `all`, all files (not the directory containing them) will be "
+         "opened in the default application for the file type. "
+         "With `shell`, we just drop into the shell (as set by $SHELL), "
+         "the output can be found in the metadata.{json,md} file in "
+         "the shell's working directory. "
+         "With `docker`, we run a Docker container with the "
+         "directory mounted in the container. "
+         "This way we can run the code in the submission in a "
+         "controlled environment. "
+         "Note that this requires Docker to be installed and running. "
+         "Default: %(const)s")
+
+  parser.add_argument("--sort-order", required=False,
+    choices=["student", "course"], default="student",
+    help="Determines the order in which directories are created "
+         "in `output_dir`. `student` results in `student/course/assignment` "
+         "and `course` results in `course/assignment/student`. "
+         "Default: %(default)s")
+
+  parser.add_argument("--docker-image", required=False,
+    default="ubuntu",
+    help="The Docker image to use when running a Docker container. "
+         "This is used with the `docker` option for `--open`. "
+         "Default: %(default)s")
+
+  parser.add_argument("--docker-cmd", required=False,
+    default="bash",
+    help="The command to run in the Docker container. "
+         "This is used with the `docker` option for `--open`. "
+         "Default: %(default)s")
+
+  parser.add_argument("--docker-args", required=False,
+    default=[], nargs=argparse.REMAINDER,
+    help="Any additional arguments to pass to the Docker command. "
+         "This is used with the `docker` option for `--open`. "
+         "Note that this must be the last option on the command line, it takes "
+         "the rest of the line as arguments for Docker.")
+
+def process_submission_options(canvas, args):
+  assignment_list = assignments.process_assignment_option(canvas, args)
+  user_list = users.process_user_or_group_option(canvas, args)
+
+  if args.ungraded:
+    submissions = list_ungraded_submissions(assignment_list,
+      include=["submission_history", "submission_comments",
+      "rubric_assessment"])
+  else:
+    submissions = list_submissions(assignment_list,
+      include=["submission_history", "submission_comments",
+      "rubric_assessment"])
+
+  submission_list = list(filter_submissions(submissions, user_list))
+  if not submission_list:
+    raise canvaslms.cli.EmptyListError(
+      "No submissions found matching the criteria")
+  return submission_list
+@
+
+
+\section{Producing a list of submissions}%
+\label{list-submissions-function}
+
+We provide the following functions:
+\begin{itemize}
+  \item [[list_submissions]], which returns all submissions;
+  \item [[list_ungraded_submissions]], which returns all ungraded submissions.
+\end{itemize}
+We return the submissions for a list of assignments, since we can match several 
+assignments with a regular expression (using [[filter_assignments]]).
+<<functions>>=
+def list_submissions(assignments, include=["submission_comments"]):
+  for assignment in assignments:
+    submissions = assignment.get_submissions(include=include)
+    for submission in submissions:
+      submission.assignment = assignment
+      yield submission
+
+def list_ungraded_submissions(assignments, include=["submisson_comments"]):
+  for assignment in assignments:
+    submissions = assignment.get_submissions(bucket="ungraded",
+      include=include)
+    for submission in submissions:
+      if submission.submitted_at and (submission.graded_at is None or
+          not submission.grade_matches_current_submission):
+        submission.assignment = assignment
+        yield submission
+@
+
+
+\section{Filtering a list of submissions}
+
+We provide the function [[filter_submissions]] which filters out a subset of 
+submissions from a list.
+
+For each submission we check if it's user is in the desired user set.
+(Note that since the list~[[user_list]], might contain duplicates, so we turn 
+it into a set first.)
+Once we've found the user, we don't need to search further, so we can break 
+after the yield.
+<<functions>>=
+def filter_submissions(submission_list, user_list):
+  user_list = set(user_list)
+
+  for submission in submission_list:
+    for user in user_list:
+      if submission.user_id == user.id:
+        submission.user = user
+        yield submission
+        break
+@
+
+
+\section{Printing a submission}
+
+We provide two functions to print a submission.
+One to print a short summary (row in CSV data) and one to print the submission 
+data for rendering.
+The first is to get an overview of all submissions, the latter to look into the 
+details of only one submission.
+
+We'll format the submission in short format.
+The most useful data is the identifier, the grade and the date of grading.
+<<functions>>=
+def format_submission_short(submission):
+  return [
+    submission.assignment.course.course_code,
+    submission.assignment.name,
+    submission.user.name,
+    submission.grade,
+    canvaslms.cli.utils.format_local_time(submission.submitted_at),
+    canvaslms.cli.utils.format_local_time(submission.graded_at)
+  ]
+@
+
+\subsection{Verifying [[format_submission_short]]}
+
+The [[format_submission_short]] function extracts key submission data into a list suitable for CSV output.
+This is the primary format for the [[submissions list]] command.
+
+<<test functions>>=
+class TestFormatSubmissionShort:
+    """Test format_submission_short() data extraction"""
+
+    def test_formats_submission_data(self):
+        """Should extract course code, assignment, user, grade, and dates"""
+        from unittest.mock import MagicMock
+        from datetime import datetime
+        
+        # Create mock submission with all required attributes
+        submission = MagicMock()
+        submission.assignment.course.course_code = "DD1234"
+        submission.assignment.name = "Lab 1"
+        submission.user.name = "Alice Anderson"
+        submission.grade = "5"
+        submission.submitted_at = "2023-12-15T10:30:00Z"
+        submission.graded_at = "2023-12-15T14:00:00Z"
+        
+        result = format_submission_short(submission)
+        
+        assert result[0] == "DD1234"
+        assert result[1] == "Lab 1"
+        assert result[2] == "Alice Anderson"
+        assert result[3] == "5"
+        # Dates will be formatted by format_local_time
+        assert result[4] is not None
+        assert result[5] is not None
+@
+
+Sometimes we want the short format to contain a unique identifier (such as 
+[[login_id]]) instead of the name.
+<<functions>>=
+def format_submission_short_unique(submission):
+  <<get uid from submission's user object>>
+
+  return [
+    submission.assignment.course.course_code,
+    submission.assignment.name,
+    uid,
+    submission.grade,
+    canvaslms.cli.utils.format_local_time(submission.submitted_at),
+    canvaslms.cli.utils.format_local_time(submission.graded_at)
+  ]
+@
+
+However, we note that sometimes the student doesn't have a [[login_id]] 
+attribute, so we can use their [[integration_id]] or [[sis_user_id]] instead 
+for uniqueness.
+See \cref{UserUniqueID} for details.
+<<get uid from submission's user object>>=
+uid = users.get_uid(submission.user)
+@
+
+We provide the function [[format_submission]] to nicely format a submission.
+It prints metadata, downloads any text attachments to include in the output.
+We also output all the submission history at the end.
+We no longer need the [[canvas]] object to resolve course, assignment and user 
+IDs, instead, we add these as attributes when fetching the objects.
+So [[submission.assignment]] is the assignment it came from, we don't need to 
+resolve the assignment from the assignmend ID.
+
+We have a [[md_title_level]] argument to specify the level of the title in the 
+Markdown version of the output.
+We want this to be able to recursively use [[format_submission]] to format the 
+submission history.
+This must then be passed to the recursive call and the section formatting.
+<<functions>>=
+def format_submission(submission, history=False, json_format=False,
+                      md_title_level="#",
+                      <<[[format_submission]] args>>):
+  """
+  Formats submission for printing to stdout. Returns a string.
+
+  If history is True, include all submission versions from history.
+
+  If json_format is True, return a JSON string, otherwise Markdown.
+
+  `md_title_level` is the level of the title in Markdown, by default `#`. This 
+  is used to create a hierarchy of sections in the output.
+
+  <<[[format_submission]] doc>>
+  """
+  student = submission.assignment.course.get_user(submission.user_id)
+
+  if json_format:
+    formatted_submission = {}
+  else:
+    formatted_submission = ""
+
+  <<add metadata to output>>
+  <<add rubric assessment to output>>
+  <<add comments to output>>
+  if history:
+    if diff:
+      <<add submission history diffs to output>>
+    else:
+      <<add submission history to output>>
+  else:
+    <<add body to output>>
+    <<add quiz answers to output>>
+    <<add attachments to output>>
+
+  return formatted_submission
+@
+
+\subsection{Some helper functions}
+
+We want to format some sections.
+The section has a title and a body.
+<<[[format_section]] doc>>=
+In the case of Markdown (default), we format the title as a header and the body 
+as a paragraph. If we don't do JSON, but receive a dictionary as the body, we 
+format it as a list of key-value pairs.
+
+`md_title_level` is the level of the title in Markdown, by default `#`.
+We'll use this to create a hierarchy of sections in the output.
+
+In the case of JSON, we return a dictionary with the title as the key and the 
+body as the value.
+<<functions>>=
+def format_section(title, body, json_format=False, md_title_level="#"):
+  """
+  <<[[format_section]] doc>>
+  """
+  if json_format:
+    return {title: body}
+
+  if isinstance(body, dict):
+    return "\n".join([
+      f" - {key.capitalize().replace('_', ' ')}: {value}"
+        for key, value in body.items()
+    ])
+
+  return f"\n{md_title_level} {title}\n\n{body}\n\n"
+@
+
+\subsection{Metadata}
+
+To format the metadata section, we simply pass the right strings to the section 
+formatting function.
+<<add metadata to output>>=
+metadata = {
+  "course": submission.assignment.course.course_code,
+  "assignment": submission.assignment.name,
+  "student": str(student),
+  "submission_id": submission.id,
+  "submitted_at": canvaslms.cli.utils.format_local_time(
+    submission.submitted_at),
+  "graded_at": canvaslms.cli.utils.format_local_time(
+    submission.graded_at),
+  "grade": submission.grade,
+  "graded_by": str(resolve_grader(submission)),
+  "speedgrader": speedgrader(submission)
+}
+
+if json_format:
+  formatted_submission.update(format_section("metadata", metadata,
+                                             json_format=True,
+                                             md_title_level=md_title_level))
+else:
+  formatted_submission += format_section("Metadata", metadata,
+                                         md_title_level=md_title_level)
+@
+
+Now to resolve the grader, we need to look up a user ID.
+Fortunately, we can do that through the course that is included as part of the 
+assignment, as part of the submission.
+(We add this manually in [[list_submissions]].)
+The grader ID is negative if it was graded automatically, \eg by a quiz or LTI 
+integration.
+If negative, it's either the quiz ID or LTI tool ID.
+(Negate to get the ID.)
+Finally, we look up the user object from the course.
+In some rare cases, we might not find the user, in which case we return the 
+grader ID as a string.
+<<functions>>=
+def resolve_grader(submission):
+  """
+  Returns a user object if the submission was graded by a human.
+  Otherwise returns None if ungraded or a descriptive string.
+  """
+  try:
+    if submission.grader_id is None:
+      return None
+  except AttributeError:
+    return None
+    
+  if submission.grader_id < 0:
+    return "autograded"
+
+  try:
+    <<resolve the grader's user ID from Canvas>>
+  except canvasapi.exceptions.ResourceDoesNotExist:
+    return f"unknown grader {submission.grader_id}"
+@
+
+The only option we have as the code is written currently, is to try to get the 
+user from the course ([[course.get_user]]).
+But we should really get the user from a Canvas object, [[canvas.get_user]].
+If using [[get_user(...)]] on a course object, then the user must exist in the 
+course.
+However, that's not necessarily true.
+So we should get it from a [[Canvas]] object, that is, from the system rather 
+than just the course.
+But as mentioned, right now we can only do it through the course.
+This isn't a problem as long as none of the teachers or teaching assistants are 
+removed.
+<<resolve the grader's user ID from Canvas>>=
+return submission.assignment.course.get_user(submission.grader_id)
+@
+
+
+\subsection{Rubric data}
+
+<<add rubric assessment to output>>=
+try:
+  if submission.rubric_assessment:
+    if json_format:
+      formatted_submission.update(format_section(
+        "rubric_assessment",
+        format_rubric(submission, json_format=True)),
+        json_format=True)
+    else:
+      formatted_submission += format_section(
+        "Rubric assessment",
+        format_rubric(submission))
+except AttributeError:
+  pass
+@
+
+\subsection{General comments}
+
+<<add comments to output>>=
+try:
+  if submission.submission_comments:
+    if json_format:
+      formatted_submission.update(format_section(
+        "comments", submission.submission_comments,
+        json_format=True))
+    else:
+      body = ""
+      for comment in submission.submission_comments:
+        created_at = canvaslms.cli.utils.format_local_time(
+          comment['created_at'])
+        body += f"{comment['author_name']} ({created_at}):\n\n"
+        body += comment["comment"] + "\n\n"
+      formatted_submission += format_section("Comments", body)
+except AttributeError:
+  pass
+@
+
+\subsection{Body}
+
+<<add body to output>>=
+try:
+  if submission.body:
+    if json_format:
+      formatted_submission.update(format_section(
+        "body", submission.body, json_format=True,
+        md_title_level=md_title_level))
+    else:
+      formatted_submission += format_section("Body", submission.body,
+                                             md_title_level=md_title_level)
+except AttributeError:
+  pass
+@
+
+\subsection{Quiz answers}
+
+<<add quiz answers to output>>=
+try:
+  if submission.submission_data:
+    if json_format:
+      formatted_submission.update(format_section(
+        "quiz_answers", submission.submission_data,
+        json_format=True, md_title_level=md_title_level))
+    else:
+      formatted_submission += format_section(
+        "Quiz answers",
+        json.dumps(submission.submission_data, indent=2),
+        md_title_level=md_title_level)
+except AttributeError:
+  pass
+@
+
+\subsection{Attachments}
+
+For the attachment, we want to add it to the output.
+In the case of Python code we want to have it as a Markdown code block.
+If it's a text file, we want to have it as part of the plain Markdown.
+We will try to convert the attachment to Markdown using [[pypandoc]].
+
+Since we want the files to be their own sections, for easy navigation, we must 
+bumps [[md_title_level]] by one to make the files a subsection of the main 
+submission.
+
+In the JSON version, we want to introduce one more level: the attachments 
+should be found under the key [[attachments]].
+<<add attachments to output>>=
+try:
+  <<attachment iteration variables>>
+  if json_format:
+    attachments = {}
+  for attachment in submission.attachments:
+    <<let [[contents]] be the converted [[attachment]]>>
+    formatted_attachment = format_section(attachment.filename, contents,
+                                          json_format=json_format,
+                                          md_title_level=md_title_level+"#")
+
+    if json_format:
+      attachments.update(formatted_attachment)
+    else:
+      formatted_submission += formatted_attachment
+
+  if json_format and attachments:
+    formatted_submission.update(format_section("attachments", attachments,
+                                               json_format=True,
+                                               md_title_level=md_title_level))
+except AttributeError:
+  pass
+@
+
+Let's look at the conversion.
+If it's a text-based format, we want to include it as a Markdown code block.
+Otherwise, we'll try to convert it to Markdown using [[pypandoc]].
+If the latter fails, we want to add a pointer to the file in the output, so 
+that the user can open it in an external viewer.
+
+In fact, having a copy of all the files locally is useful.
+We need to download it anyways, so we might just as well put a copy in a local 
+temporary directory too.
+We'll let the caller specify the directory to use, so we can use the same 
+directory for all attachments and potentially all users.
+<<[[format_submission]] args>>=
+tmpdir = None,
+<<[[format_submission]] doc>>=
+`tmpdir` is the directory to store all the submission files. Defaults to None, 
+which creates a temporary directory.
+
+<<attachment iteration variables>>=
+tmpdir = pathlib.Path(tmpdir or tempfile.mkdtemp())
+tmpdir.mkdir(parents=True, exist_ok=True)
+@
+
+We'll use [[tmpdir]] as the temporary directory to store the files when we try 
+to convert them.
+<<functions>>=
+def convert_to_md(attachment: canvasapi.file.File,
+                  tmpdir: pathlib.Path) -> str:
+  """
+  Converts `attachment` to Markdown. Returns the Markdown string.
+
+  Store a file version in `tmpdir`.
+  """
+  <<download [[attachment]] to [[outfile]] in [[tmpdir]]>>
+  content_type = getattr(attachment, "content-type")
+  <<if [[content_type]] is text, just use [[outfile]] contents>>
+  <<else if [[content_type]] is PDF, convert [[outfile]] using [[pdf2txt]]>>
+  <<else convert [[outfile]] using [[pypandoc]]>>
+<<let [[contents]] be the converted [[attachment]]>>=
+contents = convert_to_md(attachment, tmpdir)
+@
+
+We check if the attachment is already cached before downloading.
+If cached, we copy from the cache to avoid redundant network requests.
+Otherwise, we download the file and add it to the cache.
+
+This is particularly important for computing diffs between submission versions:
+if a student submits version N+1, we already have the attachments from versions
+N, N-1, \ldots cached locally, so we only need to download version N+1.
+
+<<download [[attachment]] to [[outfile]] in [[tmpdir]]>>=
+outfile = tmpdir / attachment.filename
+cached_path = attachment_cache.get_cached_attachment(attachment.id)
+
+if cached_path:
+  # Use cached file - copy to temporary directory for processing
+  import shutil
+  shutil.copy(cached_path, outfile)
+else:
+  # Download and cache for future use
+  attachment.download(outfile)
+  attachment_cache.cache_attachment(attachment.id, outfile, {
+    'filename': attachment.filename,
+    'size': getattr(attachment, 'size', 0),
+    'content_type': getattr(attachment, 'content-type', 'application/octet-stream')
+  })
+@
+
+If the content type is text, we can just decode it and use it in a Markdown 
+code block with a suitable (Markdown) content type.
+This means that we can set what type of data the code block contains.
+We compute this text from the content type of the attachment.
+For instance, Python source code is [[text/x-python]].
+We remove the [[text/]] prefix and check if there is any [[x-]] prefix left, in 
+which case we remove that as well.
+
+Now, we want to change the content type to the format expected by Markdown to 
+do proper syntax highlighting.
+This requires some ugly processing since one [[.py]] file might have content 
+type [[text/x-python]] and another [[.py]] file might have 
+[[text/python-script]].
+<<functions>>=
+def text_to_md(content_type):
+  """
+  Takes a text-based content type, returns Markdown code block type.
+  Raises ValueError if not possible.
+  """
+  if content_type.startswith("text/"):
+    content_type = content_type[len("text/"):]
+  else:
+    raise ValueError(f"Not text-based content type: {content_type}")
+
+  if content_type.startswith("x-"):
+    content_type = content_type[2:]
+  if content_type == "python-script":
+    content_type = "python"
+
+  return content_type
+@
+
+This leaves us with the following.
+The advantage of reading the content from the file is that Python will solve 
+the encoding for us.
+Instead of using an [[if]] statement, we'll go all Python and use a 
+[[try-except]] block.
+<<if [[content_type]] is text, just use [[outfile]] contents>>=
+try:
+  md_type = text_to_md(content_type)
+  with open(outfile, "r") as f:
+    contents = f.read()
+  return f"```{md_type}\n{contents}\n```"
+except ValueError:
+  pass
+@
+
+Now we'll do the same for PDF files.
+We'll use [[pdf2txt]] to convert the PDF to text.
+However, here we'll use an if statement.
+We'll check for the content type to end with [[pdf]], that will capture also 
+[[x-pdf]].
+<<else if [[content_type]] is PDF, convert [[outfile]] using [[pdf2txt]]>>=
+if content_type.endswith("pdf"):
+  try:
+    return subprocess.check_output(["pdf2txt", str(outfile)],
+                                    text=True)
+  except subprocess.CalledProcessError:
+    pass
+@
+
+Finally, as a last attempt, we use [[pypandoc]] to try to convert it to 
+Markdown.
+Here we'll use Pandoc's ability to infer the file type on its own.
+This means we'll have to download the attachment as a file in a temporary 
+location and let Pandoc convert the file to Markdown.
+<<else convert [[outfile]] using [[pypandoc]]>>=
+try:
+  return pypandoc.convert_file(outfile, "markdown")
+except Exception as err:
+  return f"Cannot convert this file. " \
+         f"The file is located at\n\n  {outfile}\n\n"
+@
+
+
+\subsection{Submission history}
+
+The history contains all the student's submissions, including the current 
+submission.
+We want to keep track of what belongs to the different versions.
+This becomes important when we rely on the [[tmpdir]] to store the files.
+We don't want the files of one version overwrite the files of another.
+Then we can't be sure which version we're looking at.
+
+To produce the history, we'll modify [[tmpdir]] to create a subdirectory for 
+each version.
+We'll write a metadata file for each version.
+Then we'll return all of those in one main metadata file too.
+<<add submission history to output>>=
+try:
+  submission_history = submission.submission_history
+except AttributeError:
+  pass
+else:
+  if submission_history:
+    versions = {}
+    for version, prev_submission in enumerate(submission.submission_history):
+      version = str(version)
+      version_dir = tmpdir / f"version-{version}"
+
+      <<add [[prev_submission]] to [[versions]]>>
+      <<write [[prev_submission]] to file in [[version_dir]]>>
+
+    if json_format:
+      formatted_submission.update(format_section(
+        "submission_history", versions, json_format=True,
+        md_title_level=md_title_level))
+    else:
+      formatted_versions = ""
+      for version, prev_metadata in versions.items():
+        formatted_versions += format_section(f"Version {version}",
+                                             prev_metadata,
+                                             md_title_level=md_title_level+"#")
+      formatted_submission += format_section(
+        "Submission history", formatted_versions,
+        md_title_level=md_title_level)
+@
+
+The [[prev_submission]] that we get is in raw JSON format from Canvas.
+We'll turn it into a [[Submission]] object and add the extra assignment 
+attribute to it.
+Now we can reuse the [[format_submission]] function to format this version's 
+submission metadata.
+
+Note that we can't pass on the [[history]] argument to [[format_submission]],
+we need to let it know that it's formatting a history version in another way to
+get the sectioning levels right.
+We'll use an argument [[md_title_level]].
+
+Similarly, we need to pass through the diff-related parameters.
+Since we're inside [[format_submission]], we don't have access to the [[args]]
+object---we only have the function's parameters ([[diff]],
+[[diff_threshold_fixed]], and [[diff_threshold_percent]]).
+We'll define a chunk that passes these parameters through to the recursive call.
+<<diff params>>=
+diff=diff,
+diff_threshold_fixed=diff_threshold_fixed,
+diff_threshold_percent=diff_threshold_percent
+@
+
+<<add [[prev_submission]] to [[versions]]>>=
+prev_submission = canvasapi.submission.Submission(
+  submission._requester, prev_submission)
+prev_submission.assignment = submission.assignment
+
+prev_metadata = format_submission(prev_submission,
+                                  tmpdir=version_dir,
+                                  json_format=json_format,
+                                  md_title_level=md_title_level+"#",
+                                  <<diff params>>)
+
+versions[version] = prev_metadata
+@
+
+When we write the metadata to a file, we'll either just write a string or JSON 
+data.
+We can use [[json.dump]] to write the JSON data to a file.
+<<write [[prev_submission]] to file in [[version_dir]]>>=
+if json_format:
+  with open(version_dir/"metadata.json", "w") as f:
+    json.dump(prev_metadata, f, indent=2)
+else:
+  with open(version_dir/"metadata.md", "w") as f:
+    f.write(prev_metadata)
+@
+
+
+\section{Diff functionality for submission versions}\label{SubmissionDiff}
+\marginpar{%
+  \footnotesize
+  \cref{SubmissionDiff} was written by GitHub Copilot.
+  It was reviewed and revised by Daniel Bosk.
+}%
+When grading student submissions, instructors often need to understand how
+students' work evolved over multiple attempts.
+A common pattern in student work is progressive refinement, where each
+submission builds on the previous one.
+Simply viewing each version in isolation makes it difficult to identify what
+actually changed between attempts, forcing the instructor to mentally compare
+versions or manually switch between different views.
+
+This section implements diff functionality that addresses this pedagogical need.
+The approach shows Version~0 in its entirety (providing complete context)
+followed by unified diffs for subsequent versions.
+This design balances readability with information density: the instructor reads
+the complete first submission to understand the student's initial approach, then
+sees only what changed in each subsequent attempt.
+This makes it easy to track the student's problem-solving process and identify
+patterns in their revisions.
+
+The implementation handles parameter handling, content extraction from various
+submission types (text, quiz answers, file attachments), and unified diff
+generation.
+
+We will use the [[difflib.unified_diff]] function to generate the diffs.
+Or, if available, use [[patiencediff]] package instead.
+Fortunately, [[patiencediff]] has the same interface as [[difflib]], so we can 
+just try to import it first, and fall back to [[difflib]] if not available.
+<<import [[difflib]]>>=
+try:
+  import patiencediff as difflib
+except ImportError:
+  import difflib
+@
+
+\subsubsection{Testing patiencediff integration}
+
+The patiencediff integration uses an optional dependency pattern with graceful
+fallback to standard difflib.
+We verify the import fallback works correctly and that both implementations
+provide the same interface.
+
+<<test functions>>=
+class TestPatiencediffImport:
+    """Test that patiencediff is imported correctly with fallback"""
+
+    def test_import_provides_unified_diff(self):
+        """Both patiencediff and difflib provide unified_diff"""
+        # The import pattern ensures we always have unified_diff available
+        try:
+            import patiencediff as difflib
+        except ImportError:
+            import difflib
+        
+        assert hasattr(difflib, 'unified_diff')
+
+    def test_fallback_to_standard_difflib(self):
+        """Standard difflib should always be available"""
+        import difflib
+        assert hasattr(difflib, 'unified_diff')
+
+class TestDiffFunctionality:
+    """Test that unified_diff works correctly regardless of implementation"""
+
+    def test_unified_diff_detects_changes(self):
+        """unified_diff should detect changes between old and new content"""
+        import difflib
+        
+        old_content = ['Hello\n', 'World\n']
+        new_content = ['Hello\n', 'World!\n']
+        
+        diff = list(difflib.unified_diff(old_content, new_content))
+        
+        # Should have diff lines
+        assert len(diff) > 0
+
+    def test_unified_diff_no_changes(self):
+        """unified_diff produces minimal output when content is identical"""
+        import difflib
+        
+        content = ['Hello\n', 'World\n']
+        
+        diff = list(difflib.unified_diff(content, content))
+        
+        # Should be empty or only headers
+        assert len(diff) <= 2
+
+    def test_unified_diff_with_context(self):
+        """unified_diff should respect context parameter"""
+        import difflib
+        
+        old_content = ['line 1\n', 'line 2\n', 'line 3\n', 'line 4\n', 'line 5\n']
+        new_content = ['line 1\n', 'line 2\n', 'CHANGED\n', 'line 4\n', 'line 5\n']
+        
+        # Use 1 line of context
+        diff = list(difflib.unified_diff(old_content, new_content, n=1))
+        
+        # Should have some output
+        assert len(diff) > 0
+
+    def test_unified_diff_multiple_changes(self):
+        """unified_diff should handle multiple changes"""
+        import difflib
+        
+        old_content = [
+            'line 1\n',
+            'line 2\n',
+            'line 3\n',
+            'line 4\n',
+            'line 5\n'
+        ]
+        new_content = [
+            'line 1 modified\n',
+            'line 2\n',
+            'line 3 modified\n',
+            'line 4\n',
+            'line 5 modified\n'
+        ]
+        
+        diff = list(difflib.unified_diff(old_content, new_content))
+        
+        # Should detect multiple changes
+        assert len(diff) > 0
+        removed_lines = [line for line in diff if line.startswith('-') and not line.startswith('---')]
+        added_lines = [line for line in diff if line.startswith('+') and not line.startswith('+++')]
+        assert len(removed_lines) > 0
+        assert len(added_lines) > 0
+@
+
+\subsection{Adding diff options to command line}
+
+<<[[format_submission]] doc>>=
+`diff` is a boolean indicating whether to show diffs between submission versions
+instead of showing each version in full. Only works when `history` is True.
+`diff_threshold_fixed` and `diff_threshold_percent` control the matching
+sensitivity for renamed files (see [[match_renamed_files]] for details).
+<<add diff-related options>>=
+parser.add_argument("--diff", action="store_true",
+  help="Show diffs between submission versions. Automatically enables --history.")
+
+parser.add_argument("--diff-threshold-fixed", type=int,
+  default=DEFAULT_DIFF_THRESHOLD_FIXED,
+  metavar="N",
+  help="Fixed edit distance threshold for matching renamed files. "
+        "Files with distance <= N will match. Default: %(default)s")
+
+parser.add_argument("--diff-threshold-percent", type=int,
+  default=DEFAULT_DIFF_THRESHOLD_PERCENT,
+  metavar="PCT",
+  help="Percentage threshold for matching renamed files. "
+        "Files with distance <= PCT%% of filename length will match. "
+        "Default: %(default)s")
+@
+
+\subsection{Enabling history when diff is requested}
+
+When the user requests diffs between submission versions, we need access to the
+submission history. Without history, there's only one version available and no
+comparison can be made. Therefore, we automatically enable history mode when
+diff is requested to provide better user experience - users don't need to
+remember to specify both flags.
+<<enable history when diff is requested>>=
+if args.diff:
+  args.history = True
+@
+
+
+\subsection{Adding diff parameter to [[format_submission]]}
+
+The diff functionality requires an additional parameter to the 
+[[format_submission]] function to control whether we show diffs or full content 
+for each version.
+<<[[format_submission]] args>>=
+diff=False,
+<<args for diff option>>=
+diff=args.diff,
+@
+
+\subsection{Design decisions}
+
+Several design choices shape the diff functionality's implementation and output
+format.
+
+We chose unified diff format (as produced by [[difflib.unified_diff]]) because:
+\begin{itemize}
+\item It's familiar to anyone who has used version control systems like Git,
+      reducing the learning curve for instructors.
+\item It's compact and works well in terminal pagers, which is the primary
+      viewing environment for this tool.
+\item It clearly shows context around changes, making it easy to understand
+      what was modified without losing sight of the surrounding code.
+\item The [[+]]/[[-]] notation makes additions and deletions immediately
+      apparent at a glance.
+\end{itemize}
+
+We wrap diffs in Markdown code blocks with the [[diff]] syntax highlighting
+marker.
+This provides visual distinction between added lines, removed lines, and
+unchanged context when the output is viewed with a capable pager (such as
+[[less -R]]) or rendered in a Markdown viewer.
+
+JSON format is explicitly not supported for diffs.
+Unified diff is fundamentally a textual representation optimized for human
+reading, and it doesn't translate meaningfully to structured data.
+Instructors using [[--json]] mode will see a message indicating that diffs are
+not available in that format.
+
+\subsection{Example output}
+
+To illustrate the diff functionality, consider a student who submits a Python
+solution twice.
+The first version contains a basic implementation:
+\begin{minted}{python}
+def calculate_average(numbers):
+    return sum(numbers) / len(numbers)
+\end{minted}
+
+The student then revises the submission to add error handling:
+\begin{minted}{python}
+def calculate_average(numbers):
+    if not numbers:
+        return 0
+    return sum(numbers) / len(numbers)
+\end{minted}
+
+The diff output will show Version~0 in full, then display the changes for
+Version~1:
+\begin{minted}{diff}
+--- Version 0/solution.py
++++ Version 1/solution.py
+@@ -1,2 +1,4 @@
+ def calculate_average(numbers):
++    if not numbers:
++        return 0
+     return sum(numbers) / len(numbers)
+\end{minted}
+
+This makes it immediately clear that the student added input validation between
+submissions.
+The [[@@]] line shows that we're looking at lines starting from line~1 in the
+original, and that the new version has 4 lines instead of 2.
+The unchanged lines provide context, while the [[+]] prefix clearly marks the
+new additions.
+
+If the student had renamed the file between submissions (\eg from
+[[solution.py]] to [[solution_final.py]]), the diff headers would show both
+names to make the rename detection visible to the instructor.
+
+\subsection{Submission history with diffs}
+
+When the user wants to see diffs between submission versions, we need to extract
+the text content from each version and compare them. The strategy is to show
+Version 0 in full (providing complete context), then show subsequent versions 
+as diffs from the previous version.
+
+First, we check if submission history is available.
+<<add submission history diffs to output>>=
+try:
+  submission_history = submission.submission_history
+except AttributeError:
+  pass
+else:
+  if submission_history:
+    if json_format:
+      <<handle json format for diffs>>
+    else:
+      <<process versions for diff display>>
+@
+
+For JSON format, we don't support diffs as they're not meaningful in that context.
+<<handle json format for diffs>>=
+formatted_submission.update(format_section(
+  "submission_diffs", "Diffs not supported in JSON format",
+  json_format=True, md_title_level=md_title_level))
+@
+
+For markdown format, we process each version and build the diff output.
+<<process versions for diff display>>=
+diff_output = ""
+prev_content = None
+
+<<iterate through submission versions>>
+
+if diff_output:
+  formatted_submission += format_section("Submission History with Diffs",
+                                         diff_output,
+                                         md_title_level=md_title_level)
+else:
+  formatted_submission += format_section("Submission History with Diffs",
+                                         "No submission history found.",
+                                         md_title_level=md_title_level)
+@
+
+We iterate through each version filling [[diff_output]], treating Version 0 
+specially (showing full content) and subsequent versions as diffs.
+<<iterate through submission versions>>=
+for version, curr_submission_data in enumerate(submission.submission_history):
+  curr_submission = canvasapi.submission.Submission(submission._requester,
+                                                    curr_submission_data)
+  curr_submission.assignment = submission.assignment
+  
+  curr_content = extract_submission_text(curr_submission, tmpdir / f"version-{version}")
+  
+  <<handle version 0 full content>>
+  <<handle subsequent versions as diffs>>
+  
+  prev_content = curr_content
+@
+
+Version 0 is shown in full to provide complete context for understanding 
+subsequent changes.
+We use a dedicated directory for this version to avoid file collisions
+between different submission revisions during extraction.
+<<handle version 0 full content>>=
+if version == 0:
+  version_dir = tmpdir / f"version-{version}"
+  version_0_formatted = format_submission(curr_submission,
+                                          tmpdir=version_dir,
+                                          json_format=json_format,
+                                          md_title_level=md_title_level+"##",
+                                          <<diff params>>)
+  diff_output += format_section(f"Version {version} (Full Content)",
+                                version_0_formatted,
+                                md_title_level=md_title_level+"#")
+@
+
+Subsequent versions are shown as diffs from the previous version.
+<<handle subsequent versions as diffs>>=
+else:
+  version_diff = generate_diff(prev_content,
+                               curr_content,
+                               f"Version {version-1}",
+                               f"Version {version}",
+                               diff_threshold_fixed,
+                               diff_threshold_percent)
+  if version_diff:
+    diff_output += format_section(f"Version {version} "
+                                    f"(Changes from Version {version-1})",
+                                  version_diff,
+                                  md_title_level=md_title_level+"#")
+  else:
+    diff_output += format_section(f"Version {version} "
+                                    f"(Changes from Version {version-1})",
+                                  "No textual differences found from "
+                                    "previous version.",
+                                  md_title_level=md_title_level+"#")
+@
+
+\subsection{Text extraction for diff comparison}
+
+To generate meaningful diffs, we need to extract text content from submissions
+in a consistent format. This function handles different types of content including
+body text, quiz answers, and file attachments.
+<<functions>>=
+def extract_submission_text(submission, tmpdir):
+  """
+  Extracts text content from a submission for diff comparison.
+  Returns a dictionary with keys for different content types.
+  """
+  content = {}
+  
+  <<extract body text>>
+  <<extract quiz answers>>
+  <<extract attachment text>>
+  
+  return content
+@
+
+Body text is the main textual content of the submission.
+<<extract body text>>=
+try:
+  if submission.body:
+    content['body'] = submission.body
+except AttributeError:
+  pass
+@
+
+Quiz answers are stored as JSON data that we format consistently for comparison.
+<<extract quiz answers>>=
+try:
+  if submission.submission_data:
+    content['quiz_answers'] = json.dumps(submission.submission_data,
+                                         indent=2, sort_keys=True)
+except AttributeError:
+  pass
+@
+
+File attachments require special handling to convert various formats to text.
+<<extract attachment text>>=
+try:
+  if submission.attachments:
+    tmpdir = pathlib.Path(tmpdir)
+    tmpdir.mkdir(parents=True, exist_ok=True)
+    attachment_texts = {}
+    
+    <<process each attachment>>
+    
+    if attachment_texts:
+      content['attachments'] = attachment_texts
+except AttributeError:
+  pass
+@
+
+Each attachment is processed to extract its text content, with error handling
+for files that cannot be converted.
+When [[convert_to_md]] processes text files, it wraps the content in Markdown
+code blocks ([[```python\n...\n```]]) for nice display.
+However, for diff comparison, we want the raw content without these markers,
+since the diff itself will be wrapped in a code block later.
+Removing the markers prevents nested code blocks and ensures clean line-by-line
+comparison.
+<<process each attachment>>=
+for attachment in submission.attachments:
+  try:
+    attachment_content = convert_to_md(attachment, tmpdir)
+    # Remove markdown code block markers for cleaner diff
+    lines = attachment_content.split('\n')
+    if len(lines) > 2  and lines[0].startswith('```') \
+                       and lines[-1].endswith('```'):
+      attachment_content = '\n'.join(lines[1:-1])
+    attachment_texts[attachment.filename] = attachment_content
+  except Exception:
+    attachment_texts[attachment.filename] = \
+                                    "[Could not convert attachment to text]"
+@
+
+\subsection{Generating unified diffs}
+
+This function generates unified diffs between two content dictionaries, handling
+different content types appropriately.
+<<functions>>=
+def generate_diff(prev_content, curr_content, prev_label, curr_label,
+                 diff_threshold_fixed=DEFAULT_DIFF_THRESHOLD_FIXED,
+                 diff_threshold_percent=DEFAULT_DIFF_THRESHOLD_PERCENT):
+  """
+  Generates a unified diff between two content dictionaries. Each key
+  represents a part of the submission (body, quiz_answers, attachments).
+  The attachments key contains itself a dictionary of filename to content.
+
+  The diff_threshold parameters control renamed file matching sensitivity.
+
+  Returns a string with the diff output, or None if no differences.
+  """
+  diff_lines = []
+
+  <<process all content keys for diff>>
+  
+  <<format final diff output>>
+@
+
+We process each content type, handling attachments specially since they're nested.
+We split this into two separate concerns: non-attachment content (body text,
+quiz answers) and attachment content (files).
+<<process all content keys for diff>>=
+<<process non-attachment content for diff>>
+<<process attachment content for diff>>
+@
+
+First, we handle non-attachment content types like body text and quiz answers.
+These are all stored as strings directly in the content dictionary.
+<<process non-attachment content for diff>>=
+all_keys = (set(prev_content.keys()) | set(curr_content.keys())) \
+              - {'attachments'}
+
+for key in sorted(all_keys):
+  prev_text = prev_content.get(key, "")
+  curr_text = curr_content.get(key, "")
+
+  <<handle other content diffs>>
+@
+
+Then we handle attachments, which require special processing.
+<<process attachment content for diff>>=
+<<handle attachment diffs>>
+@
+
+Other than attachments content types (body text, quiz answers) are handled with
+standard diff logic.
+We call [[splitlines(keepends=True)]] to retain the original line terminators
+so that [[difflib.unified_diff]] can faithfully represent changes, including
+newline-only edits.
+We also pass [[lineterm=""]] to [[unified_diff]] to prevent it from adding
+extra newlines (since our input lines already have them preserved by
+[[keepends=True]]).
+<<handle other content diffs>>=
+if prev_text != curr_text:
+  content_diff = list(difflib.unified_diff(
+    prev_text.splitlines(keepends=True) if prev_text else [],
+    curr_text.splitlines(keepends=True) if curr_text else [],
+    fromfile=f"{prev_label}/{key}",
+    tofile=f"{curr_label}/{key}",
+    lineterm=""
+  ))
+  if content_diff:
+    diff_lines.extend(content_diff)
+    diff_lines.append("\n")
+@
+
+Attachments require special handling since they're nested dictionaries of files.
+However, when there's only one file in each version, we try to match them even 
+if names differ.
+<<handle attachment diffs>>=
+prev_attachments = prev_content.get('attachments', {})
+curr_attachments = curr_content.get('attachments', {})
+
+# Dictionary to track original filenames for matched files
+# Maps current filename -> original filename in previous version
+filename_mapping = {}
+
+<<match single files with different names>>
+
+all_files = set(prev_attachments.keys()) | set(curr_attachments.keys())
+
+<<diff each attachment file>>
+@
+
+\subsubsection{Smart file matching for renamed submissions}
+
+A common student behavior is to rename files between submissions, often adding
+qualifiers like ``final'', ``revised'', or ``v2''.
+For example:
+\begin{itemize}
+\item [[solution.py]] → [[solution_final.py]]
+\item [[assignment.py]] → [[final_assignment.py]]
+\item [[lab1.java]] → [[lab1_revised.java]]
+\end{itemize}
+
+We use \emph{edit distance} (Levenshtein distance) to detect renamed files
+and match them across versions.
+This allows diffing the actual content changes rather than showing spurious
+add/delete operations.
+
+The matching algorithm works for any number of files:
+\begin{enumerate}
+\item Compute edit distance between all pairs of files with matching extensions
+\item Sort pairs by edit distance (lowest first)
+\item Accept matches greedily, ensuring one-to-one mapping
+\item Only accept matches below a conservative threshold:
+  \begin{itemize}
+  \item Distance $\leq$ [[DEFAULT_DIFF_THRESHOLD_FIXED]], or
+  \item Distance $\leq$ [[DEFAULT_DIFF_THRESHOLD_PERCENT]]\%
+    of the longer filename (without extension)
+  \end{itemize}
+\end{enumerate}
+
+This approach correctly handles cases like:
+\begin{itemize}
+\item Single file renames: [[lab.py]] → [[lab_final.py]]
+\item Multiple file renames: [[part1.py]], [[part2.py]] →
+  [[part1_v2.py]], [[part2_v2.py]]
+\item Mixed scenarios: [[lab.py]] → [[lab_final.py]] while [[test.py]]
+  remains unchanged
+\item Adding similarly-named files: [[lab1.py]] → [[lab1_final.py]]
+  with new [[lab1_test.py]]
+\end{itemize}
+We define the constants as follows.
+Our choice is based on testing on student data with cases similar to the above.
+And these values seems to make a good trade-off for a default.
+<<constants>>=
+DEFAULT_DIFF_THRESHOLD_FIXED = 30
+DEFAULT_DIFF_THRESHOLD_PERCENT = 60
+<<[[format_submission]] args>>=
+diff_threshold_fixed=DEFAULT_DIFF_THRESHOLD_FIXED,
+diff_threshold_percent=DEFAULT_DIFF_THRESHOLD_PERCENT,
+<<args for diff option>>=
+diff_threshold_fixed=args.diff_threshold_fixed,
+diff_threshold_percent=args.diff_threshold_percent
+@
+
+The key insight is that by considering lowest-distance pairs first,
+we naturally find the correct matches even when students add or remove
+files with similar names.
+
+\subsubsection{Adjusting matching thresholds}
+
+The default thresholds (distance $\leq$ [[DEFAULT_DIFF_THRESHOLD_FIXED]]
+or $\leq$ [[DEFAULT_DIFF_THRESHOLD_PERCENT]]\% of length) work well
+for most common renaming patterns.
+However, some students use more substantial renames that exceed these limits.
+
+For example, [[lab_6_auxiliary.py]] $\to$ [[new_lab_6_auxiliary_functions.py]]
+has an edit distance of 14, which exceeds the default threshold of 9
+(max of [[DEFAULT_DIFF_THRESHOLD_FIXED]] and
+[[DEFAULT_DIFF_THRESHOLD_PERCENT]]\% of 30 characters).
+
+To match such files, increase the thresholds using command-line options:
+\begin{description}
+\item[{[[--diff-threshold-fixed N]]}]
+  Sets the minimum edit distance allowed
+  (default: [[DEFAULT_DIFF_THRESHOLD_FIXED]]).
+  Use higher values to match files with more character changes.
+\item[{[[--diff-threshold-percent PCT]]}]
+  Sets the percentage of filename length allowed
+  (default: [[DEFAULT_DIFF_THRESHOLD_PERCENT]]).
+  Use higher percentages to match files with proportionally larger changes.
+\end{description}
+
+The threshold used is the \emph{maximum} of these two values, so increasing
+either one allows more permissive matching.
+
+Examples:
+\begin{itemize}
+\item [[--diff-threshold-percent 50]] allows up to 50\% of filename length
+  (would match [[lab_6_auxiliary.py]] $\to$
+  [[new_lab_6_auxiliary_functions.py]])
+\item [[--diff-threshold-fixed 15]] allows up to 15 character edits
+  (also matches the above pair)
+\item [[--diff-threshold-fixed 20 --diff-threshold-percent 60]]
+  very permissive matching for heavily renamed files
+\end{itemize}
+
+Be conservative when increasing thresholds: very high values may cause
+incorrect matches between unrelated files.
+The diff headers always show both filenames, allowing you to verify matches
+are correct.
+
+When files are matched this way, the diff header shows both original names
+([[--- Version 0/solution.py]] and [[+++ Version 1/solution_final.py]]) to
+make the matching transparent to the grader.
+This allows instructors to verify that the heuristic made the correct match.
+
+We use the [[match_renamed_files()]] function to find matches using edit
+distance.
+This works for both single files and multiple files, using an optimal
+matching algorithm that considers all pairs and selects the best matches.
+The function uses a conservative threshold to avoid incorrect pairings
+(\eg it won't match [[test.py]] with [[test_data.py]] because the edit
+distance is too large).
+
+<<match single files with different names>>=
+# Find renamed files using edit distance matching
+filename_mapping = match_renamed_files(prev_attachments, curr_attachments,
+                                      diff_threshold_fixed,
+                                      diff_threshold_percent)
+
+# Rename files in prev_attachments to match current names
+for curr_filename, prev_filename in filename_mapping.items():
+  prev_attachments[curr_filename] = prev_attachments.pop(prev_filename)
+@
+
+Each attachment file is compared individually.
+When a file has been matched despite having different names, we use the original
+filename in the diff header to make it clear that a rename was detected.
+<<diff each attachment file>>=
+for filename in sorted(all_files):
+  prev_file_content = prev_attachments.get(filename, "")
+  curr_file_content = curr_attachments.get(filename, "")
+  
+  if prev_file_content != curr_file_content:
+    # Use original filename if this file was matched despite name difference
+    prev_filename_for_diff = filename_mapping.get(filename, filename)
+    
+    file_diff = list(difflib.unified_diff(
+      prev_file_content.splitlines(keepends=True),
+      curr_file_content.splitlines(keepends=True),
+      fromfile=f"{prev_label}/{prev_filename_for_diff}",
+      tofile=f"{curr_label}/{filename}",
+      lineterm=""
+    ))
+    if file_diff:
+      diff_lines.extend(file_diff)
+      diff_lines.append("\n")
+@
+
+Finally, we format the diff output with markdown code blocks for readability.
+Each diff line should be properly terminated to ensure correct rendering.
+<<format final diff output>>=
+if diff_lines:
+  # Ensure each line ends with a newline for proper rendering
+  formatted_lines = []
+  for line in diff_lines:
+    if line == "\n":
+      formatted_lines.append(line)
+    elif not line.endswith('\n'):
+      formatted_lines.append(line + '\n')
+    else:
+      formatted_lines.append(line)
+  return "```diff\n" + "".join(formatted_lines) + "```"
+return None
+@
+
+\subsection{Limitations and edge cases}
+
+The diff functionality handles most common submission scenarios, but has some
+limitations instructors should be aware of:
+
+\begin{description}
+\item[Binary files and unconvertible content]
+  Files that cannot be converted to text (such as images, compiled binaries, or
+  proprietary formats) will show [[{[}Could not convert attachment to text{]}]]
+  in the output rather than a meaningful diff.
+  The file is still downloaded to [[tmpdir]] for manual inspection.
+
+\item[Very large files]
+  No pagination or summarization is performed on large diffs.
+  A student submission with a very large file (\eg a data file or generated
+  code) may produce unwieldy output.
+  The pager helps navigate this, but instructors may prefer to use
+  [[--output-dir]] to save files for inspection in an editor.
+
+\item[Multiple file handling]
+  When multiple files exist in a version, file matching uses exact names only.
+  If a student renames one of several files between submissions, that file will
+  appear as separate delete/add operations rather than a diff.
+  This is intentional to avoid incorrect pairings, but means the instructor
+  must manually correlate the old and new versions.
+
+\item[File matching heuristic accuracy]
+  The smart file matching heuristic (§\ref{SubmissionDiff}) may occasionally
+  match unrelated files if they happen to share common naming patterns.
+  For example, [[intro.py]] and [[intro_to_python.py]] might be matched despite
+  being different programs.
+  The visible filenames in diff headers ([[--- Version 0/intro.py]] and
+  [[+++ Version 1/intro_to_python.py]]) help detect such cases, allowing the
+  instructor to mentally discount the diff.
+
+\item[Line ending differences]
+  Different operating systems use different line endings (LF vs CRLF).
+  If a student switches systems between submissions, the diff may show every
+  line as changed even if only line endings differ.
+  The [[splitlines(keepends=True)]] approach preserves line endings, so genuine
+  content changes remain visible, but the output can be noisy.
+
+\item[Whitespace-only changes]
+  The diff shows all whitespace changes (indentation, trailing spaces).
+  For languages like Python where indentation is significant, this is important.
+  However, for other languages, reformatting code may produce large diffs that
+  obscure semantic changes.
+\end{description}
+
+Despite these limitations, the diff functionality significantly improves the
+efficiency of reviewing student submission revisions in the common case.
+
+\subsection{Filename processing helpers}
+
+Helper functions for file name processing used by the diff functionality.
+<<functions>>=
+def get_file_extension(filename):
+  """
+  Extract file extension from filename.
+  Returns extension including the dot (e.g., '.py') or empty string if none.
+  """
+  if '.' in filename:
+    return '.' + filename.rsplit('.', 1)[1]
+  return ''
+
+def get_file_base(filename):
+  """
+  Extract base filename without extension.
+  """
+  if '.' in filename:
+    return filename.rsplit('.', 1)[0]
+  return filename
+@
+
+\subsection{Computing string similarity with edit distance}
+
+To match renamed files across submission versions, we need a measure of
+similarity between filenames.
+The \emph{Levenshtein edit distance} (or simply \enquote{edit distance})
+quantifies how different two strings are by counting the minimum number of
+single-character edits needed to transform one string into the other.
+
+The three allowed edit operations are:
+\begin{description}
+\item[Insertion] Add a character (\eg [[lab1]] $\to$ [[lab_1]])
+\item[Deletion] Remove a character (\eg [[lab_1]] $\to$ [[lab1]])
+\item[Substitution] Replace one character with another
+  (\eg [[Lab1]] $\to$ [[lab1]])
+\end{description}
+
+For example, transforming [[solution.py]] to [[solution_final.py]] requires
+inserting [[_final]] (6 operations), so the edit distance is 6.
+Transforming [[Lab1.py]] to [[lab1.py]] requires changing [[L]] to [[l]]
+(1 substitution), so the edit distance is 1.
+
+The smaller the edit distance, the more similar the strings.
+An edit distance of 0 means the strings are identical.
+
+We use edit distance to match filenames because it naturally handles the
+common patterns students use when renaming files:
+\begin{itemize}
+\item Adding suffixes: [[lab.py]] $\to$ [[lab_final.py]]
+\item Changing separators: [[lab_1.py]] $\to$ [[lab-1.py]]
+\item Fixing capitalization: [[Solution.py]] $\to$ [[solution.py]]
+\item Adding prefixes: [[test.py]] $\to$ [[new_test.py]]
+\end{itemize}
+
+<<functions>>=
+def compute_edit_distance(str1, str2):
+  """
+  Compute Levenshtein edit distance between two strings.
+
+  Returns the minimum number of single-character edits (insertions,
+  deletions, or substitutions) needed to transform str1 into str2.
+  """
+  <<compute edit distance using dynamic programming>>
+@
+
+The edit distance algorithm uses \emph{dynamic programming}.
+We build a matrix [[dp]] where [[dp[i][j]]] represents the edit distance
+between the first [[i]] characters of [[str1]] and the first [[j]] characters
+of [[str2]].
+
+The base cases are:
+\begin{itemize}
+\item [[dp[0][j] = j]] --- transforming empty string to [[str2[0:j]]]
+  requires [[j]] insertions
+\item [[dp[i][0] = i]] --- transforming [[str1[0:i]]] to empty string
+  requires [[i]] deletions
+\end{itemize}
+
+For each position [[(i, j)]], we consider three possibilities:
+\begin{description}
+\item[Characters match] If [[str1[i-1] == str2[j-1]]], no edit needed.
+  Take [[dp[i-1][j-1]]].
+\item[Substitution] Replace [[str1[i-1]]] with [[str2[j-1]]].
+  Cost: [[dp[i-1][j-1] + 1]].
+\item[Insertion] Insert [[str2[j-1]]].
+  Cost: [[dp[i][j-1] + 1]].
+\item[Deletion] Delete [[str1[i-1]]].
+  Cost: [[dp[i-1][j] + 1]].
+\end{description}
+
+We take the minimum of these options.
+The final answer is [[dp[len(str1)][len(str2)]]].
+
+<<compute edit distance using dynamic programming>>=
+m, n = len(str1), len(str2)
+
+# Create DP table
+dp = [[0] * (n + 1) for _ in range(m + 1)]
+
+# Base cases
+for i in range(m + 1):
+  dp[i][0] = i  # Delete all characters from str1
+for j in range(n + 1):
+  dp[0][j] = j  # Insert all characters from str2
+
+# Fill DP table
+for i in range(1, m + 1):
+  for j in range(1, n + 1):
+    if str1[i-1] == str2[j-1]:
+      # Characters match, no edit needed
+      dp[i][j] = dp[i-1][j-1]
+    else:
+      # Take minimum of insert, delete, substitute
+      dp[i][j] = 1 + min(
+        dp[i-1][j],    # Delete from str1
+        dp[i][j-1],    # Insert from str2
+        dp[i-1][j-1]   # Substitute
+      )
+
+return dp[m][n]
+@
+
+\subsection{Matching renamed files using edit distance}
+
+With the edit distance function available, we can now match files across
+submission versions even when they have been renamed.
+The challenge is handling multiple files: if a student submits three files
+in version 0 and three files in version 1, which old files correspond to
+which new files?
+
+We want to find the \emph{optimal matching} that pairs files with minimal
+total edit distance.
+However, we must be conservative: only match files when we have high confidence
+the match is correct.
+An incorrect match would show a confusing diff between unrelated files.
+
+Our approach uses a greedy algorithm based on sorted distances:
+\begin{enumerate}
+\item Compute edit distance between every pair of files (old and new) with
+  matching extensions
+\item Sort all candidate pairs by edit distance (lowest first)
+\item Accept matches in order, skipping pairs where either file is already
+  matched
+\item Only accept matches below a conservative threshold
+\end{enumerate}
+
+This gives us near-optimal one-to-one matching without the complexity of
+the Hungarian algorithm.
+The key insight is that by considering lowest-distance pairs first, we naturally
+find the best matches.
+
+For example, if a student renames [[lab1.py]] to [[lab1_final.py]] (distance 6)
+and also adds a new file [[lab1_test.py]], we correctly match the first pair
+because its distance is lower than any pairing involving [[lab1_test.py]].
+
+<<functions>>=
+def match_renamed_files(prev_attachments, curr_attachments,
+                       fixed_threshold=DEFAULT_DIFF_THRESHOLD_FIXED,
+                       percent_threshold=DEFAULT_DIFF_THRESHOLD_PERCENT):
+  """
+  Match files across versions using edit distance.
+
+  Args:
+    prev_attachments: Dictionary of previous version's attachments
+    curr_attachments: Dictionary of current version's attachments
+    fixed_threshold: Maximum edit distance for a match
+                    (default: DEFAULT_DIFF_THRESHOLD_FIXED)
+    percent_threshold: Maximum distance as percentage of filename length
+                      (default: DEFAULT_DIFF_THRESHOLD_PERCENT)
+
+  Returns a dictionary mapping current filename -> previous filename
+  for files that appear to be renames.
+  """
+  <<build candidate matches with distances>>
+  <<accept matches in distance order>>
+@
+
+First, we compute edit distances for all candidate pairs.
+We only consider pairs with matching file extensions, since students rarely
+change extensions when renaming (\eg [[.py]] to [[.txt]]).
+
+<<build candidate matches with distances>>=
+candidates = []
+
+for curr_filename in curr_attachments:
+  curr_ext = get_file_extension(curr_filename)
+  curr_base = get_file_base(curr_filename)
+
+  for prev_filename in prev_attachments:
+    # Only match files with same extension
+    prev_ext = get_file_extension(prev_filename)
+    if prev_ext != curr_ext or not prev_ext:
+      continue
+
+    # Skip if names are identical (will be matched automatically later)
+    if curr_filename == prev_filename:
+      continue
+
+    prev_base = get_file_base(prev_filename)
+    distance = compute_edit_distance(prev_base, curr_base)
+
+    candidates.append((distance, curr_filename, prev_filename))
+@
+
+Next, we sort candidates by distance and accept matches greedily.
+We track which files have been matched to ensure one-to-one mapping.
+
+We use a conservative threshold: only accept matches where the edit distance
+is small relative to the filename length.
+By default, we require distance $\leq$ [[DEFAULT_DIFF_THRESHOLD_FIXED]]
+or distance $\leq$ [[DEFAULT_DIFF_THRESHOLD_PERCENT]]\% of the
+longer filename's base length.
+These thresholds can be adjusted using [[--diff-threshold-fixed]] and
+[[--diff-threshold-percent]] command-line options.
+
+This prevents matching unrelated files that happen to have short names
+(\eg [[a.py]] and [[b.py]] have distance 1 but shouldn't be matched).
+
+<<accept matches in distance order>>=
+filename_mapping = {}
+matched_prev = set()
+matched_curr = set()
+
+# Sort by distance (ascending)
+candidates.sort(key=lambda x: x[0])
+
+for distance, curr_filename, prev_filename in candidates:
+  # Skip if either file already matched
+  if curr_filename in matched_curr or prev_filename in matched_prev:
+    continue
+
+  # Conservative threshold: distance <= fixed or <= percent% of base length
+  curr_base = get_file_base(curr_filename)
+  prev_base = get_file_base(prev_filename)
+  max_base_len = max(len(curr_base), len(prev_base))
+  threshold = max(fixed_threshold, int(percent_threshold / 100.0 * max_base_len))
+
+  if distance <= threshold:
+    filename_mapping[curr_filename] = prev_filename
+    matched_curr.add(curr_filename)
+    matched_prev.add(prev_filename)
+
+return filename_mapping
+@
+
+
+\section{Formatting rubrics}
+
+For assignments that use rubrics, we want to format those rubrics so that we 
+can read the results instead of just the cumulated grade.
+<<functions>>=
+def format_rubric(submission, json_format=False):
+  """
+  Format the rubric assessment of the `submission` in readable form.
+
+  If `json_format` is True, return a JSON string, otherwise Markdown.
+  """
+
+  if json_format:
+    result = {}
+  else:
+    result = ""
+
+  for crit_id, rating_data in submission.rubric_assessment.items():
+    criterion = get_criterion(crit_id, submission.assignment.rubric)
+    rating = get_rating(rating_data["rating_id"], criterion)
+    try:
+      comments = rating_data["comments"]
+    except KeyError:
+      comments = ""
+
+    <<add [[criterion]], [[rating]] and [[comments]] to [[result]]>>
+
+    if not json_format:
+      result += "\n"
+
+  return result.strip()
+@
+
+Sometimes Canvas is missing some data,
+for instance, an individual rating.
+So we add it only if it exists.
+<<add [[criterion]], [[rating]] and [[comments]] to [[result]]>>=
+if json_format:
+  result[criterion["description"]] = {
+    "rating": rating["description"] if rating else None,
+    "points": rating["points"] if rating else None,
+    "comments": comments
+  }
+else:
+  result += f"- {criterion['description']}: "
+  if rating:
+    result += f"{rating['description']} ({rating['points']})"
+  else:
+    result += "-"
+  result += "\n"
+  if comments:
+    result += textwrap.indent(textwrap.fill(f"- Comment: {comments}"),
+                              "  ")
+    result += "\n"
+@
+
+We can get the rating of a rubric from the rubric assessment.
+We can get this data from [[submission.rubric_assessment]] and it looks like 
+this:
+\begin{minted}{python}
+{'_7957': {'rating_id': '_6397', 'comments': '', 'points': 1.0},
+ '_1100': {'rating_id': '_8950', 'comments': '', 'points': 1.0}}
+\end{minted}
+
+We get the rubric with the assignment.
+So we can get it through [[submission.assignment.rubric]] and it looks like 
+this:
+\begin{minted}{python}
+[{'id': '_7957', 'points': 1.0, 'description': 'Uppfyller kraven i lydelsen', 
+'long_description': '', 'criterion_use_range': False, 'ratings': [{'id': 
+'_6397', 'points': 1.0, 'description': 'OK', 'long_description': ''}, {'id': 
+'_7836', 'points': 0.0, 'description': 'Påpekande', 'long_description': ''}]},
+{'id': '_1100', 'points': 1.0, 'description': 'Kan redogöra för alla detaljer', 
+'long_description': '', 'criterion_use_range': False, 'ratings': [{'id': 
+'_8950', 'points': 1.0, 'description': 'OK', 'long_description': ''}, {'id': 
+'_4428', 'points': 0.0, 'description': 'Påpekande', 'long_description': ''}]}]
+\end{minted}
+It's essentially a list of criterions.
+We want to extract a criterion by ID from the rubric.
+<<functions>>=
+def get_criterion(criterion_id, rubric):
+  """Returns criterion with ID `criterion_id` from rubric `rubric`"""
+  for criterion in rubric:
+    if criterion["id"] == criterion_id:
+      return criterion
+
+  return None
+@ And in exactly the same fashion we want to extract a rating from the 
+criterion.
+<<functions>>=
+def get_rating(rating_id, criterion):
+  """Returns rating with ID `rating_id` from rubric criterion `criterion`"""
+  for rating in criterion["ratings"]:
+    if rating["id"] == rating_id:
+      return rating
+
+  return None
+@
+
+
+\section{The [[submissions grade]] subcommand}
+
+The [[submissions grade]] subcommand allows grading of submissions.
+We must identify submissions, for this we use the options provided by 
+[[add_submission_options]].
+We will add [[required=True]] so that we get all options as required.
+
+Now, that [[submissions_grade_command]] function must take three arguments: [[config]], 
+[[canvas]] and [[args]].
+It must also do the processing for the submissions options using 
+[[process_submission_options]].
+<<functions>>=
+def submissions_grade_command(config, canvas, args):
+  submission_list = process_submission_options(canvas, args)
+  <<process options for grading>>
+  <<grade the submissions>>
+@
+
+\subsection{The options for grading}
+
+We introduce two options:
+\begin{itemize}
+\item [[-g]] or [[--grade]], which sets the grade of the submission.
+This can be almost anything: Canvas accepts points, percentages or letter 
+grades and will convert accordingly.
+\item [[-m]] or [[--message]], which sets a comment.
+\item [[-v]] or [[--verbose]], which will cause [[canvaslms]] to print what 
+grade is set for which assignment and which student.
+\end{itemize}
+Both [[-g]] and [[-m]] are optional.
+If neither is given, the SpeedGrader page of each submission is opened in the 
+web browser.
+In that case, [[-v]] make not much sense.
+The grading options are added via the [[add_grading_options]] function,
+which is shared between [[submissions grade]] and the standalone [[grade]]
+alias command.
+
+When we process the options, we will set up a dictionary that will be passed to 
+the Canvas API.
+It should be a dictionary of dictionaries, because we will unpack it using the 
+[[**]]-operator to have two named arguments: [[submission]] and [[comment]].
+<<process options for grading>>=
+results = {}
+if args.grade:
+  results["submission"] = {"posted_grade": args.grade}
+if args.message:
+  results["comment"] = {"text_comment": args.message}
+@
+
+Now we can process the submissions: either update the submission, if the grade 
+or message options were given, or open the submission in SpeedGrader.
+<<grade the submissions>>=
+if not args.grade and not args.message:
+  for submission in submission_list:
+    webbrowser.open(speedgrader(submission))
+else:
+  for submission in submission_list:
+    <<if verbose, print [[submission]] and [[results]] to stdout>>
+    <<grade submission with error handling>>
+@
+
+\subsection{Verbose output when setting grades}
+
+We log grading operations at INFO level, which is visible with the [[-v]]
+flag. This provides detailed feedback about what's happening during grading
+operations without cluttering normal output.
+<<if verbose, print [[submission]] and [[results]] to stdout>>=
+logger.info(f"Grading {submission.assignment.course.course_code} "
+             f"{submission.assignment.name} for {submission.user.name}")
+if args.grade:
+  logger.info(f"  Setting grade to: {args.grade}")
+if args.message:
+  logger.info(f"  Adding comment: {args.message}")
+@
+
+\subsection{Error handling for grading operations}
+
+We need to handle Canvas API exceptions when setting grades.
+Common issues include unauthorized access when assignments are not published,
+or when the user doesn't have permission to grade the assignment.
+This error handling ensures that users get helpful feedback instead of raw
+API exceptions.
+<<grade submission with error handling>>=
+try:
+  submission.edit(**results)
+except canvasapi.exceptions.Forbidden as err:
+  canvaslms.cli.err(1,
+    f"Permission denied when grading {submission.assignment.name} "
+    f"for {submission.user}. "
+    f"Hint: The assignment may not be published yet, or you may not have "
+    f"permission to grade this assignment. "
+    f"Canvas error: {err}")
+except canvasapi.exceptions.Unauthorized as err:
+  canvaslms.cli.err(1,
+    f"Unauthorized to grade {submission.assignment.name} "
+    f"for {submission.user}. "
+    f"Hint: Check your Canvas permissions or verify your authentication token. "
+    f"Canvas error: {err}")
+except canvasapi.exceptions.CanvasException as err:
+  canvaslms.cli.err(1,
+    f"Canvas API error when grading {submission.assignment.name} "
+    f"for {submission.user}. "
+    f"Canvas error: {err}")
+@
+
