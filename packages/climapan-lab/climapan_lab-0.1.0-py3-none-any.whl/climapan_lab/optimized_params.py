@@ -1,0 +1,33 @@
+# Optimized parameters from Autocorrelation-Based Bayesian calibration
+# Matches: ACF structure, CV (variability), and Trend
+
+optimized_params = {
+    "bankIL": 0.13670232251302977,
+    "bankResInit": 8978014244.389511,
+    "base_green_energy_price": 88.12537095665978,
+    "capital_growth_rate": 0.04808136246642571,
+    "climateSensitivity": 3.8836912211983625,
+    "climateZetaBrown": 0.5432385836156324,
+    "consumption_growth": 0.0037297940117719404,
+    "consumption_var": 0.0599898685983348,
+    "depreciationRate": 0.3730818778714202,
+    "energyOwnerProportionFromProfits": 0.6215391539842214,
+    "energy_price_growth": 0.0034186708574764253,
+    "forecast_discount_factor": 0.911391947804967,
+    "fossil_fuel_price": 2.9836941481310877,
+    "fossil_fuel_price_growth_rate": 0.006189794500206046,
+    "mark_up_alpha": 0.7192988687411799,
+    "mark_up_factor": 0.7831713183923286,
+    "ownerProportionFromProfits": 0.8897902897791072,
+    "owner_additional_consumption": 143.05927693573318,
+    "owner_endownment": 7277.147439555336,
+    "reserve_ratio": 0.18136807490883644,
+    "rho_energy": 86.18664149921297,
+    "rho_energy_K": 109.98205837795672,
+    "rho_labour": 67.4526867593956,
+    "rho_labour_K": 31.346703110182286,
+    "subsistenceLevelOfConsumption": 76.98013692350332,
+    "unemploymentDole": 272.0571568552891,
+    "wageAdjustmentRate": 0.007973123145192927,
+    "worker_additional_consumption": 9.536617708313317,
+}

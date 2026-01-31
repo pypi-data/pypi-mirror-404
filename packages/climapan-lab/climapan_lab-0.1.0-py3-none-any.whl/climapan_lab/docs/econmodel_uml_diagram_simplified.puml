@@ -1,0 +1,143 @@
+
+@startuml EconModel_Simplified_Class_Diagram
+
+!theme plain
+skinparam backgroundColor White
+skinparam classBackgroundColor LightYellow
+skinparam classBorderColor DarkBlue
+skinparam packageBackgroundColor LightBlue
+
+package "Economic Simulation Model" {
+    
+    class EconModel {
+        <<Main Model>>
+        + GDP: float
+        + gini: float
+        + covidState: bool
+        + lockdown: bool
+        + consumer_agents: AgentList
+        + bank_agents: AgentList
+        + government_agents: AgentList
+        + firms: AgentList
+        + climateModule: AgentList
+        --
+        + setup(): void
+        + step(): void
+        + update(): void
+    }
+
+    class Consumer {
+        <<Agent>>
+        + consumerType: str
+        + deposit: float
+        + wage: float
+        + employed: bool
+        --
+        + getWage(): float
+        + isEmployed(): bool
+    }
+
+    class Bank {
+        <<Agent>>
+        + loans: float
+        + equity: float
+        + deposits: float
+        --
+        + reset_bank(): void
+    }
+
+    class Government {
+        <<Agent>>
+        + budget: float
+        --
+        + update_budget(): void
+    }
+
+    abstract class Firm {
+        <<Abstract Agent>>
+        + useEnergy: str
+        + capital: float
+        + price: float
+        + net_profit: float
+        + lockdown: bool
+        --
+        + produce(): void
+        + price_setting(): void
+    }
+
+    class ConsumerGoodsFirm {
+        <<Consumer Goods>>
+        + market_share: float
+        --
+        + prepareForecast(): void
+    }
+
+    class CapitalGoodsFirm {
+        <<Capital Goods>>
+        + capital_purchase: float
+        --
+        + set_capital_investment(): void
+    }
+
+    class GreenEnergyFirm {
+        <<Green Energy>>
+        + energy_demand: float
+    }
+
+    class BrownEnergyFirm {
+        <<Brown Energy>>
+        + energy_demand: float
+    }
+
+    class Climate {
+        <<Climate System>>
+        + CO2: float
+        + T: float
+        --
+        + progress(): void
+        + climate_damage(): void
+    }
+
+    class "ap.Model" as ApModel {
+        <<Framework>>
+        + step(): void
+        + record(): void
+    }
+}
+
+' Main inheritance
+ApModel <|-- EconModel
+
+' Firm hierarchy
+Firm <|-- ConsumerGoodsFirm
+Firm <|-- CapitalGoodsFirm
+Firm <|-- GreenEnergyFirm
+Firm <|-- BrownEnergyFirm
+
+' Composition (EconModel contains agents)
+EconModel *-- "many" Consumer
+EconModel *-- "1" Bank
+EconModel *-- "1" Government
+EconModel *-- "many" ConsumerGoodsFirm
+EconModel *-- "many" CapitalGoodsFirm
+EconModel *-- "1" GreenEnergyFirm
+EconModel *-- "1" BrownEnergyFirm
+EconModel *-- "0..1" Climate
+
+' Key interactions
+Consumer --> Firm : works for
+Bank --> Firm : lends to
+Government --> EconModel : regulates
+Climate --> Firm : affects
+
+note top of EconModel
+    Orchestrates agent-based economic simulation
+    with COVID-19 and climate change effects
+end note
+
+note bottom of Firm
+    Four types: Consumer Goods, Capital Goods,
+    Green Energy, Brown Energy
+end note
+
+@enduml
