@@ -1,0 +1,186 @@
+Metadata-Version: 2.4
+Name: atomkit
+Version: 0.1.2
+Summary: Atom-level analysis toolkit for molecular dynamics trajectories
+Project-URL: Homepage, https://github.com/arki05/atomkit
+Project-URL: Repository, https://github.com/arki05/atomkit
+Project-URL: Issues, https://github.com/arki05/atomkit/issues
+Author-email: Julius Arkenberg <julius@rkenberg.de>
+License: MIT
+License-File: LICENSE
+Keywords: chemistry,hdf5,lammps,molecular-dynamics,simulation,spatial-indexing
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Science/Research
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Scientific/Engineering :: Chemistry
+Classifier: Topic :: Scientific/Engineering :: Physics
+Classifier: Typing :: Typed
+Requires-Python: >=3.10
+Requires-Dist: h5py>=3.0
+Requires-Dist: numba>=0.56
+Requires-Dist: numpy>=1.24
+Requires-Dist: polars>=0.19
+Requires-Dist: tqdm>=4.60
+Provides-Extra: all
+Requires-Dist: hdf5plugin>=4.0; extra == 'all'
+Requires-Dist: marimo>=0.1; extra == 'all'
+Requires-Dist: matplotlib>=3.5; extra == 'all'
+Provides-Extra: compression
+Requires-Dist: hdf5plugin>=4.0; extra == 'compression'
+Provides-Extra: dev
+Requires-Dist: hdf5plugin>=4.0; extra == 'dev'
+Requires-Dist: matplotlib>=3.5; extra == 'dev'
+Requires-Dist: pytest-xdist>=3.0; extra == 'dev'
+Requires-Dist: pytest>=7.0; extra == 'dev'
+Provides-Extra: marimo
+Requires-Dist: marimo>=0.1; extra == 'marimo'
+Requires-Dist: matplotlib>=3.5; extra == 'marimo'
+Provides-Extra: viz
+Requires-Dist: matplotlib>=3.5; extra == 'viz'
+Description-Content-Type: text/markdown
+
+# atomkit
+
+Atom-level analysis toolkit for molecular dynamics trajectories.
+
+## Install
+
+```bash
+pip install atomkit
+# or
+uv pip install atomkit
+```
+
+## Features
+
+### SpatialGrid
+
+4D CSR-indexed spatial grid (space + time) for fast region queries on LAMMPS trajectories. Stores as HDF5 with zstd compression and lazy loading (mmap).
+
+**CLI:**
+
+```bash
+# Convert LAMMPS trajectory to HDF5 (all timesteps)
+atomkit convert simulation.lammpstrj output.h5
+
+# Options
+atomkit convert simulation.lammpstrj -c 4.0              # cell size 4Å
+atomkit convert simulation.lammpstrj -t 0:100            # timesteps 0-99
+atomkit convert simulation.lammpstrj -t 0:1000:10        # every 10th timestep
+atomkit convert simulation.lammpstrj -t 0,50,100         # specific timesteps
+atomkit convert simulation.lammpstrj --coords unwrapped  # use xu,yu,zu columns
+atomkit convert simulation.lammpstrj --coords wrapped    # use x,y,z columns
+
+# Inspect file
+atomkit info output.h5
+```
+
+**Python:**
+
+```python
+from atomkit import SpatialGrid, Region
+
+# Create from LAMMPS file (loads all timesteps by default)
+grid = SpatialGrid.from_lammps('simulation.lammpstrj', cell_size=4.0)
+grid.save('data.h5')
+
+# Coordinate type: "auto" (default), "unwrapped", "wrapped", or "scaled"
+# - unwrapped (xu,yu,zu): actual positions, tracks displacement outside box
+# - wrapped (x,y,z): positions wrapped into simulation box
+# - scaled (xs,ys,zs): fractional coordinates (0-1)
+grid = SpatialGrid.from_lammps('traj.lammpstrj', coord_type='unwrapped')
+
+# Query with 4D regions (returns read-only numpy arrays)
+with SpatialGrid.load('data.h5') as grid:
+    # Region bounds: (min, max) tuple, single value, or omit for unbounded
+
+    # Single timestep (t=100 means timestep VALUE 100)
+    data = grid.query(Region(t=100))
+
+    # Spatial box, all timesteps
+    data = grid.query(Region(x=(0, 50), y=(0, 50), z=(0, 50)))
+
+    # Full 4D query
+    data = grid.query(Region(x=(0, 50), y=(0, 50), z=(0, 50), t=(0, 1000)))
+
+    # Slice at a point (all cells containing x=25)
+    data = grid.query(Region(x=25.0, t=100))
+
+    # Everything
+    data = grid.query()  # or Region()
+
+    # Access fields
+    data['coords']       # (N, 3) atom positions
+    data['stress']       # (N,) stress values
+    data['_timestep']    # (N,) which timestep each atom belongs to
+    data['_source_idx']  # (N,) original file indices
+
+    # Per-timestep analysis
+    for t in np.unique(data['_timestep']):
+        mask = data['_timestep'] == t
+        print(f"t={t}: mean stress = {data['stress'][mask].mean()}")
+
+    # Fast approximate count (no field reads)
+    n_approx = grid.count(Region(x=(0, 50), y=(0, 50), z=(0, 50)))
+
+    # Exact vs cell-level query
+    data = grid.query(region)                  # default, exact bounds
+    data = grid.query(region, cell_level=True) # faster, includes full boundary cells
+
+    # Add fields later
+    grid.add_field('velocity', vel_array)
+```
+
+### Region
+
+4D axis-aligned bounding box for space-time queries:
+
+```python
+from atomkit import Region
+
+# Flexible bounds specification:
+Region(x=(0, 10), y=(0, 10), z=(0, 10))  # Spatial box, all timesteps
+Region(t=100)                             # Single timestep, all space
+Region(x=5.0)                             # YZ plane at x=5 (slice query)
+Region()                                  # Everything (unbounded)
+
+# Region operations
+region = Region(x=(0, 100), y=(0, 100), z=(0, 100), t=(0, 1000))
+region.volume()                           # Spatial volume
+region.subdivide(nx=10, ny=10, nz=10)     # Split into sub-regions
+region.with_time(500)                     # Same space, different time
+region.expand(padding=5.0)                # Grow bounds
+```
+
+**Grid dimensions:**
+
+- `grid.n_timesteps` - number of timesteps
+- `grid.n_atoms` - atoms per timestep
+- `grid.grid_shape` - (nx, ny, nz) spatial cells
+- `grid.timestep_values` - actual timestep values from trajectory
+
+## Future Extensions
+
+### Marching Cubes / Void Visualization
+
+For visualizing empty space (cracks, voids, delamination) and computing volumes:
+
+```python
+# Potential future API
+verts, faces = grid.void_mesh(Region(t=100), threshold=0.5)
+volume = grid.void_volume(Region(t=100), threshold=0.5)
+```
+
+### Grid Alignment
+
+For snapping user-selected regions to grid cell boundaries:
+
+```python
+# Potential future API
+aligned = AlignedRegion.snap(region, grid, mode='enclosing')
+```
