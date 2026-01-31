@@ -1,0 +1,99 @@
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: styfle/cancel-workflow-action@0.12.1
+      - uses: actions/checkout@v6
+      - name: Get current date for caching
+        id: get-date
+        shell: bash
+        run: |
+          echo date=$(date -u +%Y-%m-%d) >> $GITHUB_OUTPUT
+      - uses: actions/cache@v5
+        id: cache
+        with:
+          path: |
+            ~/.cargo/bin
+            ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-${{ steps.get-date.outputs.date }}
+      - name: Install Rust and Garden
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          cargo install garden-tools
+      - name: Install system-provided test dependencies
+        run: sudo apt-get update
+      - run: |
+          sudo apt-get install -y \
+            nsis \
+            python3-qtpy \
+            python3-pyqt6 \
+            python3-pyqt6.qtsvg \
+            python3-pyqt6.qtwebengine \
+            python3-send2trash
+      - name: Install pip-provided test dependencies
+        run: |
+          set -x
+          garden dev/virtualenv -vv -D pip_upgrade=true
+          garden dev -vv
+      - name: Configure tests
+        run: |
+          git config --global user.name "Git Cola"
+          git config --global user.email git-cola@localhost
+      - name: Run tests and checks
+        run: garden check -vv
+      - name: Run doc build
+        run: garden doc/html -vv
+      - name: Build Windows git-cola.exe installer
+        run: |
+          set -x
+          rm -fr build
+          garden pynsist -vv
+          mv build/nsis/git-cola*.exe git-cola.exe
+      - name: Upload git-cola.win.zip
+        uses: actions/upload-artifact@v6
+        with:
+          name: git-cola.win
+          path: git-cola.exe
+      - name: Code formatting
+        run: garden fmt -vv -- --check
+      - name: Test the garden installation method
+        run: garden install -vv -D prefix=dist
+
+  macos:
+    name: macOS
+    runs-on: macos-latest
+    steps:
+      - uses: styfle/cancel-workflow-action@0.12.1
+      - uses: actions/checkout@v6
+      - name: Get current date for caching
+        id: get-date
+        shell: bash
+        run: |
+          echo date=$(date -u +%Y-%m-%d) >> $GITHUB_OUTPUT
+      - uses: actions/cache@v5
+        id: cache
+        with:
+          path: |
+            ~/.cargo/bin
+            ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-${{ steps.get-date.outputs.date }}
+      - name: Install Rust and Garden
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          cargo install garden-tools
+      - name: Install dependencies
+        run: brew install git-cola
+      - name: Build macOS git-cola.app bundle
+        run: garden macos/app -vv -D cola_app='${TREE_PATH}/local/git-cola.app'
+      - name: Upload git-cola.app.zip
+        uses: actions/upload-artifact@v6
+        with:
+          name: git-cola.app
+          path: local
