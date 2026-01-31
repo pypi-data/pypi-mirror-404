@@ -1,0 +1,36 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "fapilog-tamper"
+version = "0.1.0"
+description = "Tamper-evident logging add-on for fapilog"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+authors = [{name = "Fapilog", email = "dev@fapilog.dev"}]
+dependencies = [
+  "fapilog>=0.3.0",
+  "cryptography>=41.0.0",
+]
+
+[project.optional-dependencies]
+signatures = ["pynacl>=1.5.0"]
+aws = ["boto3>=1.26.0"]
+gcp = ["google-cloud-kms>=2.0.0"]
+azure = ["azure-keyvault-keys>=4.0.0", "azure-identity>=1.0.0"]
+vault = ["hvac>=1.0.0"]
+all-kms = ["fapilog-tamper[aws,gcp,azure,vault,signatures]"]
+
+[project.entry-points."fapilog.enrichers"]
+integrity = "fapilog_tamper.enricher:IntegrityEnricher"
+
+[project.entry-points."fapilog.sinks"]
+sealed = "fapilog_tamper.sealed_sink:SealedSink"
+
+[project.scripts]
+fapilog-tamper = "fapilog_tamper.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/fapilog_tamper"]
