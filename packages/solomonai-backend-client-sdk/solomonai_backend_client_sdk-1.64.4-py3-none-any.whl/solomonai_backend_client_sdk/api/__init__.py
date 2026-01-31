@@ -1,0 +1,10 @@
+# flake8: noqa
+
+# import apis into api package
+from solomonai_backend_client_sdk.api.accounting_service_api import AccountingServiceApi
+from solomonai_backend_client_sdk.api.financial_service_api import FinancialServiceApi
+from solomonai_backend_client_sdk.api.social_service_api import SocialServiceApi
+from solomonai_backend_client_sdk.api.user_service_v2_api import UserServiceV2Api
+from solomonai_backend_client_sdk.api.workspace_service_api import WorkspaceServiceApi
+from solomonai_backend_client_sdk.api.workspace_service_rest_api import WorkspaceServiceRestApi
+
