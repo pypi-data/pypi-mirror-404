@@ -1,0 +1,97 @@
+# this will only work for DB deployed in the same cluster and namespace
+{{ if .Values.alias_svc.dpps_mariadb.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dpps-mariadb
+spec:
+  ports:
+  - name: mysql
+    port: 3306
+    protocol: TCP
+    targetPort: mysql
+  selector:
+    app.kubernetes.io/component: primary
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/name: mariadb
+  type: ClusterIP
+{{ end }}
+{{ if .Values.alias_svc.dirac_db.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dirac-db
+spec:
+  ports:
+  - name: mysql
+    port: 3306
+    protocol: TCP
+    targetPort: mysql
+  selector:
+    app.kubernetes.io/component: primary
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/name: mariadb
+  type: ClusterIP
+{{ end }}
+{{ if .Values.alias_svc.dpps_minio.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dpps-minio
+spec:
+  ports:
+  - name: http
+    port: 9000
+    protocol: TCP
+    targetPort: 9000
+  selector:
+    app: minio
+    release: {{ .Release.Name }}
+  type: ClusterIP
+{{ end }}
+{{ if .Values.alias_svc.dpps_fts.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dpps-fts
+spec:
+  ports:
+  - name: fts1
+    port: 8446
+    protocol: TCP
+    targetPort: fts-web
+  - name: fts2
+    port: 8449
+    protocol: TCP
+    targetPort: fts-mon
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/name: fts
+  sessionAffinity: None
+  type: ClusterIP
+{{ end }}
+{{ if .Values.alias_svc.dpps_iam.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wms-dpps-iam-login-service
+spec:
+  ports:
+  - name: http
+    port: 8080
+    protocol: TCP
+    targetPort: http
+  - name: debug
+    port: 1044
+    protocol: TCP
+    targetPort: debug
+  selector:
+    app.kubernetes.io/component: login-service
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/name: dpps-iam
+{{ end }}

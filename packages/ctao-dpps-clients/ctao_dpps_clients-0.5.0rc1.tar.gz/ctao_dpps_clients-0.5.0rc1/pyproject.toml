@@ -1,0 +1,154 @@
+[build-system]
+requires = ["setuptools>=64", "setuptools-scm>=8"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ctao-dpps-clients"
+description = "DPPS python clients package"
+readme = "README.md"
+license = "BSD-3-Clause"
+
+authors = [
+  {name = "The CTAO DPPS team"},
+]
+maintainers = [
+    {name = "Maximilian Linhoff", email = "maximilian.linhoff@cta-observatory.org"},
+]
+
+requires-python = ">=3.9"
+
+dependencies = [
+  "ctao-wms-clients==0.5.0rc4",
+  "ctao-bdms-clients==0.6.0rc1",
+]
+
+dynamic = ["version"]
+
+[project.urls]
+repository = "https://gitlab.cta-observatory.org/cta-computing/dpps/dpps"
+documentation = "http://cta-computing.gitlab-pages.cta-observatory.org/dpps/dpps/"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[project.optional-dependencies]
+test = [
+  "pytest",
+  "pytest-cov",
+  "pytest-requirements",
+  "pytest-xdist",
+  "tables",
+  "astropy",
+  # Used for pipeline-only tests without going through WMS
+  "ctao-calibpipe==0.4.0",
+  "ctao-datapipe==0.3.1",
+]
+doc = [
+  "sphinx",
+  "numpydoc",
+  "ctao-sphinx-theme",
+  "myst-parser",
+  "sphinx-changelog",
+]
+dev = [
+  "setuptools_scm",
+  "sphinx-autobuild",
+]
+
+[tool.setuptools_scm]
+write_to = "src/dpps/_version.py"
+
+[tool.pytest.ini_options]
+minversion = "7"
+testpaths = ["tests"]
+log_cli_level = "INFO"
+xfail_strict = true
+# print summary of failed tests, force errors if settings are misspelled
+addopts = ["-ra", "--strict-config", "--strict-markers"]
+filterwarnings = [
+  "error",
+  # this warning should not be turned into an error, will happen e.g. when
+  # using wheels compiled against an older version of numpy then is used at runtime
+  # left as warning as the other direction (compiled vs. newer, using older numpy) is
+  # problematic
+  "default:numpy.ndarray size changed:RuntimeWarning",
+  # resource warning due to unclosed resources in rucio turned into error
+  "default::pytest.PytestUnraisableExceptionWarning",
+  # warnings from DIRAC we cannot do anything about
+  "ignore:pkg_resources is deprecated as an API:DeprecationWarning",
+  "ignore:Deprecated call to `pkg_resources:DeprecationWarning",
+  "ignore:distutils Version classes:DeprecationWarning",
+  "ignore:_SixMetaPathImporter:ImportWarning",
+  "ignore:The asyncore module:DeprecationWarning",
+  "ignore:.*setParseAction:DeprecationWarning",
+  "ignore:Version\\._version:DeprecationWarning:M2Crypto",
+  "ignore:datetime\\.datetime\\.utcnow:DeprecationWarning:DIRAC",
+  "ignore:Python 3.14 will, by default, filter extracted tar archives:DeprecationWarning:DIRAC",
+]
+
+[tool.coverage.run]
+relative_files = true
+source = ["src", "tests"]
+omit = [
+  "src/dpps/_version.py",
+  "src/dpps/_dev_version/*",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+extend-select = [
+    "I", # isort
+    "N", # pep8 naming
+    "PT", # pytest
+    "UP", # pyupgrade
+    "COM", # flake8-commas
+    "ISC", # implicit string concat rules
+    "ICN", # import name conventions
+    "G", # logging
+]
+ignore = [
+    "COM812", # incompatible with ruff format
+    "ISC001", # incompatible with ruff format
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+
+[tool.isort]
+profile = "black"
+line_length = 88
+
+[tool.towncrier]
+package = "dpps"
+directory = "docs/changes"
+filename = "CHANGES.rst"
+template = "docs/changes/template.rst"
+underlines = ["-", "~", "^"]
+# template to turn the number to a link, we link to merge requests
+issue_format = "`!{issue} <https://gitlab.cta-observatory.org/cta-computing/dpps/dpps/-/merge_requests/{issue}>`__"
+
+[tool.towncrier.fragment.feature]
+    name = "New Features"
+    showcontent = true
+
+[tool.towncrier.fragment.bugfix]
+    name = "Bug Fixes"
+    showcontent = true
+
+[tool.towncrier.fragment.api]
+    name = "API Changes"
+    showcontent = true
+
+[tool.towncrier.fragment.optimization]
+    name = "Refactoring and Optimization"
+    showcontent = true
+
+[tool.towncrier.fragment.maintenance]
+    name = "Maintenance"
+    showcontent = true

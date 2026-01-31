@@ -1,0 +1,145 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "dpps-pytest"
+  labels:
+  {{- include "dpps.labels" . | nindent 4 }}
+  {{ if .Values.dev.start_long_running_client }}
+  {{ else }}
+  annotations:
+    "helm.sh/hook": test
+  {{ end }}
+spec:
+  securityContext:
+    runAsUser: {{ .Values.dev.runAsUser }}
+    runAsGroup: {{ .Values.dev.runAsGroup }}
+    fsGroup: {{ .Values.dev.runAsGroup }}
+
+  containers:
+  - name: test
+    image: "{{ .Values.image.repository_prefix }}-clients:{{ .Values.dev.client_image_tag | default .Chart.AppVersion }}"
+    workingDir: /home/dpps/dpps
+
+    command:
+    - bash
+    - -c
+    - |
+      set -xe
+
+      {{ if .Values.dev.mount_repo }}
+      pip install -e .[test]
+      {{ end }}
+
+      export AIV_RELEASE_NAME={{ .Release.Name }}
+
+
+      export DIRAC_CFG=${DIRACOS}/etc/dirac.cfg
+
+      mkdir -pv ${DIRACOS}/etc/grid-security/certificates/
+      cp -fv /etc/grid-security/certificates/* ${DIRACOS}/etc/grid-security/certificates/
+      install -D -m 644 -v /opt/user/globus/usercert.pem $HOME/.globus/usercert.pem
+      install -D -m 600 -v /opt/user/globus/userkey.pem $HOME/.globus/userkey.pem
+      ls -lR ${DIRACOS}/etc/grid-security
+      ls -lR ${HOME}/.globus/
+
+
+      dirac-proxy-init \
+        -K $HOME/.globus/userkey.pem \
+        -C $HOME/.globus/usercert.pem \
+        --cfg ${DIRAC_CFG} \
+        --nocs -ddd
+      dirac-configure \
+        -F \
+        --cfg ${DIRAC_CFG} \
+        -C  dips://{{ .Release.Name }}-wms-dirac-master-cs:9135/Configuration/Server \
+        --DiracxUrl={{ tpl .Values.wms.diracx.diracx.settings.DIRACX_SERVICE_AUTH_TOKEN_ISSUER . }} \
+        -V {{ .Values.wms.diracServer.voName }} \
+        -K {{ .Values.wms.diracServer.diracx.legacyExchangeApiKey }} \
+        -ddd
+
+      cat ${DIRAC_CFG}
+
+      {{ if .Values.dev.run_tests }}
+      python3 -m pytest \
+        -svv \
+        -o cache_dir=$PWD/.pytest-cache \
+        --cov \
+        --cov-report=xml:/tmp/coverage.xml \
+        --junitxml=/tmp/report.xml \
+        --color=yes \
+        --log-cli-level=INFO \
+        --durations=10 {{- if gt (int .Values.dev.n_test_jobs) 1 }} \
+        -n {{ .Values.dev.n_test_jobs }}
+        {{- end }}
+
+      echo "pytest exited with exit-code $?"
+
+      curl -T /tmp/coverage.xml http://testkit:8000/coverage.xml
+      curl -T /tmp/report.xml http://testkit:8000/report.xml
+      {{ end }}
+
+      {{ if .Values.dev.sleep }}
+      sleep infinity
+      {{ end }}
+
+
+    volumeMounts:
+    {{ if .Values.dev.mount_repo }}
+    - name: repo
+      mountPath: /home/dpps/dpps
+    {{ end }}
+    - name: cafile
+      subPath: ca.pem
+      mountPath: /etc/grid-security/certificates/dpps_test_ca.pem
+    - name: cafile
+      subPath: ca.pem
+      mountPath: /etc/grid-security/certificates/74df993b.0
+    - name: cafile
+      subPath: dpps_test_ca.crl.r0
+      mountPath: /etc/grid-security/certificates/74df993b.r0
+    - name: cafile
+      subPath: dpps_test_ca.crl.r0
+      mountPath: /etc/grid-security/certificates/dpps_test_ca.crl.r0
+    - name: cafile
+      subPath: ca.pem
+      mountPath: /etc/grid-security/ca.pem
+    # this unusual location is needed not to causee somewhat unpredictable behavior due to conflict with mounted home
+    - name: dppsuser-certkey-400
+      mountPath: /opt/user/globus/userkey.pem
+      subPath: dppsuser.key.pem
+    - name: dppsuser-certkey-600
+      mountPath: /opt/user/globus/usercert.pem
+      subPath: dppsuser.pem
+    - name: rucio-config
+      mountPath: /opt/rucio/etc
+
+    env:
+    - name: DATAPIPE_VERSION
+      value: "{{ .Values.dev.pipelines.datapipe.version }}"
+    - name: CALIBPIPE_VERSION
+      value: "{{ .Values.dev.pipelines.calibpipe.version }}"
+
+  volumes:
+  {{ if .Values.dev.mount_repo }}
+  - name: repo
+    hostPath:
+      path: /repo
+      type: Directory
+  {{ end }}
+  - name: cafile
+    secret:
+      defaultMode: 420
+      secretName: {{ template "certprefix" . }}-server-cafile
+  - name: dppsuser-certkey-600
+    secret:
+      defaultMode: 0600
+      secretName: {{ template "certprefix" . }}-dppsuser-certkey
+  - name: dppsuser-certkey-400
+    secret:
+      defaultMode: 0400
+      secretName: {{ template "certprefix" . }}-dppsuser-certkey
+  - name: rucio-config
+    configMap:
+      name: {{ .Release.Name }}-bdms-rucio-config
+
+  restartPolicy: Never

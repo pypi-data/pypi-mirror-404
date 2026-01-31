@@ -1,0 +1,1077 @@
+global:
+  security:
+    # needed to override bitnami image; see also https://gitlab.cta-observatory.org/cta-computing/dpps/aiv/mariadb-chart/-/issues/1
+    allowInsecureImages: true
+
+  registry: harbor.cta-observatory.org/proxy_cache
+
+image:
+  repository_prefix: "harbor.cta-observatory.org/dpps/dpps"
+  pullPolicy: IfNotPresent
+
+dev:
+  # -- run tests in the container
+  run_tests: true
+  # -- sleep after test to allow interactive development
+  sleep: false
+  # -- mount the repo volume to test the code as it is being developed
+  mount_repo: true
+
+  # -- tag of the image used to run helm tests
+  client_image_tag:
+
+  # -- if true, a long-running client container will start *instead* of a test container
+  start_long_running_client: false
+
+  # -- user to run the container as. needs to be the same as local user if writing to repo directory
+  runAsUser: 1000
+  runAsGroup: 1000
+
+  # -- number of parallel test jobs for pytest
+  n_test_jobs: 1
+
+  # -- Pipelines versions used in the tests
+  pipelines:
+    datapipe:
+      version: v0.3.1
+    calibpipe:
+      version: v0.4.0
+
+
+# DPPS alias services, shortcuts to common services used in DPPS
+# Normally should not be necessary if charts refer to proper service names
+alias_svc:
+  dpps_mariadb:
+    enabled: false
+
+  dirac_db:
+    enabled: true
+
+  dpps_minio:
+    enabled: false
+
+  dpps_fts:
+    enabled: false
+
+  dpps_iam:
+    enabled: true
+
+bdms:
+  # -- Whether to deploy BDMS
+  enabled: true
+  configure_test_setup: true
+  safe_to_bootstrap_rucio: true
+
+  prepuller_enabled: false
+
+  cert-generator-grid:
+    enabled: false
+
+  rucio_iam_sync_user:
+    iam_server: http://{{ .Release.Name }}-iam-login-service:8080
+    enabled: true
+    secret:
+      # -- name of the secret containing the sync config file in key sync-iam-rucio.cfg
+      name: sync-rucio-iam-config
+      # -- Create secret from values, for testing. Set to false for production and create secret
+      create: true
+      client_id: dpps-test-client
+      client_secret: secret
+
+  rucio-daemons:
+    ftsRenewal:
+      servers: "https://dpps-fts:8446"
+
+  acada_ingest:
+    workers:
+      enabled: false
+  redis:
+    enabled: false
+
+  iam:
+    enabled: false
+
+  gcert-issuer:
+    enabled: false
+
+
+
+# -- WMS configuration
+
+wms:
+  global:
+    registry: harbor.cta-observatory.org/proxy_cache
+    dockerRegistry: harbor.cta-observatory.org/proxy_cache
+    # diracx chart
+    images:
+      busybox:
+        repository: harbor.cta-observatory.org/proxy_cache/busybox
+
+  # -- Whether to deploy WMS
+  enabled: true
+
+  diracServer:
+    # -- Recreates some DIRAC databases from scratch. Useful at first installation, but destructive on update: should be changed immediately after the first installation.
+    # This list might overlap with list of of DBs in chart/templates/configmap.yaml
+    resetDatabasesOnStart:
+    - ResourceStatusDB
+    - ProxyDB
+    - JobDB
+    - SandboxMetadataDB
+    - TaskQueueDB
+    - JobLoggingDB
+    - PilotAgentsDB
+    - ReqDB
+    - AccountingDB
+    - FileCatalogDB
+
+    podAnnotations: {}
+    podLabels: {}
+    podSecurityContext: {}
+    securityContext: {}
+
+    webApp:
+      # DIRAC WebApp
+      enabled: true
+      hostkey:
+        secretFullName: ""
+      extraVolumes: ~
+      extraVolumeMounts: ~
+
+    voName: ctao.dpps.test
+
+    diracx:
+      legacyExchangeApiKey: diracx:legacy:Mr8ostGuB_SsdmcjZb7LPkMkDyp9rNuHX6w1qAqahDg=
+
+    diracConfig:
+      registry:
+        DefaultGroup: "dirac_user"
+        # Registry Users
+        users:
+          admin-user:
+            DN: "/CN=DPPS User"
+            CA: "/CN=DPPS Development CA"
+          # Add more users as needed
+        # Registry Groups
+        groups:
+          dirac_user:
+            users: ["test-user"]
+            properties: ["NormalUser"]
+          dpps_group:
+            users: ["admin-user", "test-user"]
+            properties: ["NormalUser", "PrivateLimitedDelegation"]
+          dpps_genpilot:
+            users: ["admin-user"]
+            properties: ["GenericPilot", "LimitedDelegation"]
+          dirac_admin:
+            users: ["admin-user"]
+            properties: [
+              "AlarmsManagement", "ServiceAdministrator", "CSAdministrator",
+              "JobAdministrator", "FullDelegation", "ProxyManagement", "Operator"
+            ]
+
+      resources:
+        fileCatalog: |
+
+          RucioFileCatalog
+          {
+            CatalogType = RucioFileCatalog
+            AccessType = Read-Write
+            Status = Active
+            Master = True
+            CatalogURL = DataManagement/FileCatalog
+            MetaCatalog = True
+          }
+
+        # StorageElements resource configuration
+        storageElements: |
+
+          SandboxSE
+          {
+            BackendType = DISET
+            AccessProtocol.1
+            {
+              Host = {{ .Release.Name }}-wms-dirac-sandbox-store
+              Port = {{ .Values.diracServer.diracComponents.sandboxStore.port }}
+              PluginName = DIP
+              Protocol = dips
+              Path = /WorkloadManagement/SandboxStore
+              Access = remote
+              WSUrl =
+            }
+          }
+
+
+          STORAGE-1 {
+            BackendType = xrootd
+            ReadAccess = Active
+            WriteAccess = Active
+            RemoveAccess = Active
+            AccessProtocol.1 {
+              Host = rucio-storage-1
+              Port = 1094
+              Protocol = root
+              Path = /rucio
+              Access = remote
+              SpaceToken =
+              WSUrl = /srm/managerv2?SFN=
+              PluginName = GFAL2_XROOT
+              ProtocolsList = file
+            }
+          }
+          STORAGE-2 {
+            BackendType = xrootd
+            ReadAccess = Active
+            WriteAccess = Active
+            RemoveAccess = Active
+            AccessProtocol.1 {
+              Host = rucio-storage-2
+              Port = 1094
+              Protocol = root
+              Path = /rucio
+              Access = remote
+              SpaceToken =
+              WSUrl = /srm/managerv2?SFN=
+              PluginName = GFAL2_XROOT
+              ProtocolsList = file
+            }
+          }
+          STORAGE-3 {
+            BackendType = xrootd
+            ReadAccess = Active
+            WriteAccess = Active
+            RemoveAccess = Active
+            AccessProtocol.1 {
+              Host = rucio-storage-3
+              Port = 1094
+              Protocol = root
+              Path = /rucio
+              Access = remote
+              SpaceToken =
+              WSUrl = /srm/managerv2?SFN=
+              PluginName = GFAL2_XROOT
+              ProtocolsList = file
+            }
+          }
+
+
+        # Sites resource configuration
+        sites: |
+          CTAO
+          {
+            CTAO.CI.de
+            {
+              Name = CTAO.CI.de
+              CE = dirac-ce
+              CEs
+              {
+                dirac-ce
+                {
+                  CEType = SSH
+                  SubmissionMode = Direct
+                  SSHHost = dirac-ce
+                  SSHUser = dirac
+                  SSHKey = /home/dirac/.ssh/diracuser_sshkey
+                  wnTmpDir = /tmp
+                  Pilot = True
+                  SharedArea = /home/dirac
+                  UserEnvVariables = RUCIO_HOME:::/cvmfs/ctao.dpps.test/rucio
+                  ExtraPilotOptions = --PollingTime 10 --CVMFS_locations=/
+                  Queues
+                  {
+                    normal
+                    {
+                      maxCPUTime = 172800
+                      SI00 = 2155
+                      MaxTotalJobs = 2500
+                      MaxWaitingJobs = 300
+                      VO = ctao.dpps.test
+                      BundleProxy = True
+                    }
+                  }
+                }
+              }
+              SE = STORAGE-1
+              SE += STORAGE-2
+              SE += STORAGE-3
+            }
+
+          }
+
+    environment:
+      DB_ROOT_PASSWORD: "dirac-db-root"
+      DB_DIRAC_PASSWORD: "dirac-db"
+      DIRAC_CFG_MASTER_CS: "/configurations/masterCS.cfg"
+      DIRAC_X509_HOST_KEY: "/opt/dirac/etc/grid-security/hostkey.pem"
+      DIRAC_X509_HOST_CERT: "/opt/dirac/etc/grid-security/hostcert.pem"
+      X509_CERT_DIR: "/opt/dirac/etc/grid-security/certificates"
+      X509_VOMS_DIR: "/opt/dirac/etc/grid-security/vomsdir"
+      X509_VOMSES: "/opt/dirac/etc/grid-security/vomses"
+      DIRAC_CFG_PATH: /configurations
+
+    bootstrap:
+      image: harbor.cta-observatory.org/proxy_cache/bitnamilegacy/kubectl:1.33.1
+      enabled: true
+      # allow to enable specific jobs:
+      # bootstrap DIRAC RSS sync
+      syncRSS: true
+      # bootstrap to sync DiracX CS
+      syncDiracxCS: true
+      # bootstrap to create users
+      syncIamUsers: true
+      # bootstrap service databases initialization
+      initDiracDb: true
+      # bootstrap first proxy init
+      firstProxy: true
+      # bootstrap component monitoring
+      componentMonitoring: true
+
+    initContainers:
+      certKeys:
+       # shared volume to mount certs and keys using the initContainer
+        volumes:
+          - name: ssh-dir
+            emptyDir: {}
+          - name: globus-dir
+            emptyDir: {}
+          - name: certs-dir
+            emptyDir: {}
+
+        volumeMounts:
+          - name: ssh-dir
+            mountPath: /home/dirac/.ssh
+          - name: certs-dir
+            mountPath: /opt/dirac/etc/grid-security
+          - name: globus-dir
+            mountPath: /home/dirac/.globus
+
+    configurationName: DPPS-Tests
+
+    masterCS:
+      # StatefulSet Master CS
+      enabled: true
+      # port on which to run
+      # CAUTION: it has to be the same as what is in masterCS.cfg
+      port: 9135
+      hostkey:
+        secretFullName: ""
+      extraVolumes: ~
+      extraVolumeMounts: ~
+
+    # Definition of the DIRAC services we want to run.
+    # We create one service and one deployment per entry
+    # Note that the Port has to be the same as the one in the CS,
+    diracComponents:
+      # Common base definitions
+      # Services
+      _serviceDefaults: &serviceDefaults
+        type: service
+        replicaCount: 1
+      # Agents
+      _agentDefaults: &agentDefaults
+        port: null
+        type: agent
+        replicaCount: 1
+      # Executors
+      _executorDefaults: &executorDefaults
+        port: null
+        type: executor
+        replicaCount: 1
+      # Name of the service (will be used for naming k8 services, pods, deployment, etc)
+      # Configuration System
+      # configurationServer:
+      #   port: 9135
+      #   cmd: Configuration/Server
+      # Framework System
+      proxyManager:
+        port: 9152
+        cmd: Framework/ProxyManager
+        <<: *serviceDefaults
+      bundleDelivery:
+        port: 9158
+        cmd: Framework/BundleDelivery
+        <<: *serviceDefaults
+      systemAdmin:
+        port: 9162
+        cmd: Framework/SystemAdministrator
+        <<: *serviceDefaults
+      # ComponentMonitoring is mandatory
+      componentMonitoring:
+        port: 9190
+        cmd: Framework/ComponentMonitoring
+        <<: *serviceDefaults
+      # Workload Management System
+      # Need ESDB
+      jobMonitoring:
+        port: 9130
+        cmd: WorkloadManagement/JobMonitoring
+        <<: *serviceDefaults
+      jobManager:
+        port: 9132
+        cmd: WorkloadManagement/JobManager
+        type: service
+        replicaCount: 1
+      jobStateUpdate:
+        port: 9136
+        cmd: WorkloadManagement/JobStateUpdate
+        <<: *serviceDefaults
+      wmsAdmin:
+        port: 9145
+        cmd: WorkloadManagement/WMSAdministrator
+        <<: *serviceDefaults
+      matcher:
+        port: 9170
+        cmd: WorkloadManagement/Matcher
+        <<: *serviceDefaults
+      pilotManager:
+        port: 9171
+        cmd: WorkloadManagement/PilotManager
+        <<: *serviceDefaults
+      optimizationMind:
+        port: 9175
+        cmd: WorkloadManagement/OptimizationMind
+        <<: *serviceDefaults
+      sandboxStore:
+        port: 9196
+        cmd: WorkloadManagement/SandboxStore
+        <<: *serviceDefaults
+      # DataManagement System
+      fileCatalog:
+        port: 9197
+        cmd: DataManagement/FileCatalog
+        <<: *serviceDefaults
+      storageElement:
+        port: 9148
+        cmd: DataManagement/StorageElement
+        <<: *serviceDefaults
+      # Monitoring System
+      # monitoring:
+      #   port: 9137
+      #   cmd: Monitoring/Monitoring
+      # Accounting System
+      # dataStore:
+      #   port: 9133
+      #   cmd: Accounting/DataStore
+      # Request Management System
+      reqProxy:
+        port: 9161
+        cmd: RequestManagement/ReqProxy
+        <<: *serviceDefaults
+      reqManager:
+        port: 9140
+        cmd: RequestManagement/ReqManager
+        <<: *serviceDefaults
+      # Resource Status System
+      resourceStatus:
+        port: 9160
+        cmd: ResourceStatus/ResourceStatus
+        <<: *serviceDefaults
+      resourceManagement:
+        port: 9172
+        cmd: ResourceStatus/ResourceManagement
+        <<: *serviceDefaults
+      publisher:
+        port: 9165
+        cmd: ResourceStatus/Publisher
+        <<: *serviceDefaults
+
+      # Definition of the DIRAC agents we want to run.
+      # Workload
+      siteDirector:
+        port: null
+        cmd: WorkloadManagement/SiteDirector
+        <<: *agentDefaults
+      pilotSync:
+        port: null
+        cmd: WorkloadManagement/PilotSyncAgent
+        <<: *agentDefaults
+      pilotStatus:
+        port: null
+        cmd: WorkloadManagement/PilotStatusAgent
+        <<: *agentDefaults
+      # # RMS
+      reqExecuting:
+        port: null
+        cmd: RequestManagement/RequestExecutingAgent
+        <<: *agentDefaults
+      cleanReqDB:
+        port: null
+        cmd: RequestManagement/CleanReqDBAgent
+        <<: *agentDefaults
+
+      # Definition of the DIRAC executors we want to run.
+      optimizers:
+        port: null
+        cmd: WorkloadManagement/Optimizers
+        <<: *executorDefaults
+
+    # List of the databases to be installed
+    diracDatabases:
+      - AccountingDB
+      - FileCatalogDB
+      - InstalledComponentsDB
+      - JobDB
+      - JobLoggingDB
+      - PilotAgentsDB
+      - ProxyDB
+      - ReqDB
+      - ResourceManagementDB
+      - ResourceStatusDB
+      - SandboxMetadataDB
+      - StorageManagementDB
+      - TaskQueueDB
+
+    # extra volumes for all dirac components
+    # common volumes are added to "dpps.common-cert-volumes"
+    volumes: []
+
+    #: extra volume mounts for all dirac components
+    volumeMounts: []
+
+
+
+  # this resets all DBs in the shared service, so it can not be used right now
+  # resetDatabase: []
+
+  test_ce:
+    enabled: true
+
+  iam:
+    enabled: false
+
+    # this is not used as bootstrap, but config for the deployed iam service
+    # TODO: move to external iam sync section
+    # TODO: why would wms want to read iam bootstrap config?..
+    bootstrap:
+      config:
+        # TODO: this needs to match the IAM service name in the k8s cluster
+        issuer: http://wms-dpps-iam-login-service:8080
+        clients:
+          - client_id: dpps-test-client
+            client_secret: secret
+            client_name: WMS Test Client
+            scopes:
+              - scim:write
+              - scim:read
+              - offline_access
+              - openid
+              - profile
+              - iam:admin.write
+              - iam:admin.read
+            grant_types:
+              - authorization_code
+              - password
+              - client_credentials
+              - urn:ietf:params:oauth:grant_type:redelegate
+              - refresh_token
+            redirect_uris:
+              # TODO: these need to match the WMS hostnames
+              - http://wms-diracx:8000/api/auth/device/complete
+              - http://wms-diracx:8000/api/auth/authorize/complete
+
+
+
+  iam_external:
+    enabled: true
+    loginServiceURL: http://dpps-iam-login-service:8080
+
+  cert-generator-grid:
+    enabled: false
+
+  cvmfs:
+    enabled: true
+    publish_docker_images:
+      - "harbor.cta-observatory.org/dpps/datapipe:v0.3.1"
+      - "harbor.cta-observatory.org/dpps/calibpipe:v0.4.0"
+
+  # This configuration of interface between WMS and BDMS.
+  # The ConfigMap is created by BDMS chart. The name should match the name of the ConfigMap in BDMS chart given the release name.
+  rucio:
+    enabled: true
+    # TODO: this should be templated to include release name or any other relevant info
+    rucioConfig: "{{ .Release.Name }}-bdms-rucio-config"
+
+  mariadb:
+    enabled: false
+
+  diracx:
+    enabled: true
+    global:
+      # Override the imagePullPolicy to always so we can using latest image tags
+      # without risking them being outdated.
+      imagePullPolicy: Always
+      # Keep the job log for 1h for investigations
+      batchJobTTL: 3600
+      activeDeadlineSeconds: 900
+      images:
+        tag: "v0.0.1a50"
+        services: ghcr.io/diracgrid/diracx/services
+        client: ghcr.io/diracgrid/diracx/client
+
+    initSql:
+      # Should DiracX include an init container which manages the SQL DB schema?
+      # Since we use the DIRAC DBs, we don't need this
+      enabled: false
+      env: {}
+
+    mysql:
+      enabled: false
+
+    opensearch:
+      enabled: true
+
+
+    minio:
+      environment:
+        MINIO_BROWSER_REDIRECT_URL: http://dpps-minio:32001/
+      rootUser: rootuser
+      rootPassword: rootpass123
+
+      image:
+        repository: harbor.cta-observatory.org/dpps/quay-io-minio-minio
+
+      mcImage:
+        repository: harbor.cta-observatory.org/dpps/quay-io-minio-mc
+
+
+    developer:
+      # we are not developing diracx in WMS, but this is needed to run the tests
+      enabled: true
+      localCSPath: /local_cs_store
+      urls:
+        diracx: http://dpps-diracx:8000
+        minio: http://dpps-minio:32000
+        iam: http://dpps-iam:8080
+
+    diracx:
+      hostname: dpps-diracx
+      settings:
+        DIRACX_CONFIG_BACKEND_URL: "git+file:///cs_store/initialRepo"
+        DIRACX_SERVICE_AUTH_TOKEN_ISSUER: "http://wms-diracx:8000"
+        DIRACX_SERVICE_AUTH_ALLOWED_REDIRECTS: '["http://wms-diracx:8000/api/docs/oauth2-redirect", "http://wms-diracx:8000/#authentication-callback"]'
+        DIRACX_SANDBOX_STORE_BUCKET_NAME: sandboxes
+        DIRACX_SANDBOX_STORE_S3_CLIENT_KWARGS: '{"endpoint_url": "http://dpps-minio:9000", "aws_access_key_id": "rootuser", "aws_secret_access_key": "rootpass123"}'
+        DIRACX_SANDBOX_STORE_AUTO_CREATE_BUCKET: "true"
+        DIRACX_SERVICE_AUTH_ACCESS_TOKEN_EXPIRE_MINUTES: "120"
+        DIRACX_SERVICE_AUTH_REFRESH_TOKEN_EXPIRE_MINUTES: "360"
+        DIRACX_SERVICE_AUTH_TOKEN_KEYSTORE: "file:///keystore/jwks.json"
+        DIRACX_LEGACY_EXCHANGE_HASHED_API_KEY: "19628aa0cb14b69f75b2164f7fda40215be289f6e903d1acf77b54caed61a720"
+      sqlDbs:
+        default:
+          rootUser: root
+          rootPassword: dirac-db-root
+          user: Dirac
+          password: dirac-db
+          host: dpps-mariadb:3306
+          #host: dirac-db:3306
+        dbs:
+          AuthDB:
+           internalName: DiracXAuthDB
+          JobDB:
+          JobLoggingDB:
+          SandboxMetadataDB:
+          TaskQueueDB:
+      osDbs:
+        dbs:
+          JobParametersDB:
+
+      # Increase diracx startup probe while draic server is starting
+      startupProbe:
+        timeoutSeconds: 5
+        periodSeconds: 15
+        failureThreshold: 60 # 15 × 60 = 900s = 15 minutes
+
+    rabbitmq:
+      enabled: true
+      image:
+        registry: harbor.cta-observatory.org/proxy_cache
+        repository: bitnamilegacy/rabbitmq
+      podSecurityContext:
+        enabled: false
+      containerSecurityContext:
+        enabled: false
+      auth:
+        existingPasswordSecret: rabbitmq-secret
+        existingErlangSecret: rabbitmq-secret
+
+
+    dex:
+      enabled: false
+
+    indigoiam:
+      enabled: false
+
+    opentelemetry-collector:
+      enabled: false
+
+    elasticsearch:
+      enabled: false
+
+    jaeger:
+      enabled: false
+
+    grafana:
+      enabled: false
+
+    prometheus:
+      enabled: false
+
+
+# IAM to be connected to BDMS and WMS
+
+iam:
+  # fullnameOverride: "dpps-iam"
+  enabled: true
+
+  dppsTrustStore:
+    enabled: true
+
+    initJob:
+      asHook: true
+
+    CABundlePVCName: "{{ include \"dpps-iam.fullname\" . }}-ca-bundle-pvc"
+    gridCABundlePVCName: "{{ include \"dpps-iam.fullname\" . }}-grid-ca-bundle-pvc"
+
+  dev:
+    mount_repo: false
+
+  iam:
+    # fullnameOverride: "dpps-iam"
+    mysql:
+      enabled: false
+
+    mariadb:
+      enabled: false
+
+    database:
+      external:
+        host: dpps-mariadb
+        port: 3306
+        name: indigo-iam
+        username: indigo-iam
+        password: PassW0rd
+        existingSecret: ""
+
+  # Bootstrap using default user setup for DPPS testing
+  # bootstrap:
+
+
+# ---- external DB for WMS and IAM
+
+# use wms mariad-db subchart also as db for iam, avoids multiple mariadb servers
+# and currently also naming conflicts with two mariadb charts active
+mariadb:
+  enabled: true
+  image:
+    registry: harbor.cta-observatory.org/proxy_cache
+    repository: bitnamilegacy/mariadb
+  auth:
+    rootPassword: "dirac-db-root"
+  initdbScripts:
+    create-user.sql: |
+      CREATE USER IF NOT EXISTS 'Dirac'@'%' IDENTIFIED BY 'dirac-db';
+      CREATE USER IF NOT EXISTS 'indigo-iam'@'%' IDENTIFIED BY 'PassW0rd';
+      CREATE DATABASE IF NOT EXISTS `indigo-iam`;
+      GRANT ALL PRIVILEGES ON `indigo-iam`.* TO `indigo-iam`@`%`;
+      FLUSH PRIVILEGES;
+
+simpipe:
+  enabled: false
+
+  mongodb:
+    initdbScriptsConfigMap: dpps-simpipe-setup-mongodb-user
+
+
+# obsolete by gcert-issuer
+cert-generator-grid:
+  enabled: false
+
+gcert-issuer:
+  enabled: true
+
+  use_checksum: false
+
+  dev:
+    mount_repo: false
+
+  bootstrap_job:
+    enabled: true
+
+  iam:
+    enabled: false
+
+  iam_sync:
+    # for now we just create user cert requests directly
+    enabled: true
+
+    default_namespace: cta-dpps
+
+
+
+# observability
+
+grafana:
+  enabled: true
+  image:
+    registry: harbor.cta-observatory.org/proxy_cache
+
+  downloadDashboardsImage:
+    registry: harbor.cta-observatory.org/proxy_cache
+
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+        - name: Prometheus
+          type: prometheus
+          access: proxy
+          url: http://dpps-prometheus-server
+
+        - name: Loki
+          type: loki
+          access: proxy
+          url: http://dpps-loki:3100
+          jsonData:
+            timeout: 60
+            maxLines: 1000
+
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+        - name: 'default'
+          type: file
+          editable: true
+          options:
+            path: /var/lib/grafana/dashboards/default
+
+        - name: 'sidecar'
+          type: file
+          editable: true
+          options:
+            path: /var/lib/grafana/dashboards/sidecar
+
+  dashboards:
+    default:
+      k8-views-global:
+        gnetId: 15757
+        revision: 43
+        datasource: Prometheus
+      k8-views-namespaces:
+        gnetId: 15758
+        revision: 42
+        datasource: Prometheus
+      k8-views-nodes:
+        gnetId: 15759
+        revision: 37
+        datasource: Prometheus
+      k8-views-pods:
+        gnetId: 15760
+        revision: 36
+        datasource: Prometheus
+
+  ingress:
+    enabled: true
+    hosts:
+      - grafana.dpps.local
+
+  testFramework:
+    enabled: false
+
+  # collects configmaps and adds resources to grafana
+  sidecar:
+    image:
+      registry:  harbor.cta-observatory.org/proxy_cache
+
+    dashboards:
+      enabled: true
+      searchNamespace: ALL
+      folder: /var/lib/grafana/dashboards/sidecar
+      folderAnnotation: grafana_folder
+      defaultFolderName: "Sidecar Dashboards"
+      provider:
+        name: 'sidecar'
+
+  persistentVolume:
+    size: 100Mi
+  retention: "1d"
+
+  prometheus-node-exporter:
+    enabled: false
+
+  adminUser: "admin"
+  adminPassword: "admin"
+
+
+prometheus:
+  enabled: true
+  server:
+    image:
+      repository: harbor.cta-observatory.org/proxy_cache/prom/prometheus
+
+  prometheus-pushgateway:
+    enabled: false
+
+  alertmanager:
+    enabled: false
+
+  prometheus-node-exporter:
+    image:
+      registry: harbor.cta-observatory.org/proxy_cache
+      repository: prom/node-exporter
+
+  kube-state-metrics:
+    image:
+      registry: harbor.cta-observatory.org/proxy_k8s
+
+
+loki:
+  enabled: true
+
+  # this is a minimal configuration for loki; the goal of the UC is not to test diverse loki features,
+  # but to make sure that loki can collect meaningful logs from the DPPS components
+
+  # needed to run in rancher
+  # global:
+  #   dnsService: "rke2-coredns-rke2-coredns"
+  sidecar:
+    image:
+      # TODO: current version of loki has separate registry option
+      repository:  harbor.cta-observatory.org/proxy_cache/kiwigrid/k8s-sidecar
+
+  loki:
+    storage:
+      type: s3
+      bucketNames:
+        chunks: loki-chunks
+        ruler: loki-ruler
+        admin: loki-admin
+      s3:
+        endpoint_url: http://dpps-minio:9000
+        accessKeyId: rootuser
+        secretAccessKey: rootpass123
+        s3ForcePathStyle: true
+        insecure: true
+    commonConfig:
+      replication_factor: 1
+    schemaConfig:
+      configs:
+        - from: "2024-04-01"
+          store: tsdb
+          object_store: s3
+          schema: v13
+          index:
+            prefix: loki_index_
+            period: 24h
+    pattern_ingester:
+        enabled: true
+    limits_config:
+      allow_structured_metadata: true
+      volume_enabled: true
+    ruler:
+      enable_api: true
+
+    auth_enabled: false
+
+  test:
+    enabled: false
+
+  monitoring:
+    selfMonitoring:
+      enabled: false
+      grafanaAgent:
+        installOperator: false
+      lokiCanary:
+        enabled: false
+
+  minio:
+    enabled: false
+
+  memcached:
+    image:
+      repository: harbor.cta-observatory.org/proxy_cache/memcached
+      tag: 1.6.38-alpine3.22
+
+  memcachedExporter:
+    image:
+      repository: harbor.cta-observatory.org/proxy_cache/prom/memcached-exporter
+
+  deploymentMode: SingleBinary
+
+  rollout_operator:
+    enabled: false
+
+  singleBinary:
+    replicas: 1
+
+  # Zero out replica counts of other deployment modes
+  backend:
+    replicas: 0
+  read:
+    replicas: 0
+  write:
+    replicas: 0
+
+  ingester:
+    replicas: 0
+  querier:
+    replicas: 0
+  queryFrontend:
+    replicas: 0
+  queryScheduler:
+    replicas: 0
+  distributor:
+    replicas: 0
+  compactor:
+    replicas: 0
+  indexGateway:
+    replicas: 0
+  bloomCompactor:
+    replicas: 0
+  bloomGateway:
+    replicas: 0
+
+
+fluent-bit:
+  enabled: true
+  image:
+    repository: harbor.cta-observatory.org/proxy_cache/fluent/fluent-bit
+  testFramework:
+    image:
+      repository: harbor.cta-observatory.org/proxy_cache/busybox
+  config:
+    rbac:
+      create: true
+      eventsAccess: true
+
+    inputs: |
+      [INPUT]
+          Name tail
+          Path /var/log/containers/*.log
+          multiline.parser docker, cri
+          Tag kube.*
+          Mem_Buf_Limit 5MB
+          Buffer_Chunk_Size 1
+          Refresh_Interval 1
+          Skip_Long_Lines On
+
+
+    outputs: |
+      [FILTER]
+          Name grep
+          Match *
+
+      [OUTPUT]
+          Name        loki
+          Match       *
+          Host        {{ .Release.Name }}-loki-gateway
+          port        80
+          tls         off
+          tls.verify  off
+
+
+waitForMkfs:
+  enabled: true
+
+qualpipe-webapp:
+  enabled: true

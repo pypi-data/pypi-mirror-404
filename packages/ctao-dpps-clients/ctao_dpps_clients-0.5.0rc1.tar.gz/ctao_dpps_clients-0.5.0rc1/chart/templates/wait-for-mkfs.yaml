@@ -1,0 +1,37 @@
+{{ if .Values.waitForMkfs.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-wait-for-cvmfs-mkfs-{{.Release.Revision }}
+spec:
+  template:
+    spec:
+        restartPolicy: Never
+        initContainers:
+        - name: wait-for-mkfs
+          image: harbor.cta-observatory.org/proxy_cache/bitnamilegacy/kubectl:1.33.1
+          command:
+            - bash
+            - '-c'
+            - |
+                echo "Waiting for mkfs jobs to complete...";
+                while true; do
+                    SUCCEEDED=$(kubectl get jobs {{ .Release.Name }}-cvmfs-mkfs-{{ .Release.Revision }}   -o jsonpath={.status.succeeded})
+                    echo "Mkfs job succeeded count: $SUCCEEDED";
+                    if [[ "$SUCCEEDED" == "1" ]]; then
+                        echo "mkfs job completed.";
+                        break;
+                    else
+                        echo "mkfs job not completed yet. Checking again in 10 seconds...";
+                        sleep 10;
+                    fi
+                done
+
+        containers:
+        - name: wait-for-mkfs-completion
+          image: harbor.cta-observatory.org/proxy_cache/busybox:latest
+          command: ['sh', '-c', 'echo "Mkfs jobs completed" ']
+
+
+
+{{- end }}

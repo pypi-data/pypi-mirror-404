@@ -1,0 +1,108 @@
+#
+include:
+  - project: cta-computing/common/aiv-toolkit
+    ref: 628f40d62a94e53a480ac02db2393431ba7b243a
+    file: ci-functions.yml
+  - aiv-config.yml
+
+
+variables:
+  CHART_LOCATION: chart
+  CHART_NAME: dpps
+  CHART_EXTRA_VALUES: "--set dev.pipelines.calibpipe.version=${CALIBPIPE_VERSION} --set dev.pipelines.datapipe.version=${DATAPIPE_VERSION}"
+  AIV_DOCKER_IMAGE_CONTEXT: '${CI_PROJECT_DIR}'
+  CONDA_IMAGE: "quay.io/condaforge/miniforge3:24.11.3-0"
+  CONDA_PACKAGES: "python=3.12 gfal2 m2crypto dirac-grid make rucio-clients==38.2.0"
+
+stages:
+- prepare
+- lint
+- build
+- sign
+- tests
+- sonarqube
+- publish
+- report
+- changelog
+
+
+build:
+  variables:
+    CI_HARBOR_REGISTRY_IMAGE: ${HARBOR_HOST}/dpps/dpps-clients:${DOCKER_TAG}
+    KANIKO_EXTRA_ARGS: --build-arg DATAPIPE_VERSION=${DATAPIPE_VERSION}
+      --build-arg CALIBPIPE_VERSION=${CALIBPIPE_VERSION}
+  rules:
+  - when: always
+
+
+# wms depends on gfal2 via dirac, which is sessentially impossible to install with pip
+build-docs:
+  image: ${CONDA_IMAGE}
+
+  before_script:
+  - source /opt/conda/etc/profile.d/conda.sh
+  - mamba create -y -n ci $CONDA_PACKAGES
+  - conda activate ci
+  - python --version
+  - pip install .[doc]
+
+
+sonarqube:
+  variables:
+    SONAR_HOST_URL: https://sonar-ctao.zeuthen.desy.de
+  script:
+  - sonar-scanner --debug -Dsonar.token="$SONAR_TOKEN_CTAO"
+
+
+k8s-upgrade-integration-tests:
+  rules:
+    - when: never
+
+
+pylint:
+  image: ${CONDA_IMAGE}
+
+  before_script:
+  - apt update && apt install -y --no-install-recommends git
+  - source /opt/conda/etc/profile.d/conda.sh
+  - mamba create -y -n ci pylint $CONDA_PACKAGES
+  - conda activate ci
+  - python --version
+  - pip install .[all]
+
+
+sign:
+  rules:
+  - when: never
+
+
+k8s-integration-tests:
+  image:
+    harbor.cta-observatory.org/common/aiv-docker:v4.0.0-rc1
+  variables:
+    KUBERNETES_CPU_REQUEST: '4'
+    KUBERNETES_CPU_LIMIT: '10'
+    KUBERNETES_MEMORY_REQUEST: 16Gi
+    KUBERNETES_MEMORY_LIMIT: 63Gi
+    RUNNER_SCRIPT_TIMEOUT: 115m
+    AIV_USE_SYSTEM_TOOLS: true
+  timeout: 2h
+
+build-test-report:
+  retry: 0
+
+
+kubeconform:
+  stage: lint
+  image: harbor.cta-observatory.org/proxy_cache/alpine/helm:${HELM_VERSION}
+  rules:
+  - exists:
+    - $CHART_LOCATION/Chart.yaml
+  before_script:
+  - curl -L
+    https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-linux-amd64.tar.gz
+    | tar xvzf -
+  script:
+  - helm dependencies build $CHART_LOCATION
+  - helm template $CHART_LOCATION | ./kubeconform -summary -verbose -strict
+    -output pretty -ignore-missing-schemas
