@@ -1,0 +1,94 @@
+Metadata-Version: 2.4
+Name: flywheel-bootstrap-staging
+Version: 0.1.9.202601302349
+Summary: Bootstrap runner for Flywheel provisioned GPU instances
+Project-URL: Homepage, http://paradigma.inc/
+Author: Paradigma Labs
+License: MIT
+Keywords: bootstrap,flywheel,gpu,machine-learning,ml
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+
+# Bootstrap
+
+This package hosts the BYOC bootstrapper that:
+
+- Ensures Codex is available (prefers release tarball; skips install if already
+  on `PATH`).
+- Fetches the bootstrap payload for a run from the Flywheel backend.
+- Launches `codex exec` with the provided prompt/config and streams logs.
+- Collects artifacts (manifest-on-exit) and reports completion or error back to
+  the backend.
+
+## Configuration
+
+Bootstrap reads the user's Codex `config.toml` and requires one of:
+
+```toml
+[flywheel]
+# inline instructions (host-specific tips, paths, sandbox notes)
+workspace_instructions = """
+Use /mnt/work as your workspace. Write artifacts under ./artifacts.
+"""
+
+# or: reference a file (relative paths are resolved against the config file directory)
+workspace_instructions_file = "workspace_notes.md"
+```
+
+Rules:
+
+- At least one of `workspace_instructions` or `workspace_instructions_file` is
+  required; otherwise bootstrap exits before contacting the server.
+- If both are set, the file wins and the inline value is ignored (warns once).
+- File contents must be non-empty; the path is resolved relative to the config
+  file if not absolute.
+
+Prompt assembly written to `flywheel_prompt.txt`:
+
+1. Flywheel engineer context (logging/artifact expectations).
+2. Task Description (prompt fetched from the server).
+3. Workspace Instructions (resolved from config as above).
+
+Example config: `project/bootstrap/examples/config.example.toml` can be used as
+a starting point; update the paths and instructions for your machine.
+
+## End-to-end flow (bootstrap.sh → Python bootstrapper)
+
+1. User runs `bash ./bootstrap.sh --run-id <id> --token <token> --config /path/to/config.toml [--server <url>]` on their BYOC machine.
+2. The shim:
+   - Ensures `uvx` is available (installs via `https://astral.sh/uv/install.sh` if missing, then rechecks PATH with `~/.cargo/bin`).
+   - Points `PKG_PATH` to the local repo copy `project/bootstrap`.
+   - Executes `uvx --no-cache --from "$PKG_PATH" flywheel-bootstrap "$@"` so the latest local package runs.
+3. Python entrypoint (`python -m bootstrap`):
+   - Parses args/env: requires run id + token, required `--config`, optional `--server` (default `http://localhost:8000`).
+   - Loads Codex config.toml, enforces presence of workspace instructions (inline or file), extracts workspace/sandbox settings.
+4. Workspace resolution:
+   - Uses `cd`/`workspace_dir` from config if set; otherwise `~/.flywheel/runs/<run_id>`.
+   - Creates the workspace and validates the artifact manifest path is inside sandbox `writable_roots` when sandboxing is enabled; else exits with an error.
+5. Codex availability:
+   - If `BOOTSTRAP_MOCK_CODEX` is set, skips install and runs a mock flow.
+   - Else, if `codex` is already on PATH, reuse it; otherwise download the Codex release tarball to the workspace/run root and mark it executable.
+6. Fetch bootstrap payload:
+   - `GET <server>/runs/<run_id>/bootstrap` with `X-Run-Token`; payload contains the task prompt.
+7. Build prompt file:
+   - Combine base Flywheel engineer context, “Task Description” (server prompt), and “Workspace Instructions” (user config) into `flywheel_prompt.txt` in the workspace.
+8. Launch Codex:
+   - Run `codex exec --json --cd <workspace> --skip-git-repo-check flywheel_prompt.txt` with env `FLYWHEEL_RUN_ID/TOKEN/SERVER`.
+   - Start a heartbeat thread posting `/runs/{id}/heartbeat` every 30s.
+   - Stream Codex stdout lines as logs to `/runs/{id}/logs`; capture Codex `run_id` if emitted.
+9. After Codex exits:
+   - Read `flywheel_artifacts.json`; if empty and Codex `run_id` is known, attempt one `codex resume <id>` then re-read.
+   - POST artifacts to `/runs/{id}/artifacts`; POST `/complete` on exit 0, else `/error` with the exit code.
+   - Stop/join the heartbeat thread.
+10. Mock mode (`BOOTSTRAP_MOCK_CODEX=1`):
+    - Sends a heartbeat, a few logs, writes a mock artifact manifest, returns 0 (used in e2e tests).
+
+## Next steps
+
+- Publish bootstrap package and switch `uvx --from` to a release URL.
+- Iterate on prompts / general polish
