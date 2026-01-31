@@ -1,0 +1,275 @@
+# Enumageddon - Web Fuzzer & Cloud Enumeration Tool
+
+A powerful, multi-threaded web fuzzer and OSINT tool designed to discover endpoints, APIs, and cloud services. Enumerate public and protected resources across AWS, Azure, and Google Cloud Platform.
+
+## Overview
+
+Enumageddon combines traditional URL fuzzing with cloud-native service enumeration, providing a comprehensive reconnaissance toolkit for identifying exposed infrastructure and endpoints in scope.
+
+### Currently Enumerates:
+
+**Amazon Web Services:**
+- Open / Protected S3 Buckets
+- S3 bucket variations (dev, prod, test, staging, etc.)
+
+**Microsoft Azure:**
+- Storage Accounts
+- Open Blob Storage Containers
+- Variations across Azure service endpoints
+
+**Google Cloud Platform:**
+- Open / Protected Cloud Storage Buckets
+- Cloud Storage bucket variations
+- GCP service endpoints
+
+**Web Endpoints:**
+- Custom URL paths with wildcard fuzzing
+- API endpoints with configurable extensions
+- Customizable HTTP methods and headers
+- Follow-redirect support for endpoint discovery
+
+## Installation
+
+Enumageddon can be installed using various package managers. Choose the method that works best for you:
+
+### Quick Installation (Recommended)
+
+```bash
+# Using pip (Python Package Manager)
+pip3 install enumageddon
+
+# Using pipx (Isolated Environment - Best for Tools)
+pipx install enumageddon
+
+# Using apt (Linux/Ubuntu - After PPA setup)
+sudo apt install enumageddon
+```
+
+### From Source
+
+```bash
+git clone https://github.com/yourusername/enumageddon.git
+cd enumageddon
+pip install -e .
+```
+
+### Docker
+
+```bash
+docker build -t enumageddon .
+docker run enumageddon -u https://target.com/FUZZ
+```
+
+For detailed installation instructions, see [INSTALL.md](INSTALL.md)
+
+## Quick Start
+
+The tool supports two primary modes: **URL Fuzzing** and **Cloud Enumeration**.
+
+### Quick Start - URL Fuzzing
+
+```bash
+python main.py -u https://target.com/FUZZ
+```
+
+### Quick Start - Cloud Enumeration
+
+```bash
+python main.py -k target --aws
+```
+
+## Running Examples
+
+### URL Fuzzing Examples
+
+Fuzz with built-in wordlist:
+```bash
+python main.py -u https://target.com/FUZZ
+```
+
+Fuzz with custom wordlist:
+```bash
+python main.py -u https://target.com/api/FUZZ -w wordlist.txt -t 50
+```
+
+Fuzz with extensions (php, asp, html, etc.):
+```bash
+python main.py -u https://target.com/FUZZ -x php,asp,html,js,txt
+```
+
+Filter specific status codes:
+```bash
+python main.py -u https://target.com/FUZZ -fc 403,500
+```
+
+Rate limiting (10 requests per second):
+```bash
+python main.py -u https://target.com/FUZZ -rl 10 -o results.json
+```
+
+Custom headers:
+```bash
+python main.py -u https://target.com/FUZZ -H "Authorization: Bearer TOKEN"
+```
+
+Custom User-Agent:
+```bash
+python main.py -u https://target.com/FUZZ -A firefox
+```
+
+Follow redirects:
+```bash
+python main.py -u https://target.com/FUZZ -fr
+```
+
+### Cloud Enumeration Examples
+
+Basic AWS enumeration with keyword:
+```bash
+python main.py -k target --aws
+```
+
+Enumerate all three cloud providers:
+```bash
+python main.py -k target --aws --gcp --azure
+```
+
+Multiple keywords:
+```bash
+python main.py -k target -k company.com -k product --aws --gcp --azure
+```
+
+Increase threads (default is 20):
+```bash
+python main.py -k target --aws -t 50
+```
+
+Export results to JSON:
+```bash
+python main.py -k target --aws --gcp --azure -o cloud-results.json
+```
+
+Timeout configuration (seconds):
+```bash
+python main.py -k target --gcp --azure --timeout 5
+```
+
+Disable colored output:
+```bash
+python main.py -k target --aws --no-color
+```
+
+## Complete Usage Details
+
+```
+usage: main.py [-h] [-u URL] [-w WORDLIST] [-t THREADS] [-x EXTENSIONS]
+               [-fc FILTER_CODE] [-rl RATE_LIMIT] [--timeout TIMEOUT]
+               [--method METHOD] [-A USER_AGENT] [-fr] [-H HEADER] [-o OUTPUT]
+               [--no-color] [--aws] [--gcp] [--azure] [-k KEYWORD]
+
+Enumageddon - Web Fuzzer for bug bounty hunters
+
+options:
+  -h, --help                    Show this help message and exit
+  
+  URL FUZZING:
+    -u URL, --url URL           Target URL with FUZZ placeholder
+                                (e.g., https://target.com/FUZZ)
+    -w WORDLIST, --wordlist     Path to wordlist file (optional: uses 
+                                built-in wordlist if not specified)
+    -x EXTENSIONS, --extensions Extensions to append 
+                                (e.g., php,asp,html,js,txt)
+    -fc FILTER_CODE             Status codes to filter/hide 
+                                (e.g., 404,403,500) (default: 404)
+    --method METHOD             HTTP method: GET, POST, PUT, DELETE 
+                                (default: GET)
+    -H HEADER, --header         Custom header (format: "Key: Value")
+  
+  CLOUD ENUMERATION:
+    -k KEYWORD, --keyword       Keyword for cloud_enum style enumeration 
+                                (e.g., company name). Can be used multiple times.
+    --aws                       Enumerate AWS S3 buckets
+    --gcp                       Enumerate GCP Cloud Storage
+    --azure                     Enumerate Azure Storage accounts
+  
+  REQUEST CONFIGURATION:
+    -t THREADS, --threads       Number of threads (default: 20)
+    -rl RATE_LIMIT, --rate-limit Requests per second max (0=unlimited) 
+                                (default: 0)
+    --timeout TIMEOUT           Request timeout in seconds (no default limit)
+    -A USER_AGENT, --user-agent User-Agent preset or custom string
+                                Presets: chrome, firefox, safari, opera, 
+                                edge, bot, curl, mobile
+    -fr, --follow-redirects     Follow HTTP redirects (301, 302, 307, 308)
+  
+  OUTPUT:
+    -o OUTPUT, --output         Save results to file 
+                                (.txt, .json, .csv)
+    --no-color                  Disable colored output
+```
+
+## Platform Compatibility
+
+Enumageddon is fully compatible with:
+
+- **Windows**: PowerShell, CMD, Windows Terminal
+- **macOS**: Terminal, iTerm2
+- **Linux**: All standard terminals
+
+ANSI color codes are automatically detected and disabled on systems that don't support them. Use `--no-color` to force plain text output.
+
+## Export Formats
+
+Results can be exported in multiple formats:
+
+- **JSON** (.json) - Machine-readable format for parsing
+- **CSV** (.csv) - Spreadsheet compatible format
+- **TXT** (.txt) - Human-readable text format
+
+Example:
+```bash
+python main.py -u https://target.com/FUZZ -o results.json
+python main.py -k target --aws -o cloud-scan.csv
+```
+
+## Features
+
+- Multi-threaded HTTP fuzzing (configurable threads)
+- Cloud service enumeration (AWS, GCP, Azure)
+- Keyword mutation engine (33+ variations per keyword)
+- Built-in wordlist (100+ common paths)
+- Custom wordlist support
+- Multiple export formats (JSON, CSV, TXT)
+- Configurable extensions and HTTP methods
+- User-Agent presets (8 built-in options)
+- HTTP redirect following
+- Custom header support
+- Rate limiting
+- Colored output with automatic fallback
+- Cross-platform compatibility (Windows, macOS, Linux)
+- Interactive mode with guided prompts
+
+## Tips
+
+1. **Better Results with Custom Wordlists**: While the built-in wordlist covers common paths, providing your own targeted wordlist will yield better results for your specific targets.
+
+2. **Threading**: Default thread count is 20, which works well for most scenarios. Increase with `-t` if you want faster scans, but cloud providers may rate limit you at higher values.
+
+3. **Cloud Enumeration**: Keywords are automatically mutated with common variations (dev, prod, test, staging, cdn, api, bucket, storage, etc.). Provide multiple relevant keywords for better coverage.
+
+4. **Filters**: Use `-fc` to hide common status codes you're not interested in, keeping output clean and focused.
+
+5. **Timeout Configuration**: For slow or geographically distant targets, increase the timeout with `--timeout` to avoid missing valid endpoints.
+
+6. **Rate Limiting**: Use `-rl` when testing targets that are sensitive to rapid requests or to respect rate limits.
+
+## Requirements
+
+- Python 3.7+
+- requests
+- dnspython
+- python-dotenv
+
+## License
+
+This tool is for authorized security testing only. Always obtain proper authorization before conducting reconnaissance on any target.
