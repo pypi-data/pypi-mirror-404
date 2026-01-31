@@ -1,0 +1,131 @@
+from typing import Optional, Union
+
+from pyspark.sql import SparkSession
+
+from blossom.context.context import Context
+from blossom.dataframe.data_handler import DataHandler
+from blossom.dataframe.dataframe import DataFrame
+from blossom.dataframe.local_dataframe import LocalDataFrame
+from blossom.dataframe.multiprocess_dataframe import MultiProcessDataFrame
+from blossom.dataframe.ray_dataframe import RayDataFrame
+from blossom.dataframe.spark_dataframe import SparkDataFrame
+from blossom.dataset.dataset import Dataset
+from blossom.dataset.standard_dataset import StandardDataset
+from blossom.schema.schema import Schema
+from blossom.util.type import StrEnum
+
+
+class DataType(StrEnum):
+    """
+    Enumeration of supported data file types.
+
+    Attributes:
+        JSON: JSON file format
+        PARQUET: Parquet file format
+    """
+
+    JSON = "json"
+    PARQUET = "parquet"
+
+
+class DatasetEngine(StrEnum):
+    """
+    Enumeration of available dataset processing engines.
+
+    Attributes:
+        LOCAL: Local in-memory processing engine
+        MULTIPROCESS: Multi-process processing engine
+        SPARK: Apache Spark distributed processing engine
+        RAY: Ray distributed processing engine
+    """
+
+    LOCAL = "local"
+    MULTIPROCESS = "multiprocess"
+    SPARK = "spark"
+    RAY = "ray"
+
+
+def load_dataset(
+    path: Union[str, list[str]],
+    engine: DatasetEngine = DatasetEngine.LOCAL,
+    data_type: DataType = DataType.JSON,
+    data_handler: Optional[DataHandler] = None,
+    context: Optional[Context] = None,
+    spark_session: Optional[SparkSession] = None,
+) -> Dataset:
+    """
+    Load a dataset from file(s).
+
+    Args:
+        path: Path to the data file or list of paths to data files.
+        engine: Processing engine to use (default: DatasetEngine.LOCAL)
+        data_type: Type of data file (default: DataType.JSON). Supported types:
+            - DataType.JSON: JSON/JSONL files
+            - DataType.PARQUET: Parquet files
+        data_handler: Optional custom data handler for deserialization
+        context: Optional execution context
+        spark_session: Optional Spark session (required for Spark engine)
+
+    Returns:
+        A dataset containing the loaded data
+
+    Raises:
+        ValueError: If an invalid engine or data type is specified
+    """
+    dataframe: DataFrame
+    if engine == DatasetEngine.LOCAL:
+        dataframe = LocalDataFrame()
+    elif engine == DatasetEngine.MULTIPROCESS:
+        dataframe = MultiProcessDataFrame()
+    elif engine == DatasetEngine.RAY:
+        dataframe = RayDataFrame()
+    elif engine == DatasetEngine.SPARK:
+        dataframe = SparkDataFrame(spark_session=spark_session)
+    else:
+        raise ValueError(f"Invalid dataset engine: {engine}")
+
+    if data_type == DataType.JSON:
+        dataframe = dataframe.read_json(path, data_handler)
+    elif data_type == DataType.PARQUET:
+        dataframe = dataframe.read_parquet(path, data_handler)
+    else:
+        raise ValueError(f"Invalid file type: {data_type}")
+
+    return StandardDataset(context, dataframe)
+
+
+def create_dataset(
+    data: Optional[list[Schema]] = None,
+    engine: DatasetEngine = DatasetEngine.LOCAL,
+    context: Optional[Context] = None,
+    spark_session: Optional[SparkSession] = None,
+) -> Dataset:
+    """
+    Create a dataset from a list of schemas.
+
+    Args:
+        data: List of schema objects (default: empty list)
+        engine: Processing engine to use (default: DatasetEngine.LOCAL)
+        context: Optional execution context
+        spark_session: Optional Spark session (required for Spark engine)
+
+    Returns:
+        A dataset containing the provided data
+
+    Raises:
+        ValueError: If an invalid engine is specified
+    """
+    dataframe: DataFrame
+    if engine == DatasetEngine.LOCAL:
+        dataframe = LocalDataFrame()
+    elif engine == DatasetEngine.MULTIPROCESS:
+        dataframe = MultiProcessDataFrame()
+    elif engine == DatasetEngine.RAY:
+        dataframe = RayDataFrame()
+    elif engine == DatasetEngine.SPARK:
+        dataframe = SparkDataFrame(spark_session=spark_session)
+    else:
+        raise ValueError(f"Invalid dataset engine: {engine}")
+
+    dataframe = dataframe.from_list(data or [])
+    return StandardDataset(context, dataframe)
