@@ -1,0 +1,85 @@
+[package]
+name = "view-buffer"
+version = "0.6.0"
+edition = "2021"
+authors = ["Your Name <your.email@example.com>"]
+description = "A zero-copy, stride-aware tensor orchestration framework for Rust."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/heshamdar/view-buffer"
+keywords = ["tensor", "zero-copy", "arrow", "ndarray", "image"]
+categories = ["science", "data-structures", "computer-vision"]
+readme = "README.md"
+
+# Library only - Python bindings are provided by polars-cv
+[lib]
+name = "view_buffer"
+crate-type = ["rlib"]
+
+[dependencies]
+thiserror = "1.0"
+num-traits = "0.2"
+
+# Optional dependencies
+ndarray = { version = "0.17", optional = true }
+image = { version = "0.25", optional = true }
+tiff = { version = "0.10", optional = true }
+fast_image_resize = { version = "5.0", optional = true }
+arrow = { version = "53.0", features = ["ffi"], optional = true }
+image_hasher = { version = "3.0", optional = true }
+polars-arrow = { version = "0.46", optional = true }
+
+# NEW: Serialization & Protocol dependencies (Phase 1)
+serde = { version = "1.0", features = ["derive"], optional = true }
+serde_json = { version = "1.0", optional = true }
+bytemuck = { version = "1.14", features = ["derive"], optional = true }
+
+[dev-dependencies]
+anyhow = "1.0"
+ndarray = "0.17"
+image = "0.25"
+tiff = "0.10"
+fast_image_resize = "5.0"
+arrow = { version = "53.0", features = ["ffi"] }
+polars-arrow = "0.46"
+# Added for tests
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[features]
+# Enable ndarray by default for strided scalar operations
+default = ["ndarray_interop"]
+
+# External crate interops (require dependencies)
+ndarray_interop = ["dep:ndarray"]
+image_interop = ["dep:image", "dep:fast_image_resize", "dep:tiff"]
+arrow_interop = ["dep:arrow"]
+polars_interop = ["dep:polars-arrow"]
+
+# Output format support (no external deps, just format logic)
+numpy_interop = []
+torch_interop = []
+
+# Perceptual hashing support (requires image_interop)
+perceptual_hash = ["dep:image_hasher", "image_interop"]
+
+# Convenience bundles
+all_interops = [
+    "ndarray_interop",
+    "image_interop",
+    "arrow_interop",
+    "polars_interop",
+    "numpy_interop",
+    "torch_interop",
+    "perceptual_hash",
+]
+
+# Serialization support
+serde = ["dep:serde", "dep:serde_json", "dep:bytemuck"]
+
+[[example]]
+name = "demo"
+required-features = ["image_interop"]
+
+[[example]]
+name = "comprehensive_demo"
+required-features = ["image_interop"]
