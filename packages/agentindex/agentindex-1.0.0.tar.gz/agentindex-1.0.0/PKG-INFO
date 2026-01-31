@@ -1,0 +1,260 @@
+Metadata-Version: 2.4
+Name: agentindex
+Version: 1.0.0
+Summary: Official Python SDK for Agent Index - The discovery layer for x402 AI agents
+Project-URL: Homepage, https://theagentindex.app
+Project-URL: Documentation, https://theagentindex.app/docs
+Project-URL: Repository, https://github.com/402-agent/agentindex-python
+Project-URL: Issues, https://github.com/402-agent/agentindex-python/issues
+Author-email: 402 Agent Inc <hello@theagentindex.app>
+License-Expression: MIT
+Keywords: agent-discovery,agent-index,ai-agents,base,coinbase,langchain,x402
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Internet :: WWW/HTTP
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Requires-Python: >=3.9
+Requires-Dist: httpx>=0.25.0
+Requires-Dist: pydantic>=2.0.0
+Provides-Extra: dev
+Requires-Dist: pytest; extra == 'dev'
+Requires-Dist: pytest-asyncio; extra == 'dev'
+Requires-Dist: ruff; extra == 'dev'
+Provides-Extra: langchain
+Requires-Dist: langchain>=0.1.0; extra == 'langchain'
+Description-Content-Type: text/markdown
+
+# agentindex
+
+The official Python SDK for [Agent Index](https://theagentindex.app) — the discovery layer for x402 AI agents.
+
+[![PyPI version](https://badge.fury.io/py/agentindex.svg)](https://pypi.org/project/agentindex/)
+[![Python](https://img.shields.io/pypi/pyversions/agentindex.svg)](https://pypi.org/project/agentindex/)
+
+## Installation
+
+```bash
+pip install agentindex
+```
+
+With LangChain support:
+```bash
+pip install agentindex[langchain]
+```
+
+## Quick Start
+
+```python
+from agentindex import AgentIndex
+
+client = AgentIndex()
+
+# Search for crypto price agents
+results = client.search("crypto price")
+for agent in results.results:
+    print(f"{agent.description} - ${agent.price_usd}/call")
+
+# Get trending agents
+trending = client.trending()
+print(trending.trending)
+```
+
+## Async Support
+
+```python
+import asyncio
+from agentindex import AsyncAgentIndex
+
+async def main():
+    async with AsyncAgentIndex() as client:
+        results = await client.search("weather forecast")
+        print(results.results)
+
+asyncio.run(main())
+```
+
+## API Reference
+
+### Constructor
+
+```python
+client = AgentIndex(
+    base_url="https://api.theagentindex.app",  # default
+    timeout=10.0,  # default, in seconds
+)
+```
+
+### Methods
+
+#### `search()` — Search for agents
+
+```python
+results = client.search(
+    query="crypto price",       # required
+    category="crypto",          # optional: crypto, defi, ai, weather, news, oracle
+    max_price=0.05,             # optional: max USD per call
+    limit=20,                   # optional: default 10, max 50
+)
+
+# results.count - total matches
+# results.results - list of Agent objects
+```
+
+#### `trending()` — Get trending agents
+
+```python
+trending = client.trending()
+for agent in trending.trending:
+    print(agent.description)
+```
+
+#### `health()` — Check API status
+
+```python
+health = client.health()
+print(f"Status: {health.status}")
+```
+
+#### `recommend()` — AI-powered recommendations
+
+⚡ **Premium endpoint** — requires x402 payment ($0.005/call)
+
+```python
+recs = client.recommend(
+    use_case="I need real-time crypto prices for my trading bot",
+    max_price=0.02,
+    limit=5,
+)
+```
+
+#### `analytics()` — Endpoint analytics
+
+⚡ **Premium endpoint** — requires x402 payment ($0.01/call)
+
+```python
+analytics = client.analytics(
+    target="crypto",  # category or agent ID
+    period="7d",      # 24h, 7d, or 30d
+)
+print(f"Total calls: {analytics.total_calls}")
+```
+
+### Models
+
+```python
+class Agent:
+    id: str                    # Unique identifier
+    url: str                   # Endpoint URL
+    domain: str                # Domain name
+    description: str           # Capabilities
+    price_usd: float           # Price per call
+    category: str              # Category
+    health: str                # healthy, degraded, down, unknown
+    tier: str                  # A, B, C, D
+    score: int                 # Trust score (0-100)
+```
+
+## LangChain Integration
+
+```python
+from agentindex import create_langchain_tool
+
+# Create a tool for your LangChain agent
+tool = create_langchain_tool()
+
+# Use in your agent
+from langchain.agents import AgentExecutor
+# ... add tool to your agent
+```
+
+## Quick Search
+
+One-liner convenience function:
+
+```python
+from agentindex import search
+
+agents = search("crypto prices", category="defi")
+```
+
+## Examples
+
+### Find the cheapest agent
+
+```python
+from agentindex import AgentIndex
+
+with AgentIndex() as client:
+    results = client.search("crypto price", category="crypto", max_price=0.01)
+    
+    # Sort by price
+    cheapest = sorted(results.results, key=lambda a: a.price_usd)
+    print(f"Cheapest: {cheapest[0].url} at ${cheapest[0].price_usd}/call")
+```
+
+### Filter healthy agents only
+
+```python
+results = client.search("weather")
+healthy = [a for a in results.results if a.health == "healthy"]
+print(f"{len(healthy)} healthy agents found")
+```
+
+### Build an agent that finds other agents
+
+```python
+from agentindex import AgentIndex
+
+def find_best_agent(capability: str) -> str:
+    """Find the best agent for a capability."""
+    with AgentIndex() as client:
+        results = client.search(capability, limit=5)
+        
+        # Pick best healthy agent by score
+        healthy = [a for a in results.results if a.health == "healthy"]
+        if not healthy:
+            raise ValueError(f"No healthy agent found for: {capability}")
+        
+        best = max(healthy, key=lambda a: a.score)
+        return best.url
+
+# Your AI can now dynamically find tools
+weather_api = find_best_agent("weather forecast")
+print(f"Using: {weather_api}")
+```
+
+## Error Handling
+
+```python
+from agentindex import AgentIndex, AgentIndexError
+
+client = AgentIndex()
+
+try:
+    results = client.search("test")
+except AgentIndexError as e:
+    print(f"API Error: {e.message}")
+    print(f"Status: {e.status_code}")
+```
+
+## Rate Limits
+
+- **Free tier:** 100 requests/minute
+- **Premium endpoints:** Unlimited (pay-per-call via x402)
+
+## Support
+
+- 📖 [Documentation](https://theagentindex.app/docs)
+- 💬 [Discord](https://discord.gg/agentindex)
+- 🐛 [Issues](https://github.com/402-agent/agentindex-python/issues)
+- 🐦 [Twitter](https://twitter.com/theagentindex)
+
+## License
+
+MIT © [402 Agent Inc](https://theagentindex.app)
