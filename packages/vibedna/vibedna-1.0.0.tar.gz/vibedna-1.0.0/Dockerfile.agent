@@ -1,0 +1,46 @@
+# VibeDNA Agent Docker Image
+# © 2026 VibeDNA powered by VibeCaaS.com a division of NeuralQuantum.ai LLC. All rights reserved.
+
+FROM python:3.11-slim
+
+LABEL maintainer="NeuralQuantum.ai <contact@neuralquantum.ai>"
+LABEL description="VibeDNA Agent System"
+LABEL version="1.0.0"
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy project files
+COPY pyproject.toml ./
+COPY vibedna/ ./vibedna/
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -e ".[agents]"
+
+# Create non-root user for security
+RUN useradd -m -u 1000 vibedna && \
+    chown -R vibedna:vibedna /app
+USER vibedna
+
+# Default environment variables
+ENV AGENT_TYPE=encoder
+ENV AGENT_PORT=8300
+ENV VIBEDNA_LOG_LEVEL=INFO
+
+# Expose agent port
+EXPOSE ${AGENT_PORT}
+
+# Health check endpoint
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:${AGENT_PORT}/health || exit 1
+
+# Entry point script
+COPY --chown=vibedna:vibedna scripts/run_agent.py ./scripts/
+CMD ["python", "scripts/run_agent.py"]
+
+# © 2026 VibeDNA powered by VibeCaaS.com a division of NeuralQuantum.ai LLC. All rights reserved.

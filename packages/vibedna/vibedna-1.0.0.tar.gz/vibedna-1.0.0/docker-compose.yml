@@ -1,0 +1,571 @@
+# VibeDNA Agent Orchestration System - Docker Compose
+# © 2026 VibeDNA powered by VibeCaaS.com a division of NeuralQuantum.ai LLC. All rights reserved.
+
+version: '3.8'
+
+# Shared configurations
+x-common-env: &common-env
+  VIBEDNA_LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  VIBEDNA_REDIS_URL: redis://redis:6379/0
+  VIBEDNA_POSTGRES_URL: postgresql://vibedna:vibedna@postgres:5432/vibedna
+  VIBEDNA_ES_URL: http://elasticsearch:9200
+
+x-agent-defaults: &agent-defaults
+  build:
+    context: .
+    dockerfile: Dockerfile.agent
+  restart: unless-stopped
+  networks:
+    - vibedna-network
+  depends_on:
+    redis:
+      condition: service_healthy
+    postgres:
+      condition: service_healthy
+
+x-mcp-defaults: &mcp-defaults
+  build:
+    context: .
+    dockerfile: Dockerfile.mcp
+  restart: unless-stopped
+  networks:
+    - vibedna-network
+  depends_on:
+    redis:
+      condition: service_healthy
+
+services:
+  # =============================================================================
+  # Infrastructure Services
+  # =============================================================================
+
+  redis:
+    image: redis:7-alpine
+    container_name: vibedna-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - vibedna-network
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: vibedna-postgres
+    environment:
+      POSTGRES_USER: vibedna
+      POSTGRES_PASSWORD: vibedna
+      POSTGRES_DB: vibedna
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vibedna"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - vibedna-network
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: vibedna-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -q '\"status\":\"green\"\\|\"status\":\"yellow\"'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - vibedna-network
+
+  # =============================================================================
+  # MCP Servers
+  # =============================================================================
+
+  mcp-core:
+    <<: *mcp-defaults
+    container_name: vibedna-mcp-core
+    environment:
+      <<: *common-env
+      MCP_SERVER_TYPE: core
+      MCP_SERVER_PORT: 8100
+    ports:
+      - "8100:8100"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8100/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  mcp-fs:
+    <<: *mcp-defaults
+    container_name: vibedna-mcp-fs
+    environment:
+      <<: *common-env
+      MCP_SERVER_TYPE: fs
+      MCP_SERVER_PORT: 8101
+    ports:
+      - "8101:8101"
+    volumes:
+      - dna-storage:/data/dna
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8101/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  mcp-compute:
+    <<: *mcp-defaults
+    container_name: vibedna-mcp-compute
+    environment:
+      <<: *common-env
+      MCP_SERVER_TYPE: compute
+      MCP_SERVER_PORT: 8102
+    ports:
+      - "8102:8102"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8102/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  mcp-monitor:
+    <<: *mcp-defaults
+    container_name: vibedna-mcp-monitor
+    environment:
+      <<: *common-env
+      MCP_SERVER_TYPE: monitor
+      MCP_SERVER_PORT: 8103
+    ports:
+      - "8103:8103"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8103/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  mcp-search:
+    <<: *mcp-defaults
+    container_name: vibedna-mcp-search
+    environment:
+      <<: *common-env
+      MCP_SERVER_TYPE: search
+      MCP_SERVER_PORT: 8104
+    ports:
+      - "8104:8104"
+    depends_on:
+      redis:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8104/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  mcp-synth:
+    <<: *mcp-defaults
+    container_name: vibedna-mcp-synth
+    environment:
+      <<: *common-env
+      MCP_SERVER_TYPE: synth
+      MCP_SERVER_PORT: 8105
+    ports:
+      - "8105:8105"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8105/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # =============================================================================
+  # Orchestration Tier
+  # =============================================================================
+
+  master-orchestrator:
+    <<: *agent-defaults
+    container_name: vibedna-master-orchestrator
+    environment:
+      <<: *common-env
+      AGENT_TYPE: master-orchestrator
+      AGENT_PORT: 8200
+    ports:
+      - "8200:8200"
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      mcp-core:
+        condition: service_healthy
+      mcp-monitor:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8200/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  workflow-orchestrator:
+    <<: *agent-defaults
+    container_name: vibedna-workflow-orchestrator
+    environment:
+      <<: *common-env
+      AGENT_TYPE: workflow-orchestrator
+      AGENT_PORT: 8201
+    ports:
+      - "8201:8201"
+    depends_on:
+      master-orchestrator:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8201/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  resource-orchestrator:
+    <<: *agent-defaults
+    container_name: vibedna-resource-orchestrator
+    environment:
+      <<: *common-env
+      AGENT_TYPE: resource-orchestrator
+      AGENT_PORT: 8202
+    ports:
+      - "8202:8202"
+    depends_on:
+      master-orchestrator:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8202/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # =============================================================================
+  # Specialist Tier
+  # =============================================================================
+
+  encoder-agent:
+    <<: *agent-defaults
+    container_name: vibedna-encoder-agent
+    environment:
+      <<: *common-env
+      AGENT_TYPE: encoder
+      AGENT_PORT: 8300
+    ports:
+      - "8300:8300"
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          memory: 512M
+    depends_on:
+      mcp-core:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8300/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  decoder-agent:
+    <<: *agent-defaults
+    container_name: vibedna-decoder-agent
+    environment:
+      <<: *common-env
+      AGENT_TYPE: decoder
+      AGENT_PORT: 8301
+    ports:
+      - "8301:8301"
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          memory: 512M
+    depends_on:
+      mcp-core:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8301/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  error-correction-agent:
+    <<: *agent-defaults
+    container_name: vibedna-error-correction-agent
+    environment:
+      <<: *common-env
+      AGENT_TYPE: error-correction
+      AGENT_PORT: 8302
+    ports:
+      - "8302:8302"
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+    depends_on:
+      mcp-core:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8302/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  compute-agent:
+    <<: *agent-defaults
+    container_name: vibedna-compute-agent
+    environment:
+      <<: *common-env
+      AGENT_TYPE: compute
+      AGENT_PORT: 8303
+    ports:
+      - "8303:8303"
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          memory: 1G
+    depends_on:
+      mcp-compute:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8303/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  filesystem-agent:
+    <<: *agent-defaults
+    container_name: vibedna-filesystem-agent
+    environment:
+      <<: *common-env
+      AGENT_TYPE: filesystem
+      AGENT_PORT: 8304
+    ports:
+      - "8304:8304"
+    volumes:
+      - dna-storage:/data/dna
+    depends_on:
+      mcp-fs:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8304/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  validation-agent:
+    <<: *agent-defaults
+    container_name: vibedna-validation-agent
+    environment:
+      <<: *common-env
+      AGENT_TYPE: validation
+      AGENT_PORT: 8305
+    ports:
+      - "8305:8305"
+    depends_on:
+      mcp-core:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8305/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  visualization-agent:
+    <<: *agent-defaults
+    container_name: vibedna-visualization-agent
+    environment:
+      <<: *common-env
+      AGENT_TYPE: visualization
+      AGENT_PORT: 8306
+    ports:
+      - "8306:8306"
+    depends_on:
+      mcp-monitor:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8306/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  synthesis-agent:
+    <<: *agent-defaults
+    container_name: vibedna-synthesis-agent
+    environment:
+      <<: *common-env
+      AGENT_TYPE: synthesis
+      AGENT_PORT: 8307
+    ports:
+      - "8307:8307"
+    depends_on:
+      mcp-synth:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8307/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # =============================================================================
+  # Support Tier
+  # =============================================================================
+
+  index-agent:
+    <<: *agent-defaults
+    container_name: vibedna-index-agent
+    environment:
+      <<: *common-env
+      AGENT_TYPE: index
+      AGENT_PORT: 8400
+    ports:
+      - "8400:8400"
+    depends_on:
+      mcp-search:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8400/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  metrics-agent:
+    <<: *agent-defaults
+    container_name: vibedna-metrics-agent
+    environment:
+      <<: *common-env
+      AGENT_TYPE: metrics
+      AGENT_PORT: 8401
+    ports:
+      - "8401:8401"
+    depends_on:
+      mcp-monitor:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8401/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  logging-agent:
+    <<: *agent-defaults
+    container_name: vibedna-logging-agent
+    environment:
+      <<: *common-env
+      AGENT_TYPE: logging
+      AGENT_PORT: 8402
+    ports:
+      - "8402:8402"
+    volumes:
+      - logs-data:/var/log/vibedna
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8402/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  docs-agent:
+    <<: *agent-defaults
+    container_name: vibedna-docs-agent
+    environment:
+      <<: *common-env
+      AGENT_TYPE: docs
+      AGENT_PORT: 8403
+    ports:
+      - "8403:8403"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8403/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  security-agent:
+    <<: *agent-defaults
+    container_name: vibedna-security-agent
+    environment:
+      <<: *common-env
+      AGENT_TYPE: security
+      AGENT_PORT: 8404
+    ports:
+      - "8404:8404"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8404/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # =============================================================================
+  # API Gateway
+  # =============================================================================
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: vibedna-api-gateway
+    environment:
+      <<: *common-env
+      MASTER_ORCHESTRATOR_URL: http://master-orchestrator:8200
+    ports:
+      - "8000:8000"
+    depends_on:
+      master-orchestrator:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - vibedna-network
+
+# =============================================================================
+# Networks
+# =============================================================================
+
+networks:
+  vibedna-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+# =============================================================================
+# Volumes
+# =============================================================================
+
+volumes:
+  redis-data:
+    driver: local
+  postgres-data:
+    driver: local
+  elasticsearch-data:
+    driver: local
+  dna-storage:
+    driver: local
+  logs-data:
+    driver: local
+
+# © 2026 VibeDNA powered by VibeCaaS.com a division of NeuralQuantum.ai LLC. All rights reserved.
