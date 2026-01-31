@@ -1,0 +1,1004 @@
+{
+    "openapi": "3.0.3",
+    "info": {
+        "title": "Fantasy Premier League API",
+        "description": "A comprehensive REST API for Fantasy Premier League data including players, teams, fixtures, gameweeks, leagues, and manager information. This is a community-documented API for the official Fantasy Premier League platform.",
+        "version": "1.0.0",
+        "contact": {
+            "name": "API Documentation"
+        },
+        "license": {
+            "name": "Community Documentation"
+        }
+    },
+    "components": {
+        "schemas": {},
+        "parameters": {
+            "gameweekParam": {
+                "schema": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 38
+                },
+                "in": "path",
+                "name": "GW",
+                "required": true,
+                "description": "Gameweek number (1-38)"
+            },
+            "teamIdParam": {
+                "schema": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "in": "path",
+                "name": "TID",
+                "required": true,
+                "description": "Team/Manager ID"
+            },
+            "leagueIdParam": {
+                "schema": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "in": "path",
+                "name": "LID",
+                "required": true,
+                "description": "League ID"
+            },
+            "elementIdParam": {
+                "schema": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "in": "path",
+                "name": "EID",
+                "required": true,
+                "description": "Player/Element ID"
+            },
+            "pageStandingsParam": {
+                "schema": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "default": 1
+                },
+                "in": "query",
+                "name": "page_standings",
+                "required": false,
+                "description": "Page number for leagues with more than 50 teams"
+            }
+        },
+        "securitySchemes": {
+            "cookieAuth": {
+                "type": "apiKey",
+                "in": "cookie",
+                "name": "pl_profile",
+                "description": "Session cookie authentication for private endpoints. Obtain by logging in to the Fantasy Premier League website."
+            }
+        }
+    },
+    "paths": {
+        "/api/bootstrap-static/": {
+            "get": {
+                "summary": "Get bootstrap static data",
+                "tags": [
+                    "Bootstrap"
+                ],
+                "description": "Main endpoint containing all player IDs, team IDs, team strength, gameweek deadlines, and other core FPL data. This is the primary endpoint for initializing FPL applications.",
+                "responses": {
+                    "200": {
+                        "description": "Successful response containing all bootstrap data",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "events": {
+                                            "type": "array",
+                                            "description": "All gameweek information"
+                                        },
+                                        "teams": {
+                                            "type": "array",
+                                            "description": "All Premier League teams"
+                                        },
+                                        "elements": {
+                                            "type": "array",
+                                            "description": "All players"
+                                        },
+                                        "element_types": {
+                                            "type": "array",
+                                            "description": "Player positions (GK, DEF, MID, FWD)"
+                                        },
+                                        "element_stats": {
+                                            "type": "array",
+                                            "description": "Available player statistics"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/fixtures/": {
+            "get": {
+                "summary": "Get all fixtures",
+                "tags": [
+                    "Fixtures"
+                ],
+                "description": "Retrieve all Premier League fixtures for the season. Can be filtered by gameweek using the event query parameter.",
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 38
+                        },
+                        "in": "query",
+                        "name": "event",
+                        "required": false,
+                        "description": "Filter fixtures by specific gameweek"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of fixtures",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "id": {
+                                                "type": "integer",
+                                                "description": "Fixture ID"
+                                            },
+                                            "event": {
+                                                "type": "integer",
+                                                "description": "Gameweek number"
+                                            },
+                                            "team_h": {
+                                                "type": "integer",
+                                                "description": "Home team ID"
+                                            },
+                                            "team_a": {
+                                                "type": "integer",
+                                                "description": "Away team ID"
+                                            },
+                                            "kickoff_time": {
+                                                "type": "string",
+                                                "format": "date-time",
+                                                "description": "Match kickoff time"
+                                            },
+                                            "team_h_score": {
+                                                "type": "integer",
+                                                "nullable": true,
+                                                "description": "Home team score (null if not finished)"
+                                            },
+                                            "team_a_score": {
+                                                "type": "integer",
+                                                "nullable": true,
+                                                "description": "Away team score (null if not finished)"
+                                            },
+                                            "finished": {
+                                                "type": "boolean",
+                                                "description": "Whether the match has finished"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/event/{GW}/live/": {
+            "get": {
+                "summary": "Get live gameweek data",
+                "tags": [
+                    "Gameweeks"
+                ],
+                "description": "Live results and player performance data for a specific gameweek. Returns real-time updates during matches.",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/gameweekParam"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Live gameweek data",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "elements": {
+                                            "type": "array",
+                                            "description": "Player statistics for the gameweek"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Gameweek not found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "detail": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/entry/{TID}/": {
+            "get": {
+                "summary": "Get manager team info",
+                "tags": [
+                    "Managers"
+                ],
+                "description": "General information about a manager's team including name, manager name, kit colors, and leagues joined.",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/teamIdParam"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Manager team information",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "id": {
+                                            "type": "integer",
+                                            "description": "Team ID"
+                                        },
+                                        "player_first_name": {
+                                            "type": "string",
+                                            "description": "Manager first name"
+                                        },
+                                        "player_last_name": {
+                                            "type": "string",
+                                            "description": "Manager last name"
+                                        },
+                                        "name": {
+                                            "type": "string",
+                                            "description": "Team name"
+                                        },
+                                        "summary_overall_points": {
+                                            "type": "integer",
+                                            "description": "Total points this season"
+                                        },
+                                        "summary_overall_rank": {
+                                            "type": "integer",
+                                            "description": "Overall rank"
+                                        },
+                                        "leagues": {
+                                            "type": "object",
+                                            "description": "Leagues the team has joined"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Team not found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "detail": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/entry/{TID}/history/": {
+            "get": {
+                "summary": "Get manager team history",
+                "tags": [
+                    "Managers"
+                ],
+                "description": "Current season and previous seasons performance history for a specific manager team.",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/teamIdParam"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Team history data",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "current": {
+                                            "type": "array",
+                                            "description": "Current season gameweek-by-gameweek performance"
+                                        },
+                                        "past": {
+                                            "type": "array",
+                                            "description": "Previous seasons summary"
+                                        },
+                                        "chips": {
+                                            "type": "array",
+                                            "description": "Chips used this season"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Team not found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "detail": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/entry/{TID}/transfers/": {
+            "get": {
+                "summary": "Get all team transfers",
+                "tags": [
+                    "Managers",
+                    "Transfers"
+                ],
+                "description": "All transfers made by a specific manager team throughout the season.",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/teamIdParam"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of transfers",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "element_in": {
+                                                "type": "integer",
+                                                "description": "Player ID transferred in"
+                                            },
+                                            "element_out": {
+                                                "type": "integer",
+                                                "description": "Player ID transferred out"
+                                            },
+                                            "entry": {
+                                                "type": "integer",
+                                                "description": "Team ID"
+                                            },
+                                            "event": {
+                                                "type": "integer",
+                                                "description": "Gameweek of transfer"
+                                            },
+                                            "time": {
+                                                "type": "string",
+                                                "format": "date-time",
+                                                "description": "Transfer timestamp"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Team not found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "detail": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/entry/{TID}/event/{GW}/picks/": {
+            "get": {
+                "summary": "Get team squad picks",
+                "tags": [
+                    "Managers"
+                ],
+                "description": "Squad picks, captain, vice-captain, and bench for a specific manager team in a given gameweek.",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/teamIdParam"
+                    },
+                    {
+                        "$ref": "#/components/parameters/gameweekParam"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Team picks for the gameweek",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "active_chip": {
+                                            "type": "string",
+                                            "nullable": true,
+                                            "description": "Active chip for this gameweek"
+                                        },
+                                        "automatic_subs": {
+                                            "type": "array",
+                                            "description": "Automatic substitutions made"
+                                        },
+                                        "entry_history": {
+                                            "type": "object",
+                                            "description": "Gameweek performance summary"
+                                        },
+                                        "picks": {
+                                            "type": "array",
+                                            "description": "Selected players with position and multiplier",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "element": {
+                                                        "type": "integer",
+                                                        "description": "Player ID"
+                                                    },
+                                                    "position": {
+                                                        "type": "integer",
+                                                        "description": "Position in squad (1-15)"
+                                                    },
+                                                    "is_captain": {
+                                                        "type": "boolean"
+                                                    },
+                                                    "is_vice_captain": {
+                                                        "type": "boolean"
+                                                    },
+                                                    "multiplier": {
+                                                        "type": "integer",
+                                                        "description": "Points multiplier (0 for bench, 1 for playing, 2 for captain)"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Team or gameweek not found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "detail": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/leagues-classic/{LID}/standings/": {
+            "get": {
+                "summary": "Get league standings",
+                "tags": [
+                    "Leagues"
+                ],
+                "description": "Information about a classic league including name and current standings. Supports pagination for leagues with more than 50 teams.",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/leagueIdParam"
+                    },
+                    {
+                        "$ref": "#/components/parameters/pageStandingsParam"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "League standings data",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "league": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "integer"
+                                                },
+                                                "name": {
+                                                    "type": "string"
+                                                },
+                                                "created": {
+                                                    "type": "string",
+                                                    "format": "date-time"
+                                                }
+                                            }
+                                        },
+                                        "standings": {
+                                            "type": "object",
+                                            "properties": {
+                                                "has_next": {
+                                                    "type": "boolean",
+                                                    "description": "Whether there are more pages"
+                                                },
+                                                "page": {
+                                                    "type": "integer",
+                                                    "description": "Current page number"
+                                                },
+                                                "results": {
+                                                    "type": "array",
+                                                    "description": "Team standings",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "rank": {
+                                                                "type": "integer"
+                                                            },
+                                                            "entry": {
+                                                                "type": "integer",
+                                                                "description": "Team ID"
+                                                            },
+                                                            "entry_name": {
+                                                                "type": "string",
+                                                                "description": "Team name"
+                                                            },
+                                                            "player_name": {
+                                                                "type": "string",
+                                                                "description": "Manager name"
+                                                            },
+                                                            "total": {
+                                                                "type": "integer",
+                                                                "description": "Total points"
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "League not found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "detail": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/element-summary/{EID}/": {
+            "get": {
+                "summary": "Get player details",
+                "tags": [
+                    "Players"
+                ],
+                "description": "Detailed information about a specific player including upcoming fixtures with FDR (Fixture Difficulty Rating), current season statistics, and previous season summary.",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/elementIdParam"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Player details",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "fixtures": {
+                                            "type": "array",
+                                            "description": "Upcoming fixtures with difficulty ratings"
+                                        },
+                                        "history": {
+                                            "type": "array",
+                                            "description": "Gameweek-by-gameweek performance this season"
+                                        },
+                                        "history_past": {
+                                            "type": "array",
+                                            "description": "Previous seasons summary"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Player not found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "detail": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/regions/": {
+            "get": {
+                "summary": "Get FPL regions",
+                "tags": [
+                    "Regions"
+                ],
+                "description": "List of all available FPL regions for geographical filtering and statistics.",
+                "responses": {
+                    "200": {
+                        "description": "List of regions",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "id": {
+                                                "type": "integer"
+                                            },
+                                            "name": {
+                                                "type": "string"
+                                            },
+                                            "iso_code_short": {
+                                                "type": "string"
+                                            },
+                                            "iso_code_long": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/stats/best-classic-private-leagues/": {
+            "get": {
+                "summary": "Get best leagues",
+                "tags": [
+                    "Leagues"
+                ],
+                "description": "List of the best performing classic private leagues in FPL.",
+                "responses": {
+                    "200": {
+                        "description": "List of best leagues",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "id": {
+                                                "type": "integer",
+                                                "description": "League ID"
+                                            },
+                                            "name": {
+                                                "type": "string",
+                                                "description": "League name"
+                                            },
+                                            "average_score": {
+                                                "type": "number",
+                                                "description": "Average score"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/my-team/{TID}/": {
+            "get": {
+                "summary": "Get my team details (Private)",
+                "tags": [
+                    "Private",
+                    "Managers"
+                ],
+                "description": "Details about your own team including squad picks, current sell prices, chip status, and available transfers. Requires authentication.",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/teamIdParam"
+                    }
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Your team details",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "picks": {
+                                            "type": "array",
+                                            "description": "Your squad picks with sell prices"
+                                        },
+                                        "chips": {
+                                            "type": "array",
+                                            "description": "Chip status"
+                                        },
+                                        "transfers": {
+                                            "type": "object",
+                                            "description": "Transfer information"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized - Authentication required",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "detail": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Team not found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "detail": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/entry/{TID}/transfers-latest/": {
+            "get": {
+                "summary": "Get latest transfers (Private)",
+                "tags": [
+                    "Private",
+                    "Transfers"
+                ],
+                "description": "List of transfers you have performed in the current transfer window. Requires authentication and TID must be your own team ID.",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/teamIdParam"
+                    }
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Latest transfers",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "element_in": {
+                                                "type": "integer",
+                                                "description": "Player ID transferred in"
+                                            },
+                                            "element_out": {
+                                                "type": "integer",
+                                                "description": "Player ID transferred out"
+                                            },
+                                            "time": {
+                                                "type": "string",
+                                                "format": "date-time"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized - Authentication required",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "detail": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/me/": {
+            "get": {
+                "summary": "Get my profile (Private)",
+                "tags": [
+                    "Private"
+                ],
+                "description": "Information about your FPL profile including name, team ID, favorite team, and region. Requires authentication.",
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Your profile information",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "player": {
+                                            "type": "object",
+                                            "properties": {
+                                                "first_name": {
+                                                    "type": "string"
+                                                },
+                                                "last_name": {
+                                                    "type": "string"
+                                                },
+                                                "email": {
+                                                    "type": "string",
+                                                    "format": "email"
+                                                },
+                                                "entry": {
+                                                    "type": "integer",
+                                                    "description": "Your team ID"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized - Authentication required",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "detail": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "servers": [
+        {
+            "url": "https://fantasy.premierleague.com",
+            "description": "Official Fantasy Premier League API"
+        }
+    ],
+    "tags": [
+        {
+            "name": "Bootstrap",
+            "description": "Core bootstrap data for initializing FPL applications"
+        },
+        {
+            "name": "Fixtures",
+            "description": "Premier League fixture data"
+        },
+        {
+            "name": "Gameweeks",
+            "description": "Gameweek-specific data and live updates"
+        },
+        {
+            "name": "Managers",
+            "description": "Manager team information and history"
+        },
+        {
+            "name": "Transfers",
+            "description": "Transfer history and data"
+        },
+        {
+            "name": "Leagues",
+            "description": "League standings and information"
+        },
+        {
+            "name": "Players",
+            "description": "Player details and statistics"
+        },
+        {
+            "name": "Regions",
+            "description": "FPL region data"
+        },
+        {
+            "name": "Private",
+            "description": "Endpoints requiring authentication"
+        }
+    ]
+}
