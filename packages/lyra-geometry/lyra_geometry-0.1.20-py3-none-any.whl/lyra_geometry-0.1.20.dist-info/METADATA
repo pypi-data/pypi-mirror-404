@@ -1,0 +1,396 @@
+Metadata-Version: 2.4
+Name: lyra-geometry
+Version: 0.1.20
+Summary: Python library for symbolic differential geometry: tensors, connections, and curvature.
+Author: Eduardo
+License: MIT License
+        
+        Copyright (c) 2025 Eduardo
+        
+        Permission is hereby granted, free of charge, to any person obtaining a copy
+        of this software and associated documentation files (the "Software"), to deal
+        in the Software without restriction, including without limitation the rights
+        to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+        copies of the Software, and to permit persons to whom the Software is
+        furnished to do so, subject to the following conditions:
+        
+        The above copyright notice and this permission notice shall be included in all
+        copies or substantial portions of the Software.
+        
+        THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+        IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+        FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+        AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+        LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+        OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+        SOFTWARE.
+        
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: sympy>=1.12
+Provides-Extra: dev
+Requires-Dist: pytest; extra == "dev"
+Dynamic: license-file
+
+# Lyra Geometry
+
+Lyra Geometry is a Python library for symbolic differential geometry with a
+focus on tensor spaces, connections, and curvature in Lyra geometry. It is
+built on SymPy to support exact tensor manipulation in scripts and notebooks.
+
+## Highlights
+
+- Tensor spaces with index notation (up/down indices).
+- Lyra connection and curvature tensors derived from a metric.
+- Automatic Einstein summation for repeated labels.
+- Covariant derivatives, torsion, and non-metricity support.
+- Friendly API designed for interactive exploration.
+
+## Requirements
+
+- Python >= 3.9
+- SymPy >= 1.12
+
+## Installation
+
+```bash
+python -m pip install lyra-geometry
+```
+
+For local development:
+
+```bash
+python -m pip install -e .[dev]
+```
+
+## Minimal API reference
+
+Core objects:
+
+- `SpaceTime(coords, metric, connection_strategy=...)`: main high-level API for metrics, connections, and curvature.
+  ```python
+  st = pl.SpaceTime(coords=(x, y), metric=sp.diag(1, 1))
+  st.riemann
+  ```
+- `TensorSpace(dim, labels=...)`: lower-level tensor space without a metric.
+  ```python
+  ts = pl.TensorSpace(dim=2, labels=("x", "y"))
+  ```
+- `Tensor`: tensor container with index-aware arithmetic and contractions.
+  ```python
+  t = st.tensor.generic("T", (pl.U, pl.D))
+  t[+a, -b]
+  ```
+- `Index`, `UpIndex`, `DownIndex`: index labels and variance markers.
+  ```python
+  a, b = st.index("a b")
+  st.g[-a, -b]
+  ```
+- `U`, `D`: convenience aliases for up/down index variance.
+  ```python
+  v = st.tensor.generic("v", (pl.U,))
+  w = st.tensor.generic("w", (pl.D,))
+  ```
+
+Connection and curvature strategies:
+
+- `LyraConnectionStrategy`, `LyraCurvatureStrategy`: default Lyra geometry behavior.
+  ```python
+  st = pl.SpaceTime(coords=(x, y), metric=sp.diag(1, 1))
+  st.gamma
+  ```
+- `FixedConnectionStrategy`: use a fixed connection tensor.
+  ```python
+  Gamma0 = sp.ImmutableDenseNDimArray([0] * 8, (2, 2, 2))
+  st = pl.SpaceTime(coords=(x, y), metric=sp.diag(1, 1),
+                    connection_strategy=pl.FixedConnectionStrategy(Gamma0))
+  ```
+- `Connection`, `ConnectionTensor`, `CurvatureStrategy`: building blocks for custom strategies.
+
+Helpers:
+
+- `example_indexing()`: small demo of index notation.
+  ```python
+  pl.example_indexing()
+  ```
+- `greek()`: helper for common Greek index labels.
+  ```python
+  mu, nu = pl.greek("mu nu")
+  ```
+
+## Riemann convention
+
+`TensorSpace` and `SpaceTime` accept a `riemann_convention` parameter to control
+the overall sign of the curvature tensors. The default is `"mtw"`/`"wald"` and
+matches the current library behavior:
+
+```
+R^rho_{ sigma mu nu } = d_mu Gamma^rho_{nu sigma}
+                      - d_nu Gamma^rho_{mu sigma}
+                      + Gamma^rho_{mu lambda} Gamma^lambda_{nu sigma}
+                      - Gamma^rho_{nu lambda} Gamma^lambda_{mu sigma}
+```
+
+Choosing `"landau-lifshitz"`/`"weinberg"` flips the global sign of the Riemann,
+Ricci, and scalar curvature tensors.
+
+```python
+st = pl.SpaceTime(coords=(x, y), metric=sp.diag(1, 1), riemann_convention="landau-lifshitz")
+```
+
+## Module organization
+
+The public API continues to be re-exported from `lyra_geometry`, but the
+implementation is organized by responsibility:
+
+- `lyra_geometry.core`: tensor spaces, connections, curvature strategies.
+- `lyra_geometry.tensors`: tensors, indices, and low-level tensor helpers.
+- `lyra_geometry.diff_ops`: gradient/divergence/laplacian helpers.
+- `lyra_geometry.invariants`: Ricci/Kretschmann/Euler invariants.
+- `lyra_geometry.utils`: small utilities like `greek` and `example_indexing`.
+
+## What `lyra-geometry` is (and what it is not)
+
+### What it is
+
+The `lyra-geometry` is a symbolic library to work with relativistic gravity thoeries. Concretely, `lyra-geometry` provides:
+
+- **Exact symbolic tensor calculus** built on top of SymPy.
+- A clean, object-oriented **`SpaceTime` abstraction** that organizes:
+  - metric, inverse metric, and determinant,
+  - Levi–Civita connection (by default),
+  - Riemann, Ricci, Einstein tensors, and scalar curvature,
+  - covariant derivatives with correct index bookkeeping.
+- **Explicit index variance (up/down indices)** with:
+  - readable index notation,
+  - **automatic Einstein summation** on repeated labels.
+- A workflow designed for **interactive notebooks and analytic derivations**,
+  where expressions remain transparent and inspectable at every step.
+
+In this default configuration, `lyra-geometry` behaves exactly as a **symbolic
+GR toolkit**.
+
+Where the library *extends beyond* standard GR is in its **native support for
+Lyra geometry and related non-Riemannian structures**:
+
+- the Lyra scale field $\phi$ can be introduced when desired,
+- alternative connection strategies,
+- optional torsion and non-metricity sectors.
+
+These features are **opt-in**. They do not interfere with ordinary GR unless
+explicitly enabled.
+
+In short:  
+**`lyra-geometry` is a symbolic GR library first, and a Lyra-geometry laboratory
+second.**
+
+---
+
+### What it is NOT
+
+To set expectations clearly, `lyra-geometry` is **not**:
+
+- A numerical relativity or cosmological simulation framework.
+- A high-performance or HPC-oriented tensor engine.
+- A “black-box” solver that automatically derives or solves field equations.
+- A replacement for large, monolithic CAS environments (e.g. full SageMath).
+- A library that enforces Lyra geometry or non-Riemannian assumptions by default.
+
+If you never introduce a scale field, torsion, or non-metricity, the library
+remains **purely Riemannian and fully compatible with standard GR practice**.
+
+---
+
+### When it makes sense to use it
+
+`lyra-geometry` is particularly well suited if you want to:
+
+- perform **symbolic GR calculations** with explicit index control,
+- derive connections and curvature tensors from a metric in a reproducible way,
+- check lengthy analytic derivations while minimizing index errors,
+- work entirely in Python notebooks with a clean, inspectable API,
+- explore extensions of GR (Lyra geometry, alternative connections) **without
+  rewriting your tensor infrastructure**.
+
+If your primary goal is large-scale numerics, data-driven cosmology, or
+observational pipelines, this library is best used **in combination with other
+tools**, or not at all.
+
+### Comparison with common GR / tensor libraries
+
+| Library            | Symbolic | Index Notation | Automatic Contraction | Curvature & Connection | Lyra Geometry | Numeric Focus | Philosophy |
+|--------------------|----------|----------------|------------------------|------------------------|---------------|---------------|------------|
+| SymPy (tensor)     | ✅       | ⚠️ (low-level) | ⚠️ manual              | ⚠️ partial             | ❌            | ❌            | General-purpose CAS |
+| EinsteinPy         | ✅       | ✅              | ⚠️ partial              | ✅ (GR)                | ❌            | ✅            | End-to-end GR |
+| SageManifolds      | ✅       | ✅              | ✅                      | ✅ (very rich)         | ❌            | ⚠️            | Full math environment |
+| Cadabra            | ✅       | ✅              | ✅ (very strong)        | ⚠️ user-defined        | ❌            | ❌            | QFT/GR CAS |
+| OGRePy             | ✅       | ✅              | ✅                      | ✅ (GR)                | ❌            | ❌            | OO GR toolkit |
+| RicciPy            | ✅       | ⚠️              | ⚠️                      | ✅ (GR)                | ❌            | ❌            | Ricci calculus |
+| Pytearcat          | ✅       | ✅              | ✅                      | ⚠️ limited             | ❌            | ❌            | GR calculator |
+| galgebra           | ✅       | ❌              | ❌                      | ❌                     | ❌            | ❌            | Geometric algebra |
+| PyMetric           | ⚠️       | ❌              | ❌                      | ⚠️                     | ❌            | ⚠️            | Coord-based DG |
+| **lyra-geometry**  | ✅       | ✅ (core)       | ✅ (automatic)          | ✅ (Lyra & Riemann)    | ✅            | ❌            | Symbolic DG focused on Lyra |
+
+
+## Getting started
+
+Create a space with a metric, then inspect its basic objects:
+
+```python
+import sympy as sp
+import lyra_geometry as pl
+
+x, y = sp.symbols("x y", real=True)
+metric = sp.diag(x + 2*y, x**2 * y)
+
+st = pl.SpaceTime(coords=(x, y), metric=metric)
+
+st.g          # metric tensor
+st.metric_inv # inverse metric matrix
+st.detg       # determinant of the metric
+```
+
+## Indices, raising/lowering, and components
+
+Use index labels with explicit variance markers to access components:
+
+```python
+a, b, c = st.index("a b c")
+
+st.g[-a, -b]  # g_ab
+st.g[+a, +b]  # g^ab
+
+st.g[-a, -b](0, 0)  # component access
+```
+
+Bare indices (like `t[a, b]`) are not accepted; always use `+a`/`-a`.
+
+## Generic tensors and contraction
+
+Create symbolic tensors and let repeated labels contract automatically:
+
+```python
+v = st.tensor.generic("v", (pl.U,))
+w = st.tensor.generic("w", (pl.D,))
+
+scalar = v[+a] * w[-a]  # automatic contraction
+```
+
+Explicit contraction and a simple index-string parser are also available:
+
+```python
+st.contract(v[+a], w[-a])
+st.eval_contract("v^a w_a")
+```
+
+## Covariant derivative
+
+The Lyra covariant derivative adds one covariant index:
+
+```python
+dv = st.nabla(v)
+dv.signature  # (D, U)
+dv[-b, +a](0, 0)
+```
+
+## Connection and curvature
+
+When a metric is provided, the Lyra connection and curvature tensors are
+computed automatically:
+
+```python
+st.gamma            # Gamma^a_{bc}
+st.riemann          # Riemann tensor
+st.ricci            # Ricci tensor
+st.einstein         # Einstein tensor
+st.scalar_curvature # scalar curvature
+```
+
+## Scale, torsion, and non-metricity
+
+You can set a scale field and provide torsion/non-metricity explicitly:
+
+```python
+phi = sp.Function("phi")(x)
+st.set_scale(phi)
+
+st.set_torsion(st.zeros((pl.D, pl.D, pl.D)))
+st.set_nonmetricity(st.zeros((pl.U, pl.D, pl.D)))
+
+st.update()
+```
+
+## Custom connection strategies
+
+If you already have Gamma components, you can fix the connection manually:
+
+```python
+Gamma0 = sp.ImmutableDenseNDimArray([0] * (2**3), (2, 2, 2))
+
+st2 = pl.SpaceTime(
+    coords=(x, y),
+    metric=sp.diag(1, 1),
+    connection_strategy=pl.FixedConnectionStrategy(Gamma0),
+)
+
+st2.gamma
+```
+
+## Simplification with fmt
+
+Use `fmt()` to expand and simplify expressions:
+
+```python
+st.ricci.fmt()
+st.einstein.fmt()
+st.scalar_curvature.fmt()
+```
+
+## Notebook examples
+
+The notebook `examples/example.ipynb` walks through:
+
+- A quick tutorial of the core API.
+- Schwarzschild spacetime: metric, connection, and curvature tensors.
+- FLRW spacetime: metric, curvature, and covariant derivative of a scalar.
+- A spherically symmetric LyST solution with scale field and field equations.
+
+## Project structure
+
+- `src/lyra_geometry/core.py`: core implementation.
+- `src/lyra_geometry/__init__.py`: public exports and version.
+- `examples/example.ipynb`: tutorial and physics examples.
+- `tests/`: pytest smoke tests.
+
+## Development and testing
+
+```bash
+python -m pytest
+```
+
+## Versioning and release policy
+
+This project follows SemVer 2.0 with a pre-1.0 policy:
+
+- While major is 0, breaking changes bump the minor version.
+- Backward-compatible changes (features, improvements) also bump the minor.
+- Fixes that do not change behavior bump the patch.
+
+The public API is the set of objects exported from `src/lyra_geometry/__init__.py`
+and the behaviors documented in this README. Other internal modules may change
+without notice.
+
+Release checklist (short form):
+
+1. Move items from `Unreleased` into a new version section in `CHANGELOG.md`.
+2. Bump the version in `src/lyra_geometry/__init__.py`.
+3. Run `python -m pytest` and record the outcome in the release notes.
+4. Tag and publish the release.
+
+## License
+
+MIT. See `LICENSE`.
