@@ -1,0 +1,210 @@
+[project]
+name = "aind-session"
+description = "User-friendly tools for accessing paths, metadata and assets related to AIND sessions."
+authors = [
+    { name = "Ben Hardcastle", email = "ben.hardcastle@alleninstitue.org" },
+]
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "codeocean==0.12.0",
+    "npc-io>=0.1.30",
+    "npc-session>=0.1.39",
+    "aind-data-access-api[docdb]>=1.2.2",
+    "tzdata>=2024.2",
+    "aind-codeocean-pipeline-monitor>=0.5.2",
+]
+version = "0.3.21"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+]
+
+[project.license]
+text = "MIT"
+
+[project.urls]
+Repository = "https://github.com/AllenNeuralDynamics/aind-session"
+Issues = "https://github.com/AllenNeuralDynamics/aind-session/issues"
+
+[project.scripts]
+task = "poethepoet:main"
+
+[dependency-groups]
+task_runner = ["poethepoet>=0.33.1"]
+linting = ["black>=25.1.0", "isort>=6.0.1", "ruff>=0.11.2"]
+testing = ["pytest>=7.4.0", "mypy>=1.4.1", "pytest-cov>=4.1.0"]
+bump = [
+    "bump-my-version>=1.1.1",
+    "git-changelog>=2.5.3",
+]
+
+[tool.uv]
+package = true
+default-groups = "all"
+
+[tool.bumpversion]
+tag = true
+allow_dirty = true
+commit = true
+commit_args = "-a"
+message = "Bump version: {current_version} → {new_version} [skip actions]"
+pre_commit_hooks = [
+    "uv lock --upgrade-package lazynwb",
+    "git-changelog -o CHANGELOG.md",
+    "uv build",
+    "uv publish",
+]
+post_commit_hooks = [
+    "git push origin main",
+    "git push --tags",
+]
+
+[tool.poe.tasks]
+mypy = "mypy src --install-types --non-interactive"
+pytest = "pytest --cov-report term-missing:skip-covered --cov-report=html"
+test = ["pytest"]
+ruff = "ruff check src --fix-only"
+black = "black src"
+format = ["ruff", "black"]
+bump_pub_tag = "bump-my-version bump patch"
+release = ["format", "bump_pub_tag"]
+
+[build-system]
+requires = [
+    "setuptools>=61",
+    "wheel",
+]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = [
+    "src",
+]
+
+[tool.setuptools.package-data]
+aind_session = [
+    "py.typed",
+]
+
+[tool.black]
+target-version = [
+    "py39",
+    "py310",
+    "py311",
+]
+
+[tool.ruff]
+line-length = 100
+select = [
+    "B",
+    "C4",
+    "E",
+    "F",
+    "PGH",
+    "RUF",
+    "W",
+    "YTT",
+    "ANN",
+    "C",
+    "I",
+    "RUF100",
+    "N",
+    "UP",
+]
+ignore = [
+    "ANN101",
+]
+src = [
+    "src",
+]
+extend-exclude = [
+    "tests/fixtures",
+]
+target-version = "py39"
+
+[tool.ruff.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[tool.ruff.mccabe]
+max-complexity = 10
+
+[tool.coverage.paths]
+source = [
+    "src",
+    "README.md",
+]
+
+[tool.coverage.run]
+branch = true
+source = [
+    "src",
+    "README.md",
+]
+
+[tool.coverage.report]
+skip_covered = true
+show_missing = true
+skip_empty = true
+exclude_also = [
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "@(abc.)?abstractmethod",
+    "@typing.runtime_checkable",
+]
+
+[tool.pytest.ini_options]
+addopts = [
+    "--import-mode=importlib",
+    "--doctest-modules",
+    "--ignore-glob=*scripts*,*examples*,*docs*,*extensions*",
+    "--cov",
+    "--cov-report=xml",
+    "--cov-config=pyproject.toml",
+    "--doctest-glob=README.md",
+    "-x",
+]
+doctest_optionflags = [
+    "NORMALIZE_WHITESPACE",
+    "IGNORE_EXCEPTION_DETAIL",
+    "ELLIPSIS",
+]
+testpaths = [
+    "src",
+    "tests",
+    "README.md",
+]
+
+[tool.mypy]
+check_untyped_defs = false
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+disallow_untyped_decorators = false
+disallow_any_unimported = false
+warn_return_any = false
+warn_unused_ignores = true
+no_implicit_optional = true
+show_error_codes = true
+ignore_missing_imports = true
+implicit_reexport = false
+exclude = [
+    "src/aind_session/scripts",
+]
+
+[tool.isort]
+profile = "black"
+atomic = true
+skip_glob = [
+    "*/setup.py",
+]
+filter_files = true
+known_first_party = [
+    "aind_session",
+]
