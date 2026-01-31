@@ -1,0 +1,247 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "headroom-ai"
+version = "0.3.0"
+description = "The Context Optimization Layer for LLM Applications - Cut costs by 50-90%"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.10"
+authors = [
+    { name = "Headroom Contributors" }
+]
+maintainers = [
+    { name = "Headroom Contributors" }
+]
+keywords = [
+    "llm",
+    "openai",
+    "anthropic",
+    "claude",
+    "gpt",
+    "context",
+    "token",
+    "optimization",
+    "compression",
+    "caching",
+    "proxy",
+    "ai",
+    "machine-learning",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
+dependencies = [
+    "tiktoken>=0.5.0",
+    "pydantic>=2.0.0",
+    "openai>=2.14.0",
+    "sentence-transformers>=5.2.0",
+    "litellm>=1.0.0",
+    "accelerate>=1.12.0",
+    "sentencepiece>=0.2.1",
+    "protobuf>=6.33.4",
+    "semantic-router>=0.1.12",
+    "pillow>=10.0.0",             # Image processing for compression
+    "datasets>=4.5.0",
+    "hnswlib>=0.8.0",             # HNSW vector index for memory system
+    "click>=8.1.0",               # CLI framework
+    "rich>=13.0.0",               # Rich terminal output
+]
+
+[project.optional-dependencies]
+# Semantic relevance scoring with embeddings
+relevance = [
+    "sentence-transformers>=2.2.0",
+    "numpy>=1.24.0",
+]
+# Proxy server
+proxy = [
+    "fastapi>=0.100.0",
+    "uvicorn>=0.23.0",
+    "httpx[http2]>=0.24.0",  # http2 extra enables h2 for HTTP/2 support
+]
+# Report generation
+reports = [
+    "jinja2>=3.0.0",
+]
+# ML-based compression (LLMLingua-2)
+llmlingua = [
+    "llmlingua>=0.2.0",
+    "torch>=2.0.0",
+    "transformers>=4.30.0",
+]
+# AST-based code compression (tree-sitter)
+code = [
+    "tree-sitter-language-pack>=0.10.0",
+]
+# Agno agent framework integration
+agno = [
+    "agno>=1.0.0",
+]
+# Voice filler detection (training and inference)
+voice = [
+    "onnxruntime>=1.16.0",       # Fast CPU inference
+    "transformers>=4.30.0",      # Model loading and tokenization
+    "torch>=2.0.0",              # Training
+]
+# Voice training only (includes voice deps + training extras)
+voice-train = [
+    "headroom-ai[voice]",
+    "datasets>=2.14.0",          # Data loading
+    "accelerate>=0.20.0",        # Training acceleration
+]
+# Evaluation framework for testing compression accuracy
+evals = [
+    "datasets>=2.14.0",           # HuggingFace datasets
+    "sentence-transformers>=2.2.0", # Semantic similarity
+    "numpy>=1.24.0",              # Numerical operations
+    "scikit-learn>=1.3.0",        # ML metrics
+    "anthropic>=0.18.0",          # Anthropic API for evals
+    "openai>=1.0.0",              # OpenAI API for evals
+]
+# Memory system extras (hierarchical memory with vector search)
+memory = [
+    "hnswlib>=0.8.0",  # HNSW vector index for semantic search
+]
+# AWS Bedrock backend
+bedrock = [
+    "boto3>=1.28.0",
+]
+# Development dependencies
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "pytest-asyncio>=0.21.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0.0",
+    "pre-commit>=3.0.0",
+    "openai>=1.0.0",
+    "anthropic>=0.18.0",
+    "ollama>=0.4.0",  # For Ollama integration tests (local LLM, no API key needed)
+    "langchain-ollama>=0.2.0",  # For LangChain+Ollama integration tests
+    "hnswlib>=0.8.0",  # For memory system tests
+]
+# All optional dependencies
+all = [
+    "headroom-ai[relevance,proxy,reports,llmlingua,code,evals,memory,voice]",
+]
+
+[project.scripts]
+headroom = "headroom.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/chopratejas/headroom"
+Documentation = "https://github.com/chopratejas/headroom#readme"
+Repository = "https://github.com/chopratejas/headroom"
+Issues = "https://github.com/chopratejas/headroom/issues"
+Changelog = "https://github.com/chopratejas/headroom/blob/main/CHANGELOG.md"
+
+[tool.hatch.build.targets.wheel]
+packages = ["headroom"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/headroom",
+    "/tests",
+    "/LICENSE",
+    "/NOTICE",
+    "/README.md",
+    "/CHANGELOG.md",
+]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+]
+ignore = [
+    "E501",  # line too long (handled by formatter)
+    "B008",  # do not perform function calls in argument defaults
+    "B905",  # zip without strict parameter
+    "UP038", # isinstance(x, (A, B)) is clearer than isinstance(x, A | B)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["headroom"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+ignore_missing_imports = true
+
+# Per-module overrides for modules with dynamic typing patterns
+[[tool.mypy.overrides]]
+module = [
+    "headroom.proxy.server",
+    "headroom.integrations.langchain",
+    "headroom.integrations.mcp",
+    "headroom.ccr.mcp_server",
+    "headroom.relevance.embedding",
+    "headroom.reporting.generator",
+]
+disallow_untyped_defs = false
+
+[[tool.mypy.overrides]]
+module = [
+    "headroom.tokenizers.*",
+    "headroom.providers.litellm",
+    "headroom.providers.google",
+]
+disallow_untyped_defs = false
+warn_return_any = false
+
+# Ignore third-party stubs with syntax errors
+[[tool.mypy.overrides]]
+module = ["mlx.*"]
+ignore_errors = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+asyncio_mode = "auto"
+
+[tool.coverage.run]
+source = ["headroom"]
+branch = true
+omit = [
+    "headroom/cli.py",
+    "*/tests/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]
