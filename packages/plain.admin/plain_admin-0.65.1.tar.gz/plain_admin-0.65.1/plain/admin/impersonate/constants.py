@@ -1,0 +1,1 @@
+_IMPERSONATE_SESSION_KEY = "impersonate"
