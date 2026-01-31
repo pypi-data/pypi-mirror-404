@@ -1,0 +1,915 @@
+{% load i18n static rest_framework rest_wind %}
+
+<!doctype html>
+<html
+  lang="{{ LANGUAGE_CODE }}"
+  dir="{% if LANGUAGE_BIDI %}rtl{% else %}ltr{% endif %}"
+  data-theme="{% block theme %}default{% endblock %}"
+>
+  <head>
+    {% block head %}
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    {% block meta %}
+    <meta name="robots" content="NONE,NOARCHIVE" />
+    {% endblock %}
+    <title>
+      {% block title %}{% if name %}{{ name }} -{% endif %} Django REST
+      framework{% endblock %}
+    </title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Noto+Kufi+Arabic:wght@100..900&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&family=Noto+Sans:ital,wght@0,100..900;1,100..900&family=Noto+Serif:ital,wght@0,100..900;1,100..900&display=swap"
+      rel="stylesheet"
+    />
+    {% block highlight_theme %}
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css"
+    />
+    <link rel="stylesheet" href="{% static 'rest_wind/css/pygments.css' %}" />
+    {% endblock %}
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/http.min.js"></script>
+    <script>
+      hljs.highlightAll();
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/clipboard@2.0.11/dist/clipboard.min.js"></script>
+
+    {% block styles %}
+    <link rel="stylesheet" href="{% static 'rest_wind/css/styles.css' %}" />
+    {% endblock %}
+    <!---->
+    {% endblock %}
+  </head>
+
+  <body
+    class="relative bg-base-300 font-sans h-dvh overflow-hidden md:p-1 lg:p-2 rtl:font-kufi"
+  >
+    {% include 'rest_framework/components/messages.html' %}
+    <div
+      class="drawer h-dvh bg-base-100 overflow-hidden md:rounded-box md:drawer-open md:max-h-[calc(100dvh-0.5rem)] lg:max-h-[calc(100dvh-1rem)]"
+    >
+      <input id="drawer" type="checkbox" class="drawer-toggle" />
+
+      <section
+        class="drawer-content size-full max-h-dvh md:max-h-[calc(100dvh-0.5rem)] lg:max-h-[calc(100dvh-1rem)]"
+      >
+        {% block content %}
+        <div
+          class="drawer max-h-dvh md:max-h-[calc(100dvh-0.5rem)] lg:max-h-[calc(100dvh-1rem)] lg:drawer-open"
+        >
+          <input id="sidebar" type="checkbox" class="drawer-toggle" />
+
+          <section
+            class="drawer-content max-h-dvh md:max-h-[calc(100dvh-0.5rem)] lg:max-h-[calc(100dvh-1rem)]"
+          >
+            <div class="relative size-full">
+              <header class="absolute inset-x-0 top-0 z-10 backdrop-blur-3xl">
+                <nav class="navbar p-4">
+                  <ul class="navbar-start gap-4">
+                    {% block navbar_start %}
+                    <li
+                      class="tooltip tooltip-right rtl:tooltip-left lg:hidden"
+                      data-tip="{% trans 'Open drawer' %}"
+                    >
+                      <label
+                        for="sidebar"
+                        aria-label="{% trans 'close sidebar' %}"
+                        class="btn btn-sm lg:btn-md 2xl:btn-lg btn-square btn-ghost"
+                      >
+                        <i data-lucide="menu" class="size-4 lg:size-6"></i>
+                        <span class="sr-only">{% trans 'Open drawer' %}</span>
+                      </label>
+                    </li>
+                    {% endblock %}
+
+                    <!---->
+                    {% block branding %}
+                    <li
+                      class="tooltip tooltip-right rtl:tooltip-left tooltip-primary md:hidden"
+                      data-tip="{% trans 'Django REST Framework' %}"
+                    >
+                      <h1 class="relative">
+                        <a
+                          href="https://www.django-rest-framework.org/"
+                          class="btn btn-square btn-primary lg:btn-lg 2xl:btn-lg"
+                        >
+                          <div
+                            class="btn btn-square btn-primary rotate-45 p-0 shadow-none lg:btn-lg 2xl:btn-lg"
+                          >
+                            <i
+                              data-lucide="braces"
+                              class="-rotate-45 lg:size-8 2xl:size-10"
+                            ></i>
+                          </div>
+                          <span class="sr-only">
+                            {% trans 'Django REST Framework' %}
+                          </span>
+                        </a>
+                      </h1>
+                    </li>
+                    {% endblock %}
+                  </ul>
+
+                  <ul class="navbar-center hidden gap-4 lg:block">
+                    {% block navbar_center %}
+                    <li>
+                      <form method="get">
+                        <label
+                          class="input input-ghost w-full bg-transparent focus:input-primary active:input-primary 2xl:input-lg"
+                        >
+                          <i
+                            data-lucide="search"
+                            class="size-4 opacity-50 lg:size-6"
+                          ></i>
+                          <input
+                            required
+                            type="search"
+                            name="search"
+                            class="grow"
+                            placeholder="{% trans 'Search' %}"
+                          />
+                        </label>
+                      </form>
+                    </li>
+                    {% endblock %}
+                  </ul>
+
+                  <ul class="navbar-end gap-4">
+                    {% block navbar_end %}
+                    <!---->
+                    {% block theme_toggle %}
+                    <li
+                      class="tooltip tooltip-left rtl:tooltip-right"
+                      data-tip="{% trans 'Toggle theme' %}"
+                    >
+                      <label
+                        class="swap swap-rotate btn btn-sm lg:btn-md 2xl:btn-lg btn-square btn-ghost"
+                      >
+                        <input
+                          type="checkbox"
+                          class="theme-controller"
+                          value="{% block toggle_theme %}dark{% endblock %}"
+                        />
+                        <i
+                          data-lucide="sun"
+                          class="swap-off size-4 lg:size-6"
+                        ></i>
+                        <i
+                          data-lucide="moon-star"
+                          class="swap-on size-4 lg:size-6"
+                        ></i>
+                        <span class="sr-only">
+                          {% trans 'Toggle theme' %}
+                        </span>
+                      </label>
+                    </li>
+                    {% endblock %}
+
+                    <!---->
+                    {% block theme_selector %}
+                    <!---->
+                    {% include 'rest_framework/components/themes.html' %}
+                    <!---->
+                    {% endblock %}
+
+                    <!---->
+                    {% include 'rest_framework/components/languages.html' %}
+                    <!---->
+                    {% endblock %}
+                  </ul>
+                </nav>
+              </header>
+
+              <div
+                class="size-full max-h-dvh overflow-y-auto px-4 py-16 md:max-h-[calc(100dvh-0.5rem)] lg:max-h-[calc(100dvh-1rem)]"
+              >
+                <main class="container mx-auto grid gap-8">
+                  <!---->
+                  {% block breadcrumbs %}
+                  <nav class="breadcrumbs text-sm">
+                    <ol>
+                      {% for name, url in breadcrumblist %}
+                      <!---->
+                      {% if forloop.last %}
+                      <li>{{ name }}</li>
+                      {% else %}
+                      <li>
+                        <a href="{{ url }}">{{ name }}</a>
+                      </li>
+                      {% endif %}
+                      <!---->
+                      {% endfor %}
+                    </ol>
+                  </nav>
+                  {% endblock %}
+
+                  <section class="container-prose">
+                    <h1>{{ name }}</h1>
+
+                    {% if paginator %}
+                    <nav class="not-prose">
+                      {% get_pagination_html paginator %}
+                    </nav>
+                    {% endif %}
+
+                    <div class="relative">
+                      <div
+                        class="not-prose absolute inset-x-0 top-0 flex items-center justify-end gap-4 p-2 rtl:justify-start"
+                      >
+                        <!---->
+                        {% if extra_actions %}
+                        <div class="tooltip" data-tip="{% trans 'Actions' %}">
+                          <button
+                            popovertarget="actions"
+                            style="anchor-name: --actions"
+                            class="btn btn-sm lg:btn-md 2xl:btn-lg btn-square btn-ghost"
+                          >
+                            <i
+                              data-lucide="circle-ellipsis"
+                              class="size-4 lg:size-6"
+                            ></i>
+                            <span class="sr-only">{% trans 'Actions' %}</span>
+                          </button>
+
+                          <ul
+                            popover
+                            id="actions"
+                            style="
+                              position-anchor: --actions;
+                              max-height: 20rem;
+                            "
+                            class="menu menu-sm dropdown dropdown-left bg-base-100/50 rounded-box shadow-lg backdrop-blur-3xl rtl:dropdown-right lg:menu-md 2xl:menu-lg"
+                          >
+                            <li class="menu-title">
+                              {% trans 'Extra Actions' %}
+                            </li>
+                            {% for action_name, url in extra_actions|items %}
+                            <li><a href="{{ url }}">{{ action_name }}</a></li>
+                            {% endfor %}
+                          </ul>
+                        </div>
+                        {% endif %}
+
+                        <!---->
+                        {% if delete_form %}
+                        <div
+                          data-tip="{% trans 'Delete' %}"
+                          class="tooltip tooltip-error"
+                        >
+                          <button
+                            type="button"
+                            onclick="deleteDialog.showModal()"
+                            class="btn btn-sm lg:btn-md 2xl:btn-lg btn-square btn-error"
+                          >
+                            <i
+                              data-lucide="trash-2"
+                              class="size-4 lg:size-6"
+                            ></i>
+                            <span class="sr-only">{% trans 'Delete' %}</span>
+                          </button>
+                        </div>
+                        {% endif %}
+
+                        <!---->
+                        {% if filter_form %}
+                        <div class="tooltip" data-tip="{% trans 'Filters' %}">
+                          <button
+                            type="button"
+                            onclick="filtersDialog.showModal()"
+                            class="btn btn-sm lg:btn-md 2xl:btn-lg btn-square btn-ghost"
+                          >
+                            <i
+                              data-lucide="list-filter"
+                              class="size-4 lg:size-6"
+                            ></i>
+                            <span class="sr-only">{% trans 'Filters' %}</span>
+                          </button>
+                        </div>
+
+                        {{ filter_form }}
+                        <!---->
+                        {% endif %}
+
+                        <div
+                          class="tooltip"
+                          data-tip="{% trans 'Documentation' %}"
+                        >
+                          <button
+                            onclick="docsDialog.showModal()"
+                            class="btn btn-sm lg:btn-md 2xl:btn-lg btn-ghost btn-square"
+                          >
+                            <span class="sr-only">
+                              {% trans 'Documentation' %}
+                            </span>
+
+                            <i
+                              data-lucide="book-text"
+                              class="size-4 lg:size-5"
+                            ></i>
+                          </button>
+                        </div>
+
+                        <div class="tooltip" data-tip="{% trans 'Copy' %}">
+                          <button
+                            class="btn btn-sm lg:btn-md 2xl:btn-lg btn-copy btn-ghost btn-square"
+                            data-clipboard-text="{{ content }}"
+                          >
+                            <span class="sr-only">{% trans 'Copy' %}</span>
+                            <i data-lucide="copy" class="size-4 lg:size-5"></i>
+                          </button>
+                        </div>
+                      </div>
+
+                      <pre
+                        dir="ltr"
+                        class="bg-transparent p-0 border border-base-300"
+                      ><code class="language-http">{{ request.method }} {{ request.get_full_path }}
+HTTP {{ response.status_code }} {{ response.status_text }}
+{% for key, val in response_headers|items %}
+{{ key }}: {{ val|urlize }}{% endfor %}</code><code class="language-json">{{ content|urlize }}</code></pre>
+                    </div>
+                  </section>
+                </main>
+              </div>
+            </div>
+          </section>
+
+          <section
+            class="drawer-side z-50 max-h-dvh md:max-h-[calc(100dvh-0.5rem)] lg:max-h-[calc(100dvh-1rem)]"
+          >
+            <label
+              for="sidebar"
+              aria-label="{% trans 'close sidebar' %}"
+              class="drawer-overlay"
+            ></label>
+
+            <div
+              class="bg-base-100 border-base-300 relative flex size-full flex-col overflow-hidden overflow-y-auto border-r rtl:border-l lg:min-w-sm lg:max-w-sm 2xl:min-w-md 2xl:max-w-md"
+            >
+              <header
+                class="absolute inset-x-0 top-0 z-10 flex items-center justify-between gap-4 p-4 backdrop-blur-3xl"
+              >
+                <div class="flex items-center gap-2 lg:gap-4">
+                  <div
+                    class="tooltip tooltip-right rtl:tooltip-left md:hidden"
+                    data-tip="{% trans 'Open drawer' %}"
+                  >
+                    <label
+                      for="drawer"
+                      aria-label="{% trans 'close sidebar' %}"
+                      class="btn btn-sm lg:btn-md 2xl:btn-lg btn-square btn-ghost"
+                    >
+                      <i
+                        data-lucide="panel-left-open"
+                        class="size-4 lg:size-6"
+                      ></i>
+                      <span class="sr-only">{% trans 'Open drawer' %}</span>
+                    </label>
+                  </div>
+
+                  {% block request_forms %}
+                  <!---->
+                  {% if 'GET' in allowed_methods %}
+                  <form method="get" class="flex items-center gap-2 lg:gap-4">
+                    <div
+                      class="tooltip tooltip-right rtl:tooltip-left"
+                      data-tip="{% trans 'GET request' %}"
+                    >
+                      <a
+                        rel="nofollow"
+                        href="{{ request.get_full_path }}"
+                        class="btn btn-sm lg:btn-md 2xl:btn-lg btn-square btn-ghost"
+                      >
+                        <i
+                          data-lucide="refresh-ccw"
+                          class="size-4 lg:size-6"
+                        ></i>
+                        <span class="sr-only">{% trans 'GET request' %}</span>
+                      </a>
+                    </div>
+                    {% if api_settings.URL_FORMAT_OVERRIDE %}
+                    <div
+                      class="tooltip tooltip-right rtl:tooltip-left"
+                      data-tip="{% trans 'Formats' %}"
+                    >
+                      <button
+                        type="button"
+                        popovertarget="formats"
+                        style="anchor-name: --formats"
+                        class="btn btn-sm lg:btn-md 2xl:btn-lg btn-square btn-ghost"
+                      >
+                        <i
+                          data-lucide="grid-2x2-plus"
+                          class="size-4 lg:size-6"
+                        ></i>
+                        <span class="sr-only">{% trans 'Formats' %}</span>
+                      </button>
+
+                      <ul
+                        id="formats"
+                        popover
+                        style="position-anchor: --formats"
+                        class="menu dropdown dropdown-right bg-base-100/50 rounded-box rtl:dropdown-left overflow-visible shadow-lg backdrop-blur-3xl"
+                      >
+                        <li class="menu-title">{% trans 'Formats' %}</li>
+                        {% for format in available_formats %}
+                        <li
+                          class="tooltip tooltip-bottom"
+                          data-tip="{% trans 'GET request with format of' %} `{{ format|upper }}`"
+                        >
+                          <a
+                            rel="nofollow"
+                            href="{% add_query_param request api_settings.URL_FORMAT_OVERRIDE format %}"
+                          >
+                            {{ format|upper }}
+                          </a>
+                        </li>
+                        {% endfor %}
+                      </ul>
+                    </div>
+                    {% endif %}
+                  </form>
+                  {% endif %}
+                  <!---->
+                  {% endblock %}
+                </div>
+
+                <div class="flex items-center gap-2 lg:gap-4">
+                  <!---->
+                  {% if options_form %}
+                  <form
+                    data-method="OPTIONS"
+                    data-tip="{% trans 'OPTIONS request' %}"
+                    class="tooltip tooltip-left rtl:tooltip-right"
+                  >
+                    <button
+                      type="submit"
+                      class="btn btn-sm lg:btn-md 2xl:btn-lg btn-square btn-ghost"
+                    >
+                      <i data-lucide="info" class="size-4 lg:size-6"></i>
+                      <span class="sr-only">
+                        {% trans 'OPTIONS request' %}
+                      </span>
+                    </button>
+                  </form>
+                  {% endif %}
+
+                  <div
+                    data-tip="{% trans 'Usage' %}"
+                    class="tooltip tooltip-left rtl:tooltip-right"
+                  >
+                    <button
+                      type="button"
+                      onclick="usageDialog.showModal()"
+                      class="btn btn-sm lg:btn-md 2xl:btn-lg btn-square btn-ghost"
+                    >
+                      <i
+                        data-lucide="notebook-text"
+                        class="size-4 lg:size-6"
+                      ></i>
+                      <span class="sr-only">{% trans 'Usage' %}</span>
+                    </button>
+                  </div>
+
+                  <div
+                    class="tooltip tooltip-left rtl:tooltip-right lg:hidden"
+                    data-tip="{% trans 'Close' %}"
+                  >
+                    <label
+                      for="sidebar"
+                      aria-label="{% trans 'close sidebar' %}"
+                      class="btn btn-sm lg:btn-md 2xl:btn-lg btn-square btn-ghost"
+                    >
+                      <i data-lucide="x" class="size-4 lg:size-6"></i>
+                      <span class="sr-only">{% trans 'Close' %}</span>
+                    </label>
+                  </div>
+                </div>
+              </header>
+
+              <div
+                class="flex size-full max-h-dvh flex-col gap-4 overflow-y-auto py-20 md:max-h-[calc(100dvh-0.5rem)] lg:max-h-[calc(100dvh-1rem)]"
+              >
+                <form method="get" class="px-4 lg:hidden">
+                  <label
+                    class="input input-ghost w-full bg-transparent focus:input-primary active:input-primary 2xl:input-lg"
+                  >
+                    <i
+                      data-lucide="search"
+                      class="size-4 opacity-50 lg:size-6"
+                    ></i>
+                    <input
+                      required
+                      type="search"
+                      name="search"
+                      class="grow"
+                      placeholder="{% trans 'Search' %}"
+                    />
+                  </label>
+                </form>
+
+                {% if display_edit_forms %}
+                <section
+                  role="tablist"
+                  class="tabs tabs-border tabs-xs sm:tabs-sm md:tabs-md 2xl:tabs-lg"
+                >
+                  {% if post_form or raw_data_post_form %}
+                  <input
+                    checked
+                    class="tab"
+                    type="radio"
+                    name="form-tabs"
+                    aria-label="{% trans 'Form' %}"
+                  />
+                  <div class="tab-content p-4" id="post-object-form">
+                    {% with form=post_form %}
+                    <form
+                      action="{{ request.get_full_path }}"
+                      method="POST"
+                      enctype="multipart/form-data"
+                      class="grid gap-4"
+                    >
+                      {% csrf_token %}{{ post_form }}
+
+                      <div
+                        class="tooltip tooltip-primary"
+                        data-tip="{% trans 'POST request' %}"
+                      >
+                        <button
+                          class="btn btn-sm lg:btn-md 2xl:btn-lg btn-primary w-full"
+                        >
+                          <span>{% trans 'Send' %}</span>
+                          <i
+                            data-lucide="arrow-up-from-dot"
+                            class="size-4 lg:size-6"
+                          ></i>
+                        </button>
+                      </div>
+                    </form>
+                    {% endwith %}
+                  </div>
+
+                  <input
+                    class="tab"
+                    type="radio"
+                    name="form-tabs"
+                    aria-label="{% trans 'JSON' %}"
+                  />
+                  <div class="tab-content p-4" id="post-generic-content-form">
+                    {% with form=raw_data_post_form %}
+                    <form
+                      dir="ltr"
+                      action="{{ request.get_full_path }}"
+                      method="POST"
+                      class="grid gap-4"
+                    >
+                      {% include "rest_framework/raw_data_form.html" %}
+
+                      <div
+                        class="tooltip tooltip-primary"
+                        data-tip="{% trans 'POST request' %}"
+                      >
+                        <button
+                          class="btn btn-sm lg:btn-md 2xl:btn-lg btn-primary w-full"
+                        >
+                          <span>{% trans 'Send' %}</span>
+                          <i
+                            data-lucide="arrow-up-from-dot"
+                            class="size-4 lg:size-6"
+                          ></i>
+                        </button>
+                      </div>
+                    </form>
+                    {% endwith %}
+                  </div>
+                  {% endif %}
+
+                  <!---->
+                  {% if put_form or raw_data_put_form or raw_data_patch_form %}
+                  <input
+                    checked
+                    class="tab"
+                    type="radio"
+                    name="form-tabs"
+                    aria-label="{% trans 'Form' %}"
+                  />
+                  <div class="tab-content p-4" id="put-object-form">
+                    {% with form=post_form %}
+                    <form
+                      action="{{ request.get_full_path }}"
+                      data-method="PUT"
+                      enctype="multipart/form-data"
+                      class="grid gap-4"
+                    >
+                      {{ put_form }}
+
+                      <div
+                        class="tooltip tooltip-top"
+                        data-tip="{% trans 'PUT request' %}"
+                      >
+                        <button
+                          class="btn btn-sm lg:btn-md 2xl:btn-lg btn-primary w-full"
+                        >
+                          <span>{% trans 'Send' %}</span>
+                          <i
+                            data-lucide="arrow-up-right"
+                            class="size-4 lg:size-6"
+                          ></i>
+                        </button>
+                      </div>
+                    </form>
+                    {% endwith %}
+                  </div>
+
+                  <input
+                    class="tab"
+                    type="radio"
+                    name="form-tabs"
+                    aria-label="{% trans 'JSON' %}"
+                  />
+                  <div class="tab-content p-4" id="put-generic-content-form">
+                    {% with form=raw_data_put_or_patch_form %}
+                    <form
+                      dir="ltr"
+                      action="{{ request.get_full_path }}"
+                      data-method="PUT"
+                      class="grid gap-4"
+                    >
+                      {% include "rest_framework/raw_data_form.html" %}
+
+                      <div class="flex items-center gap-4">
+                        {% if raw_data_put_form %}
+                        <div
+                          class="tooltip tooltip-primary grow"
+                          data-tip="{% trans 'PUT request' %}"
+                        >
+                          <button
+                            class="btn btn-sm lg:btn-md 2xl:btn-lg btn-primary w-full"
+                          >
+                            <span>{% trans 'Send' %}</span>
+                            <i
+                              data-lucide="arrow-up-right"
+                              class="size-4 lg:size-6"
+                            ></i>
+                          </button>
+                        </div>
+                        {% endif %}
+
+                        <!---->
+                        {% if raw_data_patch_form %}
+                        <div
+                          class="tooltip tooltip-secondary grow"
+                          data-tip="{% trans 'PATCH request' %}"
+                        >
+                          <button
+                            class="btn btn-sm lg:btn-md 2xl:btn-lg btn-secondary w-full"
+                            data-method="PATCH"
+                          >
+                            <span>{% trans 'Send' %}</span>
+                            <i
+                              data-lucide="arrow-up-right"
+                              class="size-4 lg:size-6"
+                            ></i>
+                          </button>
+                        </div>
+                        {% endif %}
+                      </div>
+                    </form>
+                    {% endwith %}
+                  </div>
+                  {% endif %}
+                </section>
+                {% endif %}
+              </div>
+            </div>
+          </section>
+        </div>
+        {% endblock %}
+      </section>
+
+      <section
+        class="drawer-side is-drawer-close:overflow-visible z-50 md:z-40 lg:z-50 max-h-dvh md:max-h-[calc(100dvh-0.5rem)] lg:max-h-[calc(100dvh-1rem)]"
+      >
+        <label
+          for="drawer"
+          aria-label="close sidebar"
+          class="drawer-overlay"
+        ></label>
+
+        <div
+          class="is-drawer-close:w-18 is-drawer-close:lg:w-20 is-drawer-open:w-full md:is-drawer-open:w-sm bg-base-100 border-base-300 flex h-full flex-col items-center gap-4 p-4 border-r rtl:border-l md:max-h-[calc(100dvh-0.5rem)] lg:max-h-[calc(100dvh-1rem)]"
+        >
+          <header class="flex w-full items-center justify-between gap-4">
+            {% block drawer_branding %}
+            <div
+              class="tooltip tooltip-right rtl:tooltip-left tooltip-primary"
+              data-tip="{% trans 'Django REST Framework' %}"
+            >
+              <h1 class="relative">
+                <a
+                  href="https://www.django-rest-framework.org/"
+                  class="btn btn-square btn-primary lg:btn-lg 2xl:btn-lg"
+                >
+                  <div
+                    class="btn btn-square btn-primary rotate-45 p-0 shadow-none lg:btn-lg 2xl:btn-lg"
+                  >
+                    <i
+                      data-lucide="braces"
+                      class="-rotate-45 lg:size-8 2xl:size-10"
+                    ></i>
+                  </div>
+                  <span class="sr-only">
+                    {% trans 'Django REST Framework' %}
+                  </span>
+                </a>
+              </h1>
+            </div>
+            {% endblock %}
+
+            <div class="is-drawer-close:hidden flex items-center gap-4">
+              {% block package %}
+              <div
+                class="tooltip tooltip-left rtl:tooltip-right"
+                data-tip="{% trans 'Github' %}"
+              >
+                <a
+                  href="https://github.com/youzarsiph/drf-restwind/"
+                  class="btn btn-sm lg:btn-md 2xl:btn-lg btn-square btn-ghost"
+                >
+                  <i data-lucide="github" class="size-4 lg:size-6"></i>
+                  <span class="sr-only">{% trans 'Github' %}</span>
+                </a>
+              </div>
+
+              <div
+                class="tooltip tooltip-left rtl:tooltip-right"
+                data-tip="{% trans 'Package' %}"
+              >
+                <a
+                  href="https://pypi.com/project/drf-restwind/"
+                  class="btn btn-sm lg:btn-md 2xl:btn-lg btn-square btn-ghost"
+                >
+                  <i data-lucide="package-check" class="size-4 lg:size-6"></i>
+                  <span class="sr-only">{% trans 'Package' %}</span>
+                </a>
+              </div>
+              {% endblock %}
+
+              <div
+                class="tooltip tooltip-left rtl:tooltip-right"
+                data-tip="{% trans 'Close' %}"
+              >
+                <label
+                  for="drawer"
+                  class="btn btn-sm lg:btn-md 2xl:btn-lg btn-square btn-ghost"
+                >
+                  <i data-lucide="x" class="size-4 lg:size-6"></i>
+                  <span class="sr-only">{% trans 'Close' %}</span>
+                </label>
+              </div>
+            </div>
+          </header>
+
+          <ul class="menu w-full grow gap-2 p-0">
+            {% block user_links %}
+            <li
+              class="is-drawer-close:tooltip is-drawer-close:tooltip-right rtl:is-drawer-close:tooltip-left"
+              data-tip="{% trans 'Home' %}"
+            >
+              <a href="https://www.django-rest-framework.org/">
+                <i data-lucide="home" class="size-4 lg:size-6"></i>
+                <span class="is-drawer-close:sr-only">
+                  {% trans 'Home' %}
+                </span>
+              </a>
+            </li>
+
+            <li
+              class="is-drawer-close:tooltip is-drawer-close:tooltip-right rtl:is-drawer-close:tooltip-left"
+              data-tip="{% trans 'Docs' %}"
+            >
+              <a
+                href="https://www.django-rest-framework.org/api-guide/requests/"
+              >
+                <i data-lucide="book-text" class="size-4 lg:size-6"></i>
+                <span class="is-drawer-close:sr-only">
+                  {% trans 'Docs' %}
+                </span>
+              </a>
+            </li>
+
+            <li
+              class="is-drawer-close:tooltip is-drawer-close:tooltip-right rtl:is-drawer-close:tooltip-left"
+              data-tip="{% trans 'Tutorial' %}"
+            >
+              <a
+                href="https://www.django-rest-framework.org/tutorial/quickstart/"
+              >
+                <i data-lucide="graduation-cap" class="size-4 lg:size-6"></i>
+                <span class="is-drawer-close:sr-only">
+                  {% trans 'Tutorial' %}
+                </span>
+              </a>
+            </li>
+
+            <li
+              class="is-drawer-close:tooltip is-drawer-close:tooltip-right rtl:is-drawer-close:tooltip-left"
+              data-tip="{% trans 'DRF Repository' %}"
+            >
+              <a href="https://github.com/encode/django-rest-framework/">
+                <i data-lucide="folder-git-2" class="size-4 lg:size-6"></i>
+                <span class="is-drawer-close:sr-only">
+                  {% trans 'DRF Repository' %}
+                </span>
+              </a>
+            </li>
+            {% endblock %}
+          </ul>
+
+          <ul class="menu w-full gap-2 p-0">
+            {% block profile_links %}{% endblock %}
+
+            <!---->
+            {% if request.user.is_authenticated %}
+            <!---->
+            {% optional_logout request user csrf_token %}
+            <!---->
+            {% else %}
+            <!---->
+            {% optional_login request %}
+            <!---->
+            {% endif %}
+
+            <li
+              class="is-drawer-close:tooltip is-drawer-close:tooltip-right rtl:is-drawer-close:tooltip-left"
+              data-tip="{% trans 'Open drawer' %}"
+            >
+              <label for="drawer" class="drawer-button">
+                <i
+                  data-lucide="sidebar-open"
+                  class="is-drawer-open:hidden size-4 lg:size-6 rtl:rotate-180"
+                ></i>
+                <i
+                  data-lucide="sidebar-close"
+                  class="is-drawer-close:hidden size-4 lg:size-6 rtl:rotate-180"
+                ></i>
+                <span class="is-drawer-close:sr-only">
+                  {% trans 'Close' %}
+                </span>
+              </label>
+            </li>
+          </ul>
+        </div>
+      </section>
+    </div>
+
+    {% include 'rest_framework/components/dialogs.html' %}
+
+    <section id="scripts" class="hidden">
+      {% block script %}
+      <script type="application/json" id="drf_csrf">
+        {
+          "csrfHeaderName": "{{ csrf_header_name|default:'X-CSRFToken' }}",
+          "csrfToken": "{% if request %}{{ csrf_token }}{% endif %}"
+        }
+      </script>
+      <script src="{% static 'rest_framework/js/jquery-3.7.1.min.js' %}"></script>
+      <script src="{% static 'rest_framework/js/ajax-form.js' %}"></script>
+      <script src="{% static 'rest_framework/js/csrf.js' %}"></script>
+      <script src="{% static 'rest_framework/js/prettify-min.js' %}"></script>
+      <script src="{% static 'rest_framework/js/default.js' %}"></script>
+      <script src="{% static 'rest_framework/js/load-ajax-form.js' %}"></script>
+      {% endblock %}
+
+      <script>
+        // Copy buttons
+        const copyBtns = new ClipboardJS(".btn-copy");
+
+        // Make all links in response section clickable
+        setTimeout(
+          () =>
+            document
+              .querySelectorAll("#response .language-json .hljs-string")
+              .forEach((e) => {
+                if (e.innerHTML.startsWith('"http')) {
+                  e.innerHTML = `<a href="${e.innerHTML.slice(
+                    1,
+                    e.innerHTML.length - 1,
+                  )}">${e.innerHTML}</a>`;
+                }
+              }),
+          100,
+        );
+      </script>
+
+      <script src="https://unpkg.com/lucide@latest"></script>
+      <script>
+        lucide.createIcons();
+      </script>
+    </section>
+  </body>
+</html>
