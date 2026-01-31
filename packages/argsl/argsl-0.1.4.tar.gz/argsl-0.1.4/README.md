@@ -1,0 +1,251 @@
+# argsl️
+
+`argsl` is for everybody who finds `argparse` too verbose.
+
+`argsl` (“args DSL” / “argparse DSL”) lets you define CLI arguments in a tiny DSL and get an `argparse.Namespace` back — with types, defaults, and optional `--help` text.
+
+```python
+from argsl import argsl
+
+args = argsl("""
+filename <path>         # positional file/path
+--name|-n <str!>        # required option
+--debug|-d <flag>       # boolean switch
+""")
+```
+
+…instead of writing `argparse` boilerplate.
+
+---
+
+- **Expressive**: one line per argument
+- **No boilerplate**: returns `argparse.Namespace` (parsed from `sys.argv`)
+- **Typed**: `int`, `float`, `str`, `path`, `bool`, `flag`, `choice`
+- **Compatible with argparse**: wraps it internally
+
+---
+
+## Installation
+
+### Using `uv` (recommended)
+
+```bash
+uv add argsl
+```
+
+### Or with `pip`
+
+```bash
+pip install argsl
+```
+
+---
+
+## Basic Example
+
+```python
+from argsl import argsl
+
+args = argsl("""
+filename <path>                          # positional file/path
+--name|-n <str=env:USER>                 # optional with env fallback
+--level|-l <choice:low,med,high="med"> # choice with default
+--debug|-d <flag>                        # boolean flag
+--onlylong <int=1>                       # long-only argument
+--no-cache <flag>                        # store_true flag; app decides semantics
+""")
+
+print(vars(args))
+```
+
+In your `pyproject.toml`:
+
+```toml
+[project.scripts]
+run = "main:main"
+```
+
+Run it:
+
+```bash
+uv run run file.txt --name Alice --debug --level high --no-cache
+```
+
+---
+
+## DSL Format
+
+Each non-empty line describes **one** argument:
+
+```
+<flags or positional> <type-expression> [# help text]
+```
+
+Examples:
+
+- Positional:
+  - `filename <path>`
+- Long option only:
+  - `--count <int=3>`
+- Long + short option:
+  - `--name|-n <str!>`
+
+### Flags / option names
+
+- Use `--long` for long options and `-s` for short options.
+- Combine long and short options with `|` **without spaces**:
+  - `--name|-n <str!>`
+  - `--name | -n <str!>` (avoid spaces around `|`)
+
+### Inline help text with `#`
+
+If a line contains `#`, everything after the **first** `#` becomes the `help=` text passed to `argparse`.
+
+```python
+args = argsl("""
+--debug|-d <flag>  # Enable debug logging
+""")
+```
+
+Notes (current behavior):
+
+- The split is done on the **first** `#` anywhere in the line.
+- Help text is trimmed (`strip()`).
+- Lines starting with `#` are ignored.
+- `#` is **not quote-aware**. If you put `#` inside a quoted default (e.g. `<str="a#b">`),
+  it will still be treated as the start of help text.
+
+---
+
+## Supported Type Expressions
+
+Type expressions live inside `<...>`.
+
+### Built-in types
+
+| DSL | Meaning | argparse behavior |
+|---|---|---|
+| `<str>` | string value | `type=str` |
+| `<int>` | integer value | `type=int` |
+| `<float>` | float value | `type=float` |
+| `<path>` | filesystem path | `type=pathlib.Path` |
+| `<bool>` | boolean value from a string | parses `1/true/yes` (case-insensitive) |
+| `<flag>` | boolean flag | `action="store_true"` (default `False`, becomes `True` if present) |
+
+### Required (`!`)
+
+- `!` marks **named options** as required:
+  - `--name <str!>` → `required=True`
+- For **positionals**, `argparse` already requires them by default, so `!` is effectively redundant.
+
+### Defaults (`=`)
+
+You can provide defaults with `=`.
+
+```text
+--count <int=3>
+--title <str="hello world">
+```
+
+Defaults are parsed with `ast.literal_eval` when possible (numbers, quoted strings, etc.). If parsing fails, the raw string is used.
+
+### Environment fallback (`=env:VAR`)
+
+Use an environment variable as a default:
+
+```text
+--user <str=env:USER>
+--home <path=env:HOME>
+```
+
+This sets `default=os.getenv("VAR")` (which may be `None` if the variable is unset).
+
+### Multiple values (`*`)
+
+Add `*` to accept **one or more** values:
+
+```text
+--list <str*>
+```
+
+This maps to `nargs="+"`.
+
+### Choices (`choice:`)
+
+Restrict input to a fixed set of strings:
+
+```text
+--level <choice:low,med,high>
+```
+
+You can also set a default using `=`:
+
+```text
+--level <choice:low,med,high="med">
+--level <choice:low,med,high=med>
+```
+
+(Choices are always treated as strings.)
+
+---
+
+## Supported Flag Variants
+
+```python
+args = argsl("""
+--user|-u <str!>      # short + long
+--only <int=1>        # long-only option
+--debug <flag>        # store_true
+--no-cache <flag>     # store_true; app interprets as "disable cache"
+""")
+```
+
+---
+
+## Test Coverage & Edge Cases
+
+Covered in tests (see `tests/test_argsl.py` and `tests/test_argsl_all.py`):
+
+- required positional + typed
+- required named args (`--foo <str!>`)
+- optional args with defaults (`--bar <int=42>`)
+- multiple values (`--list <str*>`)
+- boolean flags (`--debug <flag>`)
+- env fallback (`--x <str=env:HOME>`)
+- quoted defaults (`--title <str="The Answer">`)
+- long-only and short+long (`--onlylong`, `--msg|-m`)
+- choice types + defaults (`--level <choice:low,med,high="med">`)
+
+---
+
+## Development Workflow
+
+Using `uv`:
+
+```bash
+uv add .[dev]
+uv add '.[dev]'   # on zsh (macos)
+uv run test
+```
+
+Or with classic tools:
+
+```bash
+pip install -e .[dev]
+pip install -e '.[dev]'   # on zsh (macos)
+pytest
+```
+
+---
+
+## Publishing to PyPI
+
+```bash
+rm -rf dist/  # remove old builds (PyPI rejects re-uploads)
+uv build
+uv publish
+```
+
+---
+
+MIT licensed • Built by Gwang-Jin Kim
