@@ -1,0 +1,141 @@
+{
+  "name": "Horizontal Bar Chart",
+  "description": "Renders a horizontal bar chart with labels and values.",
+  "properties": {
+    "canvas": {
+      "width": 960,
+      "height": 540
+    },
+    "margin": 64,
+    "bar_height": 38,
+    "bar_gap": 20,
+    "value_gap": 12,
+    "font_family": "Inter, Arial, sans-serif",
+    "background": "#ffffff",
+    "text_color": "#111827",
+    "value_color": "#2563eb",
+    "colors": [
+      "#4338ca",
+      "#2563eb",
+      "#10b981",
+      "#f97316",
+      "#db2777"
+    ]
+  },
+  "schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "title": "Horizontal bar payload",
+    "description": "Top-level payload providing bar entries and optional accessories.",
+    "required": [
+      "items"
+    ],
+    "properties": {
+      "items": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 12,
+        "items": {
+          "type": "object",
+          "required": [
+            "label",
+            "value"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "label": {
+              "type": "string",
+              "description": "Category label displayed to the left of the bar."
+            },
+            "value": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Numeric figure used to scale the bar length."
+            }
+          }
+        }
+      },
+      "items2": {
+        "type": "array",
+        "description": "Optional secondary series rendered by downstream consumers.",
+        "items": {
+          "type": "object",
+          "properties": {
+            "label": {"type": "string"},
+            "value": {"type": "number"}
+          },
+          "additionalProperties": false
+        }
+      }
+    }
+  },
+  "template": [
+    {
+      "type": "rect",
+      "attributes": {
+        "x": "0",
+        "y": "0",
+        "width": "100%",
+        "height": "100%",
+        "fill": "{background}"
+      }
+    },
+    {
+      "type": "g",
+      "repeat": {
+        "items": "items",
+        "as": "entry"
+      },
+      "let": {
+        "label": "entry.label",
+        "value": "entry.value",
+        "color_index": "__index__ % colors.length",
+        "bar_color": "colors[color_index]",
+        "bar_x": "margin",
+        "span_width": "canvas.width - 2 * margin",
+        "bar_width": "span_width * (value / maxValue)",
+        "bar_y": "margin + __index__ * (bar_height + bar_gap)",
+        "label_y": "bar_y + (bar_height / 2)",
+        "value_x": "bar_x + bar_width + value_gap"
+      },
+      "children": [
+        {
+          "type": "rect",
+          "attributes": {
+            "x": "{bar_x}",
+            "y": "{bar_y}",
+            "width": "{bar_width}",
+            "height": "{bar_height}",
+            "fill": "{bar_color}",
+            "rx": "8",
+            "ry": "8"
+          }
+        },
+        {
+          "type": "text",
+          "attributes": {
+            "x": "{bar_x}",
+            "y": "{label_y}",
+            "fill": "{text_color}",
+            "fontSize": "20",
+            "fontFamily": "{font_family}",
+            "dominantBaseline": "middle"
+          },
+          "text": "{label}"
+        },
+        {
+          "type": "text",
+          "attributes": {
+            "x": "{value_x}",
+            "y": "{label_y}",
+            "fill": "{value_color}",
+            "fontSize": "18",
+            "fontFamily": "{font_family}",
+            "dominantBaseline": "middle"
+          },
+          "text": "{value}"
+        }
+      ]
+    }
+  ]
+}
