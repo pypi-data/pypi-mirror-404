@@ -1,0 +1,354 @@
+Metadata-Version: 2.1
+Name: wayfinder-paths
+Version: 0.1.23
+Summary: Wayfinder Path: strategies and adapters
+Author: Wayfinder
+Author-email: dev@wayfinder.ai
+Requires-Python: >=3.12,<4.0
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.12
+Requires-Dist: aiohttp (>=3.13.0,<4.0.0)
+Requires-Dist: eth-account (>=0.13.7,<0.14.0)
+Requires-Dist: httpx (>=0.28.1,<0.29.0)
+Requires-Dist: hyperliquid-felix
+Requires-Dist: loguru (>=0.7.3,<0.8.0)
+Requires-Dist: numpy (>=1.26.0,<2.0.0)
+Requires-Dist: pandas (>=2.2.0,<3.0.0)
+Requires-Dist: pydantic (>=2.11.9,<3.0.0)
+Requires-Dist: pyyaml (>=6.0.1,<7.0.0)
+Requires-Dist: web3 (>=7.13.0,<8.0.0)
+Description-Content-Type: text/markdown
+
+# Wayfinder Paths
+
+[![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/)
+[![PyPI](https://img.shields.io/pypi/v/wayfinder-paths.svg)](https://pypi.org/project/wayfinder-paths/)
+[![Discord](https://img.shields.io/badge/discord-join-7289da.svg)](https://discord.gg/fUVwGMXjm3)
+
+Open-source framework for building automated crypto trading strategies and protocol integrations. Develop, test, and deploy strategies with direct wallet integration across multiple chains.
+
+## Quick Start
+
+```bash
+# Clone the repository
+git clone https://github.com/WayfinderFoundation/wayfinder-paths.git
+cd wayfinder-paths
+
+# Install Poetry if needed
+curl -sSL https://install.python-poetry.org | python3 -
+
+# Install dependencies
+poetry install
+
+# Generate test wallets (creates config.json with main wallet)
+just create-wallets
+# Or: poetry run python wayfinder_paths/scripts/make_wallets.py -n 1
+
+# Create a strategy-specific wallet
+just create-wallet stablecoin_yield_strategy
+# Or: poetry run python wayfinder_paths/scripts/make_wallets.py --label stablecoin_yield_strategy
+
+# Add your API key to config.json under system.api_key
+
+# Run a strategy
+poetry run python wayfinder_paths/run_strategy.py stablecoin_yield_strategy --action status --config config.json
+```
+
+## Repository Structure
+
+```
+wayfinder-paths/
+├── wayfinder_paths/
+│   ├── core/                     # Core framework (maintained by team)
+│   │   ├── adapters/             # BaseAdapter class
+│   │   ├── clients/              # API clients (Token, Wallet, Pool, BRAP, Ledger, etc.)
+│   │   ├── engine/               # StrategyJob execution engine
+│   │   ├── strategies/           # Strategy base class and descriptors
+│   │   ├── utils/                # Web3, EVM helpers, transaction utilities
+│   │   └── config.py             # Configuration system
+│   ├── adapters/                 # Protocol integrations (community contributions)
+│   │   ├── balance_adapter/      # Wallet/token balances and transfers
+│   │   ├── brap_adapter/         # Cross-chain swaps and bridges
+│   │   ├── ledger_adapter/       # Transaction recording
+│   │   ├── moonwell_adapter/     # Moonwell lending protocol
+│   │   ├── pool_adapter/         # DeFi pool data
+│   │   └── token_adapter/        # Token metadata and prices
+│   ├── strategies/               # Trading strategies (community contributions)
+│   │   ├── basis_trading_strategy/
+│   │   ├── hyperlend_stable_yield_strategy/
+│   │   ├── moonwell_wsteth_loop_strategy/
+│   │   └── stablecoin_yield_strategy/
+│   ├── templates/                # Starter templates
+│   │   ├── adapter/
+│   │   └── strategy/
+│   ├── scripts/                  # Utility scripts
+│   └── run_strategy.py           # CLI entry point
+├── config.json                   # Local config (not committed)
+├── pyproject.toml                # Project dependencies
+└── README.md
+```
+
+## Architecture
+
+### Layered Design
+
+```
+Strategy Layer       - Trading logic (deposit, update, withdraw, exit)
+       ↓
+Adapter Layer        - Protocol integrations (BalanceAdapter, PoolAdapter, etc.)
+       ↓
+Client Layer         - API wrappers (TokenClient, PoolClient, LedgerClient, etc.)
+       ↓
+Network              - RPCs, Wayfinder API, external services
+```
+
+**Key principle**: Strategies call adapters, adapters compose clients, clients handle network communication.
+
+### Strategies
+
+Strategies implement trading logic by extending the `Strategy` base class:
+
+```python
+from wayfinder_paths.core.strategies.Strategy import Strategy, StatusDict, StatusTuple
+
+class MyStrategy(Strategy):
+    name = "My Strategy"
+
+    def __init__(self, config=None, **kwargs):
+        super().__init__(config, **kwargs)
+        # Register adapters
+        balance_adapter = BalanceAdapter(config, **kwargs)
+        self.register_adapters([balance_adapter])
+        self.balance_adapter = balance_adapter
+
+    async def deposit(self, main_token_amount=0.0, gas_token_amount=0.0) -> StatusTuple:
+        """Move funds from main wallet into strategy wallet."""
+        return (True, "Deposited successfully")
+
+    async def update(self) -> StatusTuple:
+        """Rebalance or optimize positions."""
+        return (True, "Updated successfully")
+
+    async def exit(self, **kwargs) -> StatusTuple:
+        """Transfer funds from strategy wallet back to main wallet."""
+        return (True, "Exited successfully")
+
+    async def _status(self) -> StatusDict:
+        """Report current state."""
+        return {
+            "portfolio_value": 0.0,
+            "net_deposit": 0.0,
+            "strategy_status": {"message": "healthy"},
+            "gas_available": 0.0,
+            "gassed_up": True,
+        }
+```
+
+**Required methods**: `deposit`, `update`, `exit`, `_status`
+
+**Optional methods**: `withdraw` (has default implementation), `partial_liquidate`, `setup`, `health_check`
+
+### Adapters
+
+Adapters wrap protocol-specific logic and expose capabilities to strategies:
+
+```python
+from wayfinder_paths.core.adapters.BaseAdapter import BaseAdapter
+
+class MyAdapter(BaseAdapter):
+    adapter_type = "MY_ADAPTER"
+
+    def __init__(self, config=None):
+        super().__init__("my_adapter", config)
+        self.client = SomeClient()
+
+    async def connect(self) -> bool:
+        return True
+
+    async def do_something(self, param: str) -> tuple[bool, Any]:
+        try:
+            result = await self.client.call(param)
+            return (True, result)
+        except Exception as e:
+            return (False, str(e))
+```
+
+All adapter methods return `(success: bool, data: Any)` tuples.
+
+### Built-in Adapters
+
+| Adapter | Type | Purpose |
+|---------|------|---------|
+| BalanceAdapter | BALANCE | Wallet/token balances, cross-wallet transfers with ledger tracking |
+| PoolAdapter | POOL | DeFi pool metadata and yield analytics |
+| BRAPAdapter | BRAP | Cross-chain swap quotes and execution |
+| LedgerAdapter | LEDGER | Transaction recording and net deposit tracking |
+| TokenAdapter | TOKEN | Token metadata and price feeds |
+| MoonwellAdapter | MOONWELL | Moonwell lending/borrowing on Base |
+
+### Built-in Strategies
+
+| Strategy | Description | Chain |
+|----------|-------------|-------|
+| stablecoin_yield_strategy | USDC yield optimization on Base | Base |
+| hyperlend_stable_yield_strategy | Stablecoin yield on HyperLend | HyperEVM |
+| moonwell_wsteth_loop_strategy | Leveraged wstETH carry trade | Base |
+| basis_trading_strategy | Delta-neutral funding rate capture | Hyperliquid |
+
+## Configuration
+
+Configuration lives in `config.json`:
+
+```json
+{
+  "system": {
+    "api_base_url": "https://api.wayfinder.ai",
+    "api_key": "sk_live_..."
+  },
+  "strategy": {
+    "rpc_urls": {
+      "1": "https://eth.llamarpc.com",
+      "8453": "https://mainnet.base.org",
+      "42161": "https://arb1.arbitrum.io/rpc"
+    }
+  },
+  "wallets": [
+    {
+      "label": "main",
+      "address": "0x...",
+      "private_key_hex": "0x..."
+    },
+    {
+      "label": "stablecoin_yield_strategy",
+      "address": "0x...",
+      "private_key_hex": "0x..."
+    }
+  ]
+}
+```
+
+- **system.api_key**: Required for Wayfinder API authentication (sent as `X-API-KEY` header)
+- **wallets**: Array of wallets with labels; strategies look up wallets by label matching their directory name
+- **strategy.rpc_urls**: Custom RPC endpoints by chain ID
+
+See [CONFIG_GUIDE.md](CONFIG_GUIDE.md) for detailed configuration documentation.
+
+## CLI Usage
+
+```bash
+# Check strategy status
+poetry run python wayfinder_paths/run_strategy.py <strategy_name> --action status --config config.json
+
+# Deposit funds
+poetry run python wayfinder_paths/run_strategy.py <strategy_name> --action deposit \
+    --main-token-amount 100 --gas-token-amount 0.01 --config config.json
+
+# Run update cycle
+poetry run python wayfinder_paths/run_strategy.py <strategy_name> --action update --config config.json
+
+# Withdraw funds
+poetry run python wayfinder_paths/run_strategy.py <strategy_name> --action withdraw --config config.json
+
+# Exit (return funds to main wallet)
+poetry run python wayfinder_paths/run_strategy.py <strategy_name> --action exit --config config.json
+
+# Run continuously
+poetry run python wayfinder_paths/run_strategy.py <strategy_name> --action run --config config.json
+
+# Partial liquidation
+poetry run python wayfinder_paths/run_strategy.py <strategy_name> --action partial-liquidate \
+    --amount 50 --config config.json
+```
+
+**Available actions**: `status`, `deposit`, `update`, `withdraw`, `exit`, `run`, `partial-liquidate`, `policy`, `script`
+
+## Testing
+
+```bash
+# Generate test wallets first
+just create-wallets
+
+# Run all smoke tests
+poetry run pytest -k smoke -v
+
+# Test specific strategy
+poetry run pytest wayfinder_paths/strategies/my_strategy/ -v
+
+# Test specific adapter
+poetry run pytest wayfinder_paths/adapters/my_adapter/ -v
+
+# Run with coverage
+poetry run pytest --cov=wayfinder_paths -v
+```
+
+See [TESTING.md](TESTING.md) for detailed testing guidance.
+
+## Contributing
+
+### Creating a New Strategy
+
+```bash
+# Use the convenience command (creates wallet automatically)
+just create-strategy "My Strategy Name"
+
+# Or manually copy the template
+cp -r wayfinder_paths/templates/strategy wayfinder_paths/strategies/my_strategy
+```
+
+Then:
+1. Rename the class in `strategy.py`
+2. Implement `deposit`, `update`, `exit`, and `_status` methods
+3. Add tests in `test_strategy.py`
+4. Create `examples.json` with test data
+5. Update the README
+
+### Creating a New Adapter
+
+```bash
+cp -r wayfinder_paths/templates/adapter wayfinder_paths/adapters/my_adapter
+```
+
+Then:
+1. Rename the class in `adapter.py`
+2. Implement protocol-specific methods
+3. Add tests in `test_adapter.py`
+4. Update the README
+
+### Guidelines
+
+- Strategies call adapters, not clients directly
+- All adapter methods return `(success, data)` tuples
+- Use `examples.json` for strategy test data
+- Never hardcode API keys or private keys
+- Add tests before submitting PRs
+
+## Publishing
+
+```bash
+# Must be on main branch
+export PUBLISH_TOKEN="your_pypi_token"
+just publish
+```
+
+**Version bumping**: Update `version` in `pyproject.toml` before publishing. Follow [SemVer](https://semver.org/):
+- PATCH: Bug fixes
+- MINOR: New features (backward compatible)
+- MAJOR: Breaking changes
+
+## Security
+
+- Never commit `config.json` (contains private keys)
+- Use test wallets for development
+- Test on testnets when available
+- Validate all inputs
+- Set appropriate gas limits
+
+## Community
+
+- [Discord](https://discord.gg/fUVwGMXjm3)
+- [GitHub Issues](https://github.com/WayfinderFoundation/wayfinder-paths/issues)
+
+## License
+
+MIT License - see [LICENSE](LICENSE) for details.
+
