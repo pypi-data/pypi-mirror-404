@@ -1,0 +1,400 @@
+# LoopBot SDK Python
+
+Biblioteca oficial para criar bots no LoopBot usando Python.
+
+## Instalação
+
+```bash
+pip install loopbot-sdk
+```
+
+## Inicialização
+
+```python
+from loopbot import Bot
+
+bot = Bot(
+    token="seu_token_aqui"
+)
+
+# ... seus comandos aqui ...
+
+bot.start()
+```
+
+## Guia Completo
+
+### Trabalhando com Embeds
+
+Embeds são mensagens ricas que permitem exibir informações de forma estruturada.
+
+```python
+from loopbot.builders import EmbedBuilder
+
+@bot.command("embed_demo", "Demonstração de Embed")
+def embed_demo(ctx):
+    # Criando um embed
+    embed = (
+        EmbedBuilder()
+        .set_title("Título do Embed")
+        .set_description("Descrição detalhada aqui...")
+        .set_color(0x00FF00) # Cor em hexadecimal (ex: Verde)
+        .set_url("https://loopbot.app")
+        .set_footer("Rodapé", icon_url="https://exemplo.com/icone.png")
+        .set_author("Nome Autor", url="https://perfil.com", icon_url="https://avatar.com/img.png")
+        .set_image("https://exemplo.com/imagem_grande.png")
+        .set_thumbnail("https://exemplo.com/miniatura.png")
+        .add_field("Campo 1", "Valor 1", inline=True)
+        .add_field("Campo 2", "Valor 2", inline=True)
+        .set_timestamp() # Usa hora atual se não especificado
+    )
+
+    # Enviando o embed
+    ctx.reply(embeds=[embed])
+```
+
+### Trabalhando com Containers (Componentes V2)
+
+Containers são componentes avançados que permitem agrupar outros componentes, como textos, separadores e galerias.
+
+> **Nota:** Para enviar containers, use o método `reply_with_components` ou `update_with_components`.
+
+```python
+from loopbot.builders import ContainerBuilder, SeparatorBuilder, MediaGalleryBuilder
+
+@bot.command("container_demo", "Demonstração de Container")
+def container_demo(ctx):
+    # Criando um container
+    container = (
+        ContainerBuilder()
+        .set_accent_color(0xFF0000) # Cor da barra lateral
+        .set_spoiler(False) # Se o conteúdo é spoiler
+        .add_text("# Título dentro do Container")
+        .add_text("Este é um texto normal dentro do container.")
+    )
+
+    # Adicionando um Separador
+    # spacing: 1 (pequeno) ou 2 (grande)
+    container.add_separator(divider=True, spacing=1)
+
+    # Adicionando uma Galeria de Mídia
+    gallery = (
+        MediaGalleryBuilder()
+        .add_item("https://exemplo.com/img1.png", "Legenda 1")
+        .add_item("https://exemplo.com/img2.png", "Legenda 2")
+    )
+    container.add_component(gallery)
+
+    # Enviando o container
+    ctx.reply_with_components(components=[container])
+```
+
+### Separadores
+
+Separadores ajudam a organizar visualmente o conteúdo dentro de containers ou como componentes independentes.
+
+```python
+from loopbot.builders import SeparatorBuilder
+
+# Separador com linha visível e espaçamento grande
+sep = SeparatorBuilder().set_divider(True).set_spacing(2)
+
+container.add_component(sep)
+```
+
+### Respondendo Interações
+
+O contexto (`ctx`) oferece vários métodos para responder a comandos e interações.
+
+#### Responder com Texto e Embeds
+
+```python
+# Apenas texto
+ctx.reply("Olá mundo!")
+
+# Texto e Embed
+ctx.reply("Veja isso:", embeds=[embed])
+
+# Resposta efêmera (visível apenas para o usuário que executou o comando)
+ctx.reply("Segredo...", ephemeral=True)
+```
+
+#### Responder com Componentes V2 (Containers)
+
+Para enviar Containers, Galerias ou Separadores como resposta principal.
+
+```python
+ctx.reply_with_components(components=[container1, container2])
+```
+
+#### Atualizando a Mensagem Original
+
+Útil para interações de botões ou menus de seleção, onde você deseja alterar a mensagem original em vez de enviar uma nova.
+
+```python
+@bot.on_button("meu_botao")
+def on_click(ctx):
+    # Atualiza texto e embeds da mensagem onde o botão estava
+    embed = EmbedBuilder().set_title("Atualizado!")
+    ctx.update(content="Nova mensagem", embeds=[embed])
+
+    # Ou para atualizar com Containers
+    # ctx.update_with_components(components=[novo_container])
+```
+
+#### Editando a Resposta (Follow-up)
+
+Se você já respondeu (por exemplo, com `defer` ou uma resposta rápida) e quer editar essa resposta depois.
+
+```python
+@bot.command("processar", "Processamento longo")
+def processar(ctx):
+    # Avise que está processando
+    ctx.defer() 
+    
+    # ... processamento demorado ...
+    
+    # Edita a resposta original
+    ctx.edit_reply(content="Processamento concluído!", embeds=[resultado_embed])
+```
+
+### Botões e Action Rows
+
+Botões são componentes interativos que os usuários podem clicar. Eles devem ser colocados dentro de uma `ActionRow`.
+
+```python
+from loopbot.builders import ActionRowBuilder, ButtonBuilder
+
+@bot.command("botoes", "Demo de botões")
+def botoes(ctx):
+    # Criando botões
+    btn_primario = (
+        ButtonBuilder()
+        .set_label("Clique aqui")
+        .set_custom_id("btn_click")
+        .set_style(1) # 1: Primary (Azul)
+    )
+
+    btn_link = (
+        ButtonBuilder()
+        .set_label("Visite o site")
+        .set_url("https://loopbot.app")
+        .set_style(5) # 5: Link (Cinza)
+    )
+
+    # Adicionando à ActionRow
+    row = ActionRowBuilder().add_button(btn_primario).add_button(btn_link)
+
+    ctx.reply("Escolha uma opção:", components=[row])
+
+@bot.on_button("btn_click")
+def on_btn_click(ctx):
+    ctx.reply("Você clicou no botão!", ephemeral=True)
+```
+
+### Menus de Seleção (Dropdowns)
+
+Menus de seleção permitem que o usuário escolha uma ou mais opções de uma lista.
+
+```python
+from loopbot.builders import SelectMenuBuilder
+
+@bot.command("menu", "Demo de menu")
+def menu(ctx):
+    select = (
+        SelectMenuBuilder()
+        .set_custom_id("menu_selecao")
+        .set_placeholder("Escolha sua classe")
+        .add_option("Guerreiro", "warrior", "Classe de combate corpo a corpo")
+        .add_option("Mago", "mage", "Classe de magia", emoji={"name": "🔮"})
+        .set_min_values(1)
+        .set_max_values(1)
+    )
+
+    row = ActionRowBuilder().add_select_menu(select)
+    ctx.reply("Selecione sua classe:", components=[row])
+
+@bot.on_select("menu_selecao") # Evento ainda não implementado na SDK Python, verifique suporte
+def on_menu_select(ctx):
+    # Lógica de manipulação
+    pass
+```
+
+### Modais (Formulários)
+
+Modais são janelas pop-up com formulários para entrada de texto.
+
+```python
+from loopbot.builders import ModalBuilder
+
+@bot.command("feedback", "Enviar feedback")
+def feedback(ctx):
+    modal = (
+        ModalBuilder()
+        .set_custom_id("modal_feedback")
+        .set_title("Nos dê seu feedback")
+        .add_text_input(
+            custom_id="input_msg",
+            label="Mensagem",
+            style="paragraph", # ou "short"
+            placeholder="Escreva aqui...",
+            required=True
+        )
+    )
+    
+    ctx.show_modal(modal)
+```
+
+### Layout Avançado (Sections)
+
+Sections permitem agrupar texto com um "acessório" lateral, como um botão ou imagem.
+
+```python
+from loopbot.builders import SectionBuilder, ButtonBuilder
+
+@bot.command("section", "Demo de Section")
+def section(ctx):
+    btn = ButtonBuilder().set_label("Ver Mais").set_url("https://google.com").set_style(5)
+
+    section = (
+        SectionBuilder()
+        .add_text("**Título da Seção**")
+        .add_text("Descrição detalhada ao lado do botão.")
+        .set_button_accessory(btn)
+    )
+
+    ctx.reply_with_components(components=[section])
+```
+
+### Arquivos
+
+Envio de arquivos como anexos ou dentro de estruturas.
+
+```python
+from loopbot.builders import FileBuilder
+
+file = FileBuilder("https://exemplo.com/arquivo.pdf").set_spoiler(False)
+# Adicione a um container ou envie conforme suporte da API
+```
+
+## Referência Rápida
+
+| Funcionalidade | Builder / Método |
+| :--- | :--- |
+| **Embed** | `EmbedBuilder` |
+| **Container** | `ContainerBuilder` |
+| **Separador** | `SeparatorBuilder` |
+| **Galeria** | `MediaGalleryBuilder` |
+| **Botão** | `ButtonBuilder` |
+| **Action Row** | `ActionRowBuilder` |
+| **Select Menu** | `SelectMenuBuilder` |
+| **Modal** | `ModalBuilder` |
+| **Section** | `SectionBuilder` |
+| **Arquivo** | `FileBuilder` |
+| **Responder** | `ctx.reply(...)` |
+| **Responder (Container)** | `ctx.reply_with_components(...)` |
+| **Atualizar Msg** | `ctx.update(...)` |
+| **Editar Resposta** | `ctx.edit_reply(...)` |
+
+## API de Mensagens Diretas
+
+Envie mensagens fora do contexto de interação, gerencie canais, cargos e mais.
+
+### Enviando Mensagens
+
+```python
+# Enviar mensagem para qualquer canal
+await bot.send(channel_id, content="Olá!")
+
+# Editar mensagem
+await bot.edit_message(channel_id, message_id, content="Atualizado!")
+
+# Deletar mensagem
+await bot.delete_message(channel_id, message_id)
+```
+
+### Gerenciamento de Canais
+
+```python
+# Criar canal
+await bot.create_channel(guild_id, "novo-canal", topic="Descrição")
+
+# Modificar canal
+await bot.modify_channel(channel_id, name="canal-renomeado")
+
+# Deletar canal
+await bot.delete_channel(channel_id)
+```
+
+### Canais de Fórum
+
+```python
+# Criar post no fórum
+await bot.create_forum_post(
+    forum_channel_id,
+    name="Título do Post",
+    message={"content": "Conteúdo aqui"},
+    applied_tags=["tag_id"]
+)
+
+# Obter/modificar tags do fórum
+tags = await bot.get_forum_tags(forum_channel_id)
+await bot.modify_forum_tags(forum_channel_id, [{"name": "Nova Tag"}])
+
+# Arquivar/trancar threads
+await bot.archive_thread(thread_id)
+await bot.lock_thread(thread_id)
+```
+
+### Cargos (Roles)
+
+```python
+# Obter cargos
+roles = await bot.get_roles(guild_id)
+
+# Criar cargo
+await bot.create_role(guild_id, name="Moderador", color=0x00FF00)
+
+# Modificar cargo
+await bot.modify_role(guild_id, role_id, name="Admin", hoist=True)
+
+# Deletar cargo
+await bot.delete_role(guild_id, role_id)
+
+# Reordenar cargos
+await bot.reorder_roles(guild_id, [{"id": role_id, "position": 2}])
+```
+
+### Webhooks
+
+```python
+# Criar webhook
+webhook = await bot.create_webhook(channel_id, "Meu Webhook")
+
+# Enviar mensagem via webhook
+await bot.execute_webhook(
+    webhook_id, webhook_token,
+    content="Mensagem via webhook!",
+    username="Nome Customizado"
+)
+
+# Editar/deletar mensagem do webhook
+await bot.edit_webhook_message(webhook_id, webhook_token, message_id, content="Editado")
+await bot.delete_webhook_message(webhook_id, webhook_token, message_id)
+
+# Deletar webhook
+await bot.delete_webhook(webhook_id)
+```
+
+### Gerenciamento de Membros
+
+```python
+# Adicionar/remover cargos
+await bot.add_member_role(guild_id, user_id, role_id)
+await bot.remove_member_role(guild_id, user_id, role_id)
+
+# Expulsar/banir membros
+await bot.kick_member(guild_id, user_id)
+await bot.ban_member(guild_id, user_id)
+```
+
