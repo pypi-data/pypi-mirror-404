@@ -1,0 +1,1021 @@
+syntax = "proto2";
+
+option java_multiple_files = true;
+option java_package = "com.qcloud.cos.goosefs.grpc.table";
+option java_outer_classname = "TableMasterProto";
+
+package com.qcloud.cos.goosefs.grpc.table;
+
+import "common.proto";
+import "job_master.proto";
+
+message FieldSchema {
+    optional uint32 id = 1;
+    optional string name = 2;
+    optional string type = 3;
+    optional string comment = 4;
+}
+
+message Schema {
+    repeated FieldSchema cols = 1;
+}
+
+enum PrincipalType {
+    USER = 0;
+    ROLE = 1;
+}
+
+message Database {
+    optional string db_name = 1;
+    optional string description = 2;
+    optional string location = 3;
+    map<string, string> parameter = 4;
+    optional string owner_name = 5;
+    optional PrincipalType owner_type = 6;
+    optional string comment = 7;
+}
+
+// next available id: 12
+message TableInfo {
+    optional string db_name = 1;
+    optional string table_name = 2;
+    enum TableType {
+        NATIVE = 0;
+        IMPORTED = 1;
+    }
+    optional TableType type = 3;
+    optional string owner = 4;
+    optional Schema schema = 5;
+    optional Layout layout = 6;
+    map<string, string> parameters = 7;
+
+    // partitioning scheme
+    repeated FieldSchema partition_cols = 8;
+
+    optional int64 previous_version = 9;
+    optional int64 version = 10;
+    optional int64 version_creation_time = 11;
+}
+
+// TODO(gpang): update
+message LayoutSpec {
+  optional string spec = 1;
+}
+
+// TODO(gpang): update
+message PartitionSpec {
+  optional string spec = 1;
+}
+
+message Layout {
+  optional string layout_type = 1;
+  optional LayoutSpec layout_spec = 2;
+  optional bytes layout_data = 3;
+  map<string, ColumnStatisticsInfo> stats = 4;
+}
+
+message Transformation {
+    optional Layout layout = 1;
+    optional string definition = 2;
+}
+
+// next available id: 6
+message Partition {
+    optional PartitionSpec partition_spec = 1;
+    optional Layout base_layout = 2;
+    /**
+     * The latest transformation is in the back of the list.
+     */
+    repeated Transformation transformations = 3;
+    optional int64 version = 4;
+    optional int64 version_creation_time = 5;
+    map<int64, int32> hotPartitionStatisticsMap = 6;
+}
+
+message ColumnStatisticsInfo {
+    optional string col_name = 1;
+    optional string col_type = 2;
+    optional ColumnStatisticsData data = 3;
+}
+
+message ColumnStatisticsData {
+    oneof data {
+        BooleanColumnStatsData boolean_stats = 1;
+        LongColumnStatsData long_stats = 2;
+        DoubleColumnStatsData double_stats = 3;
+        StringColumnStatsData string_stats = 4;
+        BinaryColumnStatsData binary_stats = 5;
+        DecimalColumnStatsData decimal_stats = 6;
+        DateColumnStatsData date_stats = 7;
+    }
+}
+
+message BooleanColumnStatsData {
+    optional int64 num_trues = 1;
+    optional int64 num_falses = 2;
+    optional int64 num_nulls = 3;
+    optional string bit_vectors = 4;
+}
+
+message LongColumnStatsData {
+    optional int64 low_value = 1;
+    optional int64 high_value = 2;
+    optional int64 num_nulls = 3;
+    optional int64 num_distincts = 4;
+    optional string bit_vectors = 5;
+}
+
+message DoubleColumnStatsData {
+    optional double low_value = 1;
+    optional double high_value = 2;
+    optional int64 num_nulls = 3;
+    optional int64 num_distincts = 4;
+    optional string bit_vectors = 5;
+}
+
+message Decimal {
+    required int32 scale = 1; // force using scale first in Decimal.compareTo
+    required bytes unscaled = 2;
+}
+message DecimalColumnStatsData {
+    optional Decimal low_value = 1;
+    optional Decimal high_value = 2;
+    optional int64 num_nulls = 3;
+    optional int64 num_distincts = 4;
+    optional string bit_vectors = 5;
+}
+
+message StringColumnStatsData {
+    optional int64 max_col_len = 1;
+    optional double avg_col_len = 2;
+    optional int64 num_nulls = 3;
+    optional int64 num_distincts = 4;
+    optional string bit_vectors = 5;
+}
+
+message BinaryColumnStatsData {
+    optional int64 max_col_len = 1;
+    optional double avg_col_len = 2;
+    optional int64 num_nulls = 3;
+    optional string bit_vectors = 4;
+}
+
+message Date {
+    required int64 days_since_epoch = 1;
+}
+message DateColumnStatsData {
+    optional Date low_value = 1;
+    optional Date high_value = 2;
+    optional int64 num_nulls = 3;
+    optional int64 num_distincts = 4;
+    optional string bit_vectors = 5;
+}
+
+message SyncStatus {
+    map<string, string> tables_errors = 1;
+    repeated string tables_ignored = 2;
+    repeated string tables_unchanged = 3;
+    repeated string tables_updated = 4;
+    repeated string tables_removed = 5;
+}
+
+message GetAllDatabasesPRequest {
+}
+
+message DbInfo {
+    optional string name = 1;
+    optional string type = 2;
+    optional bool auto_mount = 3;
+    optional string default_write_type = 4;
+    optional string default_read_type = 5;
+}
+
+message TbInfo {
+    optional string name = 1;
+    optional bool is_mount = 2;
+    optional string read_type = 3;
+    optional string write_type = 4;
+}
+
+message AccessStatInfo {
+    optional string db_name = 1;
+    optional string tb_name = 2;
+    optional bool is_mount = 3;
+    optional int32 hots = 4;
+}
+
+message HiveHotsTableInfo {
+    optional string path = 1;
+    optional string type = 2;
+}
+
+message PrestoHotsTableInfo {
+    optional string db_name = 1;
+    optional string tb_name = 2;
+    optional string type = 3;
+}
+
+message IncrementHotsPRequest {
+    repeated HiveHotsTableInfo hive_hots_path_list = 1;
+    repeated PrestoHotsTableInfo presto_hots_path_list = 2;
+    optional string engine_name = 3;
+}
+
+message IncrementHotsPResponse {}
+
+message GetAllDatabasesPResponse {
+    repeated DbInfo dbInfo = 1;
+}
+
+message GetAllTablesPRequest {
+    optional string database = 1;
+}
+
+message GetAllTablesPResponse {
+    repeated TbInfo tbInfo = 1;
+}
+
+message GetDatabasePRequest {
+    optional string db_name = 1;
+}
+
+message GetDatabasePResponse {
+    optional Database db = 1;
+}
+
+message GetTablePRequest {
+    optional string db_name = 1;
+    optional string table_name = 2;
+}
+
+message GetTablePResponse {
+    optional TableInfo table_info = 1;
+}
+
+message AttachDatabasePRequest {
+    optional string udb_type = 1;
+    optional string udb_db_name = 2;
+    optional string db_name = 3;
+    map<string, string> attributed = 4;
+    optional bool ignore_sync_errors = 5;
+    optional bool auto_mount=6;
+}
+
+message AttachDatabasePResponse {
+    // TODO(gpang): remove in favor of status
+    optional bool success = 1;
+    optional SyncStatus sync_status = 2;
+}
+
+message MountTablePRequest {
+    optional string dbName = 1;
+    optional string tbName = 2;
+}
+
+message MountTablePResponse {
+    optional bool success = 1;
+}
+
+message UnmountTablePRequest {
+    optional string dbName = 1;
+    optional string tbName = 2;
+}
+
+message AccessStatPRequest {
+    optional int32 days = 1;
+    optional int32 topNums = 2;
+}
+
+message AccessStatPResponse {
+    repeated AccessStatInfo accessStatInfo = 1;
+}
+
+message UnmountTablePResponse {
+    optional bool success = 1;
+}
+
+message DetachDatabasePRequest {
+    optional string db_name = 1;
+}
+
+message DetachDatabasePResponse {
+    optional bool success = 1;
+}
+
+message SyncDatabasePRequest {
+    optional string db_name = 1;
+}
+
+message SyncDatabasePResponse {
+    // TODO(gpang): remove in favor of status
+    optional bool success = 1;
+    optional SyncStatus status = 2;
+}
+
+message FileStatistics {
+    map<string, ColumnStatisticsInfo> column = 1; //map column names to column statistics
+}
+
+message GetTableColumnStatisticsPRequest {
+    optional string db_name = 1;
+    optional string table_name = 2;
+    repeated string col_names = 3;
+}
+
+message GetPartitionColumnStatisticsPRequest {
+    optional string db_name = 1;
+    optional string table_name = 2;
+    repeated string col_names = 3;
+    repeated string part_names = 4;
+}
+
+message GetTableColumnStatisticsPResponse {
+    repeated ColumnStatisticsInfo statistics = 1;
+}
+
+message ColumnStatisticsList {
+    repeated ColumnStatisticsInfo statistics = 1;
+}
+message GetPartitionColumnStatisticsPResponse {
+    map<string, ColumnStatisticsList> partition_statistics = 1;
+}
+
+message Value {
+    oneof value {
+        int64 long_type = 1;
+        double double_type = 2;
+        string string_type = 3;
+        bool boolean_type = 4;
+    }
+}
+
+message Range {
+    optional Value low = 1;
+    optional Value high = 2;
+}
+
+message RangeSet {
+    repeated Range ranges = 1;
+}
+
+message EquatableValueSet {
+    repeated Value candidates = 1;
+    optional bool white_list = 2;
+}
+
+message AllOrNoneSet {
+    optional bool all = 1;
+}
+
+message Domain {
+    oneof value_set {
+        RangeSet range = 1;
+        EquatableValueSet equatable = 2;
+        AllOrNoneSet all_or_none = 3;
+    }
+}
+
+message Constraint {
+    map<string, Domain> column_constraints = 1; // maps column to constraint, columns not present are not constrained
+}
+
+message ReadTablePRequest {
+    optional string db_name = 1;
+    optional string table_name = 2;
+    optional Constraint constraint = 3;
+}
+
+message ReadTablePResponse {
+    repeated Partition partitions = 1;
+}
+
+message TransformTablePRequest {
+    optional string db_name = 1;
+    optional string table_name = 2;
+    optional string definition = 3;
+}
+
+message TransformTablePResponse {
+    optional int64 job_id = 1;
+}
+
+message GetTransformJobInfoPRequest {
+    optional int64 job_id = 1;
+}
+
+message TransformJobInfo {
+    optional string db_name = 1;
+    optional string table_name = 2;
+    optional string definition = 3;
+    optional int64 job_id = 4;
+    optional goosefs.grpc.job.Status job_status = 5;
+    optional string job_error = 6;
+}
+
+message GetTransformJobInfoPResponse {
+    repeated TransformJobInfo info = 1;
+}
+
+message ListNamespacesPRequest {
+    repeated string id = 1;
+    optional string page_token = 2;
+    optional int32 limit = 3;
+}
+
+message ListNamespacesPResponse {
+    repeated string namespaces = 1;
+    optional string page_token = 2;
+}
+
+message CreateNamespacePRequest {
+    repeated string id = 1;
+    map<string, string> properties = 2;
+    optional string mode = 3;
+}
+
+message CreateNamespacePResponse {
+    map<string, string> properties = 1;
+}
+
+message DescribeNamespacePRequest {
+    repeated string id = 1;
+}
+
+message DescribeNamespacePResponse {
+    map<string, string> properties = 1;
+}
+
+message NamespaceExistsPRequest {
+    repeated string id = 1;
+}
+
+message NamespaceExistsPResponse {
+    optional bool exists = 1;
+}
+
+message DropNamespacePRequest {
+    repeated string id = 1;
+    optional string mode = 2;
+    optional string behavior = 3;
+}
+
+message DropNamespacePResponse {
+    map<string, string> properties = 1;
+}
+
+message ListTablesPRequest {
+    repeated string id = 1;
+    optional string page_token = 2;
+    optional int32 limit = 3;
+}
+
+message ListTablesPResponse {
+    repeated string tables = 1;
+    optional string page_token = 2;
+}
+
+message TableExistsPRequest {
+    repeated string id = 1;
+    optional int64 version = 2;  // Lance: check specific version existence
+}
+
+message TableExistsPResponse {
+    optional bool exists = 1;
+}
+
+message DescribeTablePRequest {
+    repeated string id = 1;
+    optional int64 version = 2;
+    optional bool load_detailed_metadata = 3;
+    optional bool with_table_uri = 4;  // Lance: include table URI in response
+}
+
+message DescribeTablePResponse {
+    optional string location = 1;
+    map<string, string> storage_options = 2;
+}
+
+message DeclareTablePRequest {
+    repeated string id = 1;
+    optional string location = 2;
+    map<string, string> properties = 3;
+}
+
+message DeclareTablePResponse {
+    optional string location = 1;
+    map<string, string> storage_options = 2;
+}
+
+message DeregisterTablePRequest {
+    repeated string id = 1;
+}
+
+message DeregisterTablePResponse {
+    repeated string id = 1;
+    optional string location = 2;
+    map<string, string> properties = 3;
+}
+
+message RegisterNamespaceImplPRequest {
+    optional string name = 1;
+    optional string class_name = 2;
+}
+
+message RegisterNamespaceImplPResponse {
+}
+
+message UnregisterNamespaceImplPRequest {
+    optional string name = 1;
+}
+
+message UnregisterNamespaceImplPResponse {
+    optional bool success = 1;
+}
+
+message IsRegisteredPRequest {
+    optional string name = 1;
+}
+
+message IsRegisteredPResponse {
+    optional bool registered = 1;
+}
+
+message RegisterTablePRequest {
+    repeated string id = 1;
+    optional string location = 2;
+    map<string, string> properties = 3;
+    optional string mode = 4;  // Lance: register mode (create/exist_ok/overwrite)
+}
+
+message RegisterTablePResponse {
+    optional string location = 1;
+    map<string, string> storage_options = 2;
+}
+
+message DropTablePRequest {
+    repeated string id = 1;
+    optional string mode = 2;
+}
+
+message DropTablePResponse {
+}
+
+message CountTableRowsPRequest {
+    repeated string id = 1;
+    optional string predicate = 2;  // Lance: filter condition
+    optional int64 version = 3;     // Lance: specific table version
+}
+
+message CountTableRowsPResponse {
+    optional int64 count = 1;
+}
+
+message CreateTablePRequest {
+    repeated string id = 1;
+    optional string schema = 2;
+    optional string location = 3;
+    optional string mode = 4;
+    map<string, string> properties = 5;
+}
+
+message CreateTablePResponse {
+    optional string location = 1;
+    map<string, string> storage_options = 2;
+}
+
+message CreateEmptyTablePRequest {
+    repeated string id = 1;
+    optional string schema = 2;
+    optional string location = 3;
+    optional string mode = 4;
+    map<string, string> properties = 5;
+}
+
+message CreateEmptyTablePResponse {
+    optional string location = 1;
+    map<string, string> storage_options = 2;
+}
+
+message InsertIntoTablePRequest {
+    repeated string id = 1;
+    optional string data = 2;
+    optional string mode = 3;
+}
+
+message InsertIntoTablePResponse {
+    optional int64 rows_affected = 1;
+}
+
+message MergeInsertIntoTablePRequest {
+    repeated string id = 1;
+    optional string data = 2;
+    repeated string on_columns = 3;
+}
+
+message MergeInsertIntoTablePResponse {
+    optional int64 rows_affected = 1;
+}
+
+message UpdateTablePRequest {
+    repeated string id = 1;
+    optional string updates = 2;
+    optional string where_clause = 3;  // GooseFS style
+    optional string predicate = 4;     // Lance style (same as where_clause)
+}
+
+message UpdateTablePResponse {
+    optional int64 rows_affected = 1;
+}
+
+message DeleteFromTablePRequest {
+    repeated string id = 1;
+    optional string where_clause = 2;  // GooseFS style
+    optional string predicate = 3;     // Lance style (same as where_clause)
+}
+
+message DeleteFromTablePResponse {
+    optional int64 rows_affected = 1;
+}
+
+message QueryTablePRequest {
+    repeated string id = 1;
+    optional string query = 2;
+    optional int32 limit = 3;
+}
+
+message QueryTablePResponse {
+    optional string result = 1;
+}
+
+message CreateTableIndexPRequest {
+    repeated string id = 1;
+    repeated string columns = 2;
+    optional string index_type = 3;
+    optional string index_name = 4;
+}
+
+message CreateTableIndexPResponse {
+}
+
+message CreateTableScalarIndexPRequest {
+    repeated string id = 1;
+    repeated string columns = 2;
+    optional string index_type = 3;
+}
+
+message CreateTableScalarIndexPResponse {
+}
+
+message ListTableIndicesPRequest {
+    repeated string id = 1;
+    optional string page_token = 2;  // Lance: pagination token
+    optional int32 limit = 3;        // Lance: page size limit
+    optional int64 version = 4;      // Lance: list indices for specific version
+}
+
+message ListTableIndicesPResponse {
+    repeated string indices = 1;
+}
+
+message DescribeTableIndexStatsPRequest {
+    repeated string id = 1;
+    optional string index_name = 2;
+    optional int64 version = 3;  // Lance: index stats for specific version
+}
+
+message DescribeTableIndexStatsPResponse {
+    map<string, string> stats = 1;
+}
+
+message DropTableIndexPRequest {
+    repeated string id = 1;
+    optional string index_name = 2;
+}
+
+message DropTableIndexPResponse {
+}
+
+message ListAllTablesPRequest {
+    optional string page_token = 1;
+    optional int32 limit = 2;
+}
+
+message ListAllTablesPResponse {
+    repeated string tables = 1;
+    optional string page_token = 2;
+}
+
+message RestoreTablePRequest {
+    repeated string id = 1;
+    optional int64 version = 2;
+}
+
+message RestoreTablePResponse {
+}
+
+message RenameTablePRequest {
+    repeated string old_id = 1;           // GooseFS style: old identifier
+    repeated string new_id = 2;           // GooseFS style: new identifier
+    repeated string id = 3;               // Lance style: current table id
+    repeated string new_namespace_id = 4; // Lance style: target namespace
+    optional string new_table_name = 5;   // Lance style: new table name
+}
+
+message RenameTablePResponse {
+}
+
+message ListTableVersionsPRequest {
+    repeated string id = 1;
+    optional string page_token = 2;  // Lance: pagination token
+    optional int32 limit = 3;        // Lance: page size limit
+}
+
+message ListTableVersionsPResponse {
+    repeated int64 versions = 1;
+}
+
+message UpdateTableSchemaMetadataPRequest {
+    repeated string id = 1;
+    optional string schema = 2;    // GooseFS style: schema string
+    optional string metadata = 3;  // Lance style: metadata string (same as schema)
+}
+
+message UpdateTableSchemaMetadataPResponse {
+}
+
+message GetTableStatsPRequest {
+    repeated string id = 1;
+}
+
+message GetTableStatsPResponse {
+    map<string, string> stats = 1;
+}
+
+message ExplainTableQueryPlanPRequest {
+    repeated string id = 1;
+    optional string query = 2;
+    optional bool verbose = 3;  // Lance: detailed explanation
+}
+
+message ExplainTableQueryPlanPResponse {
+    optional string plan = 1;
+}
+
+message AnalyzeTableQueryPlanPRequest {
+    repeated string id = 1;
+    optional string query = 2;
+}
+
+message AnalyzeTableQueryPlanPResponse {
+    optional string analysis = 1;
+}
+
+message AlterTableAddColumnsPRequest {
+    repeated string id = 1;
+    repeated string columns = 2;
+}
+
+message AlterTableAddColumnsPResponse {
+}
+
+message AlterTableAlterColumnsPRequest {
+    repeated string id = 1;
+    repeated string columns = 2;
+}
+
+message AlterTableAlterColumnsPResponse {
+}
+
+message AlterTableDropColumnsPRequest {
+    repeated string id = 1;
+    repeated string columns = 2;
+}
+
+message AlterTableDropColumnsPResponse {
+}
+
+message ListTableTagsPRequest {
+    repeated string id = 1;
+    optional string page_token = 2;  // Lance: pagination token
+    optional int32 limit = 3;        // Lance: page size limit
+}
+
+message ListTableTagsPResponse {
+    repeated string tags = 1;
+}
+
+message GetTableTagVersionPRequest {
+    repeated string id = 1;
+    optional string tag = 2;
+}
+
+message GetTableTagVersionPResponse {
+    optional int64 version = 1;
+}
+
+message CreateTableTagPRequest {
+    repeated string id = 1;
+    optional string tag = 2;
+    optional int64 version = 3;
+}
+
+message CreateTableTagPResponse {
+}
+
+message DeleteTableTagPRequest {
+    repeated string id = 1;
+    optional string tag = 2;
+}
+
+message DeleteTableTagPResponse {
+}
+
+message UpdateTableTagPRequest {
+    repeated string id = 1;
+    optional string tag = 2;
+    optional int64 version = 3;
+}
+
+message UpdateTableTagPResponse {
+}
+
+message DescribeTransactionPRequest {
+    optional string transaction_id = 1;  // GooseFS style
+    repeated string id = 2;              // Lance style: namespace identifier
+}
+
+message DescribeTransactionPResponse {
+    map<string, string> properties = 1;
+}
+
+message AlterTransactionPRequest {
+    optional string transaction_id = 1;  // GooseFS style
+    optional string action = 2;          // GooseFS style: single action
+    repeated string id = 3;              // Lance style: namespace identifier
+    repeated string actions = 4;         // Lance style: multiple actions
+}
+
+message AlterTransactionPResponse {
+}
+
+/**
+ * This interface contains table master service endpoints for GooseFS clients.
+ */
+service TableMasterClientService {
+
+    /**
+     * Returns all databases in the catalog
+     */
+    rpc GetAllDatabases(GetAllDatabasesPRequest) returns (GetAllDatabasesPResponse);
+
+    /**
+     * Returns all tables in the database
+     */
+    rpc GetAllTables(GetAllTablesPRequest) returns (GetAllTablesPResponse);
+
+    /**
+    * Gets a database by name from the table master
+    */
+    rpc GetDatabase(GetDatabasePRequest) returns (GetDatabasePResponse);
+
+    /**
+     * Returns a specific table info
+     */
+    rpc GetTable(GetTablePRequest) returns (GetTablePResponse);
+
+    /**
+     * Attach an existing database into the catalog as a new database name
+     */
+    rpc AttachDatabase(AttachDatabasePRequest) returns (AttachDatabasePResponse);
+
+    /**
+     * Mount a table to GooseFS
+     */
+    rpc mountTable(MountTablePRequest) returns (MountTablePResponse);
+
+    /**
+     * Unmount a table from GooseFS
+     */
+    rpc unmountTable(UnmountTablePRequest) returns (UnmountTablePResponse);
+
+    rpc accessStat(AccessStatPRequest) returns (AccessStatPResponse);
+
+    rpc incrementHots(IncrementHotsPRequest) returns(IncrementHotsPResponse);
+
+    /**
+     * Detach existing database into the catalog, removing any metadata about the table
+     */
+    rpc DetachDatabase(DetachDatabasePRequest) returns (DetachDatabasePResponse);
+
+    /**
+     * Sync existing database into the catalog
+     */
+    rpc SyncDatabase(SyncDatabasePRequest) returns (SyncDatabasePResponse);
+
+    rpc GetTableColumnStatistics(GetTableColumnStatisticsPRequest) returns (GetTableColumnStatisticsPResponse);
+
+    rpc GetPartitionColumnStatistics(GetPartitionColumnStatisticsPRequest) returns (GetPartitionColumnStatisticsPResponse);
+
+    rpc ReadTable(ReadTablePRequest) returns (ReadTablePResponse);
+
+    rpc TransformTable(TransformTablePRequest) returns (TransformTablePResponse);
+
+    /**
+     * Gets information of transformation jobs.
+     * If the job ID exists in the request, the information for that job is returned;
+     * Otherwise, information of all the jobs kept in table master will be returned.
+     */
+    rpc GetTransformJobInfo(GetTransformJobInfoPRequest) returns (GetTransformJobInfoPResponse);
+
+    rpc ListNamespaces(ListNamespacesPRequest) returns (ListNamespacesPResponse);
+    
+    rpc CreateNamespace(CreateNamespacePRequest) returns (CreateNamespacePResponse);
+    
+    rpc DescribeNamespace(DescribeNamespacePRequest) returns (DescribeNamespacePResponse);
+    
+    rpc NamespaceExists(NamespaceExistsPRequest) returns (NamespaceExistsPResponse);
+    
+    rpc DropNamespace(DropNamespacePRequest) returns (DropNamespacePResponse);
+    
+    rpc ListTables(ListTablesPRequest) returns (ListTablesPResponse);
+    
+    rpc TableExists(TableExistsPRequest) returns (TableExistsPResponse);
+    
+    rpc DescribeTable(DescribeTablePRequest) returns (DescribeTablePResponse);
+    
+    rpc DeclareTable(DeclareTablePRequest) returns (DeclareTablePResponse);
+    
+    rpc DeregisterTable(DeregisterTablePRequest) returns (DeregisterTablePResponse);
+    
+    rpc RegisterNamespaceImpl(RegisterNamespaceImplPRequest) returns (RegisterNamespaceImplPResponse);
+    
+    rpc UnregisterNamespaceImpl(UnregisterNamespaceImplPRequest) returns (UnregisterNamespaceImplPResponse);
+    
+    rpc IsRegistered(IsRegisteredPRequest) returns (IsRegisteredPResponse);
+    
+    rpc RegisterTable(RegisterTablePRequest) returns (RegisterTablePResponse);
+    
+    rpc DropTable(DropTablePRequest) returns (DropTablePResponse);
+    
+    rpc CountTableRows(CountTableRowsPRequest) returns (CountTableRowsPResponse);
+    
+    rpc CreateTable(CreateTablePRequest) returns (CreateTablePResponse);
+    
+    rpc CreateEmptyTable(CreateEmptyTablePRequest) returns (CreateEmptyTablePResponse);
+    
+    rpc InsertIntoTable(InsertIntoTablePRequest) returns (InsertIntoTablePResponse);
+    
+    rpc MergeInsertIntoTable(MergeInsertIntoTablePRequest) returns (MergeInsertIntoTablePResponse);
+    
+    rpc UpdateTable(UpdateTablePRequest) returns (UpdateTablePResponse);
+    
+    rpc DeleteFromTable(DeleteFromTablePRequest) returns (DeleteFromTablePResponse);
+    
+    rpc QueryTable(QueryTablePRequest) returns (QueryTablePResponse);
+    
+    rpc CreateTableIndex(CreateTableIndexPRequest) returns (CreateTableIndexPResponse);
+    
+    rpc CreateTableScalarIndex(CreateTableScalarIndexPRequest) returns (CreateTableScalarIndexPResponse);
+    
+    rpc ListTableIndices(ListTableIndicesPRequest) returns (ListTableIndicesPResponse);
+    
+    rpc DescribeTableIndexStats(DescribeTableIndexStatsPRequest) returns (DescribeTableIndexStatsPResponse);
+    
+    rpc DropTableIndex(DropTableIndexPRequest) returns (DropTableIndexPResponse);
+    
+    rpc ListAllTables(ListAllTablesPRequest) returns (ListAllTablesPResponse);
+    
+    rpc RestoreTable(RestoreTablePRequest) returns (RestoreTablePResponse);
+    
+    rpc RenameTable(RenameTablePRequest) returns (RenameTablePResponse);
+    
+    rpc ListTableVersions(ListTableVersionsPRequest) returns (ListTableVersionsPResponse);
+    
+    rpc UpdateTableSchemaMetadata(UpdateTableSchemaMetadataPRequest) returns (UpdateTableSchemaMetadataPResponse);
+    
+    rpc GetTableStats(GetTableStatsPRequest) returns (GetTableStatsPResponse);
+    
+    rpc ExplainTableQueryPlan(ExplainTableQueryPlanPRequest) returns (ExplainTableQueryPlanPResponse);
+    
+    rpc AnalyzeTableQueryPlan(AnalyzeTableQueryPlanPRequest) returns (AnalyzeTableQueryPlanPResponse);
+    
+    rpc AlterTableAddColumns(AlterTableAddColumnsPRequest) returns (AlterTableAddColumnsPResponse);
+    
+    rpc AlterTableAlterColumns(AlterTableAlterColumnsPRequest) returns (AlterTableAlterColumnsPResponse);
+    
+    rpc AlterTableDropColumns(AlterTableDropColumnsPRequest) returns (AlterTableDropColumnsPResponse);
+    
+    rpc ListTableTags(ListTableTagsPRequest) returns (ListTableTagsPResponse);
+    
+    rpc GetTableTagVersion(GetTableTagVersionPRequest) returns (GetTableTagVersionPResponse);
+    
+    rpc CreateTableTag(CreateTableTagPRequest) returns (CreateTableTagPResponse);
+    
+    rpc DeleteTableTag(DeleteTableTagPRequest) returns (DeleteTableTagPResponse);
+    
+    rpc UpdateTableTag(UpdateTableTagPRequest) returns (UpdateTableTagPResponse);
+    
+    rpc DescribeTransaction(DescribeTransactionPRequest) returns (DescribeTransactionPResponse);
+    
+    rpc AlterTransaction(AlterTransactionPRequest) returns (AlterTransactionPResponse);
+}
