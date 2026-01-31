@@ -1,0 +1,35 @@
+# TkinterWeb 
+**Fast and lightweight web browser, rich text, and app design widgets for Tkinter.**
+
+## Overview
+**TkinterWeb offers bindings and extensions to a modified version of the Tkhtml3 widget from [http://tkhtml.tcl.tk](https://web.archive.org/web/20250219233338/http://tkhtml.tcl.tk/), which enables the display of HTML and CSS code in Tkinter applications.** 
+
+Some of TkinterWeb's uses include:
+
+- Displaying and editing websites, feeds, help files, and other styled HTML
+- Displaying images, including SVG images
+- Creating a rich text or HTML editor
+- Designing apps using HTML templates
+- Creating prettier apps, with rounded buttons and more!
+
+All major operating systems running Python 3.2+ are supported. 
+
+## Installation
+**To install TkinterWeb, simply type `pip install tkinterweb[recommended]` in the command prompt or terminal. That's it!**
+
+## Usage
+**TkinterWeb can be used in any Tkinter application to display and edit websites, help pages, documentation, and much more! Here is an example:**
+
+```
+import tkinter as tk
+from tkinterweb import HtmlFrame # import the HtmlFrame widget
+
+root = tk.Tk() # create the Tkinter window
+frame = HtmlFrame(root) # create the HTML widget
+frame.load_website("https://tkinterweb.readthedocs.io/en/latest/") # load a website
+frame.pack(fill="both", expand=True) # attach the HtmlFrame widget to the window
+root.mainloop()
+```
+![Output](https://raw.githubusercontent.com/Andereoo/TkinterWeb/main/images/tkinterweb-demo.png)
+
+**Visit the [Read the Docs home page](https://tkinterweb.readthedocs.io/en/latest/) for more information!**
