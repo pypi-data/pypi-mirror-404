@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunksolace_agenitc_mesh_docs=self.webpackChunksolace_agenitc_mesh_docs||[]).push([[4583],{6866:(e,s,t)=>{t.r(s),t.d(s,{default:()=>n});t(6540);var c=t(6347),a=t(4848);function n(){return(0,a.jsx)(c.rd,{to:"/solace-agent-mesh/docs/documentation/getting-started"})}}}]);
