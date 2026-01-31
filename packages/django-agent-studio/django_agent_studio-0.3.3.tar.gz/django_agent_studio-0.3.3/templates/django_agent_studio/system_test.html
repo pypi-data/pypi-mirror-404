@@ -1,0 +1,141 @@
+{% extends "django_agent_studio/base.html" %}
+
+{% block title %}Test {{ system.name }} - Agent Studio{% endblock %}
+
+{% block breadcrumbs %}
+<nav class="flex items-center space-x-2 ml-4 text-sm">
+    <span class="text-gray-400">/</span>
+    <a href="{% url 'agent_studio:system_list' %}" class="text-gray-500 hover:text-gray-700">My Systems</a>
+    <span class="text-gray-400">/</span>
+    <span class="text-gray-600">{{ system.name }}</span>
+    <span class="text-gray-400">/</span>
+    <span class="text-gray-600">Test</span>
+</nav>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+    #fullscreen-chat-container {
+        display: flex;
+        justify-content: center;
+    }
+
+    #fullscreen-chat-container .cw-container {
+        position: relative !important;
+        width: 100% !important;
+        height: 100% !important;
+        max-height: none !important;
+        border-radius: 0 !important;
+        box-shadow: 0 0 20px rgba(0,0,0,0.1) !important;
+    }
+
+    #fullscreen-chat-container .cw-toggle-btn {
+        display: none !important;
+    }
+
+    #fullscreen-chat-container .cw-widget {
+        position: relative !important;
+        width: 100% !important;
+        height: 100% !important;
+        max-height: none !important;
+        border-radius: 0 !important;
+        display: flex !important;
+        flex-direction: column !important;
+        overflow: hidden !important;
+    }
+
+    #fullscreen-chat-container .cw-messages {
+        flex: 1 !important;
+        min-height: 0 !important;
+        overflow-y: auto !important;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="h-full flex flex-col">
+    <!-- System Info Bar -->
+    <div class="px-4 py-3 bg-white border-b border-gray-200 flex items-center justify-between">
+        <div class="flex items-center space-x-4">
+            <span class="text-2xl">🔗</span>
+            <div>
+                <h1 class="font-semibold text-gray-800">{{ system.name }}</h1>
+                <p class="text-sm text-gray-500">
+                    Entry: {{ agent.icon|default:"🤖" }} {{ agent.name }}
+                    <span class="text-gray-400 mx-2">•</span>
+                    {{ system.description|default:"No description"|truncatechars:80 }}
+                </p>
+            </div>
+        </div>
+        <div class="flex items-center space-x-3">
+            <a href="{% url 'agent_studio:system_collaborators' system.id %}"
+               class="text-gray-600 hover:text-gray-800 px-3 py-1.5 border border-gray-300 rounded-lg text-sm"
+               title="Manage collaborators">
+                <i class="pi pi-users"></i>
+            </a>
+            <a href="{% url 'agent_studio:system_list' %}"
+               class="text-gray-600 hover:text-gray-800 px-3 py-1.5 border border-gray-300 rounded-lg text-sm">
+                ← Back to Systems
+            </a>
+            <button @click="clearChat"
+                    class="text-gray-600 hover:text-gray-800 px-3 py-1.5 border border-gray-300 rounded-lg text-sm">
+                Clear Chat
+            </button>
+        </div>
+    </div>
+    
+    <!-- Full Screen Chat -->
+    <div class="flex-1 min-h-0 relative bg-gray-100 flex justify-center">
+        <div id="fullscreen-chat-container" class="relative w-full max-w-[800px] h-full"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const { createApp } = Vue;
+
+// Use the entry agent's slug for the chat
+const agentSlug = "{{ agent.slug|escapejs }}";
+const backendUrl = window.location.origin;
+
+function initChat() {
+    if (window.testChatWidget) {
+        window.testChatWidget.destroy();
+    }
+    
+    window.testChatWidget = ChatWidget.createInstance({
+        containerId: 'fullscreen-chat-container',
+        backendUrl: backendUrl,
+        agentKey: agentSlug,
+        title: '{{ system.name|escapejs }}',
+        primaryColor: '#3b82f6',
+        showClearButton: true,
+        showDebugButton: true,
+        showExpandButton: false,
+        embedded: true,
+        apiPaths: {
+            runs: '/api/agent-runtime/runs/',
+            runEvents: '/api/agent-runtime/runs/{runId}/events/',
+        },
+    });
+}
+
+createApp({
+    data() {
+        return {}
+    },
+    methods: {
+        clearChat() {
+            if (window.testChatWidget) {
+                window.testChatWidget.clearMessages();
+            }
+        }
+    },
+    mounted() {
+        initChat();
+    }
+}).use(primevue.config.default).mount('#app');
+</script>
+{% endblock %}
+
