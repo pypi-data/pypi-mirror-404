@@ -1,0 +1,286 @@
+Metadata-Version: 2.4
+Name: omniauto
+Version: 0.1.1
+Summary: Single Point of Truth dinámico para proyectos Python
+Home-page: https://github.com/Dancenot0/omniauto
+Author: Dancenot0
+Author-email: Dancenot0 <dancenot02@gmail.com>
+License: MIT
+Project-URL: Homepage, https://github.com/Dancenot0/omniauto
+Classifier: Development Status :: 3 - Alpha
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Requires-Python: >=3.7
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Dynamic: author
+Dynamic: home-page
+Dynamic: license-file
+Dynamic: requires-python
+
+# Omniauto
+
+**Single Point of Truth dinámico para proyectos Python**
+
+[![Python 3.7+](https://img.shields.io/badge/python-3.7+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![PyPI Version](https://img.shields.io/pypi/v/omniauto.svg)](https://pypi.org/project/omniauto/)
+
+Omniauto es una librería Python que crea un **punto único de acceso dinámico** a todos los módulos de tu proyecto. Descubre y registra funciones automáticamente, organizándolas por categorías para un acceso centralizado y consistente.
+
+## Características
+
+- **Descubrimiento automático** de módulos en tiempo de ejecución
+- **Decoradores intuitivos** (`@ui`, `@data`, `@utils`) para registro
+- **Generación de stubs** para autocompletado en IDE (VS Code, PyCharm)
+- **Contexto para IA** generado automáticamente (Copilot, ChatGPT)
+- **CLI completo** para gestión y mantenimiento
+- **Recarga en caliente** durante desarrollo
+- **Metadata completa** de todas las funciones registradas
+- **Sistema de tags** para organización y búsqueda
+
+## Instalación Rápida
+
+```bash
+pip install omniauto
+```
+
+## Uso en 30 Segundos
+
+```python
+# En tu módulo (ej: modules/ventanas.py)
+from omniauto import ui
+
+@ui(tags=['login', 'auth'])
+def abrir_login(usuario: str) -> str:
+    """Abre ventana de login"""
+    return f"Bienvenido, {usuario}!"
+
+# En cualquier parte de tu proyecto
+from omniauto import auto
+
+# Acceso centralizado a TODAS las funciones
+mensaje = auto.ui.abrir_login("admin")
+print(mensaje)  # "Bienvenido, admin!"
+```
+
+## Comandos CLI
+
+```bash
+# Listar todas las funciones registradas
+omniauto list
+
+# Generar stubs para autocompletado del IDE
+omniauto generate --type python
+
+# Generar contexto para IA/LLMs
+omniauto generate --type ai
+
+# Recargar módulos (útil en desarrollo)
+omniauto reload
+
+# Mostrar ayuda completa
+omniauto --help
+```
+
+## Estructura de Proyecto Recomendada
+
+```
+mi_proyecto/
+├── modules/           # Módulos descubiertos automáticamente
+│   ├── auth.py       # Autenticación (@ui, @data)
+│   ├── api.py        # APIs externas (@data)
+│   └── utils.py      # Utilidades (@utils)
+├── config.py         # Configuración
+├── main.py           # from omniauto import auto
+└── requirements.txt  # omniauto>=0.1.0
+```
+
+## Ejemplo Completo
+
+### Paso 1: Crear módulos
+
+**`modules/ventanas.py`:**
+```python
+from omniauto import ui
+
+@ui(tags=['login'])
+def mostrar_login():
+    """Muestra formulario de login"""
+    print("Formulario de login mostrado")
+    return True
+
+@ui(tags=['dashboard', 'admin'])
+def mostrar_dashboard(usuario: str):
+    """Muestra panel de control"""
+    return f"Dashboard de {usuario}"
+```
+
+**`modules/datos.py`:**
+```python
+from omniauto import data
+
+@data(tags=['procesamiento', 'csv'])
+def procesar_csv(ruta: str) -> list:
+    """Procesa archivo CSV"""
+    import csv
+    with open(ruta, 'r') as f:
+        return list(csv.reader(f))
+
+@data(tags=['api', 'json'])
+def llamar_api(url: str) -> dict:
+    """Llama a API REST"""
+    import requests
+    return requests.get(url).json()
+```
+
+### Paso 2: Usar en tu aplicación
+
+**`main.py`:**
+```python
+from omniauto import auto
+
+def main():
+    print(f"Modulos cargados: {list(auto._modules.keys())}")
+    
+    # Usar funciones directamente
+    if hasattr(auto.ui, 'mostrar_dashboard'):
+        resultado = auto.ui.mostrar_dashboard("admin")
+        print(f"Dashboard: {resultado}")
+    
+    # Listar todas las funciones
+    print("\nFunciones disponibles:")
+    for categoria, funciones in auto.list_functions().items():
+        if funciones:
+            print(f"{categoria.upper()}: {', '.join(funciones)}")
+    
+    # Acceder a metadata
+    print(f"\nTotal funciones registradas: {len(auto.metadata)}")
+
+if __name__ == "__main__":
+    main()
+```
+
+## Decoradores Disponibles
+
+| Decorador | Categoría | Ejemplo |
+|-----------|-----------|---------|
+| `@ui` | Interfaz de usuario | `@ui(tags=['ventana', 'formulario'])` |
+| `@data` | Procesamiento de datos | `@data(tags=['api', 'database'])` |
+| `@utils` | Utilidades | `@utils(tags=['helpers', 'validación'])` |
+| `@register` | Personalizado | `@register(category='api', tags=['rest'])` |
+
+## API Principal
+
+### Instancia Global `auto`
+```python
+from omniauto import auto
+
+# Acceso por categoría
+auto.ui.mi_funcion()        # Funciones UI
+auto.data.procesar()        # Funciones de datos
+auto.utils.helper()         # Funciones utilitarias
+
+# Métodos de utilidad
+auto.list_functions()       # Lista todas las funciones
+auto.reload_modules()       # Recarga módulos
+auto.metadata              # Metadata completa
+```
+
+### Crear Instancia Personalizada
+```python
+from omniauto import OmniAuto
+
+mi_auto = OmniAuto()
+mi_auto.discover_modules("./mis_modulos")
+```
+
+## Generación de Stubs para IDE
+
+Omniauto genera automáticamente archivos `.pyi` para que tu IDE proporcione autocompletado:
+
+```bash
+# Generar stubs
+omniauto generate --type python
+
+# Archivo generado: auto_stub.pyi
+# Contiene todas las definiciones de tipo para autocompletado
+```
+
+## Integración con IA/LLMs
+
+Genera contexto estructurado para ChatGPT, Copilot, etc.:
+
+```bash
+omniauto generate --type ai
+
+# Archivo: .copilot/omniauto_context.json
+# Usa este archivo en tus prompts de IA
+```
+
+## Recarga en Caliente (Desarrollo)
+
+```python
+from omniauto import auto
+
+# Durante desarrollo, recarga módulos sin reiniciar
+auto.reload_modules()
+
+# O desde CLI
+# omniauto reload
+```
+
+## Metadata y Búsqueda
+
+```python
+# Acceder a metadata completa
+for key, info in auto.metadata.items():
+    print(f"{key}:")
+    print(f"  Documentación: {info['doc']}")
+    print(f"  Tags: {info['tags']}")
+    print(f"  Firma: {info['signature']}")
+```
+
+## Testing
+
+```python
+# tests/test_omniauto.py
+import unittest
+from omniauto import OmniAuto
+
+class TestOmniauto(unittest.TestCase):
+    def setUp(self):
+        self.auto = OmniAuto()
+    
+    def test_registration(self):
+        @self.auto.register_function
+        def test_func():
+            return "ok"
+        
+        self.assertEqual(self.auto.test_func(), "ok")
+```
+
+## Contribuir
+
+1. **Fork** el repositorio
+2. **Crea una rama**: `git checkout -b feature/nueva-funcionalidad`
+3. **Commit cambios**: `git commit -am 'Agrega nueva funcionalidad'`
+4. **Push**: `git push origin feature/nueva-funcionalidad`
+5. **Abre Pull Request**
+
+## Licencia
+
+Distribuido bajo licencia MIT. Ver [LICENSE](LICENSE) para más información.
+
+## Agradecimientos
+
+- Inspirado por el patrón "Single Point of Truth"
+- Decoradores inspirados en Flask/ FastAPI
+- Arquitectura modular inspirada en plugin systems
+
+## Soporte
+
+- **Issues**: [GitHub Issues](https://github.com/Dancenot0/omniauto/issues)
+- **Email**: dancenot02@gmail.com
+- **Documentación**: [README completo](https://github.com/Dancenot0/omniauto#readme)
+```
