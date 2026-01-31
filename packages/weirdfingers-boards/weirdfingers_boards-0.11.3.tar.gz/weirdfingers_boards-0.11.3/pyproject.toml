@@ -1,0 +1,215 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "weirdfingers-boards"
+dynamic = ["version"]
+description = "Backend API server for Boards - AI creative toolkit with GraphQL, auth adapters, and generation workers"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [
+    { name = "Boards Contributors", email = "ai.overlord@weirdfingers.com" },
+]
+keywords = [
+    "ai",
+    "creative",
+    "toolkit",
+    "graphql",
+    "fastapi",
+    "strawberry",
+    "auth",
+    "generation",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Framework :: FastAPI",
+    "Framework :: AsyncIO",
+]
+dependencies = [
+    "sqlalchemy>=2.0.0",
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    "httpx[http2]>=0.24.0",
+    "python-dotenv>=1.0.0",
+    "strawberry-graphql[fastapi,opentelemetry]>=0.200.0",
+    "fastapi>=0.100.0",
+    "uvicorn[standard]>=0.23.0",
+    "dramatiq[redis,watch]>=1.15.0",
+    "pillow>=10.0.0",
+    "numpy>=1.24.0",
+    "psycopg[binary]>=3.1.0",
+    "structlog>=23.0.0",
+    "asyncpg>=0.29.0",
+    "alembic>=1.13.2",
+    "aiofiles>=23.0.0",
+    "pyyaml>=6.0.0",
+    "click>=8.0.0",
+    "redis>=5.0.0",
+    "pyjwt[crypto]>=2.8.0",
+    "psutil>=7.0.0",
+    "opentelemetry-api>=1.20.0",
+    "opentelemetry-sdk>=1.20.0",
+    "opentelemetry-exporter-gcp-trace>=1.6.0",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.20.0",
+    "opentelemetry-instrumentation-fastapi>=0.40.0",
+    "opentelemetry-instrumentation-sqlalchemy>=0.40.0",
+    "opentelemetry-instrumentation-asyncpg>=0.40.0",
+    "opentelemetry-instrumentation-httpx>=0.40.0",
+]
+
+[project.optional-dependencies]
+# Generator providers (per-provider)
+generators-replicate = ["replicate>=1.0.4"]
+generators-openai = ["openai>=1.60.1"]
+generators-fal = ["fal-client>=0.5.0"]
+generators-anthropic = ["anthropic>=0.25.0"]
+generators-together = ["together>=1.0.0"]
+
+# Convenience: all generators
+generators-all = [
+    "replicate>=1.0.4",
+    "openai>=1.60.1",
+    "fal-client>=0.5.0",
+    "anthropic>=0.25.0",
+    "together>=1.0.0",
+]
+
+# Storage providers (per-provider)
+storage-supabase = ["supabase>=2.0.0"]
+storage-s3 = ["boto3>=1.34.0", "aioboto3>=12.0.0"]
+storage-gcs = ["google-cloud-storage>=2.10.0"]
+
+# Convenience: all storage backends
+storage-all = [
+    "supabase>=2.0.0",
+    "boto3>=1.34.0",
+    "aioboto3>=12.0.0",
+    "google-cloud-storage>=2.10.0",
+]
+
+# Auth providers (only Supabase needs extra deps beyond core httpx/pyjwt)
+auth-supabase = ["supabase>=2.0.0"]
+
+# Convenience: everything
+all = [
+    "replicate>=1.0.4",
+    "openai>=1.60.1",
+    "fal-client>=0.5.0",
+    "anthropic>=0.25.0",
+    "together>=1.0.0",
+    "supabase>=2.0.0",
+    "boto3>=1.34.0",
+    "aioboto3>=12.0.0",
+    "google-cloud-storage>=2.10.0",
+]
+
+# Development dependencies
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-postgresql>=6.0.0",
+    "pytest-cov>=4.0.0",
+    "ruff>=0.1.0",
+    "pyright>=1.1.0",
+    "black>=23.0.0",
+    "pre-commit>=3.0.0",
+    # Include all provider deps for typecheck
+    "openai>=1.60.1",
+    "anthropic>=0.25.0",
+    "replicate>=1.0.4",
+    "together>=1.0.0",
+    "fal-client>=0.5.0",
+    # Include all storage deps for typecheck
+    "supabase>=2.0.0",
+    "boto3>=1.34.0",
+    "aioboto3>=12.0.0",
+    "google-cloud-storage>=2.10.0",
+    # Type stubs
+    "types-redis>=4.6.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/weirdfingers/boards"
+Documentation = "https://docs.boards.io"
+Repository = "https://github.com/weirdfingers/boards"
+Issues = "https://github.com/weirdfingers/boards/issues"
+Changelog = "https://github.com/weirdfingers/boards/blob/main/CHANGELOG.md"
+
+[project.scripts]
+boards-server = "boards.cli:main"
+boards-worker = "boards.workers.cli:main"
+boards-worker-health = "boards.workers.worker_main:main"
+boards-migrate = "boards.database.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+exclude = ["alembic"]
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+    "C4", # flake8-comprehensions
+    "UP", # pyupgrade
+]
+
+[tool.ruff.lint.per-file-ignores]
+# FastAPI uses Depends in function signatures
+"src/boards/api/**/*.py" = ["B008"]
+"tests/**/test_*.py" = ["B008"]
+# Alembic needs imports after path manipulation
+"alembic/env.py" = ["E402"]
+# __init__.py files often have unused imports for re-export
+"**/__init__.py" = ["F401"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+asyncio_mode = "auto"
+
+[tool.setuptools.dynamic]
+version = { attr = "boards.__version__" }
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-postgresql>=6.0.0",
+    "pytest-cov>=4.0.0",
+    "ruff>=0.1.0",
+    "pyright>=1.1.0",
+    "black>=23.0.0",
+    "pre-commit>=3.0.0",
+    "build>=1.3.0",
+    "twine>=6.1.0",
+    "watchfiles>=1.1.0",
+    # Include all provider deps for typecheck
+    "openai>=1.60.1",
+    "anthropic>=0.25.0",
+    "replicate>=1.0.4",
+    "together>=1.0.0",
+    "fal-client>=0.5.0",
+    # Include all storage deps for typecheck
+    "supabase>=2.0.0",
+    "boto3>=1.34.0",
+    "aioboto3>=12.0.0",
+    "google-cloud-storage>=2.10.0",
+    # Type stubs
+    "types-redis>=4.6.0",
+]
