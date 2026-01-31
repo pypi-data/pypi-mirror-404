@@ -1,0 +1,1075 @@
+# SEAN replaced with qing_a_statement, qing_c0_statement, qing_p0_statement, qing_x0_statement
+start: statement_sequence
+
+WHITESPACE: (" " | /\t/ | /\n/ | /\r/ )+
+%ignore WHITESPACE
+
+statement_sequence: statement ( ";" statement )* ";"?
+
+statement: dcl_statement "&"?
+	| ddl_statement "&"?
+	| dml_statement "&"?
+	| dql_statement "&"?
+#	| utility_statement "&"?
+    | qing_statement
+
+ddl_statement: create_statement
+	| drop_statement
+#	| other_statement
+
+# --------------------- SEAN added -------------------
+
+# replaced with qing_c_statement, qing_l_statement, , qing_x_statement
+qing_statement: qing_p_statement
+
+host_name: IDENTIFIER
+
+# --------------------- p: -------------------
+
+qing_p_statement: preview_table_statement "&"?
+    | alter_table_statement "&"?
+
+preview_table_statement: "PREVIEW"i path
+alter_table_statement: "ALTER"i "TABLE"i keyspace_ref (add_column_action | drop_column_action | modify_column_action | rename_table_action | add_constraint_action)
+
+add_column_action: "ADD"i "COLUMN"i? column_definition
+drop_column_action: "DROP"i "COLUMN"i? column_name
+modify_column_action: ("MODIFY"i | "ALTER"i) "COLUMN"i? column_definition
+rename_table_action: "RENAME"i ("TO"i | "AS"i) IDENTIFIER
+add_constraint_action: "ADD"i constraint_definition
+
+column_name: IDENTIFIER
+column_definition: IDENTIFIER data_type ("NOT" "NULL")? ("PRIMARY" "KEY")?
+
+data_type: "INT"i | "INTEGER"i | "VARCHAR"i "(" nbr ")" | "CHAR"i "(" nbr ")" | "TEXT"i | "DATE"i | "BOOLEAN"i
+
+constraint_definition: ("CONSTRAINT"i IDENTIFIER)? ("PRIMARY"i "KEY"i "(" column_name_list ")") | ("FOREIGN"i "KEY"i "(" column_name_list ") REFERENCES"i keyspace_ref "(" column_name_list ")") | ("CHECK"i "(" expr ")")
+
+column_name_list: column_name ("," column_name)*
+
+# --------------------- c: -------------------
+
+qing_c_statement: preview_table_statement "&"?
+    | alter_cql_table_statement "&"?
+    | alter_tables_statement "&"?
+    | describe_statement "&"?
+    | consistency_statement "&"?
+    | drop_export_db_statement
+    | use_export_db_statement
+    | "SHOW"i show_c_subcommand
+    | ("@" host_name)? qing_targettable_statement
+
+qing_targettable_statement: export_statement
+    | import_statement
+    | clean_up_export_session_statement
+    | download_session_statement
+
+show_c_subcommand: show_export_command
+
+show_export_command: "EXPORT"i ("DATABASES"i | "SESSION"i export_session_name | "SESSIONS"i)
+
+alter_cql_table_statement: "ALTER"i "TABLE"i keyspace_ref (add_column_action | drop_column_action | modify_column_action | rename_table_action | add_constraint_action | "WITH"i properties) ("AND"i properties)*
+alter_tables_statement: "ALTER"i "TABLES"i "WITH"i properties
+
+properties: ( property ( "AND"i property )* )?
+property: property_name "=" property_value
+property_name: IDENTIFIER
+property_value: literal | map_literal
+map_literal: "{" ( property_name ":" property_value ( "," property_name ":" property_value )* )? "}"
+
+describe_statement: "DESCRIBE"i (describe_table | "TABLES"i | describe_keyspace | "KEYSPACES"i | "SCHEMA"i)
+describe_table: "TABLE"i keyspace_name
+describe_keyspace: "KEYSPACE"i keyspace_name
+
+keyspace_name: IDENTIFIER
+
+export_statement: "EXPORT"i export_tables? ("WITH"i consistency_statement)? export_to?
+export_tables: ("*" ("IN"i keyspace_name)?) | (export_table ("," export_table)*)
+export_table: path ("(" column_name_list ")")? ("AS"i path)?
+
+consistency_statement: "CONSISTENCY"i consistency_type
+consistency_type: IDENTIFIER
+
+export_to: "TO"i export_database_type
+import_statement: "IMPORT"i (import_session | import_files) ("TO"i IDENTIFIER)?
+import_session: "SESSION"i export_session_name
+import_files: "FILES"i file_path ("AS"i file_path)
+
+export_database_type: IDENTIFIER
+export_session_name: IDENTIFIER
+export_database_name: IDENTIFIER
+
+file_path: (file_name "/")* file_name
+file_name: (IDENTIFIER ".")* IDENTIFIER
+
+drop_export_db_statement: "DROP"i (drop_all_export_dbs | drop_export_database)
+drop_all_export_dbs: "ALL"i "EXPORT"i "DATABASES"i
+drop_export_database: "EXPORT"i "DATABASE"i export_database_name
+
+use_export_db_statement: "USE"i export_database_name
+
+clean_up_export_session_statement: "CLEAN"i "UP"i (clean_up_all_export_sessions | clean_up_export_sessions)
+clean_up_all_export_sessions: "ALL"i "EXPORT"i "SESSIONS"i
+clean_up_export_sessions: "EXPORT"i "SESSIONS"i export_session_name ("," export_session_name)*
+
+download_session_statement: "DOWNLOAD"i "EXPORT"i "SESSION"i export_session_name
+
+# --------------------- l: -------------------
+
+qing_l_statement: preview_table_statement "&"?
+    | alter_athena_table_statement "&"?
+    | describe_table_statement "&"?
+    | "AUDIT"i ("REPAIR"i | "RUN"i)?
+    | show_topn_statement
+
+alter_athena_table_statement: "ALTER"i "TABLE"i keyspace_ref (add_column_action | drop_column_action | modify_column_action | rename_table_action | add_constraint_action | add_partition_action | drop_partition_action)
+add_partition_action: "ADD"i "PARTITION"i partition_ref
+drop_partition_action: "DROP"i "PARTITION"i partition_ref
+
+partition_ref: "(" partition_name "=" single_quoted_string ("," partition_name "=" single_quoted_string)* ")"
+partition_name: IDENTIFIER
+
+describe_table_statement: "DESCRIBE"i "TABLE"i path
+
+show_topn_statement: "SHOW"i topn_type topn_count ("OVER"i topn_window)?
+topn_count: digit+
+topn_type: IDENTIFIER
+topn_window: IDENTIFIER
+
+# --------------------- x: -------------------
+
+qing_x_statement: preview_table_statement "&"?
+    | describe_table_statement "&"?
+    | drop_export_db_statement
+
+qing_x0_statement: drop_export_db_statement
+
+# --------------------- a: -------------------
+
+# --------------------- SEAN end -------------------
+
+create_statement: create_scope
+	| create_collection
+	| create_primary_index
+	| create_index
+	| create_function
+	| create_sequence
+
+drop_statement: drop_scope
+	| drop_collection
+	| drop_primary_index
+	| drop_index
+	| drop_function
+
+# other_statement: alter_index
+#	| build_index
+#	| execute_function
+
+create_scope: "CREATE"i "SCOPE"i ( namespace_ref ":" )? bucket_ref "." scope_ref if_not_exists?
+
+if_not_exists: "IF"i "NOT"i "EXISTS"i
+
+create_collection: "CREATE"i "COLLECTION"i ( ( namespace_ref ":" )? bucket_ref "." scope_ref "." )? \
+	collection_ref if_not_exists?
+
+drop_scope: "DROP"i "SCOPE"i ( namespace_ref ":")? bucket_ref "." scope_ref if_exists?
+
+if_exists: "IF"i "EXISTS"i
+
+drop_collection: "DROP"i "COLLECTION"i \
+	( ( namespace_ref ":")? bucket_ref "." scope_ref "." )? \
+	collection_ref if_exists?
+
+create_primary_index: "CREATE"i "PRIMARY"i "INDEX"i index_name? ( "IF"i "NOT"i "EXISTS"i )? "ON"i \
+	keyspace_ref index_using? index_with?
+
+index_using: "USING"i "GSI"i
+
+index_with: "WITH"i expr
+
+create_index: "CREATE"i "INDEX"i index_name if_not_exists? "ON"i keyspace_ref \
+	LPAREN index_key lead_key_attribs? ( ( "," index_key key_attribs? )+ )? RPAREN \
+	index_partition? where_clause? index_using? index_with?
+
+index_key: expr | array_expr
+
+lead_key_attribs: (index_order include_missing?) | (include_missing index_order?)
+
+key_attribs: index_order
+
+include_missing: "INCLUDE"i "MISSING"i
+
+index_order: "ASC"i | "DESC"i
+
+array_expr: full_array_expr | simple_array_expr
+
+full_array_expr: ( "ALL"i | "DISTINCT"i ) "ARRAY"i expr \
+	"FOR"i var ( "IN"i | "WITHIN"i ) expr \
+	( "," var ( "IN"i | "WITHIN"i ) expr )* ("WHEN"i cond)? "END"i \
+
+simple_array_expr: ( "ALL"i | "DISTINCT"i ) expr
+
+pairs_function: "PAIRS"i LPAREN ( "SELF"i | index_key_object ) RPAREN
+
+index_key_object: expr
+
+index_partition: "PARTITION"i "BY"i "HASH"i LPAREN partition_key_expr \
+	( "," partition_key_expr )* RPAREN
+
+partition_key_expr: expr
+
+# alter_index: "ALTER"i "INDEX"i ( ( index_path "." index_name ) | ( index_name "ON"i keyspace_ref ) \
+#	index_using? index_with )
+
+# build_index: "BUILD"i "INDEX"i "ON"i keyspace_ref LPAREN index_term ( "," index_term )* RPAREN index_using?
+
+index_term: index_name | subquery_expr
+
+drop_primary_index: "DROP"i "PRIMARY"i "INDEX"i if_exists? "ON"i keyspace_ref index_using?
+
+drop_index: "DROP"i "INDEX"i ( ( index_path "." index_name if_exists? ) | \
+    index_name if_exists? "ON"i keyspace_ref ) index_using?
+
+index_path: keyspace_full | keyspace_prefix | keyspace_partial
+
+keyspace_full: namespace_ref ":" bucket_ref "." scope_ref "." collection_ref
+
+keyspace_prefix: ( namespace_ref ":" )? bucket_ref
+
+create_function: create_function_inline | create_function_external
+
+create_function_inline: "CREATE"i ( "OR"i "REPLACE"i )? "FUNCTION"i function_ref LPAREN params? RPAREN if_not_exists? \
+	( ( LBRACE body RBRACE ) | ( "LANGUAGE"i "INLINE"i "AS"i body ) )
+
+create_function_external: "CREATE"i ( "OR"i "REPLACE"i )? "FUNCTION"i function_ref LPAREN params? RPAREN if_not_exists? \
+	"LANGUAGE"i "JAVASCRIPT"i "AS"i obj "AT"i
+
+
+function_ref: ( namespace_ref ":" ( bucket_ref "." scope_ref "." )? )? identifier_ref
+
+params: ( identifier_or_star ( "," identifier_or_star )* ) | "..."
+
+body: ( expr | let_clause )*
+
+obj: json_object
+
+create_sequence: "CREATE"i "SEQUENCE"i ( \
+    ( sequence if_not_exists? )
+        | ( if_not_exists? sequence ) ) ( create_sequence_options | sequence_with )?
+
+sequence: ( ( namespace_ref ":" )? bucket_ref "." scope_ref "." )? identifier_ref
+
+create_sequence_options: ( start_with
+    | increment_by
+    | maxvalue
+    | minvalue
+    | cycle
+    | cache )*
+
+start_with: "START"i "WITH"i nbr
+
+increment_by: "INCREMENT"i "BY"i nbr
+
+maxvalue: ( "MAXVALUE"i nbr ) | ( "NO"i "MAXVALUE"i )
+
+minvalue: ( "MINVALUE"i nbr ) | ( "NO"i "MINVALUE"i )
+
+cycle: "NO"i? "CYCLE"i
+
+cache: ( "CACHE"i nbr ) | ( "NO"i "CACHE"i )
+
+sequence_with: "WITH"i expr
+
+drop_function: "DROP"i "FUNCTION"i function_ref if_exists?
+
+# execute_function: "EXECUTE"i "FUNCTION"i function_ref LPAREN ( expr ( "," expr )* )? RPAREN
+
+dml_statement: delete_statement
+	| insert_statement
+#	| merge_statement
+	| update_statement
+	| upsert_statement
+
+delete_statement: "DELETE"i "FROM"i target_keyspace use_keys_clause? where_clause? returning_clause?
+
+insert_statement: "INSERT"i "INTO"i target_keyspace ( insert_values | insert_select )
+
+insert_values: ( LPAREN "PRIMARY"i? "KEY"i "," "VALUE"i ( "," options )? RPAREN )? values_clause
+
+values_clause: "VALUES"i LPAREN key_expr "," value_expr ( "," "OPTIONS"i )? RPAREN  \
+	( "," "VALUES"i? LPAREN key_expr "," value_expr ( "," "OPTIONS"i )? RPAREN )*
+
+
+insert_select: LPAREN "PRIMARY"i? "KEY"i key_expr ( "," "VALUE"i value_expr )? \
+	( "," "OPTIONS"i options )? RPAREN select_statement
+
+
+options: obj
+
+# merge_statement: "MERGE"i "INTO"i ( ansi_merge | lookup_merge ) limit_clause? returning_clause?
+
+# ansi_merge: target_keyspace use_index_clause "USING"i ansi_merge_source \
+#	ansi_merge_predicate ansi_merge_actions
+
+# ansi_merge_source: ( merge_source_keyspace | merge_source_subquery | merge_source_expr ) \
+#	ansi_join_hints?
+
+# ansi_merge_predicate: "ON"i expr
+
+# ansi_merge_actions: merge_update? merge_delete? ansi_merge_insert?
+
+# ansi_merge_insert: "WHEN"i "NOT"i "MATCHED"i "THEN"i "INSERT"i LPAREN "KEY"i? key_expr  \
+#	( "," "VALUE"i? value_expr )? ( "," "OPTIONS"i? options )? RPAREN where_clause?
+
+
+# lookup_merge: target_keyspace "USING"i lookup_merge_source lookup_merge_predicate \
+#	lookup_merge_actions
+
+# lookup_merge_source: ( merge_source_keyspace use_clause? )
+#	| merge_source_subquery
+#	| merge_source_expr
+
+# lookup_merge_predicate: "ON"i "PRIMARY"i? "KEY"i expr
+
+# lookup_merge_actions: merge_update? merge_delete? lookup_merge_insert?
+
+# lookup_merge_insert: "WHEN"i "NOT"i "MATCHED"i "THEN"i "INSERT"i expr where_clause?
+
+# merge_source_keyspace: keyspace_ref ( "AS"i? alias )?
+
+# merge_source_subquery: subquery_expr "AS"i? alias
+
+# merge_source_expr: expr ( "AS"i? alias )?
+
+# merge_update: "WHEN"i "MATCHED"i "THEN"i "UPDATE"i set_clause? unset_clause? where_clause?
+
+# merge_delete: "WHEN"i "MATCHED"i "THEN"i "DELETE"i where_clause?
+
+update_statement: "UPDATE"i target_keyspace use_keys_clause? set_clause? unset_clause? \
+	where_clause? limit_clause? returning_clause?
+
+upsert_statement: "UPSERT"i "INTO"i target_keyspace ( insert_values | insert_select ) \
+	returning_clause?
+
+target_keyspace: keyspace_ref ( "AS"i? alias )?
+
+returning_clause: "RETURNING"i ( ( result_expr ( "," result_expr )* ) | \
+	( ( "RAW"i | "ELEMENT"i | "VALUE"i ) expr ) )
+
+
+set_clause: "SET"i ( path "=" expr update_for? ) \
+	( "," ( path "=" expr update_for? ) )*
+
+unset_clause: "UNSET"i path update_for? ( "," path update_for? )*
+
+update_for: ( "FOR"i ( name_var ":" )? var ( "IN"i | "WITHIN"i ) path \
+	( "," ( name_var ":" )? var ( "IN"i | "WITHIN"i ) path )* )+ \
+	( "WHEN"i cond )? "END"i
+
+
+key_expr: expr
+
+value_expr: expr
+
+dql_statement: select_statement
+#    | infer_statement
+    | update_statistics
+
+select_statement: select_term ( set_op select_term )* order_by_clause? limit_clause? offset_clause?
+
+select_term: subselect | LPAREN select_statement RPAREN
+
+subselect: select_from | from_select
+
+select_from: with_clause? select_clause from_clause? let_clause? where_clause? group_by_clause? window_clause?
+
+from_select: with_clause? from_clause let_clause? where_clause? group_by_clause? window_clause? select_clause
+
+set_op: ( "UNION"i | "INTERSECT"i | "EXCEPT"i ) "ALL"i?
+
+with_clause: "WITH"i alias "AS"i LPAREN ( select_statement | expr ) RPAREN \
+    ( "," alias "AS"i LPAREN ( select_statement | expr ) RPAREN )*
+
+alias: identifier_ref
+
+# SEAN replaced with ("SELECT"i | "XELECT"i) hint_comment? projection
+select_clause: "SELECT"i hint_comment? projection
+
+projection: ( "ALL"i | "DISTINCT"i )? ( result_expr ( "," result_expr )* | \
+	( "RAW"i | "ELEMENT"i | "VALUE"i ) expr ( "AS"i? alias )? )
+
+result_expr: ( ( path "." )? "*") | expr ( "AS"i? alias )?
+
+path: identifier_ref ( LBRACKET expr RBRACKET )* ( "." identifier_ref ( LBRACKET expr RBRACKET )* )*
+
+from_clause: "FROM"i from_terms
+
+from_terms: ( from_keyspace | from_subquery | from_generic ) \
+	( join_clause | nest_clause | unnest_clause )* comma_separated_join*
+
+from_keyspace: keyspace_ref ( "AS"i? alias )? use_clause?
+
+keyspace_ref: keyspace_path | keyspace_partial
+
+keyspace_path: ( namespace_ref ":" )? bucket_ref ( "." scope_ref "." collection_ref )?
+
+keyspace_partial: collection_ref
+
+namespace_ref: identifier_ref
+
+bucket_ref: identifier_ref
+
+scope_ref: identifier_ref
+
+collection_ref: identifier_ref
+
+from_subquery: subquery_expr "AS"i? alias
+
+subquery_expr: LPAREN select_statement RPAREN
+
+from_generic: expr ( "AS"i? alias)?
+
+join_clause: ansi_join_clause | lookup_join_clause | index_join_clause
+
+ansi_join_clause: ansi_join_type? "JOIN"i ansi_join_rhs ansi_join_predicate
+
+ansi_join_type: "INNER"i | ( "LEFT"i | "RIGHT"i ) "OUTER"i?
+
+ansi_join_rhs: rhs_keyspace | rhs_subquery | rhs_generic
+
+rhs_keyspace: keyspace_ref ( "AS"i? alias )? ansi_join_hints?
+
+rhs_subquery: subquery_expr "AS"i? alias
+
+rhs_generic: expr ( "AS"i? alias )?
+
+ansi_join_hints: use_hash_hint | use_nl_hint | multiple_hints
+
+use_hash_hint: "USE"i use_hash_term
+
+use_hash_term: "HASH"i LPAREN ( "BUILD"i | "PROBE"i ) RPAREN
+
+use_nl_hint: "USE"i use_nl_term
+
+use_nl_term: "NL"i
+
+multiple_hints: "USE"i ( ( ansi_hint_terms other_hint_terms ) | ( other_hint_terms ansi_hint_terms ) )
+
+ansi_hint_terms: use_hash_term | use_nl_term
+
+other_hint_terms: use_index_term | use_keys_term
+
+ansi_join_predicate: "ON"i expr
+
+lookup_join_clause: lookup_join_type? "JOIN"i lookup_join_rhs lookup_join_predicate
+
+lookup_join_type: "INNER"i | ( "LEFT"i "OUTER"i? )
+
+lookup_join_rhs: keyspace_ref ( "AS"i? alias )?
+
+lookup_join_predicate: "ON"i "PRIMARY"i? "KEYS"i expr
+
+index_join_clause: index_join_type? "JOIN"i index_join_rhs index_join_predicate
+
+index_join_type: "INNER"i | ( "LEFT"i "OUTER"i? )
+
+index_join_rhs: keyspace_ref ( "AS"i? alias )?
+
+index_join_predicate: "ON"i "PRIMARY"i? "KEY"i expr "FOR"i alias
+
+comma_separated_join: "," ( rhs_keyspace | rhs_subquery | rhs_generic )
+
+nest_clause: ansi_nest_clause | lookup_nest_clause | index_nest_clause
+
+ansi_nest_clause: ansi_nest_type? "NEST"i ansi_nest_rhs ansi_nest_predicate
+
+ansi_nest_type: "INNER"i | ( "LEFT"i "OUTER"i? )
+
+ansi_nest_rhs: keyspace_ref ( "AS"i? alias )?
+
+ansi_nest_predicate: "ON"i expr
+
+lookup_nest_clause: lookup_nest_type? "NEST"i lookup_nest_rhs lookup_nest_predicate
+
+lookup_nest_type: "INNER"i | ( "LEFT"i "OUTER"i? )
+
+lookup_nest_rhs: keyspace_ref ( "AS"i? alias )?
+
+lookup_nest_predicate: "ON"i "KEYS"i expr
+
+index_nest_clause: index_nest_type? "NEST"i index_nest_rhs index_nest_predicate
+
+index_nest_type: "INNER"i | ( "LEFT"i "OUTER"i? )
+
+index_nest_rhs: keyspace_ref ( "AS"i? alias )?
+
+index_nest_predicate: "ON"i "KEY"i expr "FOR"i alias
+
+unnest_clause: unnest_type? ( "UNNEST"i | "FLATTEN"i ) expr ( "AS"i? alias )?
+
+unnest_type: "INNER"i | ( "LEFT"i "OUTER"i? )
+
+use_clause: use_keys_clause | use_index_clause
+
+use_keys_clause: "USE"i use_keys_term
+
+use_keys_term: "PRIMARY"i? "KEYS"i expr
+
+use_index_clause: "USE"i use_index_term
+
+use_index_term: "INDEX"i LPAREN index_ref ( "," index_ref )* RPAREN
+
+index_ref: index_name? index_type?
+
+index_name: identifier_ref
+
+index_type: "USING"i ( "GSI"i | "FTS"i )
+
+let_clause: "LET"i alias "=" expr ( "," alias "=" expr )*
+
+where_clause: "WHERE"i cond
+
+cond: expr
+
+group_by_clause: "GROUP"i "BY"i group_term ( "," group_term )* \
+	letting_clause? having_clause? | letting_clause
+
+group_term: expr ( "AS"i? alias )?
+
+letting_clause: "LETTING"i alias "=" expr ( "," alias "=" expr )*
+
+having_clause: "HAVING"i cond
+
+window_clause: "WINDOW"i window_declaration ( "," window_declaration )*
+
+window_declaration: window_name "AS"i LPAREN window_definition RPAREN
+
+window_name: identifier_ref
+
+window_definition: window_ref? window_partition_clause? window_order_clause? window_frame_clause?
+
+window_ref: identifier_ref
+
+window_partition_clause: "PARTITION"i "BY"i expr ( "," expr )*
+
+window_order_clause: "ORDER"i "BY"i ordering_term ( "," ordering_term )*
+
+window_frame_clause: ( "ROWS"i | "RANGE"i | "GROUPS"i ) window_frame_extent window_frame_exclusion?
+
+window_frame_extent: ( "UNBOUNDED"i "PRECEDING"i )
+	| ( "CURRENT"i "ROW"i )
+	| ( "BETWEEN"i ( ( "UNBOUNDED"i "PRECEDING"i )
+		| ( "CURRENT"i "ROW"i )
+		| ( "PRECEDING"i | "FOLLOWING"i ) \
+	) )
+
+window_frame_exclusion: "EXCLUDE"i ( ( "CURRENT"i "ROW"i ) | "GROUP"i | "TIES"i | ( "NO"i "OTHERS"i ) )
+
+order_by_clause: "ORDER"i "BY"i ordering_term ( "," ordering_term )*
+
+ordering_term: expr ( "ASC"i | "DESC"i )? ( "NULLS"i ( "FIRST"i | "LAST"i ) )?
+
+limit_clause: "LIMIT"i expr
+
+offset_clause: "OFFSET"i expr
+
+hint_comment: block_hint_comment | line_hint_comment
+
+block_hint_comment: "/*+" hints "*/"
+
+line_hint_comment: "--+" hints
+
+hints: simple_hint_sequence | json_hint_object
+
+simple_hint_sequence: simple_hint+
+
+simple_hint: ordered_hint_simple
+    | gsi_hint_simple
+    | fts_hint_simple
+    | hash_hint_simple
+    | nl_hint_simple
+
+ordered_hint_simple: "ORDERED"i
+
+gsi_hint_simple: "INDEX"i LPAREN keyspace_statement RPAREN
+
+keyspace_statement: "KEYSPACE"i identifier_ref
+
+fts_hint_simple: "INDEX_FTS"i LPAREN keyspace_statement RPAREN
+
+nl_hint_simple: "USE_NL"i LPAREN ( keyspace_statement )+ RPAREN
+
+hash_hint_simple: "USE_HASH"i LPAREN ( keyspace_statement ( "/" ( "BUILD"i | "PROBE"i ) )? )+ RPAREN
+
+json_hint_object: LBRACE json_hint ( "," json_hint )* RBRACE
+
+json_hint: ordered_hint_json
+    | gsi_hint_json
+    | fts_hint_json
+    | hash_hint_json
+    | nl_hint_json
+
+ordered_hint_json: "\"ORDERED\"" ":" "TRUE"i
+
+gsi_hint_json: "\"INDEX\"" ":" ( index_array | index_object )
+
+fts_hint_json: "\"INDEX_FTS\"" ":" ( index_array | index_object )
+
+nl_hint_json: "\"USE_NS\"" ":" ( keyspace_array | keyspace_object )
+
+hash_hint_json: "\"USE_HASH\"" ":" ( hash_array | hash_object )
+
+index_array: LBRACKET index_object ( "," index_object )* RBRACKET
+
+index_object: LBRACE keyspace_property "," indexes_property RBRACE
+
+indexes_property: "\"INDEXES\"" ":" ( "NULL"i
+                                        | ( "\"" index "\"" )
+                                        | ( LBRACKET "\"" index "\"" RBRACKET ( "," "\"" index "\"" )* RBRACKET ) \
+                                    )
+
+index: index_ref
+
+keyspace_array: LBRACKET keyspace_object ( "," keyspace_object )* RBRACKET
+
+keyspace_object: LBRACE keyspace_property RBRACE
+
+keyspace_property: ( "\"KEYSPACE\"" | "\"ALIAS\"" ) ":" "\"" keyspace_statement "\""
+
+hash_array: LBRACKET hash_object ( "," hash_object )* RBRACKET
+
+hash_object: LBRACE keyspace_property ( "," option_property )? RBRACE
+
+option_property: "\"OPTION\"" ":" ( "\"BUILD\"" | "\"PROBE\"" | "NULL"i )
+
+expr: ( \
+        ( \
+            function_call
+            | path
+            | json_value
+            | literal
+            | named_arg
+            | nested_expr
+            | new_array_expr
+            | ( LPAREN expr RPAREN )
+            | subquery_expr \
+        ) ( \
+            comparison_term
+            | arithmetic_term
+            | concatenation_term
+            | logical_term
+            | collection_expr \
+        )* \
+    ) | case_expr | ( LPAREN expr RPAREN )
+
+literal: str | nbr | bool | "NULL"i | "MISSING"i
+
+nbr: digit+ ( "." digit+ )? ( "E"i ( "+" | "-" ) digit+ )?
+
+digit: "0".."9"
+
+str: double_quoted_string | single_quoted_string
+
+double_quoted_string: "\"" double_quoted_string_character* "\""
+
+single_quoted_string: "'" single_quoted_string_character* "'"
+
+double_quoted_string_character: ( escape_sequence | "\\\"" | string_char )
+
+single_quoted_string_character: ( escape_sequence | "\\'" | string_char )
+
+escape_sequence: /\\[nrt\\]/ | /\\u[0-9a-fA-F]{4}/
+
+string_char: /./
+
+bool: "TRUE"i | "FALSE"i
+
+identifier_or_star: identifier_ref | "*"
+
+fn_names: FUNCS | grammar_funcs
+
+FUNCS: "ABS"i
+    | "ACOS"i
+    | "ARRAY_APPEND"i
+    | "ARRAY_AVG"i
+    | "ARRAY_CONCAT"i
+    | "ARRAY_CONTAINS"i
+    | "ARRAY_COUNT"i
+    | "ARRAY_DISTINCT"i
+    | "ARRAY_FLATTEN"i
+    | "ARRAY_IFNULL"i
+    | "ARRAY_INSERT"i
+    | "ARRAY_INTERSECT"i
+    | "ARRAY_LENGTH"i
+    | "ARRAY_MAX"i
+    | "ARRAY_MIN"i
+    | "ARRAY_POSITION"i
+    | "ARRAY_PREPEND"i
+    | "ARRAY_PUT"i
+    | "ARRAY_RANGE"i
+    | "ARRAY_REMOVE"i
+    | "ARRAY_REPEAT"i
+    | "ARRAY_REPLACE"i
+    | "ARRAY_REVERSE"i
+    | "ARRAY_SORT"i
+    | "ARRAY_STAR"i
+    | "ARRAY_SUM"i
+    | "ARRAY_SYMDIFF"i
+    | "ARRAY_SYMDIFF1"i
+    | "ARRAY_SYMDIFFN"i
+    | "ARRAY_UNION"i
+    | "ASIN"i
+    | "ATAN"i
+    | "ATAN2"i
+    | "AVG"i
+    | "CEIL"i
+    | "CLOCK_LOCAL"i
+    | "CLOCK_MILLIS"i
+    | "CLOCK_STR"i
+    | "CLOCK_TZ"i
+    | "CLOCK_UTC"i
+    | "CONCAT"i
+    | "CONTAINS"i
+    | "COS"i
+    | "COUNT"i
+    | "DATE_ADD_MILLIS"i
+    | "DATE_DIFF_STR"i
+    | "DATE_FORMAT_STR"i
+    | "DATE_PART_MILLIS"i
+    | "DATE_PART_STR"i
+    | "DATE_RANGE_MILLIS"i
+    | "DATE_RANGE_STR"i
+    | "DATE_TRUNC_MILLIS"i
+    | "DATE_TRUNC_STR"i
+    | "DECODE_JSON"i
+    | "DEGREES"i
+    | "DURATION_TO_STR"i
+    | "ENCODE_JSON"i
+    | "ENCODED_SIZE"i
+    | "EXP"i
+    | "FLOOR"i
+    | "GREATEST"i
+    | "IF_INF"i
+    | "IF_MISSING"i
+    | "IF_MISSING_OR_NULL"i
+    | "IF_NAN"i
+    | "IF_NAN_OR_INF"i
+    | "IF_NULL"i
+    | "IFINF"i
+    | "IFMISSING"i
+    | "IFMISSINGORNULL"i
+    | "IFNAN"i
+    | "IFNANORINF"i
+    | "IFNULL"i
+    | "INITCAP"i
+    | "IS_ARRAY"i
+    | "IS_ATOM"i
+    | "IS_BOOL"i
+    | "IS_BOOLEAN"i
+    | "IS_NUM"i
+    | "IS_NUMBER"i
+    | "IS_OBJ"i
+    | "IS_OBJECT"i
+    | "IS_STR"i
+    | "IS_STRING"i
+    | "ISARRAY"i
+    | "LEAST"i
+    | "LENGTH"i
+    | "LN"i
+    | "LOG"i
+    | "LOWER"i
+    | "LTRIM"i
+    | "MAX"i
+    | "META"i
+    | "MILLIS"i
+    | "MILLIS_TO_LOCAL"i
+    | "MILLIS_TO_STR"i
+    | "MILLIS_TO_TZ"i
+    | "MILLIS_TO_UTC"i
+    | "MILLIS_TO_ZONE_NAME"i
+    | "MIN"i
+    | "MISSING_IF"i
+    | "MISSINGIF"i
+    | "NOW_LOCAL"i
+    | "NOW_MILLIS"i
+    | "NOW_STR"i
+    | "NOW_TZ"i
+    | "NOW_UTC"i
+    | "NULL_IF"i
+    | "NULLIF"i
+    | "OBJECT_ADD"i
+    | "OBJECT_CONCAT"i
+    | "OBJECT_INNER_VALUES"i
+    | "OBJECT_LENGTH"i
+    | "OBJECT_NAMES"i
+    | "OBJECT_PAIRS"i
+    | "OBJECT_PUT"i
+    | "OBJECT_REMOVE"i
+    | "OBJECT_RENAME"i
+    | "OBJECT_REPLACE"i
+    | "OBJECT_UNWRAP"i
+    | "OBJECT_VALUES"i
+    | "PAIRS"i
+    | "PI"i
+    | "POSINFIF"i
+    | "POSITION"i
+    | "POWER"i
+    | "RADIANS"i
+    | "RANDOM"i
+    | "REGEXP_CONTAINS"i
+    | "REGEXP_LIKE"i
+    | "REGEXP_POSITION"i
+    | "REGEXP_REPLACE"i
+    | "REPEAT"i
+    | "REPLACE"i
+    | "REVERSE"i
+    | "ROUND"i
+    | "RTRIM"i
+    | "SIGN"i
+    | "SIN"i
+    | "SPLIT"i
+    | "SQRT"i
+    | "STR_TO_DURATION"i
+    | "STR_TO_MILLIS"i
+    | "STR_TO_TZ"i
+    | "STR_TO_UTC"i
+    | "STR_TO_ZONE_NAME"i
+    | "SUBSTR"i
+    | "SUM"i
+    | "TAN"i
+    | "TITLE"i
+    | "TO_ARRAY"i
+    | "TO_ATOM"i
+    | "TO_BOOL"i
+    | "TO_BOOLEAN"i
+    | "TO_NUM"i
+    | "TO_NUMBER"i
+    | "TO_OBJ"i
+    | "TO_OBJECT"i
+    | "TO_STR"i
+    | "TO_STRING"i
+    | "TOARRAY"i
+    | "TOATOM"i
+    | "TOBOOL"i
+    | "TOBOOLEAN"i
+    | "TONUM"i
+    | "TONUMBER"i
+    | "TOOBJ"i
+    | "TOOBJECT"i
+    | "TOSTR"i
+    | "TOSTRING"i
+    | "TRIM"i
+    | "TRUNC"i
+    | "TYPE"i
+    | "TYPENAME"i
+    | "UPPER"i
+    | "UUID"i
+    | "WEEKDAY_MILLIS"i
+    | "WEEKDAY_STR"i
+
+grammar_funcs: "TYPE"i | "TITLE"i | "SUM"i
+
+named_arg: "$" IDENTIFIER
+
+IDENTIFIER: /[a-zA-Z_][0-9a-zA-Z_\-$]*/
+
+identifier_ref: IDENTIFIER | grammar_funcs | escaped_identifier
+
+escaped_identifier: BACKTICK ( IDENTIFIER | grammar_funcs ) BACKTICK
+
+arithmetic_term: ( "+" expr )
+    | ( "*" expr )
+    | ( "/" expr )
+    | ( "%" expr )
+    | ( "-" expr )
+
+comparison_term: relational_expr
+    | between_expr
+    | like_expr
+    | is_expr
+
+relational_expr: ( "==" expr )
+    | ( "=" expr )
+    | ( "!=" expr )
+    | ( "<>" expr )
+    | ( ">" expr )
+    | ( ">=" expr )
+    | ( "<" expr )
+    | ( "<=" expr )
+
+between_expr: "NOT"i? "BETWEEN"i expr "AND"i expr
+
+like_expr: "NOT"i? "LIKE"i expr
+
+is_expr: "IS"i "NOT"i? ( "NULL"i | "MISSING"i | "VALUED"i )
+
+concatenation_term: "||" expr
+
+logical_term: and_expr | or_expr | not_expr
+
+and_expr: "AND"i cond
+
+or_expr: "OR"i cond
+
+not_expr: "NOT"i cond
+
+case_expr: simple_case_expr | searched_case_expr
+
+simple_case_expr: "CASE"i expr ( "WHEN"i expr "THEN"i expr )+ ( "ELSE"i expr )? "END"i
+
+searched_case_expr: "CASE"i ( "WHEN"i cond "THEN"i expr)+ ( "ELSE"i expr )? "END"i
+
+collection_expr: exists_expr | in_expr | within_expr | range_cond
+
+exists_expr: "EXISTS"i expr
+
+in_expr: "NOT"i? "IN"i expr
+
+within_expr: "NOT?" "WITHIN"i expr
+
+range_cond: ( ( "ANY"i | "SOME"i ) ( "AND"i "EVERY"i )? | "EVERY"i ) range_expr "SATISFIES"i cond "END"i
+
+range_expr: ( name_var ":" )? var ( "IN"i | "WITHIN"i ) expr \
+    ( "," ( name_var ":" )? var ( "IN"i | "WITHIN"i ) expr )*
+
+var: identifier_ref
+
+name_var: identifier_ref
+
+new_array_expr: LBRACKET ( expr ( "," expr )* )? RBRACKET
+
+nested_expr: field_expr | element_expr | slice_expr
+
+field_expr: "." ( identifier_ref | ( ( escaped_identifier | ( LBRACKET expr RBRACKET ) ) "i"i? ) )
+
+element_expr: LBRACKET expr RBRACKET
+
+slice_expr: LBRACKET expr ":" expr? RBRACKET
+
+function_call: ( builtin_function
+                    | ordinary_function
+                    | aggregate_function
+                    | window_function ) ( "." path )?
+
+function_name: identifier_ref
+
+aggregate_function_name: FUNCS | "TYPE"i | identifier_ref
+
+window_function_name: FUNCS | "TYPE"i | identifier_ref
+
+ordinary_function: function_name LPAREN ( expr ( "," expr )* )? RPAREN
+
+builtin_function: ( FUNCS | "TYPE"i ) LPAREN ( expr ( "," expr )* )? RPAREN
+
+aggregate_function: aggregate_function_name LPAREN \
+    ( ( aggregate_quantifier? expr ) | ( ( path "." )? "*" ) ) RPAREN \
+    filter_clause? over_clause?
+
+aggregate_quantifier: "ALL"i | "DISTINCT"i
+
+filter_clause: "FILTER"i LPAREN "WHERE"i cond RPAREN
+
+window_function: window_function_name LPAREN window_function_arguments RPAREN \
+    window_function_options? over_clause
+
+window_function_arguments: ( expr ("," expr ( "," expr )? )? )?
+
+window_function_options: nthval_from? nulls_treatment?
+
+nthval_from: "FROM"i ( "FIRST"i | "LAST"i )
+
+nulls_treatment: ( "RESPECT"i | "IGNORE"i ) "NULLS"i
+
+over_clause: "OVER"i ( ( LPAREN window_definition RPAREN ) | window_ref )
+
+comment: block_comment
+
+block_comment: "/*" ( "\r"i )* "*/"
+
+tcl_statement: begin_transaction
+    | set_transaction
+    | savepoint_statement
+    | rollback_transaction
+    | commit_transaction
+
+begin_transaction: ( "BEGIN"i | "START"i ) ( "WORK"i | "TRAN"i | "TRANSACTION"i ) \
+    ( "ISOLATION"i "LEVEL"i "READ"i "COMMITTED"i )?
+
+set_transaction: "SET"i "TRANSACTION"i "ISOLATION"i "LEVEL"i "READ"i "COMMITTED"i
+
+savepoint_statement: "SAVEPOINT"i savepointname
+
+rollback_transaction: "ROLLBACK"i ( "WORK"i | "TRAN"i | "TRANSACTION"i )?
+
+commit_transaction: "COMMIT"i ( "WORK"i | "TRAN"i | "TRANSACTION"i )?
+
+savepointname: identifier_ref
+
+# utility_statement: advise_statement | explain_statement
+
+# advise_statement: "ADVISE"i "INDEX"i? ( select_statement
+#    | update_statement
+#    | delete_statement
+#    | merge_statement )
+
+# explain_statement: "INFER"i ( "COLLECTION"i | "KEYSPACE"i )? keyspace_ref ( "WITH"i options )?
+
+# infer_statement: "INFER"i ( "COLLECTION"i | "KEYSPACE"i )? keyspace_ref ( "WITH"i options )?
+
+name: identifier_ref
+
+parameters: array_expr
+
+update_statistics: update_statistics_expr
+    | update_statistics_index
+    | update_statistics_delete
+    | update_statistics_indexes
+
+update_statistics_expr: ( ( "UPDATE"i "STATISTICS"i "FOR"i? ) | ( "ANALYZE"i ( "KEYSPACE"i | "COLLECTION"i )? ) ) \
+    keyspace_ref LPAREN index_key ( "," index_key )* RPAREN index_with?
+
+update_statistics_index: ( ( "UPDATEi" "STATISTICS"i "FOR"i? ) | "ANALYZE"i ) \
+    index_clause index_using? index_with?
+
+index_clause: "INDEX"i ( ( index_path "." index_name ) | ( index_name "ON"i keyspace_ref ) )
+
+update_statistics_indexes: ( ( "UPDATE"i "STATISTICS"i "FOR"i? ) | ( "ANALYZE"i ( "KEYSPACE"i | "COLLECTION"i )? ) ) \
+    keyspace_ref indexes_clause index_using? index_with?
+
+indexes_clause: "INDEX"i ( ( LPAREN ( ( index_name ( "," index_name )* ) | subquery_expr ) RPAREN ) | "ALL"i )
+
+update_statistics_delete: ( ( "UPDATE"i "STATISTICS"i "FOR"i? ) | ( "ANALYZE"i ( "KEYSPACE"i | "COLLECTION"i )? ) ) \
+    keyspace_ref delete_clause
+
+delete_clause: "DELETE"i ( delete_expr | delete_all )
+
+delete_expr: "STATISTICS"i? LPAREN index_key ( "," index_key )* RPAREN
+
+delete_all: "ALL"i | "STATISTICS"i
+
+dcl_statement: grant_statement | revoke_statement
+
+grant_statement: "GRANT"i role ( "," role )* ( "ON"i keyspace_ref ( "," keyspace_ref )* )? "TO"i user ( "," user )*
+
+revoke_statement: "REVOKE"i role ( "," role )* ( "ON"i keyspace_ref ( "," keyspace_ref )* )? \
+    "FROM"i user ( "," user )*
+
+role: identifier_ref
+
+user: identifier_ref
+
+json_value: json_object | json_array
+
+json_array: LBRACKET ( expr ( "," expr )* )? RBRACKET
+
+json_object: LBRACE ( json_field ( "," json_field )* )? RBRACE
+
+json_field: str ":" expr
+
+LBRACKET: "["
+RBRACKET: "]"
+LBRACE: "{"
+RBRACE: "}"
+BACKTICK: "`"
+LPAREN: "("
+RPAREN: ")"
