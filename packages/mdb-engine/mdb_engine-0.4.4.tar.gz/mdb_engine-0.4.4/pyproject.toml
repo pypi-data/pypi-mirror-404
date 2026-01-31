@@ -1,0 +1,142 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mdb-engine"
+version = "0.4.4"
+description = "MongoDB Engine"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "AGPL-3.0"}
+authors = [
+    {name = "Fabian Valle", email = "oblivio.company@gmail.com"}
+]
+keywords = ["mongodb", "runtime", "engine", "database", "scoping"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Database",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+dependencies = [
+    "motor>=3.0.0",
+    "pymongo>=4.0.0",
+    "fastapi>=0.100.0",
+    "pydantic>=2.0.0",
+    "pyjwt>=2.8.0",
+    "jsonschema>=4.0.0",
+    "bcrypt>=4.0.0",
+    "cryptography>=41.0.0",  # Required for envelope encryption
+    "mem0ai>=0.1.7",
+    "semantic-text-splitter>=0.9.0",
+    "numpy>=1.0.0,<2.0.0",
+    "openai>=1.0.0",  # Required for embedding providers
+    "azure-identity>=1.15.0",  # Required for mem0's azure_openai provider
+    "click>=8.0.0",  # CLI tool
+]
+
+[project.optional-dependencies]
+casbin = ["casbin>=1.0.0", "casbin-motor-adapter>=0.1.0"]
+oso = ["oso-cloud>=0.1.0"]
+llm = [
+    # LLM packages removed - examples should implement their own LLM clients
+]
+test = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.1.0",
+    "pytest-mock>=3.11.0",
+    "pytest-timeout>=2.1.0",
+    "pytest-xdist>=3.3.0",  # Parallel test execution
+    "testcontainers>=3.7.0",
+]
+dev = [
+    # Pin ruff version to prevent local/CI drift
+    # Version policy: Use >=0.4.0,<0.6.0 to allow patch/minor updates but prevent major breaking changes
+    "ruff>=0.4.0,<0.6.0",
+    "semgrep>=1.50.0",
+]
+all = [
+    "casbin>=1.0.0",
+    "casbin-motor-adapter>=0.1.0",
+    "oso-cloud>=0.1.0",
+]
+
+[project.scripts]
+mdb = "mdb_engine.cli.main:cli"
+
+[project.urls]
+Homepage = "https://github.com/ranfysvalle02/mdb-engine"
+Documentation = "https://github.com/ranfysvalle02/mdb-engine#readme"
+Repository = "https://github.com/ranfysvalle02/mdb-engine"
+Issues = "https://github.com/ranfysvalle02/mdb-engine/issues"
+
+[tool.coverage.run]
+source = ["mdb_engine"]
+omit = [
+    "*/tests/*",
+    "*/__pycache__/*",
+    "*/__init__.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]
+fail_under = 70
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "F",      # pyflakes
+    "W",      # pycodestyle warnings
+    "I",      # isort
+    "B",      # flake8-bugbear
+    "C90",    # mccabe complexity
+    "UP",     # pyupgrade
+    "BLE",    # flake8-blind-except (no bare except)
+    "TRY",    # tryceratops (exception handling best practices)
+]
+ignore = [
+    "E203",   # Whitespace before ':' (conflicts with black)
+    "B008",   # Do not perform function call in argument defaults (FastAPI Depends pattern)
+    "B025",   # Duplicate exceptions in try-except (often intentional for clarity)
+    # TRY - Exception handling (keep critical, ignore pedantic)
+    "TRY002", # Create your own exception (too strict - built-ins are fine)
+    "TRY003", # Avoid inline exception messages (too strict)
+    "TRY004", # Prefer TypeError (too strict - ValueError is often appropriate)
+    "TRY201", # Use raise without exception name (bare raise not always clearer)
+    "TRY300", # Move statement to else block (pedantic, minimal benefit)
+    "TRY301", # Abstract raise to inner function (over-engineering)
+    "TRY302", # Remove handler with immediate re-raise (useful for logging)
+    "TRY401", # Redundant exception in logging.exception (minor style issue)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+"tests/**/*.py" = [
+    "F841",   # Unused variables (common in test assertions)
+    "B018",   # Useless expressions (common in test assertions)
+    "BLE001", # Blind exception catching (acceptable in test mocks)
+]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 40
