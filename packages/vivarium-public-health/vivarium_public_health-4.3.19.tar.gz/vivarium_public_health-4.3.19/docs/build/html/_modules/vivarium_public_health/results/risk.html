@@ -1,0 +1,310 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>vivarium_public_health.results.risk &mdash; vivarium_public_health 4.3.15.dev2+g712190e05 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/plot_directive.css" />
+
+  
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=7ca62e9d"></script>
+      <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+    <link href="../../../_static/style.css" rel="stylesheet" type="text/css">
+
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            vivarium_public_health
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorials/index.html">Tutorials</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_reference/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">vivarium_public_health</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">vivarium_public_health.results.risk</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for vivarium_public_health.results.risk</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">==============</span>
+<span class="sd">Risk Observers</span>
+<span class="sd">==============</span>
+
+<span class="sd">This module contains tools for observing risk exposure during the simulation.</span>
+
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">layered_config_tree</span><span class="w"> </span><span class="kn">import</span> <span class="n">LayeredConfigTree</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.engine</span><span class="w"> </span><span class="kn">import</span> <span class="n">Builder</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium_public_health.results.columns</span><span class="w"> </span><span class="kn">import</span> <span class="n">COLUMNS</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium_public_health.results.observer</span><span class="w"> </span><span class="kn">import</span> <span class="n">PublicHealthObserver</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium_public_health.utilities</span><span class="w"> </span><span class="kn">import</span> <span class="n">to_years</span>
+
+
+<div class="viewcode-block" id="CategoricalRiskObserver">
+<a class="viewcode-back" href="../../../api_reference/results/risk.html#vivarium_public_health.results.risk.CategoricalRiskObserver">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">CategoricalRiskObserver</span><span class="p">(</span><span class="n">PublicHealthObserver</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;An observer for a categorical risk factor.</span>
+
+<span class="sd">    Observes category person time for a risk factor.</span>
+
+<span class="sd">    By default, this observer computes aggregate categorical person time</span>
+<span class="sd">    over the full course of the simulation. It can be configured to add or</span>
+<span class="sd">    remove stratification groups to the default groups defined by a</span>
+<span class="sd">    ResultsStratifier.</span>
+
+<span class="sd">    In the model specification, your configuration for this component should</span>
+<span class="sd">    be specified as, e.g.:</span>
+
+<span class="sd">    .. code-block:: yaml</span>
+
+<span class="sd">        configuration:</span>
+<span class="sd">            stratification:</span>
+<span class="sd">                risk_name:</span>
+<span class="sd">                    exclude:</span>
+<span class="sd">                        - &quot;sex&quot;</span>
+<span class="sd">                    include:</span>
+<span class="sd">                        - &quot;sample_stratification&quot;</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    risk</span>
+<span class="sd">        The name of the risk factor.</span>
+<span class="sd">    exposure_pipeline_name</span>
+<span class="sd">        The name of the pipeline that produces the risk factor exposure.</span>
+<span class="sd">    step_size</span>
+<span class="sd">        The time step size of the simulation.</span>
+<span class="sd">    categories</span>
+<span class="sd">        The categories of the risk factor.</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="c1">##############</span>
+    <span class="c1"># Properties #</span>
+    <span class="c1">##############</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">columns_required</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;The columns required by this observer.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="p">[</span><span class="s2">&quot;alive&quot;</span><span class="p">]</span>
+
+    <span class="c1">#####################</span>
+    <span class="c1"># Lifecycle methods #</span>
+    <span class="c1">#####################</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">risk</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Constructor for this observer.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        risk</span>
+<span class="sd">            The name of the risk being observed</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">risk</span> <span class="o">=</span> <span class="n">risk</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">exposure_pipeline_name</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="si">}</span><span class="s2">.exposure&quot;</span>
+
+    <span class="c1">#################</span>
+    <span class="c1"># Setup methods #</span>
+    <span class="c1">#################</span>
+
+<div class="viewcode-block" id="CategoricalRiskObserver.setup">
+<a class="viewcode-back" href="../../../api_reference/results/risk.html#vivarium_public_health.results.risk.CategoricalRiskObserver.setup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Set up the observer.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">step_size</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">time</span><span class="o">.</span><span class="n">step_size</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">categories</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;risk_factor.</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="si">}</span><span class="s2">.categories&quot;</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="CategoricalRiskObserver.get_configuration_name">
+<a class="viewcode-back" href="../../../api_reference/results/risk.html#vivarium_public_health.results.risk.CategoricalRiskObserver.get_configuration_name">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_configuration_name</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">risk</span></div>
+
+
+<div class="viewcode-block" id="CategoricalRiskObserver.register_observations">
+<a class="viewcode-back" href="../../../api_reference/results/risk.html#vivarium_public_health.results.risk.CategoricalRiskObserver.register_observations">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">register_observations</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Register a stratification and observation.</span>
+
+<span class="sd">        Notes</span>
+<span class="sd">        -----</span>
+<span class="sd">        While it&#39;s typical for all stratification registrations to be encapsulated</span>
+<span class="sd">        in a single class (i.e. the</span>
+<span class="sd">        :class:ResultsStratifier &lt;vivarium_public_health.results.stratification.ResultsStratifier),</span>
+<span class="sd">        this observer registers an additional one. While it could be registered</span>
+<span class="sd">        in the ``ResultsStratifier`` as well, it is specific to this observer and</span>
+<span class="sd">        so it is registered here while we have easy access to the required categories</span>
+<span class="sd">        and value names.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">builder</span><span class="o">.</span><span class="n">results</span><span class="o">.</span><span class="n">register_stratification</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+            <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">categories</span><span class="o">.</span><span class="n">keys</span><span class="p">()),</span>
+            <span class="n">requires_values</span><span class="o">=</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">exposure_pipeline_name</span><span class="p">],</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">register_adding_observation</span><span class="p">(</span>
+            <span class="n">builder</span><span class="o">=</span><span class="n">builder</span><span class="p">,</span>
+            <span class="n">name</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;person_time_</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+            <span class="n">pop_filter</span><span class="o">=</span><span class="sa">f</span><span class="s1">&#39;alive == &quot;alive&quot; and tracked==True&#39;</span><span class="p">,</span>
+            <span class="n">when</span><span class="o">=</span><span class="s2">&quot;time_step__prepare&quot;</span><span class="p">,</span>
+            <span class="n">requires_columns</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;alive&quot;</span><span class="p">],</span>
+            <span class="n">requires_values</span><span class="o">=</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">exposure_pipeline_name</span><span class="p">],</span>
+            <span class="n">additional_stratifications</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">configuration</span><span class="o">.</span><span class="n">include</span> <span class="o">+</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="p">],</span>
+            <span class="n">excluded_stratifications</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">configuration</span><span class="o">.</span><span class="n">exclude</span><span class="p">,</span>
+            <span class="n">aggregator</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">aggregate_risk_category_person_time</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+    <span class="c1">###############</span>
+    <span class="c1"># Aggregators #</span>
+    <span class="c1">###############</span>
+
+<div class="viewcode-block" id="CategoricalRiskObserver.aggregate_risk_category_person_time">
+<a class="viewcode-back" href="../../../api_reference/results/risk.html#vivarium_public_health.results.risk.CategoricalRiskObserver.aggregate_risk_category_person_time">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">aggregate_risk_category_person_time</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Aggregate the person time for this time step.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="o">*</span> <span class="n">to_years</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">step_size</span><span class="p">())</span></div>
+
+
+    <span class="c1">##############################</span>
+    <span class="c1"># Results formatting methods #</span>
+    <span class="c1">##############################</span>
+
+<div class="viewcode-block" id="CategoricalRiskObserver.format">
+<a class="viewcode-back" href="../../../api_reference/results/risk.html#vivarium_public_health.results.risk.CategoricalRiskObserver.format">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">format</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">measure</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">results</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Rename the appropriate column to &#39;sub_entity&#39;.</span>
+
+<span class="sd">        The primary thing this method does is rename the risk column</span>
+<span class="sd">        to &#39;sub_entity&#39;. We do this here instead of the &#39;get_sub_entity_column&#39;</span>
+<span class="sd">        method simply because we do not want the risk column at all. If we keep</span>
+<span class="sd">        it here and then return it as the sub-entity column later, the final</span>
+<span class="sd">        results would have both.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        measure</span>
+<span class="sd">            The measure.</span>
+<span class="sd">        results</span>
+<span class="sd">            The results to format.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">            The formatted results.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">results</span> <span class="o">=</span> <span class="n">results</span><span class="o">.</span><span class="n">reset_index</span><span class="p">()</span>
+        <span class="n">results</span><span class="o">.</span><span class="n">rename</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="p">{</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="p">:</span> <span class="n">COLUMNS</span><span class="o">.</span><span class="n">SUB_ENTITY</span><span class="p">},</span> <span class="n">inplace</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">results</span></div>
+
+
+<div class="viewcode-block" id="CategoricalRiskObserver.get_measure_column">
+<a class="viewcode-back" href="../../../api_reference/results/risk.html#vivarium_public_health.results.risk.CategoricalRiskObserver.get_measure_column">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_measure_column</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">measure</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">results</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the &#39;measure&#39; column values.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="s2">&quot;person_time&quot;</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="n">results</span><span class="o">.</span><span class="n">index</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="CategoricalRiskObserver.get_entity_type_column">
+<a class="viewcode-back" href="../../../api_reference/results/risk.html#vivarium_public_health.results.risk.CategoricalRiskObserver.get_entity_type_column">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_entity_type_column</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">measure</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">results</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the &#39;entity_type&#39; column values.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="s2">&quot;rei&quot;</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="n">results</span><span class="o">.</span><span class="n">index</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="CategoricalRiskObserver.get_entity_column">
+<a class="viewcode-back" href="../../../api_reference/results/risk.html#vivarium_public_health.results.risk.CategoricalRiskObserver.get_entity_column">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_entity_column</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">measure</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">results</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the &#39;entity&#39; column values.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="n">results</span><span class="o">.</span><span class="n">index</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="CategoricalRiskObserver.get_sub_entity_column">
+<a class="viewcode-back" href="../../../api_reference/results/risk.html#vivarium_public_health.results.risk.CategoricalRiskObserver.get_sub_entity_column">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_sub_entity_column</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">measure</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">results</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the &#39;sub_entity&#39; column values.&quot;&quot;&quot;</span>
+        <span class="c1"># The sub-entity col was created in the &#39;format&#39; method</span>
+        <span class="k">return</span> <span class="n">results</span><span class="p">[</span><span class="n">COLUMNS</span><span class="o">.</span><span class="n">SUB_ENTITY</span><span class="p">]</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, The vivarium developers.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

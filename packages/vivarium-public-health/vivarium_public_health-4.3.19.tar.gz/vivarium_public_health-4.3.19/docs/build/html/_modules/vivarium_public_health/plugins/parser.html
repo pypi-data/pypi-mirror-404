@@ -1,0 +1,984 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>vivarium_public_health.plugins.parser &mdash; vivarium_public_health 4.3.15.dev2+g712190e05 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/plot_directive.css" />
+
+  
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=7ca62e9d"></script>
+      <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+    <link href="../../../_static/style.css" rel="stylesheet" type="text/css">
+
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            vivarium_public_health
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorials/index.html">Tutorials</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_reference/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">vivarium_public_health</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">vivarium_public_health.plugins.parser</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for vivarium_public_health.plugins.parser</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">===============================</span>
+<span class="sd">Component Configuration Parsers</span>
+<span class="sd">===============================</span>
+
+<span class="sd">Component Configuration Parsers in this module are specialized implementations of</span>
+<span class="sd">:class:`ComponentConfigurationParser &lt;vivarium.framework.components.parser.ComponentConfigurationParser&gt;`</span>
+<span class="sd">that can parse configurations of components specific to the Vivarium Public</span>
+<span class="sd">Health package.</span>
+
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">warnings</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Callable</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">importlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">import_module</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">layered_config_tree</span><span class="w"> </span><span class="kn">import</span> <span class="n">LayeredConfigTree</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pkg_resources</span><span class="w"> </span><span class="kn">import</span> <span class="n">resource_filename</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium</span><span class="w"> </span><span class="kn">import</span> <span class="n">Component</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.components</span><span class="w"> </span><span class="kn">import</span> <span class="n">ComponentConfigurationParser</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.components.parser</span><span class="w"> </span><span class="kn">import</span> <span class="n">ParsingError</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.engine</span><span class="w"> </span><span class="kn">import</span> <span class="n">Builder</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.state_machine</span><span class="w"> </span><span class="kn">import</span> <span class="n">Trigger</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.utilities</span><span class="w"> </span><span class="kn">import</span> <span class="n">import_by_path</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium_public_health.disease</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">BaseDiseaseState</span><span class="p">,</span>
+    <span class="n">DiseaseModel</span><span class="p">,</span>
+    <span class="n">DiseaseState</span><span class="p">,</span>
+    <span class="n">RecoveredState</span><span class="p">,</span>
+    <span class="n">SusceptibleState</span><span class="p">,</span>
+    <span class="n">TransientDiseaseState</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium_public_health.utilities</span><span class="w"> </span><span class="kn">import</span> <span class="n">TargetString</span>
+
+
+<div class="viewcode-block" id="CausesParsingErrors">
+<a class="viewcode-back" href="../../../api_reference/plugins/parser.html#vivarium_public_health.plugins.parser.CausesParsingErrors">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">CausesParsingErrors</span><span class="p">(</span><span class="n">ParsingError</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Error raised when there are any errors parsing a cause model configuration.&quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">messages</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2"> - &quot;</span> <span class="o">+</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2"> - &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">messages</span><span class="p">))</span></div>
+
+
+
+<div class="viewcode-block" id="CausesConfigurationParser">
+<a class="viewcode-back" href="../../../api_reference/plugins/parser.html#vivarium_public_health.plugins.parser.CausesConfigurationParser">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">CausesConfigurationParser</span><span class="p">(</span><span class="n">ComponentConfigurationParser</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Parser for cause model configurations.</span>
+
+<span class="sd">    Component configuration parser that acts the same as the standard vivarium</span>
+<span class="sd">    `ComponentConfigurationParser` but adds the additional ability to parse a</span>
+<span class="sd">    configuration to create `DiseaseModel` components. These DiseaseModel</span>
+<span class="sd">    configurations can either be specified directly in the configuration in a</span>
+<span class="sd">    `causes` key or in external configuration files that are specified in the</span>
+<span class="sd">    `external_configuration` key.</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">DEFAULT_MODEL_CONFIG</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;model_type&quot;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">DiseaseModel</span><span class="o">.</span><span class="vm">__module__</span><span class="si">}</span><span class="s2">.</span><span class="si">{</span><span class="n">DiseaseModel</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;initial_state&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="s2">&quot;residual_state&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">}</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Default cause model configuration if it&#39;s not explicitly specified.</span>
+<span class="sd">    </span>
+<span class="sd">    Initial state and residual state cannot both be provided. If neither initial</span>
+<span class="sd">    state nor residual state has been specified, the cause  model must have a</span>
+<span class="sd">    state named &#39;susceptible&#39;.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">DEFAULT_STATE_CONFIG</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;cause_type&quot;</span><span class="p">:</span> <span class="s2">&quot;cause&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;transient&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="s2">&quot;allow_self_transition&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="s2">&quot;side_effect&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="s2">&quot;cleanup_function&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="s2">&quot;state_type&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">}</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Default state configuration if it&#39;s not explicitly specified.&quot;&quot;&quot;</span>
+
+    <span class="n">DEFAULT_TRANSITION_CONFIG</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;triggered&quot;</span><span class="p">:</span> <span class="s2">&quot;NOT_TRIGGERED&quot;</span><span class="p">}</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Default triggered value.</span>
+<span class="sd">    </span>
+<span class="sd">    This value is used if the transition configuration does not explicity specify it.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="CausesConfigurationParser.parse_component_config">
+<a class="viewcode-back" href="../../../api_reference/plugins/parser.html#vivarium_public_health.plugins.parser.CausesConfigurationParser.parse_component_config">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">parse_component_config</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">component_config</span><span class="p">:</span> <span class="n">LayeredConfigTree</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Component</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Parses the component configuration and returns a list of components.</span>
+
+<span class="sd">        In particular, this method looks for an `external_configuration` key</span>
+<span class="sd">        and/or a `causes` key.</span>
+
+<span class="sd">        The `external_configuration` key should have names of packages that</span>
+<span class="sd">        contain cause model configuration files. Within that key should be a list</span>
+<span class="sd">        of paths to cause model configuration files relative to the package.</span>
+
+<span class="sd">        .. code-block:: yaml</span>
+
+<span class="sd">            external_configuration:</span>
+<span class="sd">                some_package:</span>
+<span class="sd">                    - some/path/cause_model_1.yaml</span>
+<span class="sd">                    - some/path/cause_model_2.yaml</span>
+
+<span class="sd">        The `causes` key should contain configuration information for cause</span>
+<span class="sd">        models.</span>
+
+<span class="sd">        .. code-block:: yaml</span>
+
+<span class="sd">            causes:</span>
+<span class="sd">                cause_1:</span>
+<span class="sd">                    model_type: vivarium_public_health.disease.DiseaseModel</span>
+<span class="sd">                    residual_state: susceptible</span>
+<span class="sd">                    states:</span>
+<span class="sd">                        susceptible:</span>
+<span class="sd">                            cause_type: cause</span>
+<span class="sd">                            data_sources: {}</span>
+<span class="sd">                        infected:</span>
+<span class="sd">                            cause_type: cause</span>
+<span class="sd">                            transient: false</span>
+<span class="sd">                            allow_self_transition: true</span>
+<span class="sd">                            data_sources: {}</span>
+<span class="sd">                    transitions:</span>
+<span class="sd">                        transition_1:</span>
+<span class="sd">                            source: susceptible</span>
+<span class="sd">                            sink: infected</span>
+<span class="sd">                            transition_type: rate</span>
+<span class="sd">                            data_sources: {}</span>
+
+<span class="sd">        # todo add information about the data_sources configuration</span>
+
+<span class="sd">        Note that this method modifies the simulation&#39;s component configuration</span>
+<span class="sd">        by adding the contents of external configuration files to the</span>
+<span class="sd">        `model_override` layer and adding default cause model configuration</span>
+<span class="sd">        values for all cause models to the `component_config` layer.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        component_config</span>
+<span class="sd">            A LayeredConfigTree defining the components to initialize.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">            A list of initialized components.</span>
+
+<span class="sd">        Raises</span>
+<span class="sd">        ------</span>
+<span class="sd">        CausesParsingErrors</span>
+<span class="sd">            If the cause model configuration is invalid</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">components</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">if</span> <span class="s2">&quot;external_configuration&quot;</span> <span class="ow">in</span> <span class="n">component_config</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_validate_external_configuration</span><span class="p">(</span><span class="n">component_config</span><span class="p">[</span><span class="s2">&quot;external_configuration&quot;</span><span class="p">])</span>
+            <span class="k">for</span> <span class="n">package</span><span class="p">,</span> <span class="n">config_files</span> <span class="ow">in</span> <span class="n">component_config</span><span class="p">[</span><span class="s2">&quot;external_configuration&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="k">for</span> <span class="n">config_file</span> <span class="ow">in</span> <span class="n">config_files</span><span class="o">.</span><span class="n">get_value</span><span class="p">():</span>
+                    <span class="n">source</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">package</span><span class="si">}</span><span class="s2">::</span><span class="si">{</span><span class="n">config_file</span><span class="si">}</span><span class="s2">&quot;</span>
+                    <span class="n">config_file</span> <span class="o">=</span> <span class="n">resource_filename</span><span class="p">(</span><span class="n">package</span><span class="p">,</span> <span class="n">config_file</span><span class="p">)</span>
+
+                    <span class="n">external_config</span> <span class="o">=</span> <span class="n">LayeredConfigTree</span><span class="p">(</span><span class="n">config_file</span><span class="p">)</span>
+                    <span class="n">component_config</span><span class="o">.</span><span class="n">update</span><span class="p">(</span>
+                        <span class="n">external_config</span><span class="p">,</span> <span class="n">layer</span><span class="o">=</span><span class="s2">&quot;model_override&quot;</span><span class="p">,</span> <span class="n">source</span><span class="o">=</span><span class="n">source</span>
+                    <span class="p">)</span>
+
+        <span class="k">if</span> <span class="s2">&quot;causes&quot;</span> <span class="ow">in</span> <span class="n">component_config</span><span class="p">:</span>
+            <span class="n">causes_config</span> <span class="o">=</span> <span class="n">component_config</span><span class="p">[</span><span class="s2">&quot;causes&quot;</span><span class="p">]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_validate_causes_config</span><span class="p">(</span><span class="n">causes_config</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_add_default_config_layer</span><span class="p">(</span><span class="n">causes_config</span><span class="p">)</span>
+            <span class="n">components</span> <span class="o">+=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_cause_model_components</span><span class="p">(</span><span class="n">causes_config</span><span class="p">)</span>
+
+        <span class="c1"># Parse standard components (i.e. not cause models)</span>
+        <span class="n">standard_component_config</span> <span class="o">=</span> <span class="n">component_config</span><span class="o">.</span><span class="n">to_dict</span><span class="p">()</span>
+        <span class="n">standard_component_config</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;external_configuration&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="n">standard_component_config</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="s2">&quot;causes&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="n">standard_components</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">process_level</span><span class="p">(</span><span class="n">standard_component_config</span><span class="p">,</span> <span class="p">[])</span>
+            <span class="k">if</span> <span class="n">standard_component_config</span>
+            <span class="k">else</span> <span class="p">[]</span>
+        <span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">components</span> <span class="o">+</span> <span class="n">standard_components</span></div>
+
+
+    <span class="c1">#########################</span>
+    <span class="c1"># Configuration methods #</span>
+    <span class="c1">#########################</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_add_default_config_layer</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">causes_config</span><span class="p">:</span> <span class="n">LayeredConfigTree</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Adds a default layer to the provided configuration.</span>
+
+<span class="sd">        This default layer specifies values for the cause model configuration.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        causes_config</span>
+<span class="sd">            A LayeredConfigTree defining the cause model configurations</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">default_config</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">cause_name</span><span class="p">,</span> <span class="n">cause_config</span> <span class="ow">in</span> <span class="n">causes_config</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">default_states_config</span> <span class="o">=</span> <span class="p">{}</span>
+            <span class="n">default_transitions_config</span> <span class="o">=</span> <span class="p">{}</span>
+            <span class="n">default_config</span><span class="p">[</span><span class="n">cause_name</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="o">**</span><span class="bp">self</span><span class="o">.</span><span class="n">DEFAULT_MODEL_CONFIG</span><span class="p">,</span>
+                <span class="s2">&quot;states&quot;</span><span class="p">:</span> <span class="n">default_states_config</span><span class="p">,</span>
+                <span class="s2">&quot;transitions&quot;</span><span class="p">:</span> <span class="n">default_transitions_config</span><span class="p">,</span>
+            <span class="p">}</span>
+
+            <span class="k">for</span> <span class="n">state_name</span><span class="p">,</span> <span class="n">state_config</span> <span class="ow">in</span> <span class="n">cause_config</span><span class="o">.</span><span class="n">states</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="n">default_states_config</span><span class="p">[</span><span class="n">state_name</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">DEFAULT_STATE_CONFIG</span>
+
+            <span class="k">for</span> <span class="n">transition_name</span><span class="p">,</span> <span class="n">transition_config</span> <span class="ow">in</span> <span class="n">cause_config</span><span class="o">.</span><span class="n">transitions</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="n">default_transitions_config</span><span class="p">[</span><span class="n">transition_name</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">DEFAULT_TRANSITION_CONFIG</span>
+
+        <span class="n">causes_config</span><span class="o">.</span><span class="n">update</span><span class="p">(</span>
+            <span class="n">default_config</span><span class="p">,</span> <span class="n">layer</span><span class="o">=</span><span class="s2">&quot;component_configs&quot;</span><span class="p">,</span> <span class="n">source</span><span class="o">=</span><span class="s2">&quot;causes_configuration_parser&quot;</span>
+        <span class="p">)</span>
+
+    <span class="c1">################################</span>
+    <span class="c1"># Cause model creation methods #</span>
+    <span class="c1">################################</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_get_cause_model_components</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">causes_config</span><span class="p">:</span> <span class="n">LayeredConfigTree</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">Component</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Parses the cause model configuration and returns the `DiseaseModel` components.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        causes_config</span>
+<span class="sd">            A LayeredConfigTree defining the cause model components to initialize</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">            A list of initialized `DiseaseModel` components</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">cause_models</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">for</span> <span class="n">cause_name</span><span class="p">,</span> <span class="n">cause_config</span> <span class="ow">in</span> <span class="n">causes_config</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">data_sources</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="k">if</span> <span class="s2">&quot;data_sources&quot;</span> <span class="ow">in</span> <span class="n">cause_config</span><span class="p">:</span>
+                <span class="n">data_sources_config</span> <span class="o">=</span> <span class="n">cause_config</span><span class="o">.</span><span class="n">data_sources</span>
+                <span class="n">data_sources</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_data_sources</span><span class="p">(</span><span class="n">data_sources_config</span><span class="p">)</span>
+
+            <span class="n">states</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">BaseDiseaseState</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="n">state_name</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_state</span><span class="p">(</span><span class="n">state_name</span><span class="p">,</span> <span class="n">state_config</span><span class="p">,</span> <span class="n">cause_name</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">state_name</span><span class="p">,</span> <span class="n">state_config</span> <span class="ow">in</span> <span class="n">cause_config</span><span class="o">.</span><span class="n">states</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+            <span class="p">}</span>
+
+            <span class="k">for</span> <span class="n">transition_config</span> <span class="ow">in</span> <span class="n">cause_config</span><span class="o">.</span><span class="n">transitions</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_add_transition</span><span class="p">(</span>
+                    <span class="n">states</span><span class="p">[</span><span class="n">transition_config</span><span class="o">.</span><span class="n">source</span><span class="p">],</span>
+                    <span class="n">states</span><span class="p">[</span><span class="n">transition_config</span><span class="o">.</span><span class="n">sink</span><span class="p">],</span>
+                    <span class="n">transition_config</span><span class="p">,</span>
+                <span class="p">)</span>
+
+            <span class="n">model_type</span> <span class="o">=</span> <span class="n">import_by_path</span><span class="p">(</span><span class="n">cause_config</span><span class="o">.</span><span class="n">model_type</span><span class="p">)</span>
+            <span class="n">residual_state</span> <span class="o">=</span> <span class="n">states</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+                <span class="n">cause_config</span><span class="o">.</span><span class="n">residual_state</span><span class="p">,</span> <span class="n">states</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">cause_config</span><span class="o">.</span><span class="n">initial_state</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="p">)</span>
+            <span class="n">model</span> <span class="o">=</span> <span class="n">model_type</span><span class="p">(</span>
+                <span class="n">cause_name</span><span class="p">,</span>
+                <span class="n">states</span><span class="o">=</span><span class="nb">list</span><span class="p">(</span><span class="n">states</span><span class="o">.</span><span class="n">values</span><span class="p">()),</span>
+                <span class="n">residual_state</span><span class="o">=</span><span class="n">residual_state</span><span class="p">,</span>
+                <span class="n">get_data_functions</span><span class="o">=</span><span class="n">data_sources</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">cause_models</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">cause_models</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_get_state</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">state_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">state_config</span><span class="p">:</span> <span class="n">LayeredConfigTree</span><span class="p">,</span> <span class="n">cause_name</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">BaseDiseaseState</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Parses a state configuration and returns an initialized `BaseDiseaseState` object.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        state_name</span>
+<span class="sd">            The name of the state to initialize</span>
+<span class="sd">        state_config</span>
+<span class="sd">            A LayeredConfigTree defining the state to initialize</span>
+<span class="sd">        cause_name</span>
+<span class="sd">            The name of the cause to which the state belongs</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">            An initialized `BaseDiseaseState` object</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">state_id</span> <span class="o">=</span> <span class="n">cause_name</span> <span class="k">if</span> <span class="n">state_name</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;susceptible&quot;</span><span class="p">,</span> <span class="s2">&quot;recovered&quot;</span><span class="p">]</span> <span class="k">else</span> <span class="n">state_name</span>
+        <span class="n">state_kwargs</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">&quot;cause_type&quot;</span><span class="p">:</span> <span class="n">state_config</span><span class="o">.</span><span class="n">cause_type</span><span class="p">,</span>
+            <span class="s2">&quot;allow_self_transition&quot;</span><span class="p">:</span> <span class="n">state_config</span><span class="o">.</span><span class="n">allow_self_transition</span><span class="p">,</span>
+        <span class="p">}</span>
+        <span class="k">if</span> <span class="n">state_config</span><span class="o">.</span><span class="n">side_effect</span><span class="p">:</span>
+            <span class="c1"># todo handle side effects properly</span>
+            <span class="n">state_kwargs</span><span class="p">[</span><span class="s2">&quot;side_effect&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="k">lambda</span> <span class="o">*</span><span class="n">x</span><span class="p">:</span> <span class="n">x</span>
+        <span class="k">if</span> <span class="n">state_config</span><span class="o">.</span><span class="n">cleanup_function</span><span class="p">:</span>
+            <span class="c1"># todo handle cleanup functions properly</span>
+            <span class="n">state_kwargs</span><span class="p">[</span><span class="s2">&quot;cleanup_function&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="k">lambda</span> <span class="o">*</span><span class="n">x</span><span class="p">:</span> <span class="n">x</span>
+        <span class="k">if</span> <span class="s2">&quot;data_sources&quot;</span> <span class="ow">in</span> <span class="n">state_config</span><span class="p">:</span>
+            <span class="n">data_sources_config</span> <span class="o">=</span> <span class="n">state_config</span><span class="o">.</span><span class="n">data_sources</span>
+            <span class="n">state_kwargs</span><span class="p">[</span><span class="s2">&quot;get_data_functions&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_data_sources</span><span class="p">(</span><span class="n">data_sources_config</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">state_config</span><span class="o">.</span><span class="n">state_type</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">state_type</span> <span class="o">=</span> <span class="n">import_by_path</span><span class="p">(</span><span class="n">state_config</span><span class="o">.</span><span class="n">state_type</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">state_config</span><span class="o">.</span><span class="n">transient</span><span class="p">:</span>
+            <span class="n">state_type</span> <span class="o">=</span> <span class="n">TransientDiseaseState</span>
+        <span class="k">elif</span> <span class="n">state_name</span> <span class="o">==</span> <span class="s2">&quot;susceptible&quot;</span><span class="p">:</span>
+            <span class="n">state_type</span> <span class="o">=</span> <span class="n">SusceptibleState</span>
+        <span class="k">elif</span> <span class="n">state_name</span> <span class="o">==</span> <span class="s2">&quot;recovered&quot;</span><span class="p">:</span>
+            <span class="n">state_type</span> <span class="o">=</span> <span class="n">RecoveredState</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">state_type</span> <span class="o">=</span> <span class="n">DiseaseState</span>
+
+        <span class="n">state</span> <span class="o">=</span> <span class="n">state_type</span><span class="p">(</span><span class="n">state_id</span><span class="p">,</span> <span class="o">**</span><span class="n">state_kwargs</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">state</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_add_transition</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">source_state</span><span class="p">:</span> <span class="n">BaseDiseaseState</span><span class="p">,</span>
+        <span class="n">sink_state</span><span class="p">:</span> <span class="n">BaseDiseaseState</span><span class="p">,</span>
+        <span class="n">transition_config</span><span class="p">:</span> <span class="n">LayeredConfigTree</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Adds a transition between two states.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        source_state</span>
+<span class="sd">            The state the transition starts from</span>
+<span class="sd">        sink_state</span>
+<span class="sd">            The state the transition ends at</span>
+<span class="sd">        transition_config</span>
+<span class="sd">            A `LayeredConfigTree` defining the transition to add</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">triggered</span> <span class="o">=</span> <span class="n">Trigger</span><span class="p">[</span><span class="n">transition_config</span><span class="o">.</span><span class="n">triggered</span><span class="p">]</span>
+        <span class="k">if</span> <span class="s2">&quot;data_sources&quot;</span> <span class="ow">in</span> <span class="n">transition_config</span><span class="p">:</span>
+            <span class="n">data_sources_config</span> <span class="o">=</span> <span class="n">transition_config</span><span class="o">.</span><span class="n">data_sources</span>
+            <span class="n">data_sources</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_data_sources</span><span class="p">(</span><span class="n">data_sources_config</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">data_sources</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="k">if</span> <span class="n">transition_config</span><span class="p">[</span><span class="s2">&quot;transition_type&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;rate&quot;</span><span class="p">:</span>
+            <span class="n">source_state</span><span class="o">.</span><span class="n">add_rate_transition</span><span class="p">(</span>
+                <span class="n">sink_state</span><span class="p">,</span> <span class="n">get_data_functions</span><span class="o">=</span><span class="n">data_sources</span><span class="p">,</span> <span class="n">triggered</span><span class="o">=</span><span class="n">triggered</span>
+            <span class="p">)</span>
+        <span class="k">elif</span> <span class="n">transition_config</span><span class="p">[</span><span class="s2">&quot;transition_type&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;proportion&quot;</span><span class="p">:</span>
+            <span class="n">source_state</span><span class="o">.</span><span class="n">add_proportion_transition</span><span class="p">(</span>
+                <span class="n">sink_state</span><span class="p">,</span> <span class="n">get_data_functions</span><span class="o">=</span><span class="n">data_sources</span><span class="p">,</span> <span class="n">triggered</span><span class="o">=</span><span class="n">triggered</span>
+            <span class="p">)</span>
+        <span class="k">elif</span> <span class="n">transition_config</span><span class="p">[</span><span class="s2">&quot;transition_type&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;dwell_time&quot;</span><span class="p">:</span>
+            <span class="n">source_state</span><span class="o">.</span><span class="n">add_dwell_time_transition</span><span class="p">(</span><span class="n">sink_state</span><span class="p">,</span> <span class="n">triggered</span><span class="o">=</span><span class="n">triggered</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Invalid transition data type &#39;</span><span class="si">{</span><span class="n">transition_config</span><span class="o">.</span><span class="n">type</span><span class="si">}</span><span class="s2">&#39;&quot;</span>
+                <span class="sa">f</span><span class="s2">&quot; provided for transition &#39;</span><span class="si">{</span><span class="n">transition_config</span><span class="si">}</span><span class="s2">&#39;.&quot;</span>
+            <span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_get_data_sources</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">LayeredConfigTree</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">Builder</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="n">Any</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Parses a data sources configuration and returns the data sources.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        config</span>
+<span class="sd">            A LayeredConfigTree defining the data sources to initialize</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">            A dictionary of data source getters</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="p">{</span><span class="n">name</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_data_source</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">config</span><span class="p">[</span><span class="n">name</span><span class="p">])</span> <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">config</span><span class="o">.</span><span class="n">keys</span><span class="p">()}</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_get_data_source</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">source</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">Builder</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Parses a data source and returns a callable that can be used to retrieve the data.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        name</span>
+<span class="sd">            The name of the data getter</span>
+<span class="sd">        source</span>
+<span class="sd">            The data source to parse</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">            A callable that can be used to retrieve the data</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">source</span><span class="p">,</span> <span class="nb">float</span><span class="p">):</span>
+            <span class="k">return</span> <span class="k">lambda</span> <span class="n">builder</span><span class="p">,</span> <span class="o">*</span><span class="n">_</span><span class="p">:</span> <span class="n">source</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">timedelta</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Timedelta</span><span class="p">(</span><span class="n">source</span><span class="p">)</span>
+            <span class="k">return</span> <span class="k">lambda</span> <span class="n">builder</span><span class="p">,</span> <span class="o">*</span><span class="n">_</span><span class="p">:</span> <span class="n">timedelta</span>
+        <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+            <span class="k">pass</span>
+
+        <span class="k">if</span> <span class="s2">&quot;::&quot;</span> <span class="ow">in</span> <span class="n">source</span><span class="p">:</span>
+            <span class="n">module</span><span class="p">,</span> <span class="n">method</span> <span class="o">=</span> <span class="n">source</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;::&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">import_module</span><span class="p">(</span><span class="n">module</span><span class="p">),</span> <span class="n">method</span><span class="p">)</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">target_string</span> <span class="o">=</span> <span class="n">TargetString</span><span class="p">(</span><span class="n">source</span><span class="p">)</span>
+            <span class="k">return</span> <span class="k">lambda</span> <span class="n">builder</span><span class="p">,</span> <span class="o">*</span><span class="n">_</span><span class="p">:</span> <span class="n">builder</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">target_string</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+            <span class="k">pass</span>
+
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid data source &#39;</span><span class="si">{</span><span class="n">source</span><span class="si">}</span><span class="s2">&#39; for &#39;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39;.&quot;</span><span class="p">)</span>
+
+    <span class="c1">######################</span>
+    <span class="c1"># Validation methods #</span>
+    <span class="c1">######################</span>
+
+    <span class="n">_CAUSE_KEYS</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;model_type&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;initial_state&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;states&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;transitions&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;data_sources&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;residual_state&quot;</span><span class="p">,</span>
+    <span class="p">}</span>
+    <span class="n">_STATE_KEYS</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;state_type&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;cause_type&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;transient&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;allow_self_transition&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;side_effect&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;data_sources&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;cleanup_function&quot;</span><span class="p">,</span>
+    <span class="p">}</span>
+
+    <span class="n">_DATA_SOURCE_KEYS</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;cause&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;cause_specific_mortality_rate&quot;</span><span class="p">},</span>
+        <span class="s2">&quot;state&quot;</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s2">&quot;prevalence&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;birth_prevalence&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;dwell_time&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;disability_weight&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;excess_mortality_rate&quot;</span><span class="p">,</span>
+        <span class="p">},</span>
+        <span class="s2">&quot;rate_transition&quot;</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s2">&quot;incidence_rate&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;transition_rate&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;remission_rate&quot;</span><span class="p">,</span>
+        <span class="p">},</span>
+        <span class="s2">&quot;proportion_transition&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;proportion&quot;</span><span class="p">},</span>
+    <span class="p">}</span>
+    <span class="n">_TRANSITION_KEYS</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;source&quot;</span><span class="p">,</span> <span class="s2">&quot;sink&quot;</span><span class="p">,</span> <span class="s2">&quot;transition_type&quot;</span><span class="p">,</span> <span class="s2">&quot;triggered&quot;</span><span class="p">,</span> <span class="s2">&quot;data_sources&quot;</span><span class="p">}</span>
+    <span class="n">_TRANSITION_TYPE_KEYS</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;rate&quot;</span><span class="p">,</span> <span class="s2">&quot;proportion&quot;</span><span class="p">,</span> <span class="s2">&quot;dwell_time&quot;</span><span class="p">}</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_validate_external_configuration</span><span class="p">(</span><span class="n">external_configuration</span><span class="p">:</span> <span class="n">LayeredConfigTree</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Validates the external configuration.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        external_configuration</span>
+<span class="sd">            A LayeredConfigTree defining the external configuration</span>
+
+<span class="sd">        Raises</span>
+<span class="sd">        ------</span>
+<span class="sd">        CausesParsingErrors</span>
+<span class="sd">            If the external configuration is invalid</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">external_configuration</span> <span class="o">=</span> <span class="n">external_configuration</span><span class="o">.</span><span class="n">to_dict</span><span class="p">()</span>
+        <span class="n">error_messages</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">package</span><span class="p">,</span> <span class="n">config_files</span> <span class="ow">in</span> <span class="n">external_configuration</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">package</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+                <span class="n">error_messages</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;Key &#39;</span><span class="si">{</span><span class="n">package</span><span class="si">}</span><span class="s2">&#39; must be a string definition of a package.&quot;</span>
+                <span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">config_files</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+                <span class="n">error_messages</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;External configuration for package &#39;</span><span class="si">{</span><span class="n">package</span><span class="si">}</span><span class="s2">&#39; must be a list.&quot;</span>
+                <span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">for</span> <span class="n">config_file</span> <span class="ow">in</span> <span class="n">config_files</span><span class="p">:</span>
+                    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">config_file</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">config_file</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">&quot;.yaml&quot;</span><span class="p">):</span>
+                        <span class="n">error_messages</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                            <span class="sa">f</span><span class="s2">&quot;External configuration for package &#39;</span><span class="si">{</span><span class="n">package</span><span class="si">}</span><span class="s2">&#39; must &quot;</span>
+                            <span class="s2">&quot;be a list of paths to yaml files.&quot;</span>
+                        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">error_messages</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">CausesParsingErrors</span><span class="p">(</span><span class="n">error_messages</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_validate_causes_config</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">causes_config</span><span class="p">:</span> <span class="n">LayeredConfigTree</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Validates the cause model configuration.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        causes_config</span>
+<span class="sd">            A LayeredConfigTree defining the cause model configurations</span>
+
+<span class="sd">        Raises</span>
+<span class="sd">        ------</span>
+<span class="sd">        CausesParsingErrors</span>
+<span class="sd">            If the cause model configuration is invalid</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">causes_config</span> <span class="o">=</span> <span class="n">causes_config</span><span class="o">.</span><span class="n">to_dict</span><span class="p">()</span>
+        <span class="n">error_messages</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">cause_name</span><span class="p">,</span> <span class="n">cause_config</span> <span class="ow">in</span> <span class="n">causes_config</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">error_messages</span> <span class="o">+=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_cause</span><span class="p">(</span><span class="n">cause_name</span><span class="p">,</span> <span class="n">cause_config</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">error_messages</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">CausesParsingErrors</span><span class="p">(</span><span class="n">error_messages</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_validate_cause</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cause_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">cause_config</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Validates a cause configuration and returns a list of error messages.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        cause_name</span>
+<span class="sd">            The name of the cause to validate</span>
+<span class="sd">        cause_config</span>
+<span class="sd">            A LayeredConfigTree defining the cause to validate</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">            A list of error messages</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">error_messages</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">cause_config</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="n">error_messages</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Cause configuration for cause &#39;</span><span class="si">{</span><span class="n">cause_name</span><span class="si">}</span><span class="s2">&#39; must be a dictionary.&quot;</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="n">error_messages</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">set</span><span class="p">(</span><span class="n">cause_config</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span><span class="o">.</span><span class="n">issubset</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_CAUSE_KEYS</span><span class="p">):</span>
+            <span class="n">error_messages</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Cause configuration for cause &#39;</span><span class="si">{</span><span class="n">cause_name</span><span class="si">}</span><span class="s2">&#39; may only&quot;</span>
+                <span class="s2">&quot; contain the following keys: &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_CAUSE_KEYS</span><span class="si">}</span><span class="s2">.&quot;</span>
+            <span class="p">)</span>
+
+        <span class="k">if</span> <span class="s2">&quot;model_type&quot;</span> <span class="ow">in</span> <span class="n">cause_config</span><span class="p">:</span>
+            <span class="n">error_messages</span> <span class="o">+=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_imported_type</span><span class="p">(</span>
+                <span class="n">cause_config</span><span class="p">[</span><span class="s2">&quot;model_type&quot;</span><span class="p">],</span> <span class="n">cause_name</span><span class="p">,</span> <span class="s2">&quot;model&quot;</span>
+            <span class="p">)</span>
+
+        <span class="n">states_config</span> <span class="o">=</span> <span class="n">cause_config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;states&quot;</span><span class="p">,</span> <span class="p">{})</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">states_config</span><span class="p">:</span>
+            <span class="n">error_messages</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Cause configuration for cause &#39;</span><span class="si">{</span><span class="n">cause_name</span><span class="si">}</span><span class="s2">&#39; must define &quot;</span>
+                <span class="s2">&quot;at least one state.&quot;</span>
+            <span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">states_config</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="n">error_messages</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;States configuration for cause &#39;</span><span class="si">{</span><span class="n">cause_name</span><span class="si">}</span><span class="s2">&#39; must be a dictionary.&quot;</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">initial_state</span> <span class="o">=</span> <span class="n">cause_config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;initial_state&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="n">residual_state</span> <span class="o">=</span> <span class="n">cause_config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;residual_state&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">initial_state</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+                    <span class="s2">&quot;In the future, the &#39;initial_state&#39; cause configuration will&quot;</span>
+                    <span class="s2">&quot; be used to initialize all simulants into that state. To&quot;</span>
+                    <span class="s2">&quot; retain the current behavior of defining a residual state,&quot;</span>
+                    <span class="s2">&quot; use the &#39;residual_state&#39; cause configuration.&quot;</span><span class="p">,</span>
+                    <span class="ne">DeprecationWarning</span><span class="p">,</span>
+                    <span class="n">stacklevel</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="k">if</span> <span class="n">residual_state</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">residual_state</span> <span class="o">=</span> <span class="n">initial_state</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">error_messages</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                        <span class="s2">&quot;A cause may not have both &#39;initial_state and&quot;</span>
+                        <span class="s2">&quot; &#39;residual_state&#39; configurations.&quot;</span>
+                    <span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">residual_state</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">residual_state</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">states_config</span><span class="p">:</span>
+                <span class="n">error_messages</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;Residual state &#39;</span><span class="si">{</span><span class="n">residual_state</span><span class="si">}</span><span class="s2">&#39; for cause &#39;</span><span class="si">{</span><span class="n">cause_name</span><span class="si">}</span><span class="s2">&#39;&quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot; must be present in the states for cause &#39;</span><span class="si">{</span><span class="n">cause_name</span><span class="si">}</span><span class="s2">.&quot;</span>
+                <span class="p">)</span>
+            <span class="k">for</span> <span class="n">state_name</span><span class="p">,</span> <span class="n">state_config</span> <span class="ow">in</span> <span class="n">states_config</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="n">error_messages</span> <span class="o">+=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_state</span><span class="p">(</span><span class="n">cause_name</span><span class="p">,</span> <span class="n">state_name</span><span class="p">,</span> <span class="n">state_config</span><span class="p">)</span>
+
+        <span class="n">transitions_config</span> <span class="o">=</span> <span class="n">cause_config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;transitions&quot;</span><span class="p">,</span> <span class="p">{})</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">transitions_config</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="n">error_messages</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Transitions configuration for cause &#39;</span><span class="si">{</span><span class="n">cause_name</span><span class="si">}</span><span class="s2">&#39; must be &quot;</span>
+                <span class="s2">&quot;a dictionary if it is present.&quot;</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">transition_name</span><span class="p">,</span> <span class="n">transition_config</span> <span class="ow">in</span> <span class="n">transitions_config</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="n">error_messages</span> <span class="o">+=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_transition</span><span class="p">(</span>
+                    <span class="n">cause_name</span><span class="p">,</span> <span class="n">transition_name</span><span class="p">,</span> <span class="n">transition_config</span><span class="p">,</span> <span class="n">states_config</span>
+                <span class="p">)</span>
+
+        <span class="n">error_messages</span> <span class="o">+=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_data_sources</span><span class="p">(</span>
+            <span class="n">cause_config</span><span class="p">,</span> <span class="n">cause_name</span><span class="p">,</span> <span class="s2">&quot;cause&quot;</span><span class="p">,</span> <span class="n">cause_name</span>
+        <span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">error_messages</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_validate_state</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">cause_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">state_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">state_config</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Validates a state configuration and returns a list of error messages.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        cause_name</span>
+<span class="sd">            The name of the cause to which the state belongs</span>
+<span class="sd">        state_name</span>
+<span class="sd">            The name of the state to validate</span>
+<span class="sd">        state_config</span>
+<span class="sd">            A LayeredConfigTree defining the state to validate</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">            A list of error messages</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">error_messages</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">state_config</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="n">error_messages</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;State configuration for in cause &#39;</span><span class="si">{</span><span class="n">cause_name</span><span class="si">}</span><span class="s2">&#39; and &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;state &#39;</span><span class="si">{</span><span class="n">state_name</span><span class="si">}</span><span class="s2">&#39; must be a dictionary.&quot;</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="n">error_messages</span>
+
+        <span class="n">allowable_keys</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_STATE_KEYS</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">state_name</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;susceptible&quot;</span><span class="p">,</span> <span class="s2">&quot;recovered&quot;</span><span class="p">]:</span>
+            <span class="n">allowable_keys</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="s2">&quot;data_sources&quot;</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">set</span><span class="p">(</span><span class="n">state_config</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span><span class="o">.</span><span class="n">issubset</span><span class="p">(</span><span class="n">allowable_keys</span><span class="p">):</span>
+            <span class="n">error_messages</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;State configuration for in cause &#39;</span><span class="si">{</span><span class="n">cause_name</span><span class="si">}</span><span class="s2">&#39; and &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;state &#39;</span><span class="si">{</span><span class="n">state_name</span><span class="si">}</span><span class="s2">&#39; may only contain the following &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;keys: </span><span class="si">{</span><span class="n">allowable_keys</span><span class="si">}</span><span class="s2">.&quot;</span>
+            <span class="p">)</span>
+
+        <span class="n">state_type</span> <span class="o">=</span> <span class="n">state_config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;state_type&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+        <span class="n">error_messages</span> <span class="o">+=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_imported_type</span><span class="p">(</span>
+            <span class="n">state_type</span><span class="p">,</span> <span class="n">cause_name</span><span class="p">,</span> <span class="s2">&quot;state&quot;</span><span class="p">,</span> <span class="n">state_name</span>
+        <span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">state_config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;cause_type&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">),</span> <span class="nb">str</span><span class="p">):</span>
+            <span class="n">error_messages</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Cause type for state &#39;</span><span class="si">{</span><span class="n">state_name</span><span class="si">}</span><span class="s2">&#39; in cause &#39;</span><span class="si">{</span><span class="n">cause_name</span><span class="si">}</span><span class="s2">&#39; &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;must be a string. Provided </span><span class="si">{</span><span class="n">state_config</span><span class="p">[</span><span class="s1">&#39;cause_type&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">.&quot;</span>
+            <span class="p">)</span>
+        <span class="n">is_transient</span> <span class="o">=</span> <span class="n">state_config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;transient&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">is_transient</span><span class="p">,</span> <span class="nb">bool</span><span class="p">):</span>
+            <span class="n">error_messages</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Transient flag for state &#39;</span><span class="si">{</span><span class="n">state_name</span><span class="si">}</span><span class="s2">&#39; in cause &#39;</span><span class="si">{</span><span class="n">cause_name</span><span class="si">}</span><span class="s2">&#39; &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;must be a boolean. Provided </span><span class="si">{</span><span class="n">state_config</span><span class="p">[</span><span class="s1">&#39;transient&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">.&quot;</span>
+            <span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">state_name</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;susceptible&quot;</span><span class="p">,</span> <span class="s2">&quot;recovered&quot;</span><span class="p">]</span> <span class="ow">and</span> <span class="n">state_type</span><span class="p">:</span>
+            <span class="n">error_messages</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;The name &#39;</span><span class="si">{</span><span class="n">state_name</span><span class="si">}</span><span class="s2">&#39; in cause &#39;</span><span class="si">{</span><span class="n">cause_name</span><span class="si">}</span><span class="s2">&#39; concretely &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;specifies the state type, so state_type is not an allowed &quot;</span>
+                <span class="s2">&quot;configuration.&quot;</span>
+            <span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">state_name</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;susceptible&quot;</span><span class="p">,</span> <span class="s2">&quot;recovered&quot;</span><span class="p">]</span> <span class="ow">and</span> <span class="n">is_transient</span><span class="p">:</span>
+            <span class="n">error_messages</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;The name &#39;</span><span class="si">{</span><span class="n">state_name</span><span class="si">}</span><span class="s2">&#39; in cause &#39;</span><span class="si">{</span><span class="n">cause_name</span><span class="si">}</span><span class="s2">&#39; concretely &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;specifies the state type, so transient is not an allowed &quot;</span>
+                <span class="s2">&quot;configuration.&quot;</span>
+            <span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">is_transient</span> <span class="ow">and</span> <span class="n">state_type</span><span class="p">:</span>
+            <span class="n">error_messages</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Specifying transient as True for state &#39;</span><span class="si">{</span><span class="n">state_name</span><span class="si">}</span><span class="s2">&#39; in cause &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;&#39;</span><span class="si">{</span><span class="n">cause_name</span><span class="si">}</span><span class="s2">&#39; concretely specifies the state type, so &quot;</span>
+                <span class="s2">&quot;state_type is not an allowed configuration.&quot;</span>
+            <span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">state_config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;allow_self_transition&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">),</span> <span class="nb">bool</span><span class="p">):</span>
+            <span class="n">error_messages</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Allow self transition flag for state &#39;</span><span class="si">{</span><span class="n">state_name</span><span class="si">}</span><span class="s2">&#39; in cause &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;&#39;</span><span class="si">{</span><span class="n">cause_name</span><span class="si">}</span><span class="s2">&#39; must be a boolean. Provided &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;&#39;</span><span class="si">{</span><span class="n">state_config</span><span class="p">[</span><span class="s1">&#39;allow_self_transition&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&#39;.&quot;</span>
+            <span class="p">)</span>
+
+        <span class="n">error_messages</span> <span class="o">+=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_data_sources</span><span class="p">(</span>
+            <span class="n">state_config</span><span class="p">,</span> <span class="n">cause_name</span><span class="p">,</span> <span class="s2">&quot;state&quot;</span><span class="p">,</span> <span class="n">state_name</span>
+        <span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">error_messages</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_validate_transition</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">cause_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">transition_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">transition_config</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span>
+        <span class="n">states_config</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Validates a transition configuration and returns a list of error messages.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        cause_name</span>
+<span class="sd">            The name of the cause to which the transition belongs</span>
+<span class="sd">        transition_name</span>
+<span class="sd">            The name of the transition to validate</span>
+<span class="sd">        transition_config</span>
+<span class="sd">            A LayeredConfigTree defining the transition to validate</span>
+<span class="sd">        states_config</span>
+<span class="sd">            A LayeredConfigTree defining the states for the cause</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">            A list of error messages</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">error_messages</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">transition_config</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="n">error_messages</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Transition configuration for in cause &#39;</span><span class="si">{</span><span class="n">cause_name</span><span class="si">}</span><span class="s2">&#39; and &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;transition &#39;</span><span class="si">{</span><span class="n">transition_name</span><span class="si">}</span><span class="s2">&#39; must be a dictionary.&quot;</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="n">error_messages</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">set</span><span class="p">(</span><span class="n">transition_config</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span><span class="o">.</span><span class="n">issubset</span><span class="p">(</span>
+            <span class="n">CausesConfigurationParser</span><span class="o">.</span><span class="n">_TRANSITION_KEYS</span>
+        <span class="p">):</span>
+            <span class="n">error_messages</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Transition configuration for in cause &#39;</span><span class="si">{</span><span class="n">cause_name</span><span class="si">}</span><span class="s2">&#39; and &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;transition &#39;</span><span class="si">{</span><span class="n">transition_name</span><span class="si">}</span><span class="s2">&#39; may only contain the &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;following keys: </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_TRANSITION_KEYS</span><span class="si">}</span><span class="s2">.&quot;</span>
+            <span class="p">)</span>
+        <span class="n">source</span> <span class="o">=</span> <span class="n">transition_config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;source&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="n">sink</span> <span class="o">=</span> <span class="n">transition_config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;sink&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">sink</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">source</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">error_messages</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Transition configuration for in cause &#39;</span><span class="si">{</span><span class="n">cause_name</span><span class="si">}</span><span class="s2">&#39; and &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;transition &#39;</span><span class="si">{</span><span class="n">transition_name</span><span class="si">}</span><span class="s2">&#39; must contain both a source &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;and a sink.&quot;</span>
+            <span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">source</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">source</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">states_config</span><span class="p">:</span>
+            <span class="n">error_messages</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Transition configuration for in cause &#39;</span><span class="si">{</span><span class="n">cause_name</span><span class="si">}</span><span class="s2">&#39; and &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;transition &#39;</span><span class="si">{</span><span class="n">transition_name</span><span class="si">}</span><span class="s2">&#39; must contain a source that &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;is present in the states.&quot;</span>
+            <span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">sink</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">sink</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">states_config</span><span class="p">:</span>
+            <span class="n">error_messages</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Transition configuration for in cause &#39;</span><span class="si">{</span><span class="n">cause_name</span><span class="si">}</span><span class="s2">&#39; and &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;transition &#39;</span><span class="si">{</span><span class="n">transition_name</span><span class="si">}</span><span class="s2">&#39; must contain a sink that &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;is present in the states.&quot;</span>
+            <span class="p">)</span>
+
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="s2">&quot;triggered&quot;</span> <span class="ow">in</span> <span class="n">transition_config</span>
+            <span class="ow">and</span> <span class="n">transition_config</span><span class="p">[</span><span class="s2">&quot;triggered&quot;</span><span class="p">]</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">Trigger</span><span class="o">.</span><span class="n">__members__</span>
+        <span class="p">):</span>
+            <span class="n">error_messages</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Transition configuration for in cause &#39;</span><span class="si">{</span><span class="n">cause_name</span><span class="si">}</span><span class="s2">&#39; and &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;transition &#39;</span><span class="si">{</span><span class="n">transition_name</span><span class="si">}</span><span class="s2">&#39; may only have one of the following &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;values: </span><span class="si">{</span><span class="n">Trigger</span><span class="o">.</span><span class="n">__members__</span><span class="si">}</span><span class="s2">.&quot;</span>
+            <span class="p">)</span>
+
+        <span class="k">if</span> <span class="s2">&quot;transition_type&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">transition_config</span><span class="p">:</span>
+            <span class="n">error_messages</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Transition configuration for in cause &#39;</span><span class="si">{</span><span class="n">cause_name</span><span class="si">}</span><span class="s2">&#39; and &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;transition &#39;</span><span class="si">{</span><span class="n">transition_name</span><span class="si">}</span><span class="s2">&#39; must contain a transition type.&quot;</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">transition_type</span> <span class="o">=</span> <span class="n">transition_config</span><span class="p">[</span><span class="s2">&quot;transition_type&quot;</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">transition_type</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_TRANSITION_TYPE_KEYS</span><span class="p">:</span>
+                <span class="n">error_messages</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;Transition configuration for in cause &#39;</span><span class="si">{</span><span class="n">cause_name</span><span class="si">}</span><span class="s2">&#39; and &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;transition &#39;</span><span class="si">{</span><span class="n">transition_name</span><span class="si">}</span><span class="s2">&#39; may only contain the &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;following values: </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_TRANSITION_TYPE_KEYS</span><span class="si">}</span><span class="s2">.&quot;</span>
+                <span class="p">)</span>
+            <span class="k">if</span> <span class="n">transition_type</span> <span class="o">==</span> <span class="s2">&quot;dwell_time&quot;</span> <span class="ow">and</span> <span class="s2">&quot;data_sources&quot;</span> <span class="ow">in</span> <span class="n">transition_config</span><span class="p">:</span>
+                <span class="n">error_messages</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;Transition configuration for in cause &#39;</span><span class="si">{</span><span class="n">cause_name</span><span class="si">}</span><span class="s2">&#39; and &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;transition &#39;</span><span class="si">{</span><span class="n">transition_name</span><span class="si">}</span><span class="s2">&#39; is a dwell-time transition and &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;may not have data sources as dwell-time is configured on the state.&quot;</span>
+                <span class="p">)</span>
+            <span class="k">elif</span> <span class="n">transition_type</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_TRANSITION_TYPE_KEYS</span><span class="o">.</span><span class="n">difference</span><span class="p">({</span><span class="s2">&quot;dwell_time&quot;</span><span class="p">}):</span>
+                <span class="n">error_messages</span> <span class="o">+=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_data_sources</span><span class="p">(</span>
+                    <span class="n">transition_config</span><span class="p">,</span>
+                    <span class="n">cause_name</span><span class="p">,</span>
+                    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">transition_type</span><span class="si">}</span><span class="s2">_transition&quot;</span><span class="p">,</span>
+                    <span class="n">transition_name</span><span class="p">,</span>
+                <span class="p">)</span>
+        <span class="k">return</span> <span class="n">error_messages</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_validate_imported_type</span><span class="p">(</span>
+        <span class="n">import_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">cause_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">entity_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">entity_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Validates an imported type and returns a list of error messages.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        import_path</span>
+<span class="sd">            The import path to validate</span>
+<span class="sd">        cause_name</span>
+<span class="sd">            The name of the cause to which the imported type belongs</span>
+<span class="sd">        entity_type</span>
+<span class="sd">            The type of the entity to which the imported type belongs</span>
+<span class="sd">        entity_name</span>
+<span class="sd">            The name of the entity to which the imported type belongs, if it is</span>
+<span class="sd">            not a cause</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">            A list of error messages</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">expected_type</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;model&quot;</span><span class="p">:</span> <span class="n">DiseaseModel</span><span class="p">,</span> <span class="s2">&quot;state&quot;</span><span class="p">:</span> <span class="n">BaseDiseaseState</span><span class="p">}[</span><span class="n">entity_type</span><span class="p">]</span>
+
+        <span class="n">error_messages</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">import_path</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">error_messages</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">imported_type</span> <span class="o">=</span> <span class="n">import_by_path</span><span class="p">(</span><span class="n">import_path</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span>
+                <span class="nb">isinstance</span><span class="p">(</span><span class="n">imported_type</span><span class="p">,</span> <span class="nb">type</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">issubclass</span><span class="p">(</span><span class="n">imported_type</span><span class="p">,</span> <span class="n">expected_type</span><span class="p">)</span>
+            <span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">TypeError</span>
+        <span class="k">except</span> <span class="p">(</span><span class="ne">ModuleNotFoundError</span><span class="p">,</span> <span class="ne">AttributeError</span><span class="p">,</span> <span class="ne">TypeError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
+            <span class="n">error_messages</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;If &#39;</span><span class="si">{</span><span class="n">entity_type</span><span class="si">}</span><span class="s2">_type&#39; is provided for cause &#39;</span><span class="si">{</span><span class="n">cause_name</span><span class="si">}</span><span class="s2">&#39; &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="sa">f</span><span class="s1">&#39;and </span><span class="si">{</span><span class="n">entity_type</span><span class="si">}</span><span class="s1"> </span><span class="si">{</span><span class="n">entity_name</span><span class="si">}</span><span class="s1"> &#39;</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">entity_name</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">&#39;&#39;</span><span class="si">}</span><span class="s2">it &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;must be the fully qualified import path to a </span><span class="si">{</span><span class="n">expected_type</span><span class="si">}</span><span class="s2"> &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;implementation. Provided&#39;</span><span class="si">{</span><span class="n">import_path</span><span class="si">}</span><span class="s2">&#39;.&quot;</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">error_messages</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_validate_data_sources</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="n">cause_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">config_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">config_name</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Validates the data sources in a configuration and returns any error messages.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        config</span>
+<span class="sd">            A LayeredConfigTree defining the configuration to validate</span>
+<span class="sd">        cause_name</span>
+<span class="sd">            The name of the cause to which the configuration belongs</span>
+<span class="sd">        config_type</span>
+<span class="sd">            The type of the configuration to validate</span>
+<span class="sd">        config_name</span>
+<span class="sd">            The name of the configuration being validated</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">            A list of error messages</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">error_messages</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">data_sources_config</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;data_sources&quot;</span><span class="p">,</span> <span class="p">{})</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data_sources_config</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
+            <span class="n">error_messages</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Data sources configuration for </span><span class="si">{</span><span class="n">config_type</span><span class="si">}</span><span class="s2"> &#39;</span><span class="si">{</span><span class="n">config</span><span class="si">}</span><span class="s2">&#39; in &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;cause &#39;</span><span class="si">{</span><span class="n">cause_name</span><span class="si">}</span><span class="s2">&#39; must be a dictionary if it is present.&quot;</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="n">error_messages</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">set</span><span class="p">(</span><span class="n">data_sources_config</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span><span class="o">.</span><span class="n">issubset</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_DATA_SOURCE_KEYS</span><span class="p">[</span><span class="n">config_type</span><span class="p">]):</span>
+            <span class="n">error_messages</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Data sources configuration for </span><span class="si">{</span><span class="n">config_type</span><span class="si">}</span><span class="s2"> &#39;</span><span class="si">{</span><span class="n">config_name</span><span class="si">}</span><span class="s2">&#39; &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;in cause &#39;</span><span class="si">{</span><span class="n">cause_name</span><span class="si">}</span><span class="s2">&#39; may only contain the following keys: &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_DATA_SOURCE_KEYS</span><span class="p">[</span><span class="n">config_type</span><span class="p">]</span><span class="si">}</span><span class="s2">.&quot;</span>
+            <span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">config_name</span><span class="p">,</span> <span class="n">source</span> <span class="ow">in</span> <span class="n">data_sources_config</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_get_data_source</span><span class="p">(</span><span class="n">config_name</span><span class="p">,</span> <span class="n">source</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+                <span class="n">error_messages</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;Configuration for </span><span class="si">{</span><span class="n">config_type</span><span class="si">}</span><span class="s2"> &#39;</span><span class="si">{</span><span class="n">config_name</span><span class="si">}</span><span class="s2">&#39; in cause &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;&#39;</span><span class="si">{</span><span class="n">cause_name</span><span class="si">}</span><span class="s2">&#39; has an invalid data source at &#39;</span><span class="si">{</span><span class="n">source</span><span class="si">}</span><span class="s2">&#39;.&quot;</span>
+                <span class="p">)</span>
+        <span class="k">return</span> <span class="n">error_messages</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, The vivarium developers.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

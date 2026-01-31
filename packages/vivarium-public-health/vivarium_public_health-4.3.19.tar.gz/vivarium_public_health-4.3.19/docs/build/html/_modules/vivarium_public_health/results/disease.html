@@ -1,0 +1,477 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>vivarium_public_health.results.disease &mdash; vivarium_public_health 4.3.15.dev2+g712190e05 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/plot_directive.css" />
+
+  
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=7ca62e9d"></script>
+      <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+    <link href="../../../_static/style.css" rel="stylesheet" type="text/css">
+
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            vivarium_public_health
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorials/index.html">Tutorials</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_reference/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">vivarium_public_health</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">vivarium_public_health.results.disease</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for vivarium_public_health.results.disease</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">=================</span>
+<span class="sd">Disease Observers</span>
+<span class="sd">=================</span>
+
+<span class="sd">This module contains tools for observing disease incidence and prevalence</span>
+<span class="sd">in the simulation.</span>
+
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">layered_config_tree</span><span class="w"> </span><span class="kn">import</span> <span class="n">LayeredConfigTree</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.engine</span><span class="w"> </span><span class="kn">import</span> <span class="n">Builder</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.event</span><span class="w"> </span><span class="kn">import</span> <span class="n">Event</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.population</span><span class="w"> </span><span class="kn">import</span> <span class="n">SimulantData</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.resource</span><span class="w"> </span><span class="kn">import</span> <span class="n">Resource</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium_public_health.results.columns</span><span class="w"> </span><span class="kn">import</span> <span class="n">COLUMNS</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium_public_health.results.observer</span><span class="w"> </span><span class="kn">import</span> <span class="n">PublicHealthObserver</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium_public_health.utilities</span><span class="w"> </span><span class="kn">import</span> <span class="n">to_years</span>
+
+
+<div class="viewcode-block" id="DiseaseObserver">
+<a class="viewcode-back" href="../../../api_reference/results/disease.html#vivarium_public_health.results.disease.DiseaseObserver">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">DiseaseObserver</span><span class="p">(</span><span class="n">PublicHealthObserver</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Observes disease counts and person time for a cause.</span>
+
+<span class="sd">    By default, this observer computes aggregate disease state person time and</span>
+<span class="sd">    counts of disease events over the full course of the simulation. It can be</span>
+<span class="sd">    configured to add or remove stratification groups to the default groups</span>
+<span class="sd">    defined by a ResultsStratifier.</span>
+
+<span class="sd">    In the model specification, your configuration for this component should</span>
+<span class="sd">    be specified as, e.g.:</span>
+
+<span class="sd">    .. code-block:: yaml</span>
+
+<span class="sd">        configuration:</span>
+<span class="sd">            stratification:</span>
+<span class="sd">                cause_name:</span>
+<span class="sd">                    exclude:</span>
+<span class="sd">                        - &quot;sex&quot;</span>
+<span class="sd">                    include:</span>
+<span class="sd">                        - &quot;sample_stratification&quot;</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    disease</span>
+<span class="sd">        The name of the disease being observed.</span>
+<span class="sd">    previous_state_column_name</span>
+<span class="sd">        The name of the column that stores the previous state of the disease.</span>
+<span class="sd">    step_size</span>
+<span class="sd">        The time step size of the simulation.</span>
+<span class="sd">    disease_model</span>
+<span class="sd">        The disease model for the disease being observed.</span>
+<span class="sd">    entity_type</span>
+<span class="sd">        The type of entity being observed.</span>
+<span class="sd">    entity</span>
+<span class="sd">        The entity being observed.</span>
+<span class="sd">    transition_stratification_name</span>
+<span class="sd">        The stratification name for transitions between disease states.</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="c1">##############</span>
+    <span class="c1"># Properties #</span>
+    <span class="c1">##############</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">columns_created</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Columns created by this observer.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">previous_state_column_name</span><span class="p">]</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">columns_required</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Columns required by this observer.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="p">]</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">initialization_requirements</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span> <span class="o">|</span> <span class="n">Resource</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Requirements for observer initialization.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="p">]</span>
+
+    <span class="c1">#####################</span>
+    <span class="c1"># Lifecycle methods #</span>
+    <span class="c1">#####################</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">disease</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Constructor for this observer.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        disease</span>
+<span class="sd">            The name of the disease being observed.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">disease</span> <span class="o">=</span> <span class="n">disease</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">previous_state_column_name</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;previous_</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">&quot;</span>
+
+    <span class="c1">#################</span>
+    <span class="c1"># Setup methods #</span>
+    <span class="c1">#################</span>
+
+<div class="viewcode-block" id="DiseaseObserver.setup">
+<a class="viewcode-back" href="../../../api_reference/results/disease.html#vivarium_public_health.results.disease.DiseaseObserver.setup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Set up the observer.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">step_size</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">time</span><span class="o">.</span><span class="n">step_size</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">disease_model</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">components</span><span class="o">.</span><span class="n">get_component</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;disease_model.</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">entity_type</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">disease_model</span><span class="o">.</span><span class="n">cause_type</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">entity</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">disease_model</span><span class="o">.</span><span class="n">cause</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">transition_stratification_name</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;transition_</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">&quot;</span></div>
+
+
+<div class="viewcode-block" id="DiseaseObserver.get_configuration_name">
+<a class="viewcode-back" href="../../../api_reference/results/disease.html#vivarium_public_health.results.disease.DiseaseObserver.get_configuration_name">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_configuration_name</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">disease</span></div>
+
+
+<div class="viewcode-block" id="DiseaseObserver.register_observations">
+<a class="viewcode-back" href="../../../api_reference/results/disease.html#vivarium_public_health.results.disease.DiseaseObserver.register_observations">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">register_observations</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Register stratifications and observations.</span>
+
+<span class="sd">        Notes</span>
+<span class="sd">        -----</span>
+<span class="sd">        Ideally, each observer registers a single observation. This one, however,</span>
+<span class="sd">        registeres two.</span>
+
+<span class="sd">        While it&#39;s typical for all stratification registrations to be encapsulated</span>
+<span class="sd">        in a single class (i.e. the</span>
+<span class="sd">        :class:ResultsStratifier &lt;vivarium_public_health.results.stratification.ResultsStratifier),</span>
+<span class="sd">        this observer registers two additional stratifications. While they could</span>
+<span class="sd">        be registered in the ``ResultsStratifier`` as well, they are specific to</span>
+<span class="sd">        this observer and so they are registered here while we have easy access</span>
+<span class="sd">        to the required names and categories.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">register_disease_state_stratification</span><span class="p">(</span><span class="n">builder</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">register_transition_stratification</span><span class="p">(</span><span class="n">builder</span><span class="p">)</span>
+
+        <span class="n">pop_filter</span> <span class="o">=</span> <span class="s1">&#39;alive == &quot;alive&quot; and tracked==True&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">register_person_time_observation</span><span class="p">(</span><span class="n">builder</span><span class="p">,</span> <span class="n">pop_filter</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">register_transition_count_observation</span><span class="p">(</span><span class="n">builder</span><span class="p">,</span> <span class="n">pop_filter</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="DiseaseObserver.register_disease_state_stratification">
+<a class="viewcode-back" href="../../../api_reference/results/disease.html#vivarium_public_health.results.disease.DiseaseObserver.register_disease_state_stratification">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">register_disease_state_stratification</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Register the disease state stratification.&quot;&quot;&quot;</span>
+        <span class="n">builder</span><span class="o">.</span><span class="n">results</span><span class="o">.</span><span class="n">register_stratification</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="p">,</span>
+            <span class="p">[</span><span class="n">state</span><span class="o">.</span><span class="n">state_id</span> <span class="k">for</span> <span class="n">state</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">disease_model</span><span class="o">.</span><span class="n">states</span><span class="p">],</span>
+            <span class="n">requires_columns</span><span class="o">=</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="p">],</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="DiseaseObserver.register_transition_stratification">
+<a class="viewcode-back" href="../../../api_reference/results/disease.html#vivarium_public_health.results.disease.DiseaseObserver.register_transition_stratification">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">register_transition_stratification</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Register the transition stratification.</span>
+
+<span class="sd">        This stratification is used to track transitions between disease states.</span>
+<span class="sd">        It appends &#39;no_transition&#39; to the list of transition categories and also</span>
+<span class="sd">        includes it as an exluded category.</span>
+
+<span class="sd">        Notes</span>
+<span class="sd">        -----</span>
+<span class="sd">        It is important to include &#39;no_transition&#39; in bith the list of transition</span>
+<span class="sd">        categories as well as the list of excluded categories. This is because</span>
+<span class="sd">        it must exist as a category for the transition mapping to work correctly,</span>
+<span class="sd">        but then we don&#39;t want to include it later during the actual stratification</span>
+<span class="sd">        process.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">transitions</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="nb">str</span><span class="p">(</span><span class="n">transition</span><span class="p">)</span> <span class="k">for</span> <span class="n">transition</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">disease_model</span><span class="o">.</span><span class="n">transition_names</span>
+        <span class="p">]</span> <span class="o">+</span> <span class="p">[</span><span class="s2">&quot;no_transition&quot;</span><span class="p">]</span>
+        <span class="c1"># manually append &#39;no_transition&#39; as an excluded transition</span>
+        <span class="n">excluded_categories</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="o">.</span><span class="n">stratification</span><span class="o">.</span><span class="n">excluded_categories</span><span class="o">.</span><span class="n">to_dict</span><span class="p">()</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">transition_stratification_name</span><span class="p">,</span> <span class="p">[]</span>
+            <span class="p">)</span>
+        <span class="p">)</span> <span class="o">+</span> <span class="p">[</span><span class="s2">&quot;no_transition&quot;</span><span class="p">]</span>
+        <span class="n">builder</span><span class="o">.</span><span class="n">results</span><span class="o">.</span><span class="n">register_stratification</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">transition_stratification_name</span><span class="p">,</span>
+            <span class="n">categories</span><span class="o">=</span><span class="n">transitions</span><span class="p">,</span>
+            <span class="n">excluded_categories</span><span class="o">=</span><span class="n">excluded_categories</span><span class="p">,</span>
+            <span class="n">mapper</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">map_transitions</span><span class="p">,</span>
+            <span class="n">requires_columns</span><span class="o">=</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">previous_state_column_name</span><span class="p">],</span>
+            <span class="n">is_vectorized</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="DiseaseObserver.register_person_time_observation">
+<a class="viewcode-back" href="../../../api_reference/results/disease.html#vivarium_public_health.results.disease.DiseaseObserver.register_person_time_observation">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">register_person_time_observation</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">,</span> <span class="n">pop_filter</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Register a person time observation.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">register_adding_observation</span><span class="p">(</span>
+            <span class="n">builder</span><span class="o">=</span><span class="n">builder</span><span class="p">,</span>
+            <span class="n">name</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;person_time_</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+            <span class="n">pop_filter</span><span class="o">=</span><span class="n">pop_filter</span><span class="p">,</span>
+            <span class="n">when</span><span class="o">=</span><span class="s2">&quot;time_step__prepare&quot;</span><span class="p">,</span>
+            <span class="n">requires_columns</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;alive&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="p">],</span>
+            <span class="n">additional_stratifications</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">configuration</span><span class="o">.</span><span class="n">include</span> <span class="o">+</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="p">],</span>
+            <span class="n">excluded_stratifications</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">configuration</span><span class="o">.</span><span class="n">exclude</span><span class="p">,</span>
+            <span class="n">aggregator</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">aggregate_state_person_time</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="DiseaseObserver.register_transition_count_observation">
+<a class="viewcode-back" href="../../../api_reference/results/disease.html#vivarium_public_health.results.disease.DiseaseObserver.register_transition_count_observation">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">register_transition_count_observation</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">,</span> <span class="n">pop_filter</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Register a transition count observation.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">register_adding_observation</span><span class="p">(</span>
+            <span class="n">builder</span><span class="o">=</span><span class="n">builder</span><span class="p">,</span>
+            <span class="n">name</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;transition_count_</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+            <span class="n">pop_filter</span><span class="o">=</span><span class="n">pop_filter</span><span class="p">,</span>
+            <span class="n">requires_columns</span><span class="o">=</span><span class="p">[</span>
+                <span class="s2">&quot;alive&quot;</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">previous_state_column_name</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="p">,</span>
+            <span class="p">],</span>
+            <span class="n">additional_stratifications</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">configuration</span><span class="o">.</span><span class="n">include</span>
+            <span class="o">+</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">transition_stratification_name</span><span class="p">],</span>
+            <span class="n">excluded_stratifications</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">configuration</span><span class="o">.</span><span class="n">exclude</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="DiseaseObserver.map_transitions">
+<a class="viewcode-back" href="../../../api_reference/results/disease.html#vivarium_public_health.results.disease.DiseaseObserver.map_transitions">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">map_transitions</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Map previous and current disease states to transition string.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        df</span>
+<span class="sd">            The DataFrame containing the disease states.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">            The transitions between disease states.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">transitions</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">index</span><span class="o">=</span><span class="n">df</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">str</span><span class="p">)</span>
+        <span class="n">transition_mask</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">previous_state_column_name</span><span class="p">]</span> <span class="o">!=</span> <span class="n">df</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="p">]</span>
+        <span class="n">transitions</span><span class="p">[</span><span class="o">~</span><span class="n">transition_mask</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;no_transition&quot;</span>
+        <span class="n">transitions</span><span class="p">[</span><span class="n">transition_mask</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">df</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">previous_state_column_name</span><span class="p">]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">str</span><span class="p">)</span>
+            <span class="o">+</span> <span class="s2">&quot;_to_&quot;</span>
+            <span class="o">+</span> <span class="n">df</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="p">]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">str</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">transitions</span></div>
+
+
+    <span class="c1">########################</span>
+    <span class="c1"># Event-driven methods #</span>
+    <span class="c1">########################</span>
+
+<div class="viewcode-block" id="DiseaseObserver.on_initialize_simulants">
+<a class="viewcode-back" href="../../../api_reference/results/disease.html#vivarium_public_health.results.disease.DiseaseObserver.on_initialize_simulants">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">on_initialize_simulants</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pop_data</span><span class="p">:</span> <span class="n">SimulantData</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Initialize the previous state column to the current state&quot;&quot;&quot;</span>
+        <span class="n">pop</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">population_view</span><span class="o">.</span><span class="n">subview</span><span class="p">([</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="p">])</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">pop_data</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+        <span class="n">pop</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">previous_state_column_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">pop</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">population_view</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">pop</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="DiseaseObserver.on_time_step_prepare">
+<a class="viewcode-back" href="../../../api_reference/results/disease.html#vivarium_public_health.results.disease.DiseaseObserver.on_time_step_prepare">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">on_time_step_prepare</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event</span><span class="p">:</span> <span class="n">Event</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Update the previous state column to the current state.</span>
+
+<span class="sd">        This enables tracking of transitions between states.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">prior_state_pop</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">population_view</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+        <span class="n">prior_state_pop</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">previous_state_column_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">prior_state_pop</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">population_view</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">prior_state_pop</span><span class="p">)</span></div>
+
+
+    <span class="c1">###############</span>
+    <span class="c1"># Aggregators #</span>
+    <span class="c1">###############</span>
+
+<div class="viewcode-block" id="DiseaseObserver.aggregate_state_person_time">
+<a class="viewcode-back" href="../../../api_reference/results/disease.html#vivarium_public_health.results.disease.DiseaseObserver.aggregate_state_person_time">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">aggregate_state_person_time</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Aggregate person time for the time step.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        x</span>
+<span class="sd">            The DataFrame containing the population.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">            The aggregated person time.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="o">*</span> <span class="n">to_years</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">step_size</span><span class="p">())</span></div>
+
+
+    <span class="c1">##############################</span>
+    <span class="c1"># Results formatting methods #</span>
+    <span class="c1">##############################</span>
+
+<div class="viewcode-block" id="DiseaseObserver.format">
+<a class="viewcode-back" href="../../../api_reference/results/disease.html#vivarium_public_health.results.disease.DiseaseObserver.format">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">format</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">measure</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">results</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Rename the appropriate column to &#39;sub_entity&#39;.</span>
+
+<span class="sd">        The primary thing this method does is rename the appropriate column</span>
+<span class="sd">        (either the transition stratification name of the disease name, depending</span>
+<span class="sd">        on the measure) to &#39;sub_entity&#39;. We do this here instead of the</span>
+<span class="sd">        &#39;get_sub_entity_column&#39; method simply because we do not want the original</span>
+<span class="sd">        column at all. If we keep it here and then return it as the sub-entity</span>
+<span class="sd">        column later, the final results would have both.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        measure</span>
+<span class="sd">            The measure.</span>
+<span class="sd">        results</span>
+<span class="sd">            The results to format.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">            The formatted results.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">results</span> <span class="o">=</span> <span class="n">results</span><span class="o">.</span><span class="n">reset_index</span><span class="p">()</span>
+        <span class="k">if</span> <span class="s2">&quot;transition_count_&quot;</span> <span class="ow">in</span> <span class="n">measure</span><span class="p">:</span>
+            <span class="n">sub_entity</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">transition_stratification_name</span>
+        <span class="k">if</span> <span class="s2">&quot;person_time_&quot;</span> <span class="ow">in</span> <span class="n">measure</span><span class="p">:</span>
+            <span class="n">sub_entity</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">disease</span>
+        <span class="n">results</span><span class="o">.</span><span class="n">rename</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="p">{</span><span class="n">sub_entity</span><span class="p">:</span> <span class="n">COLUMNS</span><span class="o">.</span><span class="n">SUB_ENTITY</span><span class="p">},</span> <span class="n">inplace</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">results</span></div>
+
+
+<div class="viewcode-block" id="DiseaseObserver.get_measure_column">
+<a class="viewcode-back" href="../../../api_reference/results/disease.html#vivarium_public_health.results.disease.DiseaseObserver.get_measure_column">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_measure_column</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">measure</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">results</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the &#39;measure&#39; column values.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="s2">&quot;transition_count_&quot;</span> <span class="ow">in</span> <span class="n">measure</span><span class="p">:</span>
+            <span class="n">measure_name</span> <span class="o">=</span> <span class="s2">&quot;transition_count&quot;</span>
+        <span class="k">if</span> <span class="s2">&quot;person_time_&quot;</span> <span class="ow">in</span> <span class="n">measure</span><span class="p">:</span>
+            <span class="n">measure_name</span> <span class="o">=</span> <span class="s2">&quot;person_time&quot;</span>
+        <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">measure_name</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="n">results</span><span class="o">.</span><span class="n">index</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="DiseaseObserver.get_entity_type_column">
+<a class="viewcode-back" href="../../../api_reference/results/disease.html#vivarium_public_health.results.disease.DiseaseObserver.get_entity_type_column">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_entity_type_column</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">measure</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">results</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the &#39;entity_type&#39; column values.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">entity_type</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="n">results</span><span class="o">.</span><span class="n">index</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="DiseaseObserver.get_entity_column">
+<a class="viewcode-back" href="../../../api_reference/results/disease.html#vivarium_public_health.results.disease.DiseaseObserver.get_entity_column">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_entity_column</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">measure</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">results</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the &#39;entity&#39; column values.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">entity</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="n">results</span><span class="o">.</span><span class="n">index</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="DiseaseObserver.get_sub_entity_column">
+<a class="viewcode-back" href="../../../api_reference/results/disease.html#vivarium_public_health.results.disease.DiseaseObserver.get_sub_entity_column">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_sub_entity_column</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">measure</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">results</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the &#39;sub_entity&#39; column values.&quot;&quot;&quot;</span>
+        <span class="c1"># The sub-entity col was created in the &#39;format&#39; method</span>
+        <span class="k">return</span> <span class="n">results</span><span class="p">[</span><span class="n">COLUMNS</span><span class="o">.</span><span class="n">SUB_ENTITY</span><span class="p">]</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, The vivarium developers.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

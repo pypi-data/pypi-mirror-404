@@ -1,0 +1,800 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>vivarium_public_health.risks.distributions &mdash; vivarium_public_health 4.3.15.dev2+g712190e05 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/plot_directive.css" />
+
+  
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=7ca62e9d"></script>
+      <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+    <link href="../../../_static/style.css" rel="stylesheet" type="text/css">
+
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            vivarium_public_health
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorials/index.html">Tutorials</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_reference/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">vivarium_public_health</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">vivarium_public_health.risks.distributions</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for vivarium_public_health.risks.distributions</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">=================================</span>
+<span class="sd">Risk Exposure Distribution Models</span>
+<span class="sd">=================================</span>
+
+<span class="sd">This module contains tools for modeling several different risk</span>
+<span class="sd">exposure distributions.</span>
+
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">ABC</span><span class="p">,</span> <span class="n">abstractmethod</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Callable</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">risk_distributions</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">rd</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">layered_config_tree</span><span class="w"> </span><span class="kn">import</span> <span class="n">LayeredConfigTree</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium</span><span class="w"> </span><span class="kn">import</span> <span class="n">Component</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.engine</span><span class="w"> </span><span class="kn">import</span> <span class="n">Builder</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.population</span><span class="w"> </span><span class="kn">import</span> <span class="n">SimulantData</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.resource</span><span class="w"> </span><span class="kn">import</span> <span class="n">Resource</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.values</span><span class="w"> </span><span class="kn">import</span> <span class="n">Pipeline</span><span class="p">,</span> <span class="n">list_combiner</span><span class="p">,</span> <span class="n">union_post_processor</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium_public_health.risks.data_transformations</span><span class="w"> </span><span class="kn">import</span> <span class="n">pivot_categorical</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium_public_health.utilities</span><span class="w"> </span><span class="kn">import</span> <span class="n">EntityString</span><span class="p">,</span> <span class="n">get_lookup_columns</span>
+
+
+<div class="viewcode-block" id="MissingDataError">
+<a class="viewcode-back" href="../../../api_reference/risks/distributions.html#vivarium_public_health.risks.distributions.MissingDataError">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">MissingDataError</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
+    <span class="k">pass</span></div>
+
+
+
+<div class="viewcode-block" id="RiskExposureDistribution">
+<a class="viewcode-back" href="../../../api_reference/risks/distributions.html#vivarium_public_health.risks.distributions.RiskExposureDistribution">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">RiskExposureDistribution</span><span class="p">(</span><span class="n">Component</span><span class="p">,</span> <span class="n">ABC</span><span class="p">):</span>
+
+    <span class="c1">#####################</span>
+    <span class="c1"># Lifecycle methods #</span>
+    <span class="c1">#####################</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">risk</span><span class="p">:</span> <span class="n">EntityString</span><span class="p">,</span>
+        <span class="n">distribution_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">exposure_data</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="nb">float</span> <span class="o">|</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">risk</span> <span class="o">=</span> <span class="n">risk</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">distribution_type</span> <span class="o">=</span> <span class="n">distribution_type</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_exposure_data</span> <span class="o">=</span> <span class="n">exposure_data</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">parameters_pipeline_name</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="si">}</span><span class="s2">.exposure_parameters&quot;</span>
+
+    <span class="c1">#################</span>
+    <span class="c1"># Setup methods #</span>
+    <span class="c1">#################</span>
+
+<div class="viewcode-block" id="RiskExposureDistribution.get_configuration">
+<a class="viewcode-back" href="../../../api_reference/risks/distributions.html#vivarium_public_health.risks.distributions.RiskExposureDistribution.get_configuration">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_configuration</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="s2">&quot;Builder&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">LayeredConfigTree</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="RiskExposureDistribution.build_all_lookup_tables">
+<a class="viewcode-back" href="../../../api_reference/risks/distributions.html#vivarium_public_health.risks.distributions.RiskExposureDistribution.build_all_lookup_tables">[docs]</a>
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">build_all_lookup_tables</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="s2">&quot;Builder&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span></div>
+
+
+<div class="viewcode-block" id="RiskExposureDistribution.get_exposure_data">
+<a class="viewcode-back" href="../../../api_reference/risks/distributions.html#vivarium_public_health.risks.distributions.RiskExposureDistribution.get_exposure_data">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_exposure_data</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span> <span class="o">|</span> <span class="nb">float</span> <span class="o">|</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_exposure_data</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_exposure_data</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_data</span><span class="p">(</span><span class="n">builder</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">configuration</span><span class="p">[</span><span class="s2">&quot;data_sources&quot;</span><span class="p">][</span><span class="s2">&quot;exposure&quot;</span><span class="p">])</span></div>
+
+
+    <span class="c1"># noinspection PyAttributeOutsideInit</span>
+<div class="viewcode-block" id="RiskExposureDistribution.setup">
+<a class="viewcode-back" href="../../../api_reference/risks/distributions.html#vivarium_public_health.risks.distributions.RiskExposureDistribution.setup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">exposure_parameters</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_exposure_parameter_pipeline</span><span class="p">(</span><span class="n">builder</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">exposure_parameters</span><span class="o">.</span><span class="n">name</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">parameters_pipeline_name</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;Expected exposure parameters pipeline to be named &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">parameters_pipeline_name</span><span class="si">}</span><span class="s2">, &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;but found </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">exposure_parameters</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">.&quot;</span>
+            <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="RiskExposureDistribution.get_exposure_parameter_pipeline">
+<a class="viewcode-back" href="../../../api_reference/risks/distributions.html#vivarium_public_health.risks.distributions.RiskExposureDistribution.get_exposure_parameter_pipeline">[docs]</a>
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_exposure_parameter_pipeline</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Pipeline</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span></div>
+
+
+    <span class="c1">##################</span>
+    <span class="c1"># Public methods #</span>
+    <span class="c1">##################</span>
+
+<div class="viewcode-block" id="RiskExposureDistribution.ppf">
+<a class="viewcode-back" href="../../../api_reference/risks/distributions.html#vivarium_public_health.risks.distributions.RiskExposureDistribution.ppf">[docs]</a>
+    <span class="nd">@abstractmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">ppf</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">quantiles</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="EnsembleDistribution">
+<a class="viewcode-back" href="../../../api_reference/risks/distributions.html#vivarium_public_health.risks.distributions.EnsembleDistribution">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">EnsembleDistribution</span><span class="p">(</span><span class="n">RiskExposureDistribution</span><span class="p">):</span>
+    <span class="c1">##############</span>
+    <span class="c1"># Properties #</span>
+    <span class="c1">##############</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">columns_created</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_propensity</span><span class="p">]</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">initialization_requirements</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span> <span class="o">|</span> <span class="n">Resource</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">randomness</span><span class="p">]</span>
+
+    <span class="c1">#####################</span>
+    <span class="c1"># Lifecycle methods #</span>
+    <span class="c1">#####################</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">risk</span><span class="p">:</span> <span class="n">EntityString</span><span class="p">,</span> <span class="n">distribution_type</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;ensemble&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">risk</span><span class="p">,</span> <span class="n">distribution_type</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_propensity</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;ensemble_propensity_</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="si">}</span><span class="s2">&quot;</span>
+
+    <span class="c1">#################</span>
+    <span class="c1"># Setup methods #</span>
+    <span class="c1">#################</span>
+
+<div class="viewcode-block" id="EnsembleDistribution.build_all_lookup_tables">
+<a class="viewcode-back" href="../../../api_reference/risks/distributions.html#vivarium_public_health.risks.distributions.EnsembleDistribution.build_all_lookup_tables">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">build_all_lookup_tables</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Build lookup tables for ensemble distribution parameters.</span>
+
+<span class="sd">        This method combines multiple distribution types (e.g., normal, lognormal,</span>
+<span class="sd">        gamma) weighted by GBD-provided weights into a single lookup table for the entire ensemble.</span>
+<span class="sd">        We build additional lookup tables outside of ``self.lookup_tables`` because</span>
+<span class="sd">        the ensemble requires separate parameter tables for each component distribution.</span>
+
+<span class="sd">        Lookup Tables Created</span>
+<span class="sd">        ---------------------</span>
+<span class="sd">        ensemble_distribution_weights</span>
+<span class="sd">            Weights for each component distribution in the ensemble.</span>
+<span class="sd">            Value columns are the distribution names (e.g., &#39;norm&#39;, &#39;lognorm&#39;).</span>
+
+<span class="sd">        Additionally, ``self.parameters`` dict is populated with lookup tables</span>
+<span class="sd">        for each distribution&#39;s parameters (built directly via builder.lookup).</span>
+
+<span class="sd">        Data Sources Used</span>
+<span class="sd">        -----------------</span>
+<span class="sd">        - ``exposure``: Mean exposure values</span>
+<span class="sd">        - ``exposure_standard_deviation``: Standard deviation of exposure</span>
+<span class="sd">        - ``ensemble_distribution_weights``: Weights for each distribution type</span>
+
+<span class="sd">        Notes</span>
+<span class="sd">        -----</span>
+<span class="sd">        The &#39;glnorm&#39; (generalized log-normal) distribution is not supported, and therefore excluded.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">exposure_data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_exposure_data</span><span class="p">(</span><span class="n">builder</span><span class="p">)</span>
+        <span class="n">standard_deviation</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_data</span><span class="p">(</span>
+            <span class="n">builder</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">configuration</span><span class="p">[</span><span class="s2">&quot;data_sources&quot;</span><span class="p">][</span><span class="s2">&quot;exposure_standard_deviation&quot;</span><span class="p">],</span>
+        <span class="p">)</span>
+        <span class="n">weights_source</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">configuration</span><span class="p">[</span><span class="s2">&quot;data_sources&quot;</span><span class="p">][</span><span class="s2">&quot;ensemble_distribution_weights&quot;</span><span class="p">]</span>
+        <span class="n">raw_weights</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_data</span><span class="p">(</span><span class="n">builder</span><span class="p">,</span> <span class="n">weights_source</span><span class="p">)</span>
+
+        <span class="n">glnorm_mask</span> <span class="o">=</span> <span class="n">raw_weights</span><span class="p">[</span><span class="s2">&quot;parameter&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;glnorm&quot;</span>
+        <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">any</span><span class="p">(</span><span class="n">raw_weights</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">glnorm_mask</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_value_columns</span><span class="p">(</span><span class="n">weights_source</span><span class="p">)]):</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;glnorm distribution is not supported&quot;</span><span class="p">)</span>
+        <span class="n">raw_weights</span> <span class="o">=</span> <span class="n">raw_weights</span><span class="p">[</span><span class="o">~</span><span class="n">glnorm_mask</span><span class="p">]</span>
+
+        <span class="n">distributions</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">raw_weights</span><span class="p">[</span><span class="s2">&quot;parameter&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">unique</span><span class="p">())</span>
+
+        <span class="n">raw_weights</span> <span class="o">=</span> <span class="n">pivot_categorical</span><span class="p">(</span>
+            <span class="n">builder</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="p">,</span> <span class="n">raw_weights</span><span class="p">,</span> <span class="n">pivot_column</span><span class="o">=</span><span class="s2">&quot;parameter&quot;</span><span class="p">,</span> <span class="n">reset_index</span><span class="o">=</span><span class="kc">False</span>
+        <span class="p">)</span>
+
+        <span class="n">weights</span><span class="p">,</span> <span class="n">parameters</span> <span class="o">=</span> <span class="n">rd</span><span class="o">.</span><span class="n">EnsembleDistribution</span><span class="o">.</span><span class="n">get_parameters</span><span class="p">(</span>
+            <span class="n">raw_weights</span><span class="p">,</span>
+            <span class="n">mean</span><span class="o">=</span><span class="n">get_risk_distribution_parameter</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">get_value_columns</span><span class="p">,</span> <span class="n">exposure_data</span><span class="p">),</span>
+            <span class="n">sd</span><span class="o">=</span><span class="n">get_risk_distribution_parameter</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">get_value_columns</span><span class="p">,</span> <span class="n">standard_deviation</span><span class="p">),</span>
+        <span class="p">)</span>
+
+        <span class="n">distribution_weights_table</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">build_lookup_table</span><span class="p">(</span>
+            <span class="n">builder</span><span class="p">,</span> <span class="n">weights</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(),</span> <span class="n">distributions</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lookup_tables</span><span class="p">[</span><span class="s2">&quot;ensemble_distribution_weights&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">distribution_weights_table</span>
+        <span class="n">key_columns</span> <span class="o">=</span> <span class="n">distribution_weights_table</span><span class="o">.</span><span class="n">key_columns</span>
+        <span class="n">parameter_columns</span> <span class="o">=</span> <span class="n">distribution_weights_table</span><span class="o">.</span><span class="n">parameter_columns</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">parameters</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="n">parameter</span><span class="p">:</span> <span class="n">builder</span><span class="o">.</span><span class="n">lookup</span><span class="o">.</span><span class="n">build_table</span><span class="p">(</span>
+                <span class="n">data</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(),</span>
+                <span class="n">key_columns</span><span class="o">=</span><span class="n">key_columns</span><span class="p">,</span>
+                <span class="n">parameter_columns</span><span class="o">=</span><span class="n">parameter_columns</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">for</span> <span class="n">parameter</span><span class="p">,</span> <span class="n">data</span> <span class="ow">in</span> <span class="n">parameters</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+        <span class="p">}</span></div>
+
+
+<div class="viewcode-block" id="EnsembleDistribution.setup">
+<a class="viewcode-back" href="../../../api_reference/risks/distributions.html#vivarium_public_health.risks.distributions.EnsembleDistribution.setup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">setup</span><span class="p">(</span><span class="n">builder</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">randomness</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">randomness</span><span class="o">.</span><span class="n">get_stream</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_propensity</span><span class="p">,</span> <span class="n">component</span><span class="o">=</span><span class="bp">self</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="EnsembleDistribution.get_exposure_parameter_pipeline">
+<a class="viewcode-back" href="../../../api_reference/risks/distributions.html#vivarium_public_health.risks.distributions.EnsembleDistribution.get_exposure_parameter_pipeline">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_exposure_parameter_pipeline</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Pipeline</span><span class="p">:</span>
+        <span class="c1"># This pipeline is not needed for ensemble distributions, so just</span>
+        <span class="c1"># register a dummy pipeline</span>
+        <span class="k">def</span><span class="w"> </span><span class="nf">raise_not_implemented</span><span class="p">():</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                <span class="s2">&quot;EnsembleDistribution does not use exposure parameters.&quot;</span>
+            <span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">builder</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">register_value_producer</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">parameters_pipeline_name</span><span class="p">,</span> <span class="k">lambda</span> <span class="o">*</span><span class="n">_</span><span class="p">:</span> <span class="n">raise_not_implemented</span><span class="p">(),</span> <span class="n">component</span><span class="o">=</span><span class="bp">self</span>
+        <span class="p">)</span></div>
+
+
+    <span class="c1">########################</span>
+    <span class="c1"># Event-driven methods #</span>
+    <span class="c1">########################</span>
+
+<div class="viewcode-block" id="EnsembleDistribution.on_initialize_simulants">
+<a class="viewcode-back" href="../../../api_reference/risks/distributions.html#vivarium_public_health.risks.distributions.EnsembleDistribution.on_initialize_simulants">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">on_initialize_simulants</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pop_data</span><span class="p">:</span> <span class="n">SimulantData</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">ensemble_propensity</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">randomness</span><span class="o">.</span><span class="n">get_draw</span><span class="p">(</span><span class="n">pop_data</span><span class="o">.</span><span class="n">index</span><span class="p">)</span><span class="o">.</span><span class="n">rename</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_propensity</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">population_view</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">ensemble_propensity</span><span class="p">)</span></div>
+
+
+    <span class="c1">##################</span>
+    <span class="c1"># Public methods #</span>
+    <span class="c1">##################</span>
+
+<div class="viewcode-block" id="EnsembleDistribution.ppf">
+<a class="viewcode-back" href="../../../api_reference/risks/distributions.html#vivarium_public_health.risks.distributions.EnsembleDistribution.ppf">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">ppf</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">quantiles</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">quantiles</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+            <span class="n">quantiles</span> <span class="o">=</span> <span class="n">clip</span><span class="p">(</span><span class="n">quantiles</span><span class="p">)</span>
+            <span class="n">weights</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lookup_tables</span><span class="p">[</span><span class="s2">&quot;ensemble_distribution_weights&quot;</span><span class="p">](</span><span class="n">quantiles</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+            <span class="n">parameters</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="n">name</span><span class="p">:</span> <span class="n">param</span><span class="p">(</span><span class="n">quantiles</span><span class="o">.</span><span class="n">index</span><span class="p">)</span> <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">param</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">parameters</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+            <span class="p">}</span>
+            <span class="n">ensemble_propensity</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">population_view</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">quantiles</span><span class="o">.</span><span class="n">index</span><span class="p">)</span><span class="o">.</span><span class="n">iloc</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="n">rd</span><span class="o">.</span><span class="n">EnsembleDistribution</span><span class="p">(</span><span class="n">weights</span><span class="p">,</span> <span class="n">parameters</span><span class="p">)</span><span class="o">.</span><span class="n">ppf</span><span class="p">(</span>
+                <span class="n">quantiles</span><span class="p">,</span> <span class="n">ensemble_propensity</span>
+            <span class="p">)</span>
+            <span class="n">x</span><span class="p">[</span><span class="n">x</span><span class="o">.</span><span class="n">isnull</span><span class="p">()]</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">([])</span>
+        <span class="k">return</span> <span class="n">x</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="ContinuousDistribution">
+<a class="viewcode-back" href="../../../api_reference/risks/distributions.html#vivarium_public_health.risks.distributions.ContinuousDistribution">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">ContinuousDistribution</span><span class="p">(</span><span class="n">RiskExposureDistribution</span><span class="p">):</span>
+    <span class="c1">#####################</span>
+    <span class="c1"># Lifecycle methods #</span>
+    <span class="c1">#####################</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">risk</span><span class="p">:</span> <span class="n">EntityString</span><span class="p">,</span> <span class="n">distribution_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">risk</span><span class="p">,</span> <span class="n">distribution_type</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">standard_deviation</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_distribution</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="s2">&quot;normal&quot;</span><span class="p">:</span> <span class="n">rd</span><span class="o">.</span><span class="n">Normal</span><span class="p">,</span>
+                <span class="s2">&quot;lognormal&quot;</span><span class="p">:</span> <span class="n">rd</span><span class="o">.</span><span class="n">LogNormal</span><span class="p">,</span>
+            <span class="p">}[</span><span class="n">distribution_type</span><span class="p">]</span>
+        <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Distribution type </span><span class="si">{</span><span class="n">distribution_type</span><span class="si">}</span><span class="s2"> is not supported for &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;risk </span><span class="si">{</span><span class="n">risk</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">.&quot;</span>
+            <span class="p">)</span>
+
+    <span class="c1">#################</span>
+    <span class="c1"># Setup methods #</span>
+    <span class="c1">#################</span>
+
+<div class="viewcode-block" id="ContinuousDistribution.build_all_lookup_tables">
+<a class="viewcode-back" href="../../../api_reference/risks/distributions.html#vivarium_public_health.risks.distributions.ContinuousDistribution.build_all_lookup_tables">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">build_all_lookup_tables</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="s2">&quot;Builder&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Build lookup tables for continuous distribution parameters.</span>
+
+<span class="sd">        This method builds a single lookup table containing the distribution</span>
+<span class="sd">        parameters (e.g., mu and sigma for normal/lognormal) computed from</span>
+<span class="sd">        the mean exposure and standard deviation data.</span>
+
+<span class="sd">        Lookup Tables Created</span>
+<span class="sd">        ---------------------</span>
+<span class="sd">        parameters</span>
+<span class="sd">            Distribution parameters computed by the risk_distributions package.</span>
+
+<span class="sd">        Data Sources Used</span>
+<span class="sd">        -----------------</span>
+<span class="sd">        - ``exposure``: Mean exposure values</span>
+<span class="sd">        - ``exposure_standard_deviation``: Standard deviation of exposure</span>
+
+<span class="sd">        Notes</span>
+<span class="sd">        -----</span>
+<span class="sd">        The parameter transformation is handled by the ``risk_distributions``</span>
+<span class="sd">        package&#39;s ``get_parameters`` method, which converts mean/sd to the</span>
+<span class="sd">        appropriate distribution parameters.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">exposure_data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_exposure_data</span><span class="p">(</span><span class="n">builder</span><span class="p">)</span>
+        <span class="n">standard_deviation</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_data</span><span class="p">(</span>
+            <span class="n">builder</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">configuration</span><span class="p">[</span><span class="s2">&quot;data_sources&quot;</span><span class="p">][</span><span class="s2">&quot;exposure_standard_deviation&quot;</span><span class="p">]</span>
+        <span class="p">)</span>
+        <span class="n">parameters</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_distribution</span><span class="o">.</span><span class="n">get_parameters</span><span class="p">(</span>
+            <span class="n">mean</span><span class="o">=</span><span class="n">get_risk_distribution_parameter</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">get_value_columns</span><span class="p">,</span> <span class="n">exposure_data</span><span class="p">),</span>
+            <span class="n">sd</span><span class="o">=</span><span class="n">get_risk_distribution_parameter</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">get_value_columns</span><span class="p">,</span> <span class="n">standard_deviation</span><span class="p">),</span>
+        <span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">lookup_tables</span><span class="p">[</span><span class="s2">&quot;parameters&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">build_lookup_table</span><span class="p">(</span>
+            <span class="n">builder</span><span class="p">,</span> <span class="n">parameters</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(),</span> <span class="nb">list</span><span class="p">(</span><span class="n">parameters</span><span class="o">.</span><span class="n">columns</span><span class="p">)</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="ContinuousDistribution.get_exposure_parameter_pipeline">
+<a class="viewcode-back" href="../../../api_reference/risks/distributions.html#vivarium_public_health.risks.distributions.ContinuousDistribution.get_exposure_parameter_pipeline">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_exposure_parameter_pipeline</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Pipeline</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">builder</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">register_value_producer</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">parameters_pipeline_name</span><span class="p">,</span>
+            <span class="n">source</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">lookup_tables</span><span class="p">[</span><span class="s2">&quot;parameters&quot;</span><span class="p">],</span>
+            <span class="n">component</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span>
+            <span class="n">required_resources</span><span class="o">=</span><span class="n">get_lookup_columns</span><span class="p">([</span><span class="bp">self</span><span class="o">.</span><span class="n">lookup_tables</span><span class="p">[</span><span class="s2">&quot;parameters&quot;</span><span class="p">]]),</span>
+        <span class="p">)</span></div>
+
+
+    <span class="c1">##################</span>
+    <span class="c1"># Public methods #</span>
+    <span class="c1">##################</span>
+
+<div class="viewcode-block" id="ContinuousDistribution.ppf">
+<a class="viewcode-back" href="../../../api_reference/risks/distributions.html#vivarium_public_health.risks.distributions.ContinuousDistribution.ppf">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">ppf</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">quantiles</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">quantiles</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+            <span class="n">quantiles</span> <span class="o">=</span> <span class="n">clip</span><span class="p">(</span><span class="n">quantiles</span><span class="p">)</span>
+            <span class="n">parameters</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">exposure_parameters</span><span class="p">(</span><span class="n">quantiles</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_distribution</span><span class="p">(</span><span class="n">parameters</span><span class="o">=</span><span class="n">parameters</span><span class="p">)</span><span class="o">.</span><span class="n">ppf</span><span class="p">(</span><span class="n">quantiles</span><span class="p">)</span>
+            <span class="n">x</span><span class="p">[</span><span class="n">x</span><span class="o">.</span><span class="n">isnull</span><span class="p">()]</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">x</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">([])</span>
+        <span class="k">return</span> <span class="n">x</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="PolytomousDistribution">
+<a class="viewcode-back" href="../../../api_reference/risks/distributions.html#vivarium_public_health.risks.distributions.PolytomousDistribution">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">PolytomousDistribution</span><span class="p">(</span><span class="n">RiskExposureDistribution</span><span class="p">):</span>
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">categories</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+        <span class="c1"># These need to be sorted so the cumulative sum is in the ocrrect order of categories</span>
+        <span class="c1"># and results are therefore reproducible and correct</span>
+        <span class="k">return</span> <span class="nb">sorted</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">lookup_tables</span><span class="p">[</span><span class="s2">&quot;exposure&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">value_columns</span><span class="p">)</span>
+
+    <span class="c1">#################</span>
+    <span class="c1"># Setup methods #</span>
+    <span class="c1">#################</span>
+
+<div class="viewcode-block" id="PolytomousDistribution.build_all_lookup_tables">
+<a class="viewcode-back" href="../../../api_reference/risks/distributions.html#vivarium_public_health.risks.distributions.PolytomousDistribution.build_all_lookup_tables">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">build_all_lookup_tables</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="s2">&quot;Builder&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Build lookup tables for polytomous (categorical) exposure.</span>
+
+<span class="sd">        This method builds a lookup table containing exposure probabilities</span>
+<span class="sd">        for each category of the polytomous risk. The data is pivoted from</span>
+<span class="sd">        long format (one row per category) to wide format (one column per</span>
+<span class="sd">        category).</span>
+
+<span class="sd">        Lookup Tables Created</span>
+<span class="sd">        ---------------------</span>
+<span class="sd">        exposure</span>
+<span class="sd">            Exposure probabilities for each category. Value columns are the</span>
+<span class="sd">            category names (e.g., &#39;cat1&#39;, &#39;cat2&#39;, &#39;cat3&#39;, &#39;cat4&#39;). Values</span>
+<span class="sd">            should sum to 1.0 across categories for each demographic group.</span>
+
+<span class="sd">        Data Sources Used</span>
+<span class="sd">        -----------------</span>
+<span class="sd">        - ``exposure``: Exposure probabilities by category. Expected to have</span>
+<span class="sd">          a &#39;parameter&#39; column containing category names and a &#39;value&#39; column</span>
+<span class="sd">          containing the probability for each category.</span>
+
+<span class="sd">        Notes</span>
+<span class="sd">        -----</span>
+<span class="sd">        The ``pivot_categorical`` function is used to transform the data from</span>
+<span class="sd">        long to wide format, with category names becoming column names.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">exposure_data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_exposure_data</span><span class="p">(</span><span class="n">builder</span><span class="p">)</span>
+        <span class="n">exposure_value_columns</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_exposure_value_columns</span><span class="p">(</span><span class="n">exposure_data</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">exposure_data</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">):</span>
+            <span class="n">exposure_data</span> <span class="o">=</span> <span class="n">pivot_categorical</span><span class="p">(</span><span class="n">builder</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="p">,</span> <span class="n">exposure_data</span><span class="p">,</span> <span class="s2">&quot;parameter&quot;</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">lookup_tables</span><span class="p">[</span><span class="s2">&quot;exposure&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">build_lookup_table</span><span class="p">(</span>
+            <span class="n">builder</span><span class="p">,</span> <span class="n">exposure_data</span><span class="p">,</span> <span class="n">exposure_value_columns</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="PolytomousDistribution.get_exposure_value_columns">
+<a class="viewcode-back" href="../../../api_reference/risks/distributions.html#vivarium_public_health.risks.distributions.PolytomousDistribution.get_exposure_value_columns">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_exposure_value_columns</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">exposure_data</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="nb">float</span> <span class="o">|</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">exposure_data</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">):</span>
+            <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="n">exposure_data</span><span class="p">[</span><span class="s2">&quot;parameter&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">unique</span><span class="p">())</span>
+        <span class="k">return</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="PolytomousDistribution.get_exposure_parameter_pipeline">
+<a class="viewcode-back" href="../../../api_reference/risks/distributions.html#vivarium_public_health.risks.distributions.PolytomousDistribution.get_exposure_parameter_pipeline">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_exposure_parameter_pipeline</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Pipeline</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">builder</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">register_value_producer</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">parameters_pipeline_name</span><span class="p">,</span>
+            <span class="n">source</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">lookup_tables</span><span class="p">[</span><span class="s2">&quot;exposure&quot;</span><span class="p">],</span>
+            <span class="n">component</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span>
+            <span class="n">required_resources</span><span class="o">=</span><span class="n">get_lookup_columns</span><span class="p">([</span><span class="bp">self</span><span class="o">.</span><span class="n">lookup_tables</span><span class="p">[</span><span class="s2">&quot;exposure&quot;</span><span class="p">]]),</span>
+        <span class="p">)</span></div>
+
+
+    <span class="c1">##################</span>
+    <span class="c1"># Public methods #</span>
+    <span class="c1">##################</span>
+
+<div class="viewcode-block" id="PolytomousDistribution.ppf">
+<a class="viewcode-back" href="../../../api_reference/risks/distributions.html#vivarium_public_health.risks.distributions.PolytomousDistribution.ppf">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">ppf</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">quantiles</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">:</span>
+        <span class="n">exposure</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">exposure_parameters</span><span class="p">(</span><span class="n">quantiles</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+        <span class="n">sorted_exposures</span> <span class="o">=</span> <span class="n">exposure</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">categories</span><span class="p">]</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">np</span><span class="o">.</span><span class="n">allclose</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">sorted_exposures</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)):</span>
+            <span class="k">raise</span> <span class="n">MissingDataError</span><span class="p">(</span><span class="s2">&quot;All exposure data returned as 0.&quot;</span><span class="p">)</span>
+        <span class="n">exposure_sum</span> <span class="o">=</span> <span class="n">sorted_exposures</span><span class="o">.</span><span class="n">cumsum</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="s2">&quot;columns&quot;</span><span class="p">)</span>
+        <span class="n">category_index</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">concat</span><span class="p">(</span>
+            <span class="p">[</span><span class="n">exposure_sum</span><span class="p">[</span><span class="n">c</span><span class="p">]</span> <span class="o">&lt;</span> <span class="n">quantiles</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">exposure_sum</span><span class="o">.</span><span class="n">columns</span><span class="p">],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span>
+        <span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">categories</span><span class="p">)[</span><span class="n">category_index</span><span class="p">],</span>
+            <span class="n">name</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span> <span class="o">+</span> <span class="s2">&quot;.exposure&quot;</span><span class="p">,</span>
+            <span class="n">index</span><span class="o">=</span><span class="n">quantiles</span><span class="o">.</span><span class="n">index</span><span class="p">,</span>
+        <span class="p">)</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="DichotomousDistribution">
+<a class="viewcode-back" href="../../../api_reference/risks/distributions.html#vivarium_public_health.risks.distributions.DichotomousDistribution">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">DichotomousDistribution</span><span class="p">(</span><span class="n">RiskExposureDistribution</span><span class="p">):</span>
+
+    <span class="c1">#################</span>
+    <span class="c1"># Setup methods #</span>
+    <span class="c1">#################</span>
+
+<div class="viewcode-block" id="DichotomousDistribution.build_all_lookup_tables">
+<a class="viewcode-back" href="../../../api_reference/risks/distributions.html#vivarium_public_health.risks.distributions.DichotomousDistribution.build_all_lookup_tables">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">build_all_lookup_tables</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="s2">&quot;Builder&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Build lookup tables for a binary risk exposure.</span>
+
+<span class="sd">        Lookup Tables Created</span>
+<span class="sd">        ---------------------</span>
+<span class="sd">        exposure</span>
+<span class="sd">            Probability of being in the exposed category (cat1). Values must</span>
+<span class="sd">            be in the range [0, 1].</span>
+<span class="sd">        paf</span>
+<span class="sd">            Population attributable fraction, initialized to 0.0. This can be</span>
+<span class="sd">            modified by risk effects to account for joint PAF calculations.</span>
+
+<span class="sd">        Data Sources Used</span>
+<span class="sd">        -----------------</span>
+<span class="sd">        - ``exposure``: Exposure probability for cat1. Can be:</span>
+
+<span class="sd">          - A scalar value (float) representing constant exposure probability</span>
+<span class="sd">          - A DataFrame with exposure probabilities by demographic group</span>
+<span class="sd">          - A DataFrame with polytomous categories that will be rebinned</span>
+<span class="sd">            (see ``rebinned_exposed`` configuration)</span>
+
+<span class="sd">        Notes</span>
+<span class="sd">        -----</span>
+<span class="sd">        If ``rebinned_exposed`` is configured, polytomous exposure data is</span>
+<span class="sd">        automatically rebinned: specified categories are combined into &#39;cat1&#39;</span>
+<span class="sd">        (exposed) and remaining categories become &#39;cat2&#39; (unexposed).</span>
+
+<span class="sd">        The PAF lookup table enables joint PAF calculations when multiple</span>
+<span class="sd">        risk effects modify the same target.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">exposure_data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_exposure_data</span><span class="p">(</span><span class="n">builder</span><span class="p">)</span>
+        <span class="n">exposure_value_columns</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_exposure_value_columns</span><span class="p">(</span><span class="n">exposure_data</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">exposure_data</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">):</span>
+            <span class="n">any_negatives</span> <span class="o">=</span> <span class="p">(</span><span class="n">exposure_data</span><span class="p">[</span><span class="n">exposure_value_columns</span><span class="p">]</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">any</span><span class="p">()</span><span class="o">.</span><span class="n">any</span><span class="p">()</span>
+            <span class="n">any_over_one</span> <span class="o">=</span> <span class="p">(</span><span class="n">exposure_data</span><span class="p">[</span><span class="n">exposure_value_columns</span><span class="p">]</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">any</span><span class="p">()</span><span class="o">.</span><span class="n">any</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">any_negatives</span> <span class="ow">or</span> <span class="n">any_over_one</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;All exposures must be in the range [0, 1] for </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">exposure_data</span> <span class="o">&lt;</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">exposure_data</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Exposure must be in the range [0, 1] for </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">lookup_tables</span><span class="p">[</span><span class="s2">&quot;exposure&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">build_lookup_table</span><span class="p">(</span>
+            <span class="n">builder</span><span class="p">,</span> <span class="n">exposure_data</span><span class="p">,</span> <span class="n">exposure_value_columns</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lookup_tables</span><span class="p">[</span><span class="s2">&quot;paf&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">build_lookup_table</span><span class="p">(</span><span class="n">builder</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="DichotomousDistribution.get_exposure_data">
+<a class="viewcode-back" href="../../../api_reference/risks/distributions.html#vivarium_public_health.risks.distributions.DichotomousDistribution.get_exposure_data">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_exposure_data</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span> <span class="o">|</span> <span class="nb">float</span> <span class="o">|</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+        <span class="n">exposure_data</span> <span class="o">=</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">get_exposure_data</span><span class="p">(</span><span class="n">builder</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">exposure_data</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">)):</span>
+            <span class="k">return</span> <span class="n">exposure_data</span>
+
+        <span class="c1"># rebin exposure categories</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">validate_rebin_source</span><span class="p">(</span><span class="n">builder</span><span class="p">,</span> <span class="n">exposure_data</span><span class="p">)</span>
+        <span class="n">rebin_exposed_categories</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">configuration</span><span class="p">[</span><span class="s2">&quot;rebinned_exposed&quot;</span><span class="p">])</span>
+        <span class="k">if</span> <span class="n">rebin_exposed_categories</span><span class="p">:</span>
+            <span class="n">exposure_data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_rebin_exposure_data</span><span class="p">(</span><span class="n">exposure_data</span><span class="p">,</span> <span class="n">rebin_exposed_categories</span><span class="p">)</span>
+
+        <span class="n">exposure_data</span> <span class="o">=</span> <span class="n">exposure_data</span><span class="p">[</span><span class="n">exposure_data</span><span class="p">[</span><span class="s2">&quot;parameter&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;cat1&quot;</span><span class="p">]</span>
+        <span class="k">return</span> <span class="n">exposure_data</span><span class="o">.</span><span class="n">drop</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="s2">&quot;parameter&quot;</span><span class="p">)</span></div>
+
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_rebin_exposure_data</span><span class="p">(</span>
+        <span class="n">exposure_data</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span> <span class="n">rebin_exposed_categories</span><span class="p">:</span> <span class="nb">set</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+        <span class="n">exposure_data</span> <span class="o">=</span> <span class="n">exposure_data</span><span class="p">[</span>
+            <span class="n">exposure_data</span><span class="p">[</span><span class="s2">&quot;parameter&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">isin</span><span class="p">(</span><span class="n">rebin_exposed_categories</span><span class="p">)</span>
+        <span class="p">]</span>
+        <span class="n">exposure_data</span><span class="p">[</span><span class="s2">&quot;parameter&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;cat1&quot;</span>
+        <span class="n">exposure_data</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">exposure_data</span><span class="o">.</span><span class="n">groupby</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">exposure_data</span><span class="o">.</span><span class="n">columns</span><span class="o">.</span><span class="n">difference</span><span class="p">([</span><span class="s2">&quot;value&quot;</span><span class="p">])))</span>
+            <span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+            <span class="o">.</span><span class="n">reset_index</span><span class="p">()</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">exposure_data</span>
+
+<div class="viewcode-block" id="DichotomousDistribution.get_exposure_value_columns">
+<a class="viewcode-back" href="../../../api_reference/risks/distributions.html#vivarium_public_health.risks.distributions.DichotomousDistribution.get_exposure_value_columns">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_exposure_value_columns</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">exposure_data</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="nb">float</span> <span class="o">|</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">exposure_data</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">):</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_value_columns</span><span class="p">(</span><span class="n">exposure_data</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">None</span></div>
+
+
+    <span class="c1"># noinspection PyAttributeOutsideInit</span>
+<div class="viewcode-block" id="DichotomousDistribution.setup">
+<a class="viewcode-back" href="../../../api_reference/risks/distributions.html#vivarium_public_health.risks.distributions.DichotomousDistribution.setup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">setup</span><span class="p">(</span><span class="n">builder</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">joint_paf</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">register_value_producer</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="si">}</span><span class="s2">.exposure_parameters.paf&quot;</span><span class="p">,</span>
+            <span class="n">source</span><span class="o">=</span><span class="k">lambda</span> <span class="n">index</span><span class="p">:</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">lookup_tables</span><span class="p">[</span><span class="s2">&quot;paf&quot;</span><span class="p">](</span><span class="n">index</span><span class="p">)],</span>
+            <span class="n">component</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span>
+            <span class="n">preferred_combiner</span><span class="o">=</span><span class="n">list_combiner</span><span class="p">,</span>
+            <span class="n">preferred_post_processor</span><span class="o">=</span><span class="n">union_post_processor</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="DichotomousDistribution.get_exposure_parameter_pipeline">
+<a class="viewcode-back" href="../../../api_reference/risks/distributions.html#vivarium_public_health.risks.distributions.DichotomousDistribution.get_exposure_parameter_pipeline">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_exposure_parameter_pipeline</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Pipeline</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">builder</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">register_value_producer</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="si">}</span><span class="s2">.exposure_parameters&quot;</span><span class="p">,</span>
+            <span class="n">source</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">exposure_parameter_source</span><span class="p">,</span>
+            <span class="n">component</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span>
+            <span class="n">required_resources</span><span class="o">=</span><span class="n">get_lookup_columns</span><span class="p">([</span><span class="bp">self</span><span class="o">.</span><span class="n">lookup_tables</span><span class="p">[</span><span class="s2">&quot;exposure&quot;</span><span class="p">]]),</span>
+        <span class="p">)</span></div>
+
+
+    <span class="c1">##############</span>
+    <span class="c1"># Validators #</span>
+    <span class="c1">##############</span>
+
+<div class="viewcode-block" id="DichotomousDistribution.validate_rebin_source">
+<a class="viewcode-back" href="../../../api_reference/risks/distributions.html#vivarium_public_health.risks.distributions.DichotomousDistribution.validate_rebin_source">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">validate_rebin_source</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">):</span>
+            <span class="k">return</span>
+
+        <span class="n">rebin_exposed_categories</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="p">][</span><span class="s2">&quot;rebinned_exposed&quot;</span><span class="p">])</span>
+
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="n">rebin_exposed_categories</span>
+            <span class="ow">and</span> <span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="p">][</span><span class="s2">&quot;category_thresholds&quot;</span><span class="p">]</span>
+        <span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Rebinning and category thresholds are mutually exclusive. &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;You provided both for </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">.&quot;</span>
+            <span class="p">)</span>
+
+        <span class="n">invalid_cats</span> <span class="o">=</span> <span class="n">rebin_exposed_categories</span><span class="o">.</span><span class="n">difference</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">parameter</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">invalid_cats</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;The following provided categories for the rebinned exposed &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;category of </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> are not found in the exposure data: &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">invalid_cats</span><span class="si">}</span><span class="s2">.&quot;</span>
+            <span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">rebin_exposed_categories</span> <span class="o">==</span> <span class="nb">set</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">parameter</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;The provided categories for the rebinned exposed category of &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> comprise all categories for the exposure data. &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;At least one category must be left out of the provided categories &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;to be rebinned into the unexposed category.&quot;</span>
+            <span class="p">)</span></div>
+
+
+    <span class="c1">##################################</span>
+    <span class="c1"># Pipeline sources and modifiers #</span>
+    <span class="c1">##################################</span>
+
+<div class="viewcode-block" id="DichotomousDistribution.exposure_parameter_source">
+<a class="viewcode-back" href="../../../api_reference/risks/distributions.html#vivarium_public_health.risks.distributions.DichotomousDistribution.exposure_parameter_source">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">exposure_parameter_source</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">index</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">Index</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">:</span>
+        <span class="n">base_exposure</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lookup_tables</span><span class="p">[</span><span class="s2">&quot;exposure&quot;</span><span class="p">](</span><span class="n">index</span><span class="p">)</span><span class="o">.</span><span class="n">values</span>
+        <span class="n">joint_paf</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">joint_paf</span><span class="p">(</span><span class="n">index</span><span class="p">)</span><span class="o">.</span><span class="n">values</span>
+        <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">base_exposure</span> <span class="o">*</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">joint_paf</span><span class="p">),</span> <span class="n">index</span><span class="o">=</span><span class="n">index</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;values&quot;</span><span class="p">)</span></div>
+
+
+    <span class="c1">##################</span>
+    <span class="c1"># Public methods #</span>
+    <span class="c1">##################</span>
+
+<div class="viewcode-block" id="DichotomousDistribution.ppf">
+<a class="viewcode-back" href="../../../api_reference/risks/distributions.html#vivarium_public_health.risks.distributions.DichotomousDistribution.ppf">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">ppf</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">quantiles</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">:</span>
+        <span class="n">exposed</span> <span class="o">=</span> <span class="n">quantiles</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">exposure_parameters</span><span class="p">(</span><span class="n">quantiles</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span>
+            <span class="n">exposed</span><span class="o">.</span><span class="n">replace</span><span class="p">({</span><span class="kc">True</span><span class="p">:</span> <span class="s2">&quot;cat1&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">:</span> <span class="s2">&quot;cat2&quot;</span><span class="p">}),</span>
+            <span class="n">name</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span> <span class="o">+</span> <span class="s2">&quot;.exposure&quot;</span><span class="p">,</span>
+            <span class="n">index</span><span class="o">=</span><span class="n">quantiles</span><span class="o">.</span><span class="n">index</span><span class="p">,</span>
+        <span class="p">)</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="clip">
+<a class="viewcode-back" href="../../../api_reference/risks/distributions.html#vivarium_public_health.risks.distributions.clip">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">clip</span><span class="p">(</span><span class="n">q</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Adjust the percentile boundary cases.</span>
+
+<span class="sd">    The  risk distributions package uses the 99.9th and 0.001st percentiles</span>
+<span class="sd">    of a log-normal distribution as the bounds of the distribution support.</span>
+<span class="sd">    This is bound up in the GBD risk factor PAF calculation process.</span>
+<span class="sd">    We&#39;ll clip the distribution tails so we don&#39;t get NaNs back from the</span>
+<span class="sd">    distribution calls</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">Q_LOWER_BOUND</span> <span class="o">=</span> <span class="mf">0.0011</span>
+    <span class="n">Q_UPPER_BOUND</span> <span class="o">=</span> <span class="mf">0.998</span>
+    <span class="n">q</span><span class="p">[</span><span class="n">q</span> <span class="o">&gt;</span> <span class="n">Q_UPPER_BOUND</span><span class="p">]</span> <span class="o">=</span> <span class="n">Q_UPPER_BOUND</span>
+    <span class="n">q</span><span class="p">[</span><span class="n">q</span> <span class="o">&lt;</span> <span class="n">Q_LOWER_BOUND</span><span class="p">]</span> <span class="o">=</span> <span class="n">Q_LOWER_BOUND</span>
+    <span class="k">return</span> <span class="n">q</span></div>
+
+
+
+<div class="viewcode-block" id="get_risk_distribution_parameter">
+<a class="viewcode-back" href="../../../api_reference/risks/distributions.html#vivarium_public_health.risks.distributions.get_risk_distribution_parameter">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">get_risk_distribution_parameter</span><span class="p">(</span>
+    <span class="n">value_columns_getter</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">],</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]],</span>
+    <span class="n">data</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span> <span class="o">|</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">:</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">):</span>
+        <span class="n">value_columns</span> <span class="o">=</span> <span class="n">value_columns_getter</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">value_columns</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;Expected a single value column for risk data, but found &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">value_columns</span><span class="p">)</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">value_columns</span><span class="si">}</span><span class="s2">.&quot;</span>
+            <span class="p">)</span>
+        <span class="c1"># don&#39;t return parameter col in continuous and ensemble distribution</span>
+        <span class="c1"># means to match standard deviation index</span>
+        <span class="k">if</span> <span class="s2">&quot;parameter&quot;</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">columns</span> <span class="ow">and</span> <span class="nb">set</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="s2">&quot;parameter&quot;</span><span class="p">])</span> <span class="o">==</span> <span class="p">{</span><span class="s2">&quot;continuous&quot;</span><span class="p">}:</span>
+            <span class="n">data</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">drop</span><span class="p">(</span><span class="s2">&quot;parameter&quot;</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">index</span> <span class="o">=</span> <span class="p">[</span><span class="n">col</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">columns</span> <span class="k">if</span> <span class="n">col</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">value_columns</span><span class="p">]</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">set_index</span><span class="p">(</span><span class="n">index</span><span class="p">)[</span><span class="n">value_columns</span><span class="p">]</span><span class="o">.</span><span class="n">squeeze</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">data</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, The vivarium developers.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

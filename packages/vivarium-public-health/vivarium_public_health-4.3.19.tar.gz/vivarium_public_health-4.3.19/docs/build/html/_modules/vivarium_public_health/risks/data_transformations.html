@@ -1,0 +1,383 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>vivarium_public_health.risks.data_transformations &mdash; vivarium_public_health 4.3.15.dev2+g712190e05 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/plot_directive.css" />
+
+  
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=7ca62e9d"></script>
+      <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+    <link href="../../../_static/style.css" rel="stylesheet" type="text/css">
+
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            vivarium_public_health
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorials/index.html">Tutorials</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_reference/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">vivarium_public_health</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">vivarium_public_health.risks.data_transformations</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for vivarium_public_health.risks.data_transformations</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">=========================</span>
+<span class="sd">Risk Data Transformations</span>
+<span class="sd">=========================</span>
+
+<span class="sd">This module contains tools for handling raw risk exposure and relative</span>
+<span class="sd">risk data and performing any necessary data transformations.</span>
+
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.engine</span><span class="w"> </span><span class="kn">import</span> <span class="n">Builder</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium_public_health.utilities</span><span class="w"> </span><span class="kn">import</span> <span class="n">EntityString</span><span class="p">,</span> <span class="n">TargetString</span>
+
+<span class="c1">#############</span>
+<span class="c1"># Utilities #</span>
+<span class="c1">#############</span>
+
+
+<div class="viewcode-block" id="pivot_categorical">
+<a class="viewcode-back" href="../../../api_reference/risks/data_transformations.html#vivarium_public_health.risks.data_transformations.pivot_categorical">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">pivot_categorical</span><span class="p">(</span>
+    <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">,</span>
+    <span class="n">risk</span><span class="p">:</span> <span class="n">EntityString</span><span class="p">,</span>
+    <span class="n">data</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span>
+    <span class="n">pivot_column</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;parameter&quot;</span><span class="p">,</span>
+    <span class="n">reset_index</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Pivots data that is long on categories to be wide.&quot;&quot;&quot;</span>
+    <span class="c1"># todo remove dependency on artifact manager having exactly one value column</span>
+    <span class="n">value_column</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">value_columns</span><span class="p">()(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">risk</span><span class="si">}</span><span class="s2">.exposure&quot;</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">index_cols</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="n">column</span> <span class="k">for</span> <span class="n">column</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">columns</span> <span class="k">if</span> <span class="n">column</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">[</span><span class="n">value_column</span><span class="p">,</span> <span class="n">pivot_column</span><span class="p">]</span>
+    <span class="p">]</span>
+    <span class="n">data</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">pivot_table</span><span class="p">(</span><span class="n">index</span><span class="o">=</span><span class="n">index_cols</span><span class="p">,</span> <span class="n">columns</span><span class="o">=</span><span class="n">pivot_column</span><span class="p">,</span> <span class="n">values</span><span class="o">=</span><span class="n">value_column</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">reset_index</span><span class="p">:</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">reset_index</span><span class="p">()</span>
+    <span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">return</span> <span class="n">data</span></div>
+
+
+
+<span class="c1">##########################</span>
+<span class="c1"># Exposure data handlers #</span>
+<span class="c1">##########################</span>
+
+
+<div class="viewcode-block" id="get_exposure_post_processor">
+<a class="viewcode-back" href="../../../api_reference/risks/data_transformations.html#vivarium_public_health.risks.data_transformations.get_exposure_post_processor">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">get_exposure_post_processor</span><span class="p">(</span><span class="n">builder</span><span class="p">,</span> <span class="n">risk</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+    <span class="n">thresholds</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="p">[</span><span class="n">risk</span><span class="p">][</span><span class="s2">&quot;category_thresholds&quot;</span><span class="p">]</span>
+
+    <span class="k">if</span> <span class="n">thresholds</span><span class="p">:</span>
+        <span class="n">thresholds</span> <span class="o">=</span> <span class="p">[</span><span class="o">-</span><span class="n">np</span><span class="o">.</span><span class="n">inf</span><span class="p">]</span> <span class="o">+</span> <span class="n">thresholds</span> <span class="o">+</span> <span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">inf</span><span class="p">]</span>
+        <span class="n">categories</span> <span class="o">=</span> <span class="p">[</span><span class="sa">f</span><span class="s2">&quot;cat</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">thresholds</span><span class="p">))]</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">post_processor</span><span class="p">(</span><span class="n">exposure</span><span class="p">,</span> <span class="n">_</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span>
+                <span class="n">pd</span><span class="o">.</span><span class="n">cut</span><span class="p">(</span><span class="n">exposure</span><span class="p">,</span> <span class="n">thresholds</span><span class="p">,</span> <span class="n">labels</span><span class="o">=</span><span class="n">categories</span><span class="p">),</span> <span class="n">index</span><span class="o">=</span><span class="n">exposure</span><span class="o">.</span><span class="n">index</span>
+            <span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">str</span><span class="p">)</span>
+
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">post_processor</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">return</span> <span class="n">post_processor</span></div>
+
+
+
+<div class="viewcode-block" id="load_exposure_data">
+<a class="viewcode-back" href="../../../api_reference/risks/data_transformations.html#vivarium_public_health.risks.data_transformations.load_exposure_data">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">load_exposure_data</span><span class="p">(</span><span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">,</span> <span class="n">risk</span><span class="p">:</span> <span class="n">EntityString</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+    <span class="n">risk_component</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">components</span><span class="o">.</span><span class="n">get_component</span><span class="p">(</span><span class="n">risk</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">risk_component</span><span class="o">.</span><span class="n">get_data</span><span class="p">(</span>
+        <span class="n">builder</span><span class="p">,</span> <span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="p">[</span><span class="n">risk_component</span><span class="o">.</span><span class="n">name</span><span class="p">][</span><span class="s2">&quot;data_sources&quot;</span><span class="p">][</span><span class="s2">&quot;exposure&quot;</span><span class="p">]</span>
+    <span class="p">)</span></div>
+
+
+
+<span class="c1">###############################</span>
+<span class="c1"># Relative risk data handlers #</span>
+<span class="c1">###############################</span>
+
+
+<div class="viewcode-block" id="rebin_relative_risk_data">
+<a class="viewcode-back" href="../../../api_reference/risks/data_transformations.html#vivarium_public_health.risks.data_transformations.rebin_relative_risk_data">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">rebin_relative_risk_data</span><span class="p">(</span>
+    <span class="n">builder</span><span class="p">,</span> <span class="n">risk</span><span class="p">:</span> <span class="n">EntityString</span><span class="p">,</span> <span class="n">relative_risk_data</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Rebin relative risk data if necessary.</span>
+
+<span class="sd">    When the polytomous risk is rebinned, matching relative risk needs to be rebinned.</span>
+<span class="sd">    After rebinning, rr for both exposed and unexposed categories should be the weighted sum of relative risk</span>
+<span class="sd">    of the component categories where weights are relative proportions of exposure of those categories.</span>
+<span class="sd">    For example, if cat1, cat2, cat3 are exposed categories and cat4 is unexposed with exposure [0.1,0.2,0.3,0.4],</span>
+<span class="sd">    for the matching rr = [rr1, rr2, rr3, 1], rebinned rr for the rebinned cat1 should be:</span>
+<span class="sd">    (0.1 *rr1 + 0.2 * rr2 + 0.3* rr3) / (0.1+0.2+0.3)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">risk</span> <span class="ow">in</span> <span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="o">.</span><span class="n">to_dict</span><span class="p">():</span>
+        <span class="k">return</span> <span class="n">relative_risk_data</span>
+
+    <span class="n">rebin_exposed_categories</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="p">[</span><span class="n">risk</span><span class="p">][</span><span class="s2">&quot;rebinned_exposed&quot;</span><span class="p">])</span>
+
+    <span class="k">if</span> <span class="n">rebin_exposed_categories</span><span class="p">:</span>
+        <span class="c1"># todo make sure this works</span>
+        <span class="n">exposure_data</span> <span class="o">=</span> <span class="n">load_exposure_data</span><span class="p">(</span><span class="n">builder</span><span class="p">,</span> <span class="n">risk</span><span class="p">)</span>
+        <span class="n">relative_risk_data</span> <span class="o">=</span> <span class="n">_rebin_relative_risk_data</span><span class="p">(</span>
+            <span class="n">relative_risk_data</span><span class="p">,</span> <span class="n">exposure_data</span><span class="p">,</span> <span class="n">rebin_exposed_categories</span>
+        <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">relative_risk_data</span></div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_rebin_relative_risk_data</span><span class="p">(</span>
+    <span class="n">relative_risk_data</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span>
+    <span class="n">exposure_data</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span>
+    <span class="n">rebin_exposed_categories</span><span class="p">:</span> <span class="nb">set</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+    <span class="n">cols</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">exposure_data</span><span class="o">.</span><span class="n">columns</span><span class="o">.</span><span class="n">difference</span><span class="p">([</span><span class="s2">&quot;value&quot;</span><span class="p">]))</span>
+
+    <span class="n">relative_risk_data</span> <span class="o">=</span> <span class="n">relative_risk_data</span><span class="o">.</span><span class="n">merge</span><span class="p">(</span><span class="n">exposure_data</span><span class="p">,</span> <span class="n">on</span><span class="o">=</span><span class="n">cols</span><span class="p">)</span>
+    <span class="n">relative_risk_data</span><span class="p">[</span><span class="s2">&quot;value_x&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">relative_risk_data</span><span class="o">.</span><span class="n">value_x</span><span class="o">.</span><span class="n">multiply</span><span class="p">(</span>
+        <span class="n">relative_risk_data</span><span class="o">.</span><span class="n">value_y</span>
+    <span class="p">)</span>
+    <span class="n">relative_risk_data</span><span class="o">.</span><span class="n">parameter</span> <span class="o">=</span> <span class="n">relative_risk_data</span><span class="p">[</span><span class="s2">&quot;parameter&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">map</span><span class="p">(</span>
+        <span class="k">lambda</span> <span class="n">p</span><span class="p">:</span> <span class="s2">&quot;cat1&quot;</span> <span class="k">if</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">rebin_exposed_categories</span> <span class="k">else</span> <span class="s2">&quot;cat2&quot;</span>
+    <span class="p">)</span>
+    <span class="n">relative_risk_data</span> <span class="o">=</span> <span class="n">relative_risk_data</span><span class="o">.</span><span class="n">groupby</span><span class="p">(</span><span class="n">cols</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span><span class="o">.</span><span class="n">reset_index</span><span class="p">()</span>
+    <span class="n">relative_risk_data</span><span class="p">[</span><span class="s2">&quot;value&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">relative_risk_data</span><span class="o">.</span><span class="n">value_x</span><span class="o">.</span><span class="n">divide</span><span class="p">(</span>
+        <span class="n">relative_risk_data</span><span class="o">.</span><span class="n">value_y</span>
+    <span class="p">)</span><span class="o">.</span><span class="n">fillna</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">relative_risk_data</span><span class="o">.</span><span class="n">drop</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;value_x&quot;</span><span class="p">,</span> <span class="s2">&quot;value_y&quot;</span><span class="p">])</span>
+
+
+<span class="c1">##############</span>
+<span class="c1"># Validators #</span>
+<span class="c1">##############</span>
+
+
+<div class="viewcode-block" id="validate_distribution_data_source">
+<a class="viewcode-back" href="../../../api_reference/risks/data_transformations.html#vivarium_public_health.risks.data_transformations.validate_distribution_data_source">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">validate_distribution_data_source</span><span class="p">(</span><span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">,</span> <span class="n">risk</span><span class="p">:</span> <span class="n">EntityString</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Checks that the exposure distribution specification is valid.&quot;&quot;&quot;</span>
+    <span class="n">exposure_type</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="p">[</span><span class="n">risk</span><span class="p">][</span><span class="s2">&quot;data_sources&quot;</span><span class="p">][</span><span class="s2">&quot;exposure&quot;</span><span class="p">]</span>
+    <span class="n">rebin</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="p">[</span><span class="n">risk</span><span class="p">][</span><span class="s2">&quot;rebinned_exposed&quot;</span><span class="p">]</span>
+    <span class="n">category_thresholds</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="p">[</span><span class="n">risk</span><span class="p">][</span><span class="s2">&quot;category_thresholds&quot;</span><span class="p">]</span>
+
+    <span class="k">if</span> <span class="n">risk</span><span class="o">.</span><span class="n">type</span> <span class="o">==</span> <span class="s2">&quot;alternative_risk_factor&quot;</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">exposure_type</span> <span class="o">!=</span> <span class="s2">&quot;data&quot;</span> <span class="ow">or</span> <span class="n">rebin</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;Parameterized risk components are not available for alternative risks.&quot;</span>
+            <span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">category_thresholds</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Must specify category thresholds to use alternative risks.&quot;</span><span class="p">)</span>
+
+    <span class="k">elif</span> <span class="n">risk</span><span class="o">.</span><span class="n">type</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;risk_factor&quot;</span><span class="p">,</span> <span class="s2">&quot;coverage_gap&quot;</span><span class="p">]:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Unknown risk type </span><span class="si">{</span><span class="n">risk</span><span class="o">.</span><span class="n">type</span><span class="si">}</span><span class="s2"> for risk </span><span class="si">{</span><span class="n">risk</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="validate_relative_risk_data_source">
+<a class="viewcode-back" href="../../../api_reference/risks/data_transformations.html#vivarium_public_health.risks.data_transformations.validate_relative_risk_data_source">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">validate_relative_risk_data_source</span><span class="p">(</span><span class="n">builder</span><span class="p">,</span> <span class="n">risk</span><span class="p">:</span> <span class="n">EntityString</span><span class="p">,</span> <span class="n">target</span><span class="p">:</span> <span class="n">TargetString</span><span class="p">):</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">vivarium_public_health.risks</span><span class="w"> </span><span class="kn">import</span> <span class="n">RiskEffect</span>
+
+    <span class="n">source_key</span> <span class="o">=</span> <span class="n">RiskEffect</span><span class="o">.</span><span class="n">get_name</span><span class="p">(</span><span class="n">risk</span><span class="p">,</span> <span class="n">target</span><span class="p">)</span>
+    <span class="n">source_config</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="p">[</span><span class="n">source_key</span><span class="p">]</span>
+
+    <span class="n">provided_keys</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span>
+        <span class="n">k</span>
+        <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">source_config</span><span class="p">[</span><span class="s2">&quot;distribution_args&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">to_dict</span><span class="p">()</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">))</span>
+    <span class="p">)</span>
+
+    <span class="n">source_map</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;data&quot;</span><span class="p">:</span> <span class="nb">set</span><span class="p">(),</span>
+        <span class="s2">&quot;relative risk value&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;relative_risk&quot;</span><span class="p">},</span>
+        <span class="s2">&quot;normal distribution&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;mean&quot;</span><span class="p">,</span> <span class="s2">&quot;se&quot;</span><span class="p">},</span>
+        <span class="s2">&quot;log distribution&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;log_mean&quot;</span><span class="p">,</span> <span class="s2">&quot;log_se&quot;</span><span class="p">,</span> <span class="s2">&quot;tau_squared&quot;</span><span class="p">},</span>
+    <span class="p">}</span>
+
+    <span class="k">if</span> <span class="n">provided_keys</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">source_map</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;The acceptable parameter options for specifying relative risk are: &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">source_map</span><span class="o">.</span><span class="n">values</span><span class="p">()</span><span class="si">}</span><span class="s2">. You provided </span><span class="si">{</span><span class="n">provided_keys</span><span class="si">}</span><span class="s2"> for </span><span class="si">{</span><span class="n">source_key</span><span class="si">}</span><span class="s2">.&quot;</span>
+        <span class="p">)</span>
+
+    <span class="n">source_type</span> <span class="o">=</span> <span class="p">[</span><span class="n">k</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">source_map</span><span class="o">.</span><span class="n">items</span><span class="p">()</span> <span class="k">if</span> <span class="n">provided_keys</span> <span class="o">==</span> <span class="n">v</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span>
+
+    <span class="k">if</span> <span class="n">source_type</span> <span class="o">==</span> <span class="s2">&quot;relative risk value&quot;</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="mi">1</span> <span class="o">&lt;=</span> <span class="n">source_type</span> <span class="o">&lt;=</span> <span class="mi">100</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;If specifying a single value for relative risk, it should be in the range [1, 100]. &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;You provided </span><span class="si">{</span><span class="n">source_type</span><span class="si">}</span><span class="s2"> for </span><span class="si">{</span><span class="n">source_key</span><span class="si">}</span><span class="s2">.&quot;</span>
+            <span class="p">)</span>
+    <span class="k">elif</span> <span class="n">source_type</span> <span class="o">==</span> <span class="s2">&quot;normal distribution&quot;</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">source_config</span><span class="p">[</span><span class="s2">&quot;mean&quot;</span><span class="p">]</span> <span class="o">&lt;=</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">source_config</span><span class="p">[</span><span class="s2">&quot;se&quot;</span><span class="p">]</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;To specify parameters for a normal distribution for a risk effect, you must provide&quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;both mean and se above 0. This is not the case for </span><span class="si">{</span><span class="n">source_key</span><span class="si">}</span><span class="s2">.&quot;</span>
+            <span class="p">)</span>
+    <span class="k">elif</span> <span class="n">source_type</span> <span class="o">==</span> <span class="s2">&quot;log distribution&quot;</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">source_config</span><span class="p">[</span><span class="s2">&quot;log_mean&quot;</span><span class="p">]</span> <span class="o">&lt;=</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">source_config</span><span class="p">[</span><span class="s2">&quot;log_se&quot;</span><span class="p">]</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;To specify parameters for a log distribution for a risk effect, you must provide&quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;both log_mean and log_se above 0. This is not the case for </span><span class="si">{</span><span class="n">source_key</span><span class="si">}</span><span class="s2">.&quot;</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="n">source_config</span><span class="p">[</span><span class="s2">&quot;tau_squared&quot;</span><span class="p">]</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;To specify parameters for a log distribution for a risk effect, you must provide&quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;tau_squared &gt;= 0. This is not the case for </span><span class="si">{</span><span class="n">source_key</span><span class="si">}</span><span class="s2">.&quot;</span>
+            <span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">pass</span>
+
+    <span class="k">return</span> <span class="n">source_type</span></div>
+
+
+
+<div class="viewcode-block" id="validate_relative_risk_rebin_source">
+<a class="viewcode-back" href="../../../api_reference/risks/data_transformations.html#vivarium_public_health.risks.data_transformations.validate_relative_risk_rebin_source">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">validate_relative_risk_rebin_source</span><span class="p">(</span>
+    <span class="n">builder</span><span class="p">,</span> <span class="n">risk</span><span class="p">:</span> <span class="n">EntityString</span><span class="p">,</span> <span class="n">target</span><span class="p">:</span> <span class="n">TargetString</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span>
+<span class="p">):</span>
+    <span class="k">if</span> <span class="n">data</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">size</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;Subsetting </span><span class="si">{</span><span class="n">risk</span><span class="si">}</span><span class="s2"> relative risk data to </span><span class="si">{</span><span class="n">target</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">target</span><span class="o">.</span><span class="n">measure</span><span class="si">}</span><span class="s2"> &quot;</span>
+            <span class="s2">&quot;returned an empty DataFrame. Check your artifact.&quot;</span>
+        <span class="p">)</span>
+    <span class="k">if</span> <span class="n">risk</span> <span class="ow">in</span> <span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="o">.</span><span class="n">to_dict</span><span class="p">():</span>
+        <span class="n">validate_rebin_source</span><span class="p">(</span><span class="n">builder</span><span class="p">,</span> <span class="n">risk</span><span class="p">,</span> <span class="n">data</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="validate_rebin_source">
+<a class="viewcode-back" href="../../../api_reference/risks/data_transformations.html#vivarium_public_health.risks.data_transformations.validate_rebin_source">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">validate_rebin_source</span><span class="p">(</span><span class="n">builder</span><span class="p">,</span> <span class="n">risk</span><span class="p">:</span> <span class="n">EntityString</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">):</span>
+        <span class="k">return</span>
+
+    <span class="n">rebin_exposed_categories</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="p">[</span><span class="n">risk</span><span class="p">][</span><span class="s2">&quot;rebinned_exposed&quot;</span><span class="p">])</span>
+
+    <span class="k">if</span> <span class="n">rebin_exposed_categories</span> <span class="ow">and</span> <span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="p">[</span><span class="n">risk</span><span class="p">][</span><span class="s2">&quot;category_thresholds&quot;</span><span class="p">]:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;Rebinning and category thresholds are mutually exclusive. &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;You provided both for </span><span class="si">{</span><span class="n">risk</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">.&quot;</span>
+        <span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">rebin_exposed_categories</span> <span class="ow">and</span> <span class="s2">&quot;polytomous&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">builder</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">load</span><span class="p">(</span>
+        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">risk</span><span class="si">}</span><span class="s2">.distribution&quot;</span>
+    <span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;Rebinning is only supported for polytomous risks. You provided &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;rebinning exposed categoriesfor </span><span class="si">{</span><span class="n">risk</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">, which is of &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;type </span><span class="si">{</span><span class="n">builder</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">risk</span><span class="si">}</span><span class="s1">.distribution&#39;</span><span class="p">)</span><span class="si">}</span><span class="s2">.&quot;</span>
+        <span class="p">)</span>
+
+    <span class="n">invalid_cats</span> <span class="o">=</span> <span class="n">rebin_exposed_categories</span><span class="o">.</span><span class="n">difference</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">parameter</span><span class="p">))</span>
+    <span class="k">if</span> <span class="n">invalid_cats</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;The following provided categories for the rebinned exposed &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;category of </span><span class="si">{</span><span class="n">risk</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> are not found in the exposure data: &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">invalid_cats</span><span class="si">}</span><span class="s2">.&quot;</span>
+        <span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">rebin_exposed_categories</span> <span class="o">==</span> <span class="nb">set</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">parameter</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;The provided categories for the rebinned exposed category of &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">risk</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> comprise all categories for the exposure data. &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;At least one category must be left out of the provided categories &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;to be rebinned into the unexposed category.&quot;</span>
+        <span class="p">)</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, The vivarium developers.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

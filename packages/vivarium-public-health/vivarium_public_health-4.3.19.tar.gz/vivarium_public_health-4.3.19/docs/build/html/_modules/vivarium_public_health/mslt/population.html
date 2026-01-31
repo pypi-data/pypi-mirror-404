@@ -1,0 +1,376 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>vivarium_public_health.mslt.population &mdash; vivarium_public_health 4.3.15.dev2+g712190e05 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/plot_directive.css" />
+
+  
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=7ca62e9d"></script>
+      <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+    <link href="../../../_static/style.css" rel="stylesheet" type="text/css">
+
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            vivarium_public_health
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorials/index.html">Tutorials</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_reference/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">vivarium_public_health</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">vivarium_public_health.mslt.population</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for vivarium_public_health.mslt.population</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">==================</span>
+<span class="sd">Demographic Models</span>
+<span class="sd">==================</span>
+
+<span class="sd">This module contains tools for modeling the core demography in</span>
+<span class="sd">multi-state lifetable simulations.</span>
+
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium</span><span class="w"> </span><span class="kn">import</span> <span class="n">Component</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.engine</span><span class="w"> </span><span class="kn">import</span> <span class="n">Builder</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.event</span><span class="w"> </span><span class="kn">import</span> <span class="n">Event</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.population</span><span class="w"> </span><span class="kn">import</span> <span class="n">SimulantData</span>
+
+
+<div class="viewcode-block" id="BasePopulation">
+<a class="viewcode-back" href="../../../api_reference/mslt/population.html#vivarium_public_health.mslt.population.BasePopulation">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">BasePopulation</span><span class="p">(</span><span class="n">Component</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;This component implements the core population demographics: age, sex,</span>
+<span class="sd">    population size.</span>
+
+<span class="sd">    The configuration options for this component are:</span>
+
+<span class="sd">    ``population_size``</span>
+<span class="sd">        The number of population cohorts (**must be specified**).</span>
+<span class="sd">    ``max_age``</span>
+<span class="sd">        The age at which cohorts are removed from the population</span>
+<span class="sd">        (default: 110).</span>
+
+<span class="sd">    .. code-block:: yaml</span>
+
+<span class="sd">       configuration</span>
+<span class="sd">           population:</span>
+<span class="sd">               population_size: 44 # Male and female 5-year cohorts, 0 to 109.</span>
+<span class="sd">               max_age: 110        # The age at which cohorts are removed.</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">CONFIGURATION_DEFAULTS</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;population&quot;</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s2">&quot;max_age&quot;</span><span class="p">:</span> <span class="mi">110</span><span class="p">,</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+
+    <span class="c1">##############</span>
+    <span class="c1"># Properties #</span>
+    <span class="c1">##############</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">columns_created</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="p">[</span>
+            <span class="s2">&quot;age&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;sex&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;population&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;bau_population&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;acmr&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;bau_acmr&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;pr_death&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;bau_pr_death&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;deaths&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;bau_deaths&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;yld_rate&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;bau_yld_rate&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;person_years&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;bau_person_years&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;HALY&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;bau_HALY&quot;</span><span class="p">,</span>
+        <span class="p">]</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">columns_required</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">[</span><span class="s2">&quot;tracked&quot;</span><span class="p">]</span>
+
+    <span class="c1">#####################</span>
+    <span class="c1"># Lifecycle methods #</span>
+    <span class="c1">#####################</span>
+
+<div class="viewcode-block" id="BasePopulation.setup">
+<a class="viewcode-back" href="../../../api_reference/mslt/population.html#vivarium_public_health.mslt.population.BasePopulation.setup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Load the population data.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">pop_data</span> <span class="o">=</span> <span class="n">load_population_data</span><span class="p">(</span><span class="n">builder</span><span class="p">)</span>
+
+        <span class="c1"># Create additional columns with placeholder (zero) values.</span>
+        <span class="k">for</span> <span class="n">column</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">columns_created</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">column</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">pop_data</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">pop_data</span><span class="o">.</span><span class="n">loc</span><span class="p">[:,</span> <span class="n">column</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.0</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">max_age</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="o">.</span><span class="n">population</span><span class="o">.</span><span class="n">max_age</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">start_year</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="o">.</span><span class="n">time</span><span class="o">.</span><span class="n">start</span><span class="o">.</span><span class="n">year</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">clock</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">time</span><span class="o">.</span><span class="n">clock</span><span class="p">()</span></div>
+
+
+    <span class="c1">########################</span>
+    <span class="c1"># Event-driven methods #</span>
+    <span class="c1">########################</span>
+
+<div class="viewcode-block" id="BasePopulation.on_initialize_simulants">
+<a class="viewcode-back" href="../../../api_reference/mslt/population.html#vivarium_public_health.mslt.population.BasePopulation.on_initialize_simulants">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">on_initialize_simulants</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">_</span><span class="p">:</span> <span class="n">SimulantData</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Initialize each cohort.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">population_view</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">pop_data</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="BasePopulation.on_time_step_prepare">
+<a class="viewcode-back" href="../../../api_reference/mslt/population.html#vivarium_public_health.mslt.population.BasePopulation.on_time_step_prepare">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">on_time_step_prepare</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event</span><span class="p">:</span> <span class="n">Event</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Remove cohorts that have reached the maximum age.&quot;&quot;&quot;</span>
+        <span class="n">pop</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">population_view</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="n">query</span><span class="o">=</span><span class="s2">&quot;tracked == True&quot;</span><span class="p">)</span>
+        <span class="c1"># Only increase cohort ages after the first time-step.</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">clock</span><span class="p">()</span><span class="o">.</span><span class="n">year</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">start_year</span><span class="p">:</span>
+            <span class="n">pop</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
+        <span class="n">pop</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">pop</span><span class="o">.</span><span class="n">age</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">max_age</span><span class="p">,</span> <span class="s2">&quot;tracked&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">population_view</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">pop</span><span class="p">)</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="Mortality">
+<a class="viewcode-back" href="../../../api_reference/mslt/population.html#vivarium_public_health.mslt.population.Mortality">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">Mortality</span><span class="p">(</span><span class="n">Component</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;This component reduces the population size of each cohort over time,</span>
+<span class="sd">    according to the all-cause mortality rate.</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="c1">##############</span>
+    <span class="c1"># Properties #</span>
+    <span class="c1">##############</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">columns_required</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">[</span>
+            <span class="s2">&quot;population&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;bau_population&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;acmr&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;bau_acmr&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;pr_death&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;bau_pr_death&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;deaths&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;bau_deaths&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;person_years&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;bau_person_years&quot;</span><span class="p">,</span>
+        <span class="p">]</span>
+
+    <span class="c1">#####################</span>
+    <span class="c1"># Lifecycle methods #</span>
+    <span class="c1">#####################</span>
+
+<div class="viewcode-block" id="Mortality.setup">
+<a class="viewcode-back" href="../../../api_reference/mslt/population.html#vivarium_public_health.mslt.population.Mortality.setup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Load the all-cause mortality rate.&quot;&quot;&quot;</span>
+        <span class="n">mortality_data</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="s2">&quot;cause.all_causes.mortality&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">mortality_rate</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">register_rate_producer</span><span class="p">(</span>
+            <span class="s2">&quot;mortality_rate&quot;</span><span class="p">,</span>
+            <span class="n">source</span><span class="o">=</span><span class="n">builder</span><span class="o">.</span><span class="n">lookup</span><span class="o">.</span><span class="n">build_table</span><span class="p">(</span>
+                <span class="n">mortality_data</span><span class="p">,</span> <span class="n">key_columns</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;sex&quot;</span><span class="p">],</span> <span class="n">parameter_columns</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">,</span> <span class="s2">&quot;year&quot;</span><span class="p">]</span>
+            <span class="p">),</span>
+            <span class="n">component</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+    <span class="c1">########################</span>
+    <span class="c1"># Event-driven methods #</span>
+    <span class="c1">########################</span>
+
+<div class="viewcode-block" id="Mortality.on_time_step">
+<a class="viewcode-back" href="../../../api_reference/mslt/population.html#vivarium_public_health.mslt.population.Mortality.on_time_step">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">on_time_step</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event</span><span class="p">:</span> <span class="n">Event</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Calculate the number of deaths and survivors at each time-step, for</span>
+<span class="sd">        both the BAU and intervention scenarios.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">pop</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">population_view</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">pop</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="n">pop</span><span class="o">.</span><span class="n">acmr</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">mortality_rate</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+        <span class="n">probability_of_death</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="n">pop</span><span class="o">.</span><span class="n">acmr</span><span class="p">)</span>
+        <span class="n">deaths</span> <span class="o">=</span> <span class="n">pop</span><span class="o">.</span><span class="n">population</span> <span class="o">*</span> <span class="n">probability_of_death</span>
+        <span class="n">pop</span><span class="o">.</span><span class="n">population</span> <span class="o">*=</span> <span class="mi">1</span> <span class="o">-</span> <span class="n">probability_of_death</span>
+        <span class="n">pop</span><span class="o">.</span><span class="n">bau_acmr</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">mortality_rate</span><span class="o">.</span><span class="n">source</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+        <span class="n">bau_probability_of_death</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="n">pop</span><span class="o">.</span><span class="n">bau_acmr</span><span class="p">)</span>
+        <span class="n">bau_deaths</span> <span class="o">=</span> <span class="n">pop</span><span class="o">.</span><span class="n">bau_population</span> <span class="o">*</span> <span class="n">bau_probability_of_death</span>
+        <span class="n">pop</span><span class="o">.</span><span class="n">bau_population</span> <span class="o">*=</span> <span class="mi">1</span> <span class="o">-</span> <span class="n">bau_probability_of_death</span>
+        <span class="n">pop</span><span class="o">.</span><span class="n">pr_death</span> <span class="o">=</span> <span class="n">probability_of_death</span>
+        <span class="n">pop</span><span class="o">.</span><span class="n">bau_pr_death</span> <span class="o">=</span> <span class="n">bau_probability_of_death</span>
+        <span class="n">pop</span><span class="o">.</span><span class="n">deaths</span> <span class="o">=</span> <span class="n">deaths</span>
+        <span class="n">pop</span><span class="o">.</span><span class="n">bau_deaths</span> <span class="o">=</span> <span class="n">bau_deaths</span>
+        <span class="n">pop</span><span class="o">.</span><span class="n">person_years</span> <span class="o">=</span> <span class="n">pop</span><span class="o">.</span><span class="n">population</span> <span class="o">+</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="n">pop</span><span class="o">.</span><span class="n">deaths</span>
+        <span class="n">pop</span><span class="o">.</span><span class="n">bau_person_years</span> <span class="o">=</span> <span class="n">pop</span><span class="o">.</span><span class="n">bau_population</span> <span class="o">+</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="n">pop</span><span class="o">.</span><span class="n">bau_deaths</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">population_view</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">pop</span><span class="p">)</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="Disability">
+<a class="viewcode-back" href="../../../api_reference/mslt/population.html#vivarium_public_health.mslt.population.Disability">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">Disability</span><span class="p">(</span><span class="n">Component</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;This component calculates the health-adjusted life years (HALYs) for each</span>
+<span class="sd">    cohort over time, according to the years lost due to disability (YLD)</span>
+<span class="sd">    rate.</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="c1">##############</span>
+    <span class="c1"># Properties #</span>
+    <span class="c1">##############</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">columns_required</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">[</span>
+            <span class="s2">&quot;bau_yld_rate&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;yld_rate&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;bau_person_years&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;person_years&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;bau_HALY&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;HALY&quot;</span><span class="p">,</span>
+        <span class="p">]</span>
+
+    <span class="c1">#####################</span>
+    <span class="c1"># Lifecycle methods #</span>
+    <span class="c1">#####################</span>
+
+<div class="viewcode-block" id="Disability.setup">
+<a class="viewcode-back" href="../../../api_reference/mslt/population.html#vivarium_public_health.mslt.population.Disability.setup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Load the years lost due to disability (YLD) rate.&quot;&quot;&quot;</span>
+        <span class="n">yld_data</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="s2">&quot;cause.all_causes.disability_rate&quot;</span><span class="p">)</span>
+        <span class="n">yld_rate</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">lookup</span><span class="o">.</span><span class="n">build_table</span><span class="p">(</span>
+            <span class="n">yld_data</span><span class="p">,</span> <span class="n">key_columns</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;sex&quot;</span><span class="p">],</span> <span class="n">parameter_columns</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">,</span> <span class="s2">&quot;year&quot;</span><span class="p">]</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">yld_rate</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">register_rate_producer</span><span class="p">(</span>
+            <span class="s2">&quot;yld_rate&quot;</span><span class="p">,</span> <span class="n">source</span><span class="o">=</span><span class="n">yld_rate</span><span class="p">,</span> <span class="n">component</span><span class="o">=</span><span class="bp">self</span>
+        <span class="p">)</span></div>
+
+
+    <span class="c1">########################</span>
+    <span class="c1"># Event-driven methods #</span>
+    <span class="c1">########################</span>
+
+<div class="viewcode-block" id="Disability.on_time_step">
+<a class="viewcode-back" href="../../../api_reference/mslt/population.html#vivarium_public_health.mslt.population.Disability.on_time_step">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">on_time_step</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event</span><span class="p">:</span> <span class="n">Event</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Calculate the HALYs for each cohort at each time-step, for both the</span>
+<span class="sd">        BAU and intervention scenarios.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">pop</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">population_view</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">pop</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="n">pop</span><span class="o">.</span><span class="n">yld_rate</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">yld_rate</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+        <span class="n">pop</span><span class="o">.</span><span class="n">bau_yld_rate</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">yld_rate</span><span class="o">.</span><span class="n">source</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+        <span class="n">pop</span><span class="o">.</span><span class="n">HALY</span> <span class="o">=</span> <span class="n">pop</span><span class="o">.</span><span class="n">person_years</span> <span class="o">*</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">pop</span><span class="o">.</span><span class="n">yld_rate</span><span class="p">)</span>
+        <span class="n">pop</span><span class="o">.</span><span class="n">bau_HALY</span> <span class="o">=</span> <span class="n">pop</span><span class="o">.</span><span class="n">bau_person_years</span> <span class="o">*</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">pop</span><span class="o">.</span><span class="n">bau_yld_rate</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">population_view</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">pop</span><span class="p">)</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="load_population_data">
+<a class="viewcode-back" href="../../../api_reference/mslt/population.html#vivarium_public_health.mslt.population.load_population_data">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">load_population_data</span><span class="p">(</span><span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+    <span class="n">pop_data</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="s2">&quot;population.structure&quot;</span><span class="p">)</span>
+    <span class="n">pop_data</span> <span class="o">=</span> <span class="n">pop_data</span><span class="p">[[</span><span class="s2">&quot;age&quot;</span><span class="p">,</span> <span class="s2">&quot;sex&quot;</span><span class="p">,</span> <span class="s2">&quot;value&quot;</span><span class="p">]]</span><span class="o">.</span><span class="n">rename</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;value&quot;</span><span class="p">:</span> <span class="s2">&quot;population&quot;</span><span class="p">})</span>
+    <span class="n">pop_data</span><span class="p">[</span><span class="s2">&quot;bau_population&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">pop_data</span><span class="p">[</span><span class="s2">&quot;population&quot;</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">pop_data</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, The vivarium developers.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

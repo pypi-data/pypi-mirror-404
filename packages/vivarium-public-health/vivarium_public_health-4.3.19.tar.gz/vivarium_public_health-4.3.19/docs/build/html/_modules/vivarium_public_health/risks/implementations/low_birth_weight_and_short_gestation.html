@@ -1,0 +1,768 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>vivarium_public_health.risks.implementations.low_birth_weight_and_short_gestation &mdash; vivarium_public_health 4.3.15.dev2+g712190e05 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../../../_static/plot_directive.css" />
+
+  
+      <script src="../../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../../_static/documentation_options.js?v=7ca62e9d"></script>
+      <script src="../../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../../search.html" />
+    <link href="../../../../_static/style.css" rel="stylesheet" type="text/css">
+
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../../index.html" class="icon icon-home">
+            vivarium_public_health
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../../tutorials/index.html">Tutorials</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../../api_reference/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../../index.html">vivarium_public_health</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">vivarium_public_health.risks.implementations.low_birth_weight_and_short_gestation</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for vivarium_public_health.risks.implementations.low_birth_weight_and_short_gestation</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">====================================</span>
+<span class="sd">Low Birth Weight and Short Gestation</span>
+<span class="sd">====================================</span>
+
+<span class="sd">Low birth weight and short gestation (LBWSG) is a non-standard risk</span>
+<span class="sd">implementation that has been used in several public health models.</span>
+
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">pickle</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Callable</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">layered_config_tree</span><span class="w"> </span><span class="kn">import</span> <span class="n">ConfigurationError</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">loguru</span><span class="w"> </span><span class="kn">import</span> <span class="n">logger</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.engine</span><span class="w"> </span><span class="kn">import</span> <span class="n">Builder</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.lifecycle</span><span class="w"> </span><span class="kn">import</span> <span class="n">LifeCycleError</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.population</span><span class="w"> </span><span class="kn">import</span> <span class="n">SimulantData</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.resource</span><span class="w"> </span><span class="kn">import</span> <span class="n">Resource</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.values</span><span class="w"> </span><span class="kn">import</span> <span class="n">Pipeline</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium_public_health.risks</span><span class="w"> </span><span class="kn">import</span> <span class="n">Risk</span><span class="p">,</span> <span class="n">RiskEffect</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium_public_health.risks.data_transformations</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">get_exposure_post_processor</span><span class="p">,</span>
+    <span class="n">pivot_categorical</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium_public_health.risks.distributions</span><span class="w"> </span><span class="kn">import</span> <span class="n">PolytomousDistribution</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium_public_health.utilities</span><span class="w"> </span><span class="kn">import</span> <span class="n">EntityString</span><span class="p">,</span> <span class="n">get_lookup_columns</span><span class="p">,</span> <span class="n">to_snake_case</span>
+
+<span class="n">CATEGORICAL</span> <span class="o">=</span> <span class="s2">&quot;categorical&quot;</span>
+<span class="n">BIRTH_WEIGHT</span> <span class="o">=</span> <span class="s2">&quot;birth_weight&quot;</span>
+<span class="n">GESTATIONAL_AGE</span> <span class="o">=</span> <span class="s2">&quot;gestational_age&quot;</span>
+
+
+<div class="viewcode-block" id="LBWSGDistribution">
+<a class="viewcode-back" href="../../../../api_reference/risks/implementations/low_birth_weight_and_short_gestation.html#vivarium_public_health.risks.implementations.low_birth_weight_and_short_gestation.LBWSGDistribution">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">LBWSGDistribution</span><span class="p">(</span><span class="n">PolytomousDistribution</span><span class="p">):</span>
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">categories</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+        <span class="c1"># These need to be sorted so the cumulative sum is in the correct order of categories</span>
+        <span class="c1"># and results are therefore reproducible and correct</span>
+        <span class="k">return</span> <span class="nb">sorted</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">lookup_tables</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">exposure_key</span><span class="p">]</span><span class="o">.</span><span class="n">value_columns</span><span class="p">)</span>
+
+    <span class="c1">#################</span>
+    <span class="c1"># Setup methods #</span>
+    <span class="c1">#################</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">risk</span><span class="p">:</span> <span class="n">EntityString</span><span class="p">,</span>
+        <span class="n">distribution_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">exposure_data</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="nb">float</span> <span class="o">|</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">risk</span><span class="p">,</span> <span class="n">distribution_type</span><span class="p">,</span> <span class="n">exposure_data</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">exposure_key</span> <span class="o">=</span> <span class="s2">&quot;birth_exposure&quot;</span>
+
+    <span class="c1"># noinspection PyAttributeOutsideInit</span>
+<div class="viewcode-block" id="LBWSGDistribution.setup">
+<a class="viewcode-back" href="../../../../api_reference/risks/implementations/low_birth_weight_and_short_gestation.html#vivarium_public_health.risks.implementations.low_birth_weight_and_short_gestation.LBWSGDistribution.setup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">setup</span><span class="p">(</span><span class="n">builder</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">category_intervals</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_category_intervals</span><span class="p">(</span><span class="n">builder</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="LBWSGDistribution.build_all_lookup_tables">
+<a class="viewcode-back" href="../../../../api_reference/risks/implementations/low_birth_weight_and_short_gestation.html#vivarium_public_health.risks.implementations.low_birth_weight_and_short_gestation.LBWSGDistribution.build_all_lookup_tables">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">build_all_lookup_tables</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">birth_exposure_data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_data</span><span class="p">(</span>
+                <span class="n">builder</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">configuration</span><span class="p">[</span><span class="s2">&quot;data_sources&quot;</span><span class="p">][</span><span class="s2">&quot;birth_exposure&quot;</span><span class="p">]</span>
+            <span class="p">)</span>
+            <span class="n">birth_exposure_value_columns</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_exposure_value_columns</span><span class="p">(</span>
+                <span class="n">birth_exposure_data</span>
+            <span class="p">)</span>
+
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">birth_exposure_data</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">):</span>
+                <span class="n">birth_exposure_data</span> <span class="o">=</span> <span class="n">pivot_categorical</span><span class="p">(</span>
+                    <span class="n">builder</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="p">,</span> <span class="n">birth_exposure_data</span><span class="p">,</span> <span class="s2">&quot;parameter&quot;</span>
+                <span class="p">)</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">lookup_tables</span><span class="p">[</span><span class="s2">&quot;birth_exposure&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">build_lookup_table</span><span class="p">(</span>
+                <span class="n">builder</span><span class="p">,</span> <span class="n">birth_exposure_data</span><span class="p">,</span> <span class="n">birth_exposure_value_columns</span>
+            <span class="p">)</span>
+        <span class="k">except</span> <span class="n">ConfigurationError</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Birth exposure data for LBWSG is missing from the simulation&quot;</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">build_all_lookup_tables</span><span class="p">(</span><span class="n">builder</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">ConfigurationError</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;The data for LBWSG exposure is missing from the simulation.&quot;</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="s2">&quot;birth_exposure&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">lookup_tables</span>
+            <span class="ow">and</span> <span class="s2">&quot;exposure&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">lookup_tables</span>
+        <span class="p">):</span>
+            <span class="k">raise</span> <span class="n">ConfigurationError</span><span class="p">(</span>
+                <span class="s2">&quot;The LBWSG distribution requires either &#39;birth_exposure&#39; or &#39;exposure&#39; data to be &quot;</span>
+                <span class="s2">&quot;available in the simulation.&quot;</span>
+            <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="LBWSGDistribution.get_exposure_parameter_pipeline">
+<a class="viewcode-back" href="../../../../api_reference/risks/implementations/low_birth_weight_and_short_gestation.html#vivarium_public_health.risks.implementations.low_birth_weight_and_short_gestation.LBWSGDistribution.get_exposure_parameter_pipeline">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_exposure_parameter_pipeline</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Pipeline</span><span class="p">:</span>
+        <span class="n">lookup_columns</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="s2">&quot;exposure&quot;</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">lookup_tables</span><span class="p">:</span>
+            <span class="n">lookup_columns</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">get_lookup_columns</span><span class="p">([</span><span class="bp">self</span><span class="o">.</span><span class="n">lookup_tables</span><span class="p">[</span><span class="s2">&quot;exposure&quot;</span><span class="p">]]))</span>
+        <span class="k">if</span> <span class="s2">&quot;birth_exposure&quot;</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">lookup_tables</span><span class="p">:</span>
+            <span class="n">lookup_columns</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">get_lookup_columns</span><span class="p">([</span><span class="bp">self</span><span class="o">.</span><span class="n">lookup_tables</span><span class="p">[</span><span class="s2">&quot;birth_exposure&quot;</span><span class="p">]]))</span>
+        <span class="k">return</span> <span class="n">builder</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">register_value_producer</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">parameters_pipeline_name</span><span class="p">,</span>
+            <span class="n">source</span><span class="o">=</span><span class="k">lambda</span> <span class="n">index</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">lookup_tables</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">exposure_key</span><span class="p">](</span><span class="n">index</span><span class="p">),</span>
+            <span class="n">component</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span>
+            <span class="n">required_resources</span><span class="o">=</span><span class="nb">list</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">lookup_columns</span><span class="p">)),</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="LBWSGDistribution.get_category_intervals">
+<a class="viewcode-back" href="../../../../api_reference/risks/implementations/low_birth_weight_and_short_gestation.html#vivarium_public_health.risks.implementations.low_birth_weight_and_short_gestation.LBWSGDistribution.get_category_intervals">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_category_intervals</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">Interval</span><span class="p">]]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Gets the intervals for each category.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        builder</span>
+<span class="sd">            The builder object.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">            The intervals for each category.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">categories</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="si">}</span><span class="s2">.categories&quot;</span><span class="p">)</span>
+        <span class="n">category_intervals</span> <span class="o">=</span> <span class="p">{</span><span class="n">GESTATIONAL_AGE</span><span class="p">:</span> <span class="p">{},</span> <span class="n">BIRTH_WEIGHT</span><span class="p">:</span> <span class="p">{}}</span>
+
+        <span class="k">for</span> <span class="n">category</span><span class="p">,</span> <span class="n">description</span> <span class="ow">in</span> <span class="n">categories</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">gestation_interval</span><span class="p">,</span> <span class="n">birth_weight_interval</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_description</span><span class="p">(</span><span class="n">description</span><span class="p">)</span>
+            <span class="n">category_intervals</span><span class="p">[</span><span class="n">GESTATIONAL_AGE</span><span class="p">][</span><span class="n">category</span><span class="p">]</span> <span class="o">=</span> <span class="n">gestation_interval</span>
+            <span class="n">category_intervals</span><span class="p">[</span><span class="n">BIRTH_WEIGHT</span><span class="p">][</span><span class="n">category</span><span class="p">]</span> <span class="o">=</span> <span class="n">birth_weight_interval</span>
+        <span class="k">return</span> <span class="n">category_intervals</span></div>
+
+
+    <span class="c1">##################</span>
+    <span class="c1"># Public methods #</span>
+    <span class="c1">##################</span>
+
+<div class="viewcode-block" id="LBWSGDistribution.ppf">
+<a class="viewcode-back" href="../../../../api_reference/risks/implementations/low_birth_weight_and_short_gestation.html#vivarium_public_health.risks.implementations.low_birth_weight_and_short_gestation.LBWSGDistribution.ppf">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">ppf</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">propensities</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Calculate continuous exposures from propensities.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        propensities</span>
+<span class="sd">            Propensities DataFrame for each simulant with three columns:</span>
+<span class="sd">            &#39;categorical.propensity&#39;, &#39;birth_weight.propensity&#39;, and</span>
+<span class="sd">            &#39;gestational_age.propensity&#39;.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">            A DataFrame with two columns for birth-weight and gestational age</span>
+<span class="sd">            exposures.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">categorical_exposure</span> <span class="o">=</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">ppf</span><span class="p">(</span><span class="n">propensities</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">CATEGORICAL</span><span class="si">}</span><span class="s2">_propensity&quot;</span><span class="p">])</span>
+        <span class="n">continuous_exposures</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">single_axis_ppf</span><span class="p">(</span>
+                <span class="n">axis</span><span class="p">,</span>
+                <span class="n">propensities</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">axis</span><span class="si">}</span><span class="s2">.propensity&quot;</span><span class="p">],</span>
+                <span class="n">categorical_exposure</span><span class="o">=</span><span class="n">categorical_exposure</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">for</span> <span class="n">axis</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">category_intervals</span>
+        <span class="p">]</span>
+        <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">concat</span><span class="p">(</span><span class="n">continuous_exposures</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="LBWSGDistribution.single_axis_ppf">
+<a class="viewcode-back" href="../../../../api_reference/risks/implementations/low_birth_weight_and_short_gestation.html#vivarium_public_health.risks.implementations.low_birth_weight_and_short_gestation.LBWSGDistribution.single_axis_ppf">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">single_axis_ppf</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">axis</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">propensity</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">,</span>
+        <span class="n">categorical_propensity</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">categorical_exposure</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Calculate continuous exposures from propensities for a single axis.</span>
+
+<span class="sd">        Takes an axis (either &#39;birth_weight&#39; or &#39;gestational_age&#39;), a propensity</span>
+<span class="sd">        and either a categorical propensity or a categorical exposure and</span>
+<span class="sd">        returns continuous exposures for that axis.</span>
+
+<span class="sd">        If categorical propensity is provided rather than exposure, this</span>
+<span class="sd">        function requires access to the low birth weight and short gestation</span>
+<span class="sd">        categorical exposure parameters pipeline</span>
+<span class="sd">        (&quot;risk_factor.low_birth_weight_and_short_gestation.exposure_parameters&quot;).</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        axis</span>
+<span class="sd">            The axis for which to calculate continuous exposures (&#39;birth_weight&#39;</span>
+<span class="sd">            or &#39;gestational_age&#39;).</span>
+<span class="sd">        propensity</span>
+<span class="sd">            The propensity for the axis.</span>
+<span class="sd">        categorical_propensity</span>
+<span class="sd">            The categorical propensity for the axis.</span>
+<span class="sd">        categorical_exposure</span>
+<span class="sd">            The categorical exposure for the axis.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">            The continuous exposures for the axis.</span>
+
+<span class="sd">        Raises</span>
+<span class="sd">        ------</span>
+<span class="sd">        ValueError</span>
+<span class="sd">            If neither categorical propensity nor categorical exposure is provided</span>
+<span class="sd">            or both are provided.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="k">if</span> <span class="p">(</span><span class="n">categorical_propensity</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">)</span> <span class="o">==</span> <span class="p">(</span><span class="n">categorical_exposure</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;Exactly one of categorical propensity or categorical exposure &quot;</span>
+                <span class="s2">&quot;must be provided.&quot;</span>
+            <span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">categorical_exposure</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">categorical_exposure</span> <span class="o">=</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">ppf</span><span class="p">(</span><span class="n">categorical_propensity</span><span class="p">)</span>
+
+        <span class="n">exposure_intervals</span> <span class="o">=</span> <span class="n">categorical_exposure</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span>
+            <span class="k">lambda</span> <span class="n">category</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">category_intervals</span><span class="p">[</span><span class="n">axis</span><span class="p">][</span><span class="n">category</span><span class="p">]</span>
+        <span class="p">)</span>
+
+        <span class="n">exposure_left</span> <span class="o">=</span> <span class="n">exposure_intervals</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="k">lambda</span> <span class="n">interval</span><span class="p">:</span> <span class="n">interval</span><span class="o">.</span><span class="n">left</span><span class="p">)</span>
+        <span class="n">exposure_right</span> <span class="o">=</span> <span class="n">exposure_intervals</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="k">lambda</span> <span class="n">interval</span><span class="p">:</span> <span class="n">interval</span><span class="o">.</span><span class="n">right</span><span class="p">)</span>
+        <span class="n">continuous_exposure</span> <span class="o">=</span> <span class="n">propensity</span> <span class="o">*</span> <span class="p">(</span><span class="n">exposure_right</span> <span class="o">-</span> <span class="n">exposure_left</span><span class="p">)</span> <span class="o">+</span> <span class="n">exposure_left</span>
+        <span class="n">continuous_exposure</span> <span class="o">=</span> <span class="n">continuous_exposure</span><span class="o">.</span><span class="n">rename</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">axis</span><span class="si">}</span><span class="s2">.exposure&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">continuous_exposure</span></div>
+
+
+    <span class="c1">##################</span>
+    <span class="c1"># Helper methods #</span>
+    <span class="c1">##################</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_parse_description</span><span class="p">(</span><span class="n">description</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">pd</span><span class="o">.</span><span class="n">Interval</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">Interval</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Parses a string corresponding to a low birth weight and short gestation</span>
+<span class="sd">        category to an Interval.</span>
+
+<span class="sd">        An example of a standard description:</span>
+<span class="sd">        &#39;Neonatal preterm and LBWSG (estimation years) - [0, 24) wks, [0, 500) g&#39;</span>
+<span class="sd">        An example of an edge case for gestational age:</span>
+<span class="sd">        &#39;Neonatal preterm and LBWSG (estimation years) - [40, 42+] wks, [2000, 2500) g&#39;</span>
+<span class="sd">        An example of an edge case of birth weight:</span>
+<span class="sd">        &#39;Neonatal preterm and LBWSG (estimation years) - [36, 37) wks, [4000, 9999] g&#39;</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">lbwsg_values</span> <span class="o">=</span> <span class="p">[</span><span class="nb">float</span><span class="p">(</span><span class="n">val</span><span class="p">)</span> <span class="k">for</span> <span class="n">val</span> <span class="ow">in</span> <span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;(\d+)&quot;</span><span class="p">,</span> <span class="n">description</span><span class="p">)]</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">lbwsg_values</span><span class="p">))</span> <span class="o">!=</span> <span class="mi">4</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Could not parse LBWSG description &#39;</span><span class="si">{</span><span class="n">description</span><span class="si">}</span><span class="s2">&#39;. Expected 4 numeric values.&quot;</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="p">(</span>
+            <span class="n">pd</span><span class="o">.</span><span class="n">Interval</span><span class="p">(</span><span class="o">*</span><span class="n">lbwsg_values</span><span class="p">[:</span><span class="mi">2</span><span class="p">],</span> <span class="n">closed</span><span class="o">=</span><span class="s2">&quot;left&quot;</span><span class="p">),</span>  <span class="c1"># Gestational Age</span>
+            <span class="n">pd</span><span class="o">.</span><span class="n">Interval</span><span class="p">(</span><span class="o">*</span><span class="n">lbwsg_values</span><span class="p">[</span><span class="mi">2</span><span class="p">:],</span> <span class="n">closed</span><span class="o">=</span><span class="s2">&quot;left&quot;</span><span class="p">),</span>  <span class="c1"># Birth Weight</span>
+        <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="LBWSGRisk">
+<a class="viewcode-back" href="../../../../api_reference/risks/implementations/low_birth_weight_and_short_gestation.html#vivarium_public_health.risks.implementations.low_birth_weight_and_short_gestation.LBWSGRisk">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">LBWSGRisk</span><span class="p">(</span><span class="n">Risk</span><span class="p">):</span>
+    <span class="n">AXES</span> <span class="o">=</span> <span class="p">[</span><span class="n">BIRTH_WEIGHT</span><span class="p">,</span> <span class="n">GESTATIONAL_AGE</span><span class="p">]</span>
+
+    <span class="n">exposure_distributions</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;lbwsg&quot;</span><span class="p">:</span> <span class="n">LBWSGDistribution</span><span class="p">}</span>
+
+<div class="viewcode-block" id="LBWSGRisk.birth_exposure_pipeline_name">
+<a class="viewcode-back" href="../../../../api_reference/risks/implementations/low_birth_weight_and_short_gestation.html#vivarium_public_health.risks.implementations.low_birth_weight_and_short_gestation.LBWSGRisk.birth_exposure_pipeline_name">[docs]</a>
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">birth_exposure_pipeline_name</span><span class="p">(</span><span class="n">axis</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">axis</span><span class="si">}</span><span class="s2">.birth_exposure&quot;</span></div>
+
+
+<div class="viewcode-block" id="LBWSGRisk.get_exposure_column_name">
+<a class="viewcode-back" href="../../../../api_reference/risks/implementations/low_birth_weight_and_short_gestation.html#vivarium_public_health.risks.implementations.low_birth_weight_and_short_gestation.LBWSGRisk.get_exposure_column_name">[docs]</a>
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_exposure_column_name</span><span class="p">(</span><span class="n">axis</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">axis</span><span class="si">}</span><span class="s2">_exposure&quot;</span></div>
+
+
+    <span class="c1">##############</span>
+    <span class="c1"># Properties #</span>
+    <span class="c1">##############</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">configuration_defaults</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Provides default configuration values for this component.</span>
+
+<span class="sd">        Extends the base Risk configuration with LBWSG-specific settings.</span>
+
+<span class="sd">        Configuration structure::</span>
+
+<span class="sd">            {risk_name}:</span>
+<span class="sd">                data_sources:</span>
+<span class="sd">                    exposure:</span>
+<span class="sd">                        Source for exposure data. Inherited from Risk.</span>
+<span class="sd">                    ensemble_distribution_weights:</span>
+<span class="sd">                        Source for ensemble weights. Inherited from Risk.</span>
+<span class="sd">                    exposure_standard_deviation:</span>
+<span class="sd">                        Source for exposure SD. Inherited from Risk.</span>
+<span class="sd">                    birth_exposure:</span>
+<span class="sd">                        Source for birth exposure data specific to LBWSG.</span>
+<span class="sd">                        Default is the artifact key</span>
+<span class="sd">                        ``{risk}.birth_exposure``. This provides the</span>
+<span class="sd">                        joint distribution of birth weight and gestational</span>
+<span class="sd">                        age categories at birth.</span>
+<span class="sd">                distribution_type: str</span>
+<span class="sd">                    Fixed to ``&quot;lbwsg&quot;`` for this component, using the</span>
+<span class="sd">                    specialized LBWSGDistribution.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">configuration_defaults</span> <span class="o">=</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">configuration_defaults</span>
+        <span class="c1"># Add birth exposure data source</span>
+        <span class="n">configuration_defaults</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">][</span><span class="s2">&quot;data_sources&quot;</span><span class="p">][</span>
+            <span class="s2">&quot;birth_exposure&quot;</span>
+        <span class="p">]</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="si">}</span><span class="s2">.birth_exposure&quot;</span>
+        <span class="n">configuration_defaults</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">][</span><span class="s2">&quot;distribution_type&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;lbwsg&quot;</span>
+        <span class="k">return</span> <span class="n">configuration_defaults</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">columns_created</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">get_exposure_column_name</span><span class="p">(</span><span class="n">axis</span><span class="p">)</span> <span class="k">for</span> <span class="n">axis</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">AXES</span><span class="p">]</span>
+
+    <span class="c1">#####################</span>
+    <span class="c1"># Lifecycle methods #</span>
+    <span class="c1">#####################</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="s2">&quot;risk_factor.low_birth_weight_and_short_gestation&quot;</span><span class="p">)</span>
+
+    <span class="c1"># noinspection PyAttributeOutsideInit</span>
+<div class="viewcode-block" id="LBWSGRisk.setup">
+<a class="viewcode-back" href="../../../../api_reference/risks/implementations/low_birth_weight_and_short_gestation.html#vivarium_public_health.risks.implementations.low_birth_weight_and_short_gestation.LBWSGRisk.setup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">setup</span><span class="p">(</span><span class="n">builder</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">birth_exposures</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_birth_exposure_pipelines</span><span class="p">(</span><span class="n">builder</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">configuration_age_end</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="o">.</span><span class="n">population</span><span class="o">.</span><span class="n">initialization_age_max</span></div>
+
+
+    <span class="c1">#################</span>
+    <span class="c1"># Setup methods #</span>
+    <span class="c1">#################</span>
+
+<div class="viewcode-block" id="LBWSGRisk.get_propensity_pipeline">
+<a class="viewcode-back" href="../../../../api_reference/risks/implementations/low_birth_weight_and_short_gestation.html#vivarium_public_health.risks.implementations.low_birth_weight_and_short_gestation.LBWSGRisk.get_propensity_pipeline">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_propensity_pipeline</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Pipeline</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="c1"># Propensity only used on initialization; not being saved to avoid a cycle</span>
+        <span class="k">return</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="LBWSGRisk.get_exposure_pipeline">
+<a class="viewcode-back" href="../../../../api_reference/risks/implementations/low_birth_weight_and_short_gestation.html#vivarium_public_health.risks.implementations.low_birth_weight_and_short_gestation.LBWSGRisk.get_exposure_pipeline">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_exposure_pipeline</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Pipeline</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="c1"># Exposure only used on initialization; not being saved to avoid a cycle</span>
+        <span class="k">return</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="LBWSGRisk.get_birth_exposure_pipelines">
+<a class="viewcode-back" href="../../../../api_reference/risks/implementations/low_birth_weight_and_short_gestation.html#vivarium_public_health.risks.implementations.low_birth_weight_and_short_gestation.LBWSGRisk.get_birth_exposure_pipelines">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_birth_exposure_pipelines</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Pipeline</span><span class="p">]:</span>
+        <span class="n">required_columns</span> <span class="o">=</span> <span class="n">get_lookup_columns</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">exposure_distribution</span><span class="o">.</span><span class="n">lookup_tables</span><span class="o">.</span><span class="n">values</span><span class="p">()</span>
+        <span class="p">)</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">get_pipeline</span><span class="p">(</span><span class="n">axis_</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Pipeline</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">builder</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">register_value_producer</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">birth_exposure_pipeline_name</span><span class="p">(</span><span class="n">axis_</span><span class="p">),</span>
+                <span class="n">source</span><span class="o">=</span><span class="k">lambda</span> <span class="n">index</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_birth_exposure</span><span class="p">(</span><span class="n">axis_</span><span class="p">,</span> <span class="n">index</span><span class="p">),</span>
+                <span class="n">component</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span>
+                <span class="n">required_resources</span><span class="o">=</span><span class="n">required_columns</span> <span class="o">+</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">randomness</span><span class="p">],</span>
+                <span class="n">preferred_post_processor</span><span class="o">=</span><span class="n">get_exposure_post_processor</span><span class="p">(</span><span class="n">builder</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">),</span>
+            <span class="p">)</span>
+
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">birth_exposure_pipeline_name</span><span class="p">(</span><span class="n">axis</span><span class="p">):</span> <span class="n">get_pipeline</span><span class="p">(</span><span class="n">axis</span><span class="p">)</span> <span class="k">for</span> <span class="n">axis</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">AXES</span>
+        <span class="p">}</span></div>
+
+
+    <span class="c1">########################</span>
+    <span class="c1"># Event-driven methods #</span>
+    <span class="c1">########################</span>
+
+<div class="viewcode-block" id="LBWSGRisk.on_initialize_simulants">
+<a class="viewcode-back" href="../../../../api_reference/risks/implementations/low_birth_weight_and_short_gestation.html#vivarium_public_health.risks.implementations.low_birth_weight_and_short_gestation.LBWSGRisk.on_initialize_simulants">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">on_initialize_simulants</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pop_data</span><span class="p">:</span> <span class="n">SimulantData</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">pop_data</span><span class="o">.</span><span class="n">user_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;age_end&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">configuration_age_end</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">exposure_distribution</span><span class="o">.</span><span class="n">exposure_key</span> <span class="o">=</span> <span class="s2">&quot;birth_exposure&quot;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">exposure_distribution</span><span class="o">.</span><span class="n">exposure_key</span> <span class="o">=</span> <span class="s2">&quot;exposure&quot;</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">birth_exposures</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">get_exposure_column_name</span><span class="p">(</span><span class="n">axis</span><span class="p">):</span> <span class="bp">self</span><span class="o">.</span><span class="n">birth_exposures</span><span class="p">[</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">birth_exposure_pipeline_name</span><span class="p">(</span><span class="n">axis</span><span class="p">)</span>
+                <span class="p">](</span><span class="n">pop_data</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">axis</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">AXES</span>
+            <span class="p">}</span>
+        <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">ConfigurationError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">exposure_distribution</span><span class="o">.</span><span class="n">exposure_key</span><span class="si">}</span><span class="s2"> data for </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> is missing from the &quot;</span>
+                <span class="s2">&quot;simulation. Simulants cannot be initialized.&quot;</span>
+            <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">population_view</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">birth_exposures</span><span class="p">))</span></div>
+
+
+    <span class="c1">##################################</span>
+    <span class="c1"># Pipeline sources and modifiers #</span>
+    <span class="c1">##################################</span>
+
+<div class="viewcode-block" id="LBWSGRisk.get_birth_exposure">
+<a class="viewcode-back" href="../../../../api_reference/risks/implementations/low_birth_weight_and_short_gestation.html#vivarium_public_health.risks.implementations.low_birth_weight_and_short_gestation.LBWSGRisk.get_birth_exposure">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_birth_exposure</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">axis</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">index</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">Index</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+        <span class="n">categorical_propensity</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">randomness</span><span class="o">.</span><span class="n">get_draw</span><span class="p">(</span><span class="n">index</span><span class="p">,</span> <span class="n">additional_key</span><span class="o">=</span><span class="n">CATEGORICAL</span><span class="p">)</span>
+        <span class="n">continuous_propensity</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">randomness</span><span class="o">.</span><span class="n">get_draw</span><span class="p">(</span><span class="n">index</span><span class="p">,</span> <span class="n">additional_key</span><span class="o">=</span><span class="n">axis</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">exposure_distribution</span><span class="o">.</span><span class="n">single_axis_ppf</span><span class="p">(</span>
+            <span class="n">axis</span><span class="p">,</span> <span class="n">continuous_propensity</span><span class="p">,</span> <span class="n">categorical_propensity</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="LBWSGRisk.get_current_exposure">
+<a class="viewcode-back" href="../../../../api_reference/risks/implementations/low_birth_weight_and_short_gestation.html#vivarium_public_health.risks.implementations.low_birth_weight_and_short_gestation.LBWSGRisk.get_current_exposure">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_current_exposure</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">index</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">Index</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="n">LifeCycleError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;The </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> exposure pipeline should not be called. You probably want to&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot; refer directly one of the exposure columns. During simulant initialization the birth&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot; exposure pipelines should be used instead.&quot;</span>
+        <span class="p">)</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="LBWSGRiskEffect">
+<a class="viewcode-back" href="../../../../api_reference/risks/implementations/low_birth_weight_and_short_gestation.html#vivarium_public_health.risks.implementations.low_birth_weight_and_short_gestation.LBWSGRiskEffect">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">LBWSGRiskEffect</span><span class="p">(</span><span class="n">RiskEffect</span><span class="p">):</span>
+    <span class="n">TMREL_BIRTH_WEIGHT_INTERVAL</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">Interval</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Interval</span><span class="p">(</span><span class="mf">3500.0</span><span class="p">,</span> <span class="mf">4500.0</span><span class="p">)</span>
+    <span class="n">TMREL_GESTATIONAL_AGE_INTERVAL</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">Interval</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Interval</span><span class="p">(</span><span class="mf">38.0</span><span class="p">,</span> <span class="mf">42.0</span><span class="p">)</span>
+
+    <span class="c1">##############</span>
+    <span class="c1"># Properties #</span>
+    <span class="c1">##############</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">columns_created</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">rr_column_names</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">columns_required</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">,</span> <span class="s2">&quot;sex&quot;</span><span class="p">]</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">lbwsg_exposure_column_names</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">initialization_requirements</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span> <span class="o">|</span> <span class="n">Resource</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="p">[</span><span class="s2">&quot;sex&quot;</span><span class="p">]</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">lbwsg_exposure_column_names</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">rr_column_names</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">relative_risk_column_name</span><span class="p">(</span><span class="n">age_group</span><span class="p">)</span> <span class="k">for</span> <span class="n">age_group</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">age_intervals</span><span class="p">]</span>
+
+    <span class="c1">#####################</span>
+    <span class="c1"># Lifecycle methods #</span>
+    <span class="c1">#####################</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="s2">&quot;risk_factor.low_birth_weight_and_short_gestation&quot;</span><span class="p">,</span> <span class="n">target</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">lbwsg_exposure_column_names</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">LBWSGRisk</span><span class="o">.</span><span class="n">get_exposure_column_name</span><span class="p">(</span><span class="n">axis</span><span class="p">)</span> <span class="k">for</span> <span class="n">axis</span> <span class="ow">in</span> <span class="n">LBWSGRisk</span><span class="o">.</span><span class="n">AXES</span>
+        <span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">relative_risk_pipeline_name</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;effect_of_</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">_on_</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">target</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">.relative_risk&quot;</span>
+        <span class="p">)</span>
+
+<div class="viewcode-block" id="LBWSGRiskEffect.relative_risk_column_name">
+<a class="viewcode-back" href="../../../../api_reference/risks/implementations/low_birth_weight_and_short_gestation.html#vivarium_public_health.risks.implementations.low_birth_weight_and_short_gestation.LBWSGRiskEffect.relative_risk_column_name">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">relative_risk_column_name</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">age_group_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;effect_of_</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">_on_</span><span class="si">{</span><span class="n">age_group_id</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">target</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">_relative_risk&quot;</span>
+        <span class="p">)</span></div>
+
+
+    <span class="c1"># noinspection PyAttributeOutsideInit</span>
+<div class="viewcode-block" id="LBWSGRiskEffect.setup">
+<a class="viewcode-back" href="../../../../api_reference/risks/implementations/low_birth_weight_and_short_gestation.html#vivarium_public_health.risks.implementations.low_birth_weight_and_short_gestation.LBWSGRiskEffect.setup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">age_intervals</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_age_intervals</span><span class="p">(</span><span class="n">builder</span><span class="p">)</span>
+
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">setup</span><span class="p">(</span><span class="n">builder</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">interpolator</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_interpolator</span><span class="p">(</span><span class="n">builder</span><span class="p">)</span></div>
+
+
+    <span class="c1">#################</span>
+    <span class="c1"># Setup methods #</span>
+    <span class="c1">#################</span>
+
+    <span class="c1"># noinspection PyAttributeOutsideInit</span>
+<div class="viewcode-block" id="LBWSGRiskEffect.build_all_lookup_tables">
+<a class="viewcode-back" href="../../../../api_reference/risks/implementations/low_birth_weight_and_short_gestation.html#vivarium_public_health.risks.implementations.low_birth_weight_and_short_gestation.LBWSGRiskEffect.build_all_lookup_tables">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">build_all_lookup_tables</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">paf_data</span><span class="p">,</span> <span class="n">paf_value_cols</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_population_attributable_fraction_source</span><span class="p">(</span><span class="n">builder</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lookup_tables</span><span class="p">[</span><span class="s2">&quot;population_attributable_fraction&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">build_lookup_table</span><span class="p">(</span>
+            <span class="n">builder</span><span class="p">,</span> <span class="n">paf_data</span><span class="p">,</span> <span class="n">paf_value_cols</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="LBWSGRiskEffect.get_risk_exposure">
+<a class="viewcode-back" href="../../../../api_reference/risks/implementations/low_birth_weight_and_short_gestation.html#vivarium_public_health.risks.implementations.low_birth_weight_and_short_gestation.LBWSGRiskEffect.get_risk_exposure">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_risk_exposure</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">pd</span><span class="o">.</span><span class="n">Index</span><span class="p">],</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">]:</span>
+        <span class="k">def</span><span class="w"> </span><span class="nf">exposure</span><span class="p">(</span><span class="n">index</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">Index</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">population_view</span><span class="o">.</span><span class="n">subview</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">lbwsg_exposure_column_names</span><span class="p">)</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">index</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">exposure</span></div>
+
+
+<div class="viewcode-block" id="LBWSGRiskEffect.get_population_attributable_fraction_source">
+<a class="viewcode-back" href="../../../../api_reference/risks/implementations/low_birth_weight_and_short_gestation.html#vivarium_public_health.risks.implementations.low_birth_weight_and_short_gestation.LBWSGRiskEffect.get_population_attributable_fraction_source">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_population_attributable_fraction_source</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]]:</span>
+        <span class="n">paf_key</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="si">}</span><span class="s2">.population_attributable_fraction&quot;</span>
+        <span class="n">paf_data</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">paf_key</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">paf_data</span><span class="p">,</span> <span class="n">builder</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">value_columns</span><span class="p">()(</span><span class="n">paf_key</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="LBWSGRiskEffect.register_target_modifier">
+<a class="viewcode-back" href="../../../../api_reference/risks/implementations/low_birth_weight_and_short_gestation.html#vivarium_public_health.risks.implementations.low_birth_weight_and_short_gestation.LBWSGRiskEffect.register_target_modifier">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">register_target_modifier</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">builder</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">register_value_modifier</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">target_pipeline_name</span><span class="p">,</span>
+            <span class="n">modifier</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">adjust_target</span><span class="p">,</span>
+            <span class="n">component</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span>
+            <span class="n">required_resources</span><span class="o">=</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">relative_risk</span><span class="p">],</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="LBWSGRiskEffect.get_age_intervals">
+<a class="viewcode-back" href="../../../../api_reference/risks/implementations/low_birth_weight_and_short_gestation.html#vivarium_public_health.risks.implementations.low_birth_weight_and_short_gestation.LBWSGRiskEffect.get_age_intervals">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_age_intervals</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">Interval</span><span class="p">]:</span>
+        <span class="n">age_bins</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="s2">&quot;population.age_bins&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">set_index</span><span class="p">(</span><span class="s2">&quot;age_start&quot;</span><span class="p">)</span>
+        <span class="n">relative_risks</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="si">}</span><span class="s2">.relative_risk&quot;</span><span class="p">)</span>
+        <span class="n">exposed_age_group_starts</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">relative_risks</span><span class="o">.</span><span class="n">groupby</span><span class="p">(</span><span class="s2">&quot;age_start&quot;</span><span class="p">)[</span><span class="s2">&quot;value&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">any</span><span class="p">()</span><span class="o">.</span><span class="n">reset_index</span><span class="p">()[</span><span class="s2">&quot;age_start&quot;</span><span class="p">]</span>
+        <span class="p">)</span>
+
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="n">to_snake_case</span><span class="p">(</span><span class="n">age_bins</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">age_start</span><span class="p">,</span> <span class="s2">&quot;age_group_name&quot;</span><span class="p">]):</span> <span class="n">pd</span><span class="o">.</span><span class="n">Interval</span><span class="p">(</span>
+                <span class="n">age_start</span><span class="p">,</span> <span class="n">age_bins</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">age_start</span><span class="p">,</span> <span class="s2">&quot;age_end&quot;</span><span class="p">]</span>
+            <span class="p">)</span>
+            <span class="k">for</span> <span class="n">age_start</span> <span class="ow">in</span> <span class="n">exposed_age_group_starts</span>
+        <span class="p">}</span></div>
+
+
+<div class="viewcode-block" id="LBWSGRiskEffect.get_relative_risk_pipeline">
+<a class="viewcode-back" href="../../../../api_reference/risks/implementations/low_birth_weight_and_short_gestation.html#vivarium_public_health.risks.implementations.low_birth_weight_and_short_gestation.LBWSGRiskEffect.get_relative_risk_pipeline">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_relative_risk_pipeline</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Pipeline</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">builder</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">register_value_producer</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">relative_risk_pipeline_name</span><span class="p">,</span>
+            <span class="n">source</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_relative_risk_source</span><span class="p">,</span>
+            <span class="n">component</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span>
+            <span class="n">required_resources</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">]</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">rr_column_names</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="LBWSGRiskEffect.get_interpolator">
+<a class="viewcode-back" href="../../../../api_reference/risks/implementations/low_birth_weight_and_short_gestation.html#vivarium_public_health.risks.implementations.low_birth_weight_and_short_gestation.LBWSGRiskEffect.get_interpolator">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_interpolator</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">:</span>
+        <span class="n">age_start_to_age_group_name_map</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="n">interval</span><span class="o">.</span><span class="n">left</span><span class="p">:</span> <span class="n">to_snake_case</span><span class="p">(</span><span class="n">age_group_name</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">age_group_name</span><span class="p">,</span> <span class="n">interval</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">age_intervals</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+        <span class="p">}</span>
+
+        <span class="c1"># get relative risk data for target</span>
+        <span class="n">interpolators</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="si">}</span><span class="s2">.relative_risk_interpolator&quot;</span><span class="p">)</span>
+        <span class="n">interpolators</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="c1"># isolate RRs for target and drop non-neonatal age groups since they have RR == 1.0</span>
+            <span class="n">interpolators</span><span class="p">[</span>
+                <span class="n">interpolators</span><span class="p">[</span><span class="s2">&quot;age_start&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">isin</span><span class="p">(</span>
+                    <span class="p">[</span><span class="n">interval</span><span class="o">.</span><span class="n">left</span> <span class="k">for</span> <span class="n">interval</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">age_intervals</span><span class="o">.</span><span class="n">values</span><span class="p">()]</span>
+                <span class="p">)</span>
+            <span class="p">]</span>
+            <span class="o">.</span><span class="n">drop</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;age_end&quot;</span><span class="p">,</span> <span class="s2">&quot;year_start&quot;</span><span class="p">,</span> <span class="s2">&quot;year_end&quot;</span><span class="p">])</span>
+            <span class="o">.</span><span class="n">set_index</span><span class="p">([</span><span class="s2">&quot;sex&quot;</span><span class="p">,</span> <span class="s2">&quot;value&quot;</span><span class="p">])</span>
+            <span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="k">lambda</span> <span class="n">row</span><span class="p">:</span> <span class="p">(</span><span class="n">age_start_to_age_group_name_map</span><span class="p">[</span><span class="n">row</span><span class="p">[</span><span class="s2">&quot;age_start&quot;</span><span class="p">]]),</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+            <span class="o">.</span><span class="n">rename</span><span class="p">(</span><span class="s2">&quot;age_group_name&quot;</span><span class="p">)</span>
+            <span class="o">.</span><span class="n">reset_index</span><span class="p">()</span>
+            <span class="o">.</span><span class="n">set_index</span><span class="p">([</span><span class="s2">&quot;sex&quot;</span><span class="p">,</span> <span class="s2">&quot;age_group_name&quot;</span><span class="p">])</span>
+        <span class="p">)[</span><span class="s2">&quot;value&quot;</span><span class="p">]</span>
+
+        <span class="n">interpolators</span> <span class="o">=</span> <span class="n">interpolators</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">pickle</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="nb">bytes</span><span class="o">.</span><span class="n">fromhex</span><span class="p">(</span><span class="n">x</span><span class="p">)))</span>
+        <span class="k">return</span> <span class="n">interpolators</span></div>
+
+
+    <span class="c1">########################</span>
+    <span class="c1"># Event-driven methods #</span>
+    <span class="c1">########################</span>
+
+<div class="viewcode-block" id="LBWSGRiskEffect.on_initialize_simulants">
+<a class="viewcode-back" href="../../../../api_reference/risks/implementations/low_birth_weight_and_short_gestation.html#vivarium_public_health.risks.implementations.low_birth_weight_and_short_gestation.LBWSGRiskEffect.on_initialize_simulants">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">on_initialize_simulants</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pop_data</span><span class="p">:</span> <span class="n">SimulantData</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">pop</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">population_view</span><span class="o">.</span><span class="n">subview</span><span class="p">([</span><span class="s2">&quot;sex&quot;</span><span class="p">]</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">lbwsg_exposure_column_names</span><span class="p">)</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+            <span class="n">pop_data</span><span class="o">.</span><span class="n">index</span>
+        <span class="p">)</span>
+        <span class="n">birth_weight</span> <span class="o">=</span> <span class="n">pop</span><span class="p">[</span><span class="n">LBWSGRisk</span><span class="o">.</span><span class="n">get_exposure_column_name</span><span class="p">(</span><span class="n">BIRTH_WEIGHT</span><span class="p">)]</span>
+        <span class="n">gestational_age</span> <span class="o">=</span> <span class="n">pop</span><span class="p">[</span><span class="n">LBWSGRisk</span><span class="o">.</span><span class="n">get_exposure_column_name</span><span class="p">(</span><span class="n">GESTATIONAL_AGE</span><span class="p">)]</span>
+
+        <span class="n">is_male</span> <span class="o">=</span> <span class="n">pop</span><span class="p">[</span><span class="s2">&quot;sex&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;Male&quot;</span>
+        <span class="n">is_tmrel</span> <span class="o">=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">TMREL_GESTATIONAL_AGE_INTERVAL</span><span class="o">.</span><span class="n">left</span> <span class="o">&lt;=</span> <span class="n">gestational_age</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">TMREL_BIRTH_WEIGHT_INTERVAL</span><span class="o">.</span><span class="n">left</span> <span class="o">&lt;=</span> <span class="n">birth_weight</span>
+        <span class="p">)</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">get_relative_risk_for_age_group</span><span class="p">(</span><span class="n">age_group</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">:</span>
+            <span class="n">column_name</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">relative_risk_column_name</span><span class="p">(</span><span class="n">age_group</span><span class="p">)</span>
+            <span class="n">log_relative_risk</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="n">pop_data</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="n">column_name</span><span class="p">)</span>
+
+            <span class="n">male_interpolator</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">interpolator</span><span class="p">[</span><span class="s2">&quot;Male&quot;</span><span class="p">,</span> <span class="n">age_group</span><span class="p">]</span>
+            <span class="n">log_relative_risk</span><span class="p">[</span><span class="n">is_male</span> <span class="o">&amp;</span> <span class="o">~</span><span class="n">is_tmrel</span><span class="p">]</span> <span class="o">=</span> <span class="n">male_interpolator</span><span class="p">(</span>
+                <span class="n">gestational_age</span><span class="p">[</span><span class="n">is_male</span> <span class="o">&amp;</span> <span class="o">~</span><span class="n">is_tmrel</span><span class="p">],</span>
+                <span class="n">birth_weight</span><span class="p">[</span><span class="n">is_male</span> <span class="o">&amp;</span> <span class="o">~</span><span class="n">is_tmrel</span><span class="p">],</span>
+                <span class="n">grid</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+            <span class="p">)</span>
+
+            <span class="n">female_interpolator</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">interpolator</span><span class="p">[</span><span class="s2">&quot;Female&quot;</span><span class="p">,</span> <span class="n">age_group</span><span class="p">]</span>
+            <span class="n">log_relative_risk</span><span class="p">[</span><span class="o">~</span><span class="n">is_male</span> <span class="o">&amp;</span> <span class="o">~</span><span class="n">is_tmrel</span><span class="p">]</span> <span class="o">=</span> <span class="n">female_interpolator</span><span class="p">(</span>
+                <span class="n">gestational_age</span><span class="p">[</span><span class="o">~</span><span class="n">is_male</span> <span class="o">&amp;</span> <span class="o">~</span><span class="n">is_tmrel</span><span class="p">],</span>
+                <span class="n">birth_weight</span><span class="p">[</span><span class="o">~</span><span class="n">is_male</span> <span class="o">&amp;</span> <span class="o">~</span><span class="n">is_tmrel</span><span class="p">],</span>
+                <span class="n">grid</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="n">log_relative_risk</span><span class="p">)</span>
+
+        <span class="n">relative_risk_columns</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">get_relative_risk_for_age_group</span><span class="p">(</span><span class="n">age_group</span><span class="p">)</span> <span class="k">for</span> <span class="n">age_group</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">age_intervals</span>
+        <span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">population_view</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">pd</span><span class="o">.</span><span class="n">concat</span><span class="p">(</span><span class="n">relative_risk_columns</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">))</span></div>
+
+
+    <span class="c1">##################################</span>
+    <span class="c1"># Pipeline sources and modifiers #</span>
+    <span class="c1">##################################</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_get_relative_risk</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">index</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">Index</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">:</span>
+        <span class="n">pop</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">population_view</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">index</span><span class="p">)</span>
+        <span class="n">relative_risk</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="n">index</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">relative_risk_pipeline_name</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">age_group</span><span class="p">,</span> <span class="n">interval</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">age_intervals</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">age_group_mask</span> <span class="o">=</span> <span class="p">(</span><span class="n">interval</span><span class="o">.</span><span class="n">left</span> <span class="o">&lt;=</span> <span class="n">pop</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">])</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">pop</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">]</span> <span class="o">&lt;</span> <span class="n">interval</span><span class="o">.</span><span class="n">right</span><span class="p">)</span>
+            <span class="n">relative_risk</span><span class="p">[</span><span class="n">age_group_mask</span><span class="p">]</span> <span class="o">=</span> <span class="n">pop</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span>
+                <span class="n">age_group_mask</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">relative_risk_column_name</span><span class="p">(</span><span class="n">age_group</span><span class="p">)</span>
+            <span class="p">]</span>
+        <span class="k">return</span> <span class="n">relative_risk</span>
+
+<div class="viewcode-block" id="LBWSGRiskEffect.get_relative_risk_source">
+<a class="viewcode-back" href="../../../../api_reference/risks/implementations/low_birth_weight_and_short_gestation.html#vivarium_public_health.risks.implementations.low_birth_weight_and_short_gestation.LBWSGRiskEffect.get_relative_risk_source">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_relative_risk_source</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">pd</span><span class="o">.</span><span class="n">Index</span><span class="p">],</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_relative_risk</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, The vivarium developers.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

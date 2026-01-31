@@ -1,0 +1,400 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>vivarium_public_health.results.mortality &mdash; vivarium_public_health 4.3.15.dev2+g712190e05 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/plot_directive.css" />
+
+  
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=7ca62e9d"></script>
+      <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+    <link href="../../../_static/style.css" rel="stylesheet" type="text/css">
+
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            vivarium_public_health
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorials/index.html">Tutorials</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_reference/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">vivarium_public_health</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">vivarium_public_health.results.mortality</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for vivarium_public_health.results.mortality</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">===================</span>
+<span class="sd">Mortality Observers</span>
+<span class="sd">===================</span>
+
+<span class="sd">This module contains tools for observing cause-specific and</span>
+<span class="sd">excess mortality in the simulation, including &quot;other causes&quot;.</span>
+
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">layered_config_tree</span><span class="w"> </span><span class="kn">import</span> <span class="n">LayeredConfigTree</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pandas.api.types</span><span class="w"> </span><span class="kn">import</span> <span class="n">CategoricalDtype</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.engine</span><span class="w"> </span><span class="kn">import</span> <span class="n">Builder</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium_public_health.disease</span><span class="w"> </span><span class="kn">import</span> <span class="n">DiseaseState</span><span class="p">,</span> <span class="n">RiskAttributableDisease</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium_public_health.results.columns</span><span class="w"> </span><span class="kn">import</span> <span class="n">COLUMNS</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium_public_health.results.observer</span><span class="w"> </span><span class="kn">import</span> <span class="n">PublicHealthObserver</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium_public_health.results.simple_cause</span><span class="w"> </span><span class="kn">import</span> <span class="n">SimpleCause</span>
+
+
+<div class="viewcode-block" id="MortalityObserver">
+<a class="viewcode-back" href="../../../api_reference/results/mortality.html#vivarium_public_health.results.mortality.MortalityObserver">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">MortalityObserver</span><span class="p">(</span><span class="n">PublicHealthObserver</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;An observer for cause-specific deaths and ylls (including &quot;other causes&quot;).</span>
+
+<span class="sd">    By default, this counts cause-specific deaths and years of life lost over</span>
+<span class="sd">    the full course of the simulation. It can be configured to add or remove</span>
+<span class="sd">    stratification groups to the default groups defined by a</span>
+<span class="sd">    :class:ResultsStratifier. The aggregate configuration key can be set to</span>
+<span class="sd">    True to aggregate all deaths and ylls into a single observation and remove</span>
+<span class="sd">    the stratification by cause of death to improve runtime.</span>
+
+<span class="sd">    In the model specification, your configuration for this component should</span>
+<span class="sd">    be specified as, e.g.:</span>
+
+<span class="sd">    .. code-block:: yaml</span>
+
+<span class="sd">        configuration:</span>
+<span class="sd">            stratification:</span>
+<span class="sd">                mortality:</span>
+<span class="sd">                    exclude:</span>
+<span class="sd">                        - &quot;sex&quot;</span>
+<span class="sd">                    include:</span>
+<span class="sd">                        - &quot;sample_stratification&quot;</span>
+
+<span class="sd">    This observer needs to access the has_excess_mortality attribute of the causes</span>
+<span class="sd">    we&#39;re observing, but this attribute gets defined in the setup of the cause models.</span>
+<span class="sd">    As a result, the model specification should list this observer after causes.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    required_death_columns</span>
+<span class="sd">        Columns required by the deaths observation.</span>
+<span class="sd">    required_yll_columns</span>
+<span class="sd">        Columns required by the ylls observation.</span>
+<span class="sd">    clock</span>
+<span class="sd">        The simulation clock.</span>
+<span class="sd">    causes_of_death</span>
+<span class="sd">        Causes of death to be observed.</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">required_death_columns</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;alive&quot;</span><span class="p">,</span> <span class="s2">&quot;exit_time&quot;</span><span class="p">,</span> <span class="s2">&quot;cause_of_death&quot;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">required_yll_columns</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="s2">&quot;alive&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;cause_of_death&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;exit_time&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;years_of_life_lost&quot;</span><span class="p">,</span>
+        <span class="p">]</span>
+
+    <span class="c1">##############</span>
+    <span class="c1"># Properties #</span>
+    <span class="c1">##############</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">mortality_classes</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">type</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;The classes to be considered as causes of death.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="p">[</span><span class="n">DiseaseState</span><span class="p">,</span> <span class="n">RiskAttributableDisease</span><span class="p">]</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">configuration_defaults</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Provides default configuration values for this observer.</span>
+
+<span class="sd">        Extends the base PublicHealthObserver configuration with</span>
+<span class="sd">        mortality-specific settings.</span>
+
+<span class="sd">        Configuration structure::</span>
+
+<span class="sd">            stratification:</span>
+<span class="sd">                {observer_name}:</span>
+<span class="sd">                    exclude: list[str]</span>
+<span class="sd">                        Stratification groups to exclude from results.</span>
+<span class="sd">                        Inherited from base observer.</span>
+<span class="sd">                    include: list[str]</span>
+<span class="sd">                        Additional stratification groups to include.</span>
+<span class="sd">                        Inherited from base observer.</span>
+<span class="sd">                    aggregate: bool</span>
+<span class="sd">                        If True, aggregates all deaths and YLLs into a</span>
+<span class="sd">                        single observation without cause-specific breakdown.</span>
+<span class="sd">                        Default is False (cause-specific results).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">config_defaults</span> <span class="o">=</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">configuration_defaults</span>
+        <span class="n">config_defaults</span><span class="p">[</span><span class="s2">&quot;stratification&quot;</span><span class="p">][</span><span class="bp">self</span><span class="o">.</span><span class="n">get_configuration_name</span><span class="p">()][</span><span class="s2">&quot;aggregate&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="k">return</span> <span class="n">config_defaults</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">columns_required</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Columns required by this observer.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="p">[</span>
+            <span class="s2">&quot;alive&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;years_of_life_lost&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;cause_of_death&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;exit_time&quot;</span><span class="p">,</span>
+        <span class="p">]</span>
+
+    <span class="c1">#################</span>
+    <span class="c1"># Setup methods #</span>
+    <span class="c1">#################</span>
+
+<div class="viewcode-block" id="MortalityObserver.setup">
+<a class="viewcode-back" href="../../../api_reference/results/mortality.html#vivarium_public_health.results.mortality.MortalityObserver.setup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Set up the observer.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">clock</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">time</span><span class="o">.</span><span class="n">clock</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">set_causes_of_death</span><span class="p">(</span><span class="n">builder</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="MortalityObserver.set_causes_of_death">
+<a class="viewcode-back" href="../../../api_reference/results/mortality.html#vivarium_public_health.results.mortality.MortalityObserver.set_causes_of_death">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_causes_of_death</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Set the causes of death to be observed.</span>
+
+<span class="sd">        The causes to be observed are any registered components of class types</span>
+<span class="sd">        found in the ``mortality_classes`` property.</span>
+
+<span class="sd">        Notes</span>
+<span class="sd">        -----</span>
+<span class="sd">        We do not actually exclude any categories in this method.</span>
+
+<span class="sd">        Also note that we add &#39;not_dead&#39; and &#39;other_causes&#39; categories here.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">causes_of_death</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">cause</span>
+            <span class="k">for</span> <span class="n">cause</span> <span class="ow">in</span> <span class="n">builder</span><span class="o">.</span><span class="n">components</span><span class="o">.</span><span class="n">get_components_by_type</span><span class="p">(</span>
+                <span class="nb">tuple</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">mortality_classes</span><span class="p">)</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">cause</span><span class="o">.</span><span class="n">has_excess_mortality</span>
+        <span class="p">]</span>
+
+        <span class="c1"># Convert to SimpleCauses and add on other_causes and not_dead</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">causes_of_death</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">SimpleCause</span><span class="o">.</span><span class="n">create_from_specific_cause</span><span class="p">(</span><span class="n">cause</span><span class="p">)</span> <span class="k">for</span> <span class="n">cause</span> <span class="ow">in</span> <span class="n">causes_of_death</span>
+        <span class="p">]</span> <span class="o">+</span> <span class="p">[</span>
+            <span class="n">SimpleCause</span><span class="p">(</span><span class="s2">&quot;not_dead&quot;</span><span class="p">,</span> <span class="s2">&quot;not_dead&quot;</span><span class="p">,</span> <span class="s2">&quot;cause&quot;</span><span class="p">),</span>
+            <span class="n">SimpleCause</span><span class="p">(</span><span class="s2">&quot;other_causes&quot;</span><span class="p">,</span> <span class="s2">&quot;other_causes&quot;</span><span class="p">,</span> <span class="s2">&quot;cause&quot;</span><span class="p">),</span>
+        <span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="MortalityObserver.register_observations">
+<a class="viewcode-back" href="../../../api_reference/results/mortality.html#vivarium_public_health.results.mortality.MortalityObserver.register_observations">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">register_observations</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Register stratifications and observations.</span>
+
+<span class="sd">        Notes</span>
+<span class="sd">        -----</span>
+<span class="sd">        Ideally, each observer registers a single observation. This one, however,</span>
+<span class="sd">        registeres two.</span>
+
+<span class="sd">        While it&#39;s typical for all stratification registrations to be encapsulated</span>
+<span class="sd">        in a single class (i.e. the</span>
+<span class="sd">        :class:ResultsStratifier &lt;vivarium_public_health.results.stratification.ResultsStratifier),</span>
+<span class="sd">        this observer potentially registers an additional one. While it could</span>
+<span class="sd">        be registered in the ``ResultsStratifier`` as well, it is specific to</span>
+<span class="sd">        this observer and so it is registered here while we have easy access</span>
+<span class="sd">        to the required categories.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">pop_filter</span> <span class="o">=</span> <span class="s1">&#39;alive == &quot;dead&quot; and tracked == True&#39;</span>
+        <span class="n">additional_stratifications</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">configuration</span><span class="o">.</span><span class="n">include</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">configuration</span><span class="o">.</span><span class="n">aggregate</span><span class="p">:</span>
+            <span class="c1"># manually append &#39;not_dead&#39; as an excluded cause</span>
+            <span class="n">excluded_categories</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="o">.</span><span class="n">stratification</span><span class="o">.</span><span class="n">excluded_categories</span><span class="o">.</span><span class="n">to_dict</span><span class="p">()</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+                    <span class="s2">&quot;cause_of_death&quot;</span><span class="p">,</span> <span class="p">[]</span>
+                <span class="p">)</span>
+            <span class="p">)</span> <span class="o">+</span> <span class="p">[</span><span class="s2">&quot;not_dead&quot;</span><span class="p">]</span>
+            <span class="n">builder</span><span class="o">.</span><span class="n">results</span><span class="o">.</span><span class="n">register_stratification</span><span class="p">(</span>
+                <span class="s2">&quot;cause_of_death&quot;</span><span class="p">,</span>
+                <span class="p">[</span><span class="n">cause</span><span class="o">.</span><span class="n">state_id</span> <span class="k">for</span> <span class="n">cause</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">causes_of_death</span><span class="p">],</span>
+                <span class="n">excluded_categories</span><span class="o">=</span><span class="n">excluded_categories</span><span class="p">,</span>
+                <span class="n">requires_columns</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;cause_of_death&quot;</span><span class="p">],</span>
+            <span class="p">)</span>
+            <span class="n">additional_stratifications</span> <span class="o">+=</span> <span class="p">[</span><span class="s2">&quot;cause_of_death&quot;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">register_adding_observation</span><span class="p">(</span>
+            <span class="n">builder</span><span class="o">=</span><span class="n">builder</span><span class="p">,</span>
+            <span class="n">name</span><span class="o">=</span><span class="s2">&quot;deaths&quot;</span><span class="p">,</span>
+            <span class="n">pop_filter</span><span class="o">=</span><span class="n">pop_filter</span><span class="p">,</span>
+            <span class="n">requires_columns</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">required_death_columns</span><span class="p">,</span>
+            <span class="n">additional_stratifications</span><span class="o">=</span><span class="n">additional_stratifications</span><span class="p">,</span>
+            <span class="n">excluded_stratifications</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">configuration</span><span class="o">.</span><span class="n">exclude</span><span class="p">,</span>
+            <span class="n">aggregator</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">count_deaths</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">register_adding_observation</span><span class="p">(</span>
+            <span class="n">builder</span><span class="o">=</span><span class="n">builder</span><span class="p">,</span>
+            <span class="n">name</span><span class="o">=</span><span class="s2">&quot;ylls&quot;</span><span class="p">,</span>
+            <span class="n">pop_filter</span><span class="o">=</span><span class="n">pop_filter</span><span class="p">,</span>
+            <span class="n">requires_columns</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">required_yll_columns</span><span class="p">,</span>
+            <span class="n">additional_stratifications</span><span class="o">=</span><span class="n">additional_stratifications</span><span class="p">,</span>
+            <span class="n">excluded_stratifications</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">configuration</span><span class="o">.</span><span class="n">exclude</span><span class="p">,</span>
+            <span class="n">aggregator</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">calculate_ylls</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+    <span class="c1">###############</span>
+    <span class="c1"># Aggregators #</span>
+    <span class="c1">###############</span>
+
+<div class="viewcode-block" id="MortalityObserver.count_deaths">
+<a class="viewcode-back" href="../../../api_reference/results/mortality.html#vivarium_public_health.results.mortality.MortalityObserver.count_deaths">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">count_deaths</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Count the number of deaths that occurred during this time step.&quot;&quot;&quot;</span>
+        <span class="n">died_of_cause</span> <span class="o">=</span> <span class="n">x</span><span class="p">[</span><span class="s2">&quot;exit_time&quot;</span><span class="p">]</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">clock</span><span class="p">()</span>
+        <span class="k">return</span> <span class="nb">sum</span><span class="p">(</span><span class="n">died_of_cause</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="MortalityObserver.calculate_ylls">
+<a class="viewcode-back" href="../../../api_reference/results/mortality.html#vivarium_public_health.results.mortality.MortalityObserver.calculate_ylls">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">calculate_ylls</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Calculate the years of life lost during this time step.&quot;&quot;&quot;</span>
+        <span class="n">died_of_cause</span> <span class="o">=</span> <span class="n">x</span><span class="p">[</span><span class="s2">&quot;exit_time&quot;</span><span class="p">]</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">clock</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">x</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">died_of_cause</span><span class="p">,</span> <span class="s2">&quot;years_of_life_lost&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span></div>
+
+
+    <span class="c1">##############################</span>
+    <span class="c1"># Results formatting methods #</span>
+    <span class="c1">##############################</span>
+
+<div class="viewcode-block" id="MortalityObserver.format">
+<a class="viewcode-back" href="../../../api_reference/results/mortality.html#vivarium_public_health.results.mortality.MortalityObserver.format">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">format</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">measure</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">results</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Rename the appropriate column to &#39;entity&#39;.</span>
+
+<span class="sd">        The primary thing this method does is rename the &#39;cause_of_death&#39; column</span>
+<span class="sd">        to &#39;entity&#39; (or, it we are aggregating, and there is no &#39;cause_of_death&#39;</span>
+<span class="sd">        column, we simply create a new &#39;entity&#39; column). We do this here instead</span>
+<span class="sd">        of the &#39;get_entity_column&#39; method simply because we do not want the</span>
+<span class="sd">        &#39;cause_of_death&#39; at all. If we keep it here and then return it as the</span>
+<span class="sd">        entity column later, the final results would have both.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        measure</span>
+<span class="sd">            The measure.</span>
+<span class="sd">        results</span>
+<span class="sd">            The results to format.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">            The formatted results.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">results</span> <span class="o">=</span> <span class="n">results</span><span class="o">.</span><span class="n">reset_index</span><span class="p">()</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">configuration</span><span class="o">.</span><span class="n">aggregate</span><span class="p">:</span>
+            <span class="n">results</span><span class="p">[</span><span class="n">COLUMNS</span><span class="o">.</span><span class="n">ENTITY</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;all_causes&quot;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">results</span><span class="o">.</span><span class="n">rename</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;cause_of_death&quot;</span><span class="p">:</span> <span class="n">COLUMNS</span><span class="o">.</span><span class="n">ENTITY</span><span class="p">},</span> <span class="n">inplace</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">results</span></div>
+
+
+<div class="viewcode-block" id="MortalityObserver.get_entity_type_column">
+<a class="viewcode-back" href="../../../api_reference/results/mortality.html#vivarium_public_health.results.mortality.MortalityObserver.get_entity_type_column">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_entity_type_column</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">measure</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">results</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the &#39;entity_type&#39; column values.&quot;&quot;&quot;</span>
+        <span class="n">entity_type_map</span> <span class="o">=</span> <span class="p">{</span><span class="n">cause</span><span class="o">.</span><span class="n">state_id</span><span class="p">:</span> <span class="n">cause</span><span class="o">.</span><span class="n">cause_type</span> <span class="k">for</span> <span class="n">cause</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">causes_of_death</span><span class="p">}</span>
+        <span class="k">return</span> <span class="n">results</span><span class="p">[</span><span class="n">COLUMNS</span><span class="o">.</span><span class="n">ENTITY</span><span class="p">]</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">entity_type_map</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">CategoricalDtype</span><span class="p">())</span></div>
+
+
+<div class="viewcode-block" id="MortalityObserver.get_entity_column">
+<a class="viewcode-back" href="../../../api_reference/results/mortality.html#vivarium_public_health.results.mortality.MortalityObserver.get_entity_column">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_entity_column</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">measure</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">results</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the &#39;entity&#39; column values.&quot;&quot;&quot;</span>
+        <span class="c1"># The entity col was created in the &#39;format&#39; method</span>
+        <span class="k">return</span> <span class="n">results</span><span class="p">[</span><span class="n">COLUMNS</span><span class="o">.</span><span class="n">ENTITY</span><span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="MortalityObserver.get_sub_entity_column">
+<a class="viewcode-back" href="../../../api_reference/results/mortality.html#vivarium_public_health.results.mortality.MortalityObserver.get_sub_entity_column">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_sub_entity_column</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">measure</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">results</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the &#39;sub_entity&#39; column values.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">results</span><span class="p">[</span><span class="n">COLUMNS</span><span class="o">.</span><span class="n">ENTITY</span><span class="p">]</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, The vivarium developers.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

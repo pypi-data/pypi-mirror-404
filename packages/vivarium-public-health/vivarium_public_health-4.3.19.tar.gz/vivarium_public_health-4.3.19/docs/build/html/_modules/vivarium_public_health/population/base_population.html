@@ -1,0 +1,695 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>vivarium_public_health.population.base_population &mdash; vivarium_public_health 4.3.15.dev2+g712190e05 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/plot_directive.css" />
+
+  
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=7ca62e9d"></script>
+      <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+    <link href="../../../_static/style.css" rel="stylesheet" type="text/css">
+
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            vivarium_public_health
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorials/index.html">Tutorials</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_reference/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">vivarium_public_health</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">vivarium_public_health.population.base_population</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for vivarium_public_health.population.base_population</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">=========================</span>
+<span class="sd">The Core Population Model</span>
+<span class="sd">=========================</span>
+
+<span class="sd">This module contains tools for sampling and assigning core demographic</span>
+<span class="sd">characteristics to simulants.</span>
+
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">Iterable</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">layered_config_tree.exceptions</span><span class="w"> </span><span class="kn">import</span> <span class="n">ConfigurationKeyError</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">loguru</span><span class="w"> </span><span class="kn">import</span> <span class="n">logger</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium</span><span class="w"> </span><span class="kn">import</span> <span class="n">Component</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.engine</span><span class="w"> </span><span class="kn">import</span> <span class="n">Builder</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.event</span><span class="w"> </span><span class="kn">import</span> <span class="n">Event</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.population</span><span class="w"> </span><span class="kn">import</span> <span class="n">SimulantData</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.randomness</span><span class="w"> </span><span class="kn">import</span> <span class="n">RandomnessStream</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium_public_health</span><span class="w"> </span><span class="kn">import</span> <span class="n">utilities</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium_public_health.population.data_transformations</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">assign_demographic_proportions</span><span class="p">,</span>
+    <span class="n">load_population_structure</span><span class="p">,</span>
+    <span class="n">rescale_binned_proportions</span><span class="p">,</span>
+    <span class="n">smooth_ages</span><span class="p">,</span>
+<span class="p">)</span>
+
+
+<div class="viewcode-block" id="BasePopulation">
+<a class="viewcode-back" href="../../../api_reference/population/base_population.html#vivarium_public_health.population.base_population.BasePopulation">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">BasePopulation</span><span class="p">(</span><span class="n">Component</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Component for producing and aging simulants based on demographic data.&quot;&quot;&quot;</span>
+
+    <span class="n">CONFIGURATION_DEFAULTS</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;population&quot;</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s2">&quot;initialization_age_min&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+            <span class="s2">&quot;initialization_age_max&quot;</span><span class="p">:</span> <span class="mi">125</span><span class="p">,</span>
+            <span class="s2">&quot;untracking_age&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="s2">&quot;include_sex&quot;</span><span class="p">:</span> <span class="s2">&quot;Both&quot;</span><span class="p">,</span>  <span class="c1"># Either Female, Male, or Both</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+
+    <span class="c1">##############</span>
+    <span class="c1"># Properties #</span>
+    <span class="c1">##############</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">columns_created</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">,</span> <span class="s2">&quot;sex&quot;</span><span class="p">,</span> <span class="s2">&quot;alive&quot;</span><span class="p">,</span> <span class="s2">&quot;location&quot;</span><span class="p">,</span> <span class="s2">&quot;entrance_time&quot;</span><span class="p">,</span> <span class="s2">&quot;exit_time&quot;</span><span class="p">]</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">time_step_priority</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+        <span class="k">return</span> <span class="mi">8</span>
+
+    <span class="c1">#####################</span>
+    <span class="c1"># Lifecycle methods #</span>
+    <span class="c1">#####################</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_sub_components</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">AgeOutSimulants</span><span class="p">())</span>
+
+    <span class="c1"># noinspection PyAttributeOutsideInit</span>
+<div class="viewcode-block" id="BasePopulation.setup">
+<a class="viewcode-back" href="../../../api_reference/population/base_population.html#vivarium_public_health.population.base_population.BasePopulation.setup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">config</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="o">.</span><span class="n">population</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">key_columns</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="o">.</span><span class="n">randomness</span><span class="o">.</span><span class="n">key_columns</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">include_sex</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;Male&quot;</span><span class="p">,</span> <span class="s2">&quot;Female&quot;</span><span class="p">,</span> <span class="s2">&quot;Both&quot;</span><span class="p">]:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;Configuration key &#39;population.include_sex&#39; must be one &quot;</span>
+                <span class="s2">&quot;of [&#39;Male&#39;, &#39;Female&#39;, &#39;Both&#39;]. &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;Provided value: </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">include_sex</span><span class="si">}</span><span class="s2">.&quot;</span>
+            <span class="p">)</span>
+
+        <span class="c1"># TODO: Remove this when we remove deprecated keys.</span>
+        <span class="c1"># Validate configuration for deprecated keys</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_validate_config_for_deprecated_keys</span><span class="p">()</span>
+
+        <span class="n">source_population_structure</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_load_population_structure</span><span class="p">(</span><span class="n">builder</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">demographic_proportions</span> <span class="o">=</span> <span class="n">assign_demographic_proportions</span><span class="p">(</span>
+            <span class="n">source_population_structure</span><span class="p">,</span>
+            <span class="n">include_sex</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">include_sex</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">randomness</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_randomness_streams</span><span class="p">(</span><span class="n">builder</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">register_simulants</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">randomness</span><span class="o">.</span><span class="n">register_simulants</span></div>
+
+
+    <span class="c1">#################</span>
+    <span class="c1"># Setup methods #</span>
+    <span class="c1">#################</span>
+
+<div class="viewcode-block" id="BasePopulation.get_randomness_streams">
+<a class="viewcode-back" href="../../../api_reference/population/base_population.html#vivarium_public_health.population.base_population.BasePopulation.get_randomness_streams">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_randomness_streams</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">RandomnessStream</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">&quot;general_purpose&quot;</span><span class="p">:</span> <span class="n">builder</span><span class="o">.</span><span class="n">randomness</span><span class="o">.</span><span class="n">get_stream</span><span class="p">(</span>
+                <span class="s2">&quot;population_generation&quot;</span><span class="p">,</span> <span class="n">component</span><span class="o">=</span><span class="bp">self</span>
+            <span class="p">),</span>
+            <span class="s2">&quot;bin_selection&quot;</span><span class="p">:</span> <span class="n">builder</span><span class="o">.</span><span class="n">randomness</span><span class="o">.</span><span class="n">get_stream</span><span class="p">(</span>
+                <span class="s2">&quot;bin_selection&quot;</span><span class="p">,</span> <span class="n">component</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span> <span class="n">initializes_crn_attributes</span><span class="o">=</span><span class="kc">True</span>
+            <span class="p">),</span>
+            <span class="s2">&quot;age_smoothing&quot;</span><span class="p">:</span> <span class="n">builder</span><span class="o">.</span><span class="n">randomness</span><span class="o">.</span><span class="n">get_stream</span><span class="p">(</span>
+                <span class="s2">&quot;age_smoothing&quot;</span><span class="p">,</span> <span class="n">component</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span> <span class="n">initializes_crn_attributes</span><span class="o">=</span><span class="kc">True</span>
+            <span class="p">),</span>
+            <span class="s2">&quot;age_smoothing_age_bounds&quot;</span><span class="p">:</span> <span class="n">builder</span><span class="o">.</span><span class="n">randomness</span><span class="o">.</span><span class="n">get_stream</span><span class="p">(</span>
+                <span class="s2">&quot;age_smoothing_age_bounds&quot;</span><span class="p">,</span> <span class="n">component</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span> <span class="n">initializes_crn_attributes</span><span class="o">=</span><span class="kc">True</span>
+            <span class="p">),</span>
+        <span class="p">}</span></div>
+
+
+    <span class="c1">########################</span>
+    <span class="c1"># Event-driven methods #</span>
+    <span class="c1">########################</span>
+
+    <span class="c1"># TODO: Move most of this docstring to an rst file.</span>
+<div class="viewcode-block" id="BasePopulation.on_initialize_simulants">
+<a class="viewcode-back" href="../../../api_reference/population/base_population.html#vivarium_public_health.population.base_population.BasePopulation.on_initialize_simulants">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">on_initialize_simulants</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pop_data</span><span class="p">:</span> <span class="n">SimulantData</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Creates a population with fundamental demographic and simulation properties.</span>
+
+<span class="sd">        When the simulation framework creates new simulants (essentially producing a new</span>
+<span class="sd">        set of simulant ids) and this component is being used, the newly created simulants</span>
+<span class="sd">        arrive here first and are assigned the demographic qualities &#39;age&#39;, &#39;sex&#39;,</span>
+<span class="sd">        and &#39;location&#39; in a way that is consistent with the demographic distributions</span>
+<span class="sd">        represented by the population-level data.  Additionally, the simulants are assigned</span>
+<span class="sd">        the simulation properties &#39;alive&#39;, &#39;entrance_time&#39;, and &#39;exit_time&#39;.</span>
+
+<span class="sd">        The &#39;alive&#39; parameter is alive or dead.</span>
+<span class="sd">        In general, most simulation components (except for those computing summary statistics)</span>
+<span class="sd">        ignore simulants if they are not in the &#39;alive&#39; category. The &#39;entrance_time&#39; and</span>
+<span class="sd">        &#39;exit_time&#39; categories simply mark when the simulant enters or leaves the simulation,</span>
+<span class="sd">        respectively.  Here we are agnostic to the methods of entrance and exit (e.g., birth,</span>
+<span class="sd">        migration, death, etc.) as these characteristics can be inferred from this column and</span>
+<span class="sd">        other information about the simulant and the simulation parameters.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">age_params</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">&quot;age_start&quot;</span><span class="p">:</span> <span class="n">pop_data</span><span class="o">.</span><span class="n">user_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+                <span class="s2">&quot;age_start&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">initialization_age_min</span>
+            <span class="p">),</span>
+            <span class="s2">&quot;age_end&quot;</span><span class="p">:</span> <span class="n">pop_data</span><span class="o">.</span><span class="n">user_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;age_end&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">initialization_age_max</span><span class="p">),</span>
+        <span class="p">}</span>
+
+        <span class="n">demographic_proportions</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_demographic_proportions_for_creation_time</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">demographic_proportions</span><span class="p">,</span> <span class="n">pop_data</span><span class="o">.</span><span class="n">creation_time</span><span class="o">.</span><span class="n">year</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">population_view</span><span class="o">.</span><span class="n">update</span><span class="p">(</span>
+            <span class="n">generate_population</span><span class="p">(</span>
+                <span class="n">simulant_ids</span><span class="o">=</span><span class="n">pop_data</span><span class="o">.</span><span class="n">index</span><span class="p">,</span>
+                <span class="n">creation_time</span><span class="o">=</span><span class="n">pop_data</span><span class="o">.</span><span class="n">creation_time</span><span class="p">,</span>
+                <span class="n">step_size</span><span class="o">=</span><span class="n">pop_data</span><span class="o">.</span><span class="n">creation_window</span><span class="p">,</span>
+                <span class="n">age_params</span><span class="o">=</span><span class="n">age_params</span><span class="p">,</span>
+                <span class="n">demographic_proportions</span><span class="o">=</span><span class="n">demographic_proportions</span><span class="p">,</span>
+                <span class="n">randomness_streams</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">randomness</span><span class="p">,</span>
+                <span class="n">register_simulants</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">register_simulants</span><span class="p">,</span>
+                <span class="n">key_columns</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">key_columns</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="BasePopulation.on_time_step">
+<a class="viewcode-back" href="../../../api_reference/population/base_population.html#vivarium_public_health.population.base_population.BasePopulation.on_time_step">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">on_time_step</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event</span><span class="p">:</span> <span class="n">Event</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Ages simulants each time step.&quot;&quot;&quot;</span>
+        <span class="n">population</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">population_view</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="n">query</span><span class="o">=</span><span class="s2">&quot;alive == &#39;alive&#39;&quot;</span><span class="p">)</span>
+        <span class="n">population</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">]</span> <span class="o">+=</span> <span class="n">utilities</span><span class="o">.</span><span class="n">to_years</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">step_size</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">population_view</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">population</span><span class="p">)</span></div>
+
+
+    <span class="c1">##################</span>
+    <span class="c1"># Helper methods #</span>
+    <span class="c1">##################</span>
+
+<div class="viewcode-block" id="BasePopulation.get_demographic_proportions_for_creation_time">
+<a class="viewcode-back" href="../../../api_reference/population/base_population.html#vivarium_public_health.population.base_population.BasePopulation.get_demographic_proportions_for_creation_time">[docs]</a>
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_demographic_proportions_for_creation_time</span><span class="p">(</span>
+        <span class="n">demographic_proportions</span><span class="p">,</span> <span class="n">year</span><span class="p">:</span> <span class="nb">int</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+        <span class="n">reference_years</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">demographic_proportions</span><span class="o">.</span><span class="n">year_start</span><span class="p">))</span>
+        <span class="n">ref_year_index</span> <span class="o">=</span> <span class="n">_find_bin_start_index</span><span class="p">(</span><span class="n">year</span><span class="p">,</span> <span class="n">reference_years</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">demographic_proportions</span><span class="p">[</span>
+            <span class="n">demographic_proportions</span><span class="o">.</span><span class="n">year_start</span> <span class="o">==</span> <span class="n">reference_years</span><span class="p">[</span><span class="n">ref_year_index</span><span class="p">]</span>
+        <span class="p">]</span></div>
+
+
+    <span class="c1"># TODO: Remove this method when we remove the deprecated keys</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_validate_config_for_deprecated_keys</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">mapper</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">&quot;age_start&quot;</span><span class="p">:</span> <span class="s2">&quot;initialization_age_min&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;age_end&quot;</span><span class="p">:</span> <span class="s2">&quot;initialization_age_max&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;exit_age&quot;</span><span class="p">:</span> <span class="s2">&quot;untracking_age&quot;</span><span class="p">,</span>
+        <span class="p">}</span>
+        <span class="n">deprecated_keys</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">mapper</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span><span class="o">.</span><span class="n">intersection</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
+        <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">deprecated_keys</span><span class="p">:</span>
+            <span class="n">provided_new_key</span> <span class="o">=</span> <span class="kc">False</span>
+            <span class="k">for</span> <span class="n">layer</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;override&quot;</span><span class="p">,</span> <span class="s2">&quot;model_override&quot;</span><span class="p">]:</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">new_key_value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">mapper</span><span class="p">[</span><span class="n">key</span><span class="p">],</span> <span class="n">layer</span><span class="o">=</span><span class="n">layer</span><span class="p">)</span>
+                    <span class="n">provided_new_key</span> <span class="o">=</span> <span class="kc">True</span>
+                    <span class="k">break</span>
+                <span class="k">except</span> <span class="n">ConfigurationKeyError</span><span class="p">:</span>
+                    <span class="k">pass</span>
+
+            <span class="k">if</span> <span class="n">provided_new_key</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="p">[</span><span class="n">key</span><span class="p">]</span> <span class="o">!=</span> <span class="n">new_key_value</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;Configuration contains both &#39;</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">&#39; and &#39;</span><span class="si">{</span><span class="n">mapper</span><span class="p">[</span><span class="n">key</span><span class="p">]</span><span class="si">}</span><span class="s2">&#39; with different values. &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;These keys cannot both be provided. &#39;</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">&#39; will soon be deprecated so please &quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;use &#39;</span><span class="si">{</span><span class="n">mapper</span><span class="p">[</span><span class="n">key</span><span class="p">]</span><span class="si">}</span><span class="s2">&#39;. &quot;</span>
+                <span class="p">)</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">&quot;FutureWarning: &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;Configuration key &#39;</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">&#39; will be deprecated in future versions of Vivarium &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;Public Health. Use the new key &#39;</span><span class="si">{</span><span class="n">mapper</span><span class="p">[</span><span class="n">key</span><span class="p">]</span><span class="si">}</span><span class="s2">&#39; instead.&quot;</span>
+            <span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_load_population_structure</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">load_population_structure</span><span class="p">(</span><span class="n">builder</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="ScaledPopulation">
+<a class="viewcode-back" href="../../../api_reference/population/base_population.html#vivarium_public_health.population.base_population.ScaledPopulation">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">ScaledPopulation</span><span class="p">(</span><span class="n">BasePopulation</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;This component is to be used in place of BasePopulation when all simulants are</span>
+<span class="sd">    a subset of the total population and need to be rescaled. The base population</span>
+<span class="sd">    structure is multiplied by a provided scaling factor. This scaling factor</span>
+<span class="sd">    can be a dataframe passed in or a string that corresponds to an artifact key.</span>
+<span class="sd">    If providing an artifact key, users can specify that in the configuration file.</span>
+<span class="sd">    For example:</span>
+
+<span class="sd">    .. code-block:: yaml</span>
+
+<span class="sd">    components:</span>
+<span class="sd">        vivarium_public_health:</span>
+<span class="sd">            population:</span>
+<span class="sd">                - ScaledPopulation(&quot;some.artifact.key&quot;)</span>
+
+
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">scaling_factor</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">scaling_factor</span> <span class="o">=</span> <span class="n">scaling_factor</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Set a multiplicative scaling factor for the population structure.&quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_load_population_structure</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+        <span class="n">scaling_factor</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_data</span><span class="p">(</span><span class="n">builder</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">scaling_factor</span><span class="p">)</span>
+        <span class="n">population_structure</span> <span class="o">=</span> <span class="n">load_population_structure</span><span class="p">(</span><span class="n">builder</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">scaling_factor</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Scaling factor must be a pandas DataFrame. Provided value: </span><span class="si">{</span><span class="n">scaling_factor</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+        <span class="n">start_year</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="o">.</span><span class="n">time</span><span class="o">.</span><span class="n">start</span><span class="o">.</span><span class="n">year</span>
+        <span class="n">population_structure</span><span class="p">,</span> <span class="n">scaling_factor</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_format_data_inputs</span><span class="p">(</span>
+            <span class="n">population_structure</span><span class="p">,</span> <span class="n">scaling_factor</span><span class="p">,</span> <span class="n">start_year</span>
+        <span class="p">)</span>
+
+        <span class="k">return</span> <span class="p">(</span><span class="n">population_structure</span> <span class="o">*</span> <span class="n">scaling_factor</span><span class="p">)</span><span class="o">.</span><span class="n">reset_index</span><span class="p">()</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_format_data_inputs</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">pop_structure</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span> <span class="n">scalar_data</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span> <span class="n">year</span><span class="p">:</span> <span class="nb">int</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Data cleaning function to check whether scalar_data and population structure are compatible for scaling</span>
+<span class="sd">        the population structure of a simulation.&quot;&quot;&quot;</span>
+
+        <span class="n">scaling_factor</span> <span class="o">=</span> <span class="n">scalar_data</span><span class="o">.</span><span class="n">set_index</span><span class="p">(</span>
+            <span class="p">[</span><span class="n">col</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">scalar_data</span><span class="o">.</span><span class="n">columns</span> <span class="k">if</span> <span class="n">col</span> <span class="o">!=</span> <span class="s2">&quot;value&quot;</span><span class="p">]</span>
+        <span class="p">)</span>
+        <span class="n">population_structure</span> <span class="o">=</span> <span class="n">pop_structure</span><span class="o">.</span><span class="n">set_index</span><span class="p">(</span>
+            <span class="p">[</span><span class="n">col</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">pop_structure</span><span class="o">.</span><span class="n">columns</span> <span class="k">if</span> <span class="n">col</span> <span class="o">!=</span> <span class="s2">&quot;value&quot;</span><span class="p">]</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="s2">&quot;year_start&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">scaling_factor</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">names</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">population_structure</span><span class="p">,</span> <span class="n">scaling_factor</span>
+
+        <span class="c1"># Subset the population structure and scaling factors to the simulation</span>
+        <span class="c1"># start year. If the data does not contain the exact simulation start</span>
+        <span class="c1"># year, subset to the closest year less than the simulation start year.</span>
+        <span class="n">pop_reference_years</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span>
+            <span class="nb">set</span><span class="p">(</span><span class="n">population_structure</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">get_level_values</span><span class="p">(</span><span class="s2">&quot;year_start&quot;</span><span class="p">))</span>
+        <span class="p">)</span>
+        <span class="n">pop_year_index</span> <span class="o">=</span> <span class="n">_find_bin_start_index</span><span class="p">(</span><span class="n">year</span><span class="p">,</span> <span class="n">pop_reference_years</span><span class="p">)</span>
+        <span class="n">population_structure</span> <span class="o">=</span> <span class="n">population_structure</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span>
+            <span class="n">population_structure</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">get_level_values</span><span class="p">(</span><span class="s2">&quot;year_start&quot;</span><span class="p">)</span>
+            <span class="o">==</span> <span class="n">pop_reference_years</span><span class="p">[</span><span class="n">pop_year_index</span><span class="p">]</span>
+        <span class="p">]</span>
+
+        <span class="n">scale_reference_years</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span>
+            <span class="nb">set</span><span class="p">(</span><span class="n">scaling_factor</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">get_level_values</span><span class="p">(</span><span class="s2">&quot;year_start&quot;</span><span class="p">))</span>
+        <span class="p">)</span>
+        <span class="n">scale_year_index</span> <span class="o">=</span> <span class="n">_find_bin_start_index</span><span class="p">(</span><span class="n">year</span><span class="p">,</span> <span class="n">scale_reference_years</span><span class="p">)</span>
+        <span class="n">scaling_factor</span> <span class="o">=</span> <span class="n">scaling_factor</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span>
+            <span class="n">scaling_factor</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">get_level_values</span><span class="p">(</span><span class="s2">&quot;year_start&quot;</span><span class="p">)</span>
+            <span class="o">==</span> <span class="n">scale_reference_years</span><span class="p">[</span><span class="n">scale_year_index</span><span class="p">]</span>
+        <span class="p">]</span>
+
+        <span class="k">return</span> <span class="n">population_structure</span><span class="p">,</span> <span class="n">scaling_factor</span></div>
+
+
+
+<div class="viewcode-block" id="AgeOutSimulants">
+<a class="viewcode-back" href="../../../api_reference/population/base_population.html#vivarium_public_health.population.base_population.AgeOutSimulants">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">AgeOutSimulants</span><span class="p">(</span><span class="n">Component</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Component for handling aged-out simulants&quot;&quot;&quot;</span>
+
+    <span class="c1">##############</span>
+    <span class="c1"># Properties #</span>
+    <span class="c1">##############</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">columns_required</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;A list of the columns this component requires that it did not create.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_columns_required</span>
+
+    <span class="c1">#####################</span>
+    <span class="c1"># Lifecycle methods #</span>
+    <span class="c1">#####################</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_columns_required</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="c1"># noinspection PyAttributeOutsideInit</span>
+<div class="viewcode-block" id="AgeOutSimulants.setup">
+<a class="viewcode-back" href="../../../api_reference/population/base_population.html#vivarium_public_health.population.base_population.AgeOutSimulants.setup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">config</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="o">.</span><span class="n">population</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">untracking_age</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_columns_required</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">,</span> <span class="s2">&quot;exit_time&quot;</span><span class="p">,</span> <span class="s2">&quot;tracked&quot;</span><span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="AgeOutSimulants.on_time_step_cleanup">
+<a class="viewcode-back" href="../../../api_reference/population/base_population.html#vivarium_public_health.population.base_population.AgeOutSimulants.on_time_step_cleanup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">on_time_step_cleanup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event</span><span class="p">:</span> <span class="n">Event</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">untracking_age</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span>
+
+        <span class="n">population</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">population_view</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+        <span class="n">max_age</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">untracking_age</span><span class="p">)</span>
+        <span class="n">pop</span> <span class="o">=</span> <span class="n">population</span><span class="p">[(</span><span class="n">population</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="n">max_age</span><span class="p">)</span> <span class="o">&amp;</span> <span class="n">population</span><span class="p">[</span><span class="s2">&quot;tracked&quot;</span><span class="p">]]</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">pop</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">pop</span><span class="p">[</span><span class="s2">&quot;tracked&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="kc">False</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="n">pop</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+            <span class="n">pop</span><span class="p">[</span><span class="s2">&quot;exit_time&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">event</span><span class="o">.</span><span class="n">time</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">population_view</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">pop</span><span class="p">)</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="generate_population">
+<a class="viewcode-back" href="../../../api_reference/population/base_population.html#vivarium_public_health.population.base_population.generate_population">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">generate_population</span><span class="p">(</span>
+    <span class="n">simulant_ids</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">Index</span><span class="p">,</span>
+    <span class="n">creation_time</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">Timestamp</span><span class="p">,</span>
+    <span class="n">step_size</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">Timedelta</span><span class="p">,</span>
+    <span class="n">age_params</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">],</span>
+    <span class="n">demographic_proportions</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span>
+    <span class="n">randomness_streams</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">RandomnessStream</span><span class="p">],</span>
+    <span class="n">register_simulants</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">],</span> <span class="kc">None</span><span class="p">],</span>
+    <span class="n">key_columns</span><span class="p">:</span> <span class="n">Iterable</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;entrance_time&quot;</span><span class="p">,</span> <span class="s2">&quot;age&quot;</span><span class="p">),</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Produces a random set of simulants sampled from the provided `population_data`.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    simulant_ids</span>
+<span class="sd">        Values to serve as the index in the newly generated simulant DataFrame.</span>
+<span class="sd">    creation_time</span>
+<span class="sd">        The simulation time when the simulants are created.</span>
+<span class="sd">    age_params</span>
+<span class="sd">        Dictionary with keys</span>
+<span class="sd">            age_start : Start of an age range</span>
+<span class="sd">            age_end : End of an age range</span>
+
+<span class="sd">        The latter two keys can have values specified to generate simulants over an age range.</span>
+<span class="sd">    demographic_proportions</span>
+<span class="sd">        Table with columns &#39;age&#39;, &#39;age_start&#39;, &#39;age_end&#39;, &#39;sex&#39;, &#39;year&#39;,</span>
+<span class="sd">        &#39;location&#39;, &#39;population&#39;, &#39;P(sex, location, age| year)&#39;,</span>
+<span class="sd">        &#39;P(sex, location | age, year)&#39;.</span>
+<span class="sd">    randomness_streams</span>
+<span class="sd">        Source of random number generation within the vivarium common random number framework.</span>
+<span class="sd">    step_size</span>
+<span class="sd">        The size of the initial time step.</span>
+<span class="sd">    register_simulants</span>
+<span class="sd">        A function to register the new simulants with the CRN framework.</span>
+<span class="sd">    key_columns</span>
+<span class="sd">        A list of key columns for random number generation.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">        Table with columns</span>
+<span class="sd">            &#39;entrance_time&#39;</span>
+<span class="sd">                The `pandas.Timestamp` describing when the simulant entered</span>
+<span class="sd">                the simulation. Set to `creation_time` for all simulants.</span>
+<span class="sd">            &#39;exit_time&#39;</span>
+<span class="sd">                The `pandas.Timestamp` describing when the simulant exited</span>
+<span class="sd">                the simulation. Set initially to `pandas.NaT`.</span>
+<span class="sd">            &#39;alive&#39;</span>
+<span class="sd">                One of &#39;alive&#39; or &#39;dead&#39; indicating how the simulation</span>
+<span class="sd">                interacts with the simulant.</span>
+<span class="sd">            &#39;age&#39;</span>
+<span class="sd">                The age of the simulant at the current time step.</span>
+<span class="sd">            &#39;location&#39;</span>
+<span class="sd">                The location indicating where the simulant resides.</span>
+<span class="sd">            &#39;sex&#39;</span>
+<span class="sd">                Either &#39;Male&#39; or &#39;Female&#39;.  The sex of the simulant.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">simulants</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span>
+        <span class="p">{</span>
+            <span class="s2">&quot;entrance_time&quot;</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">creation_time</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="n">simulant_ids</span><span class="p">),</span>
+            <span class="s2">&quot;exit_time&quot;</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">pd</span><span class="o">.</span><span class="n">NaT</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="n">simulant_ids</span><span class="p">),</span>
+            <span class="s2">&quot;alive&quot;</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="s2">&quot;alive&quot;</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="n">simulant_ids</span><span class="p">),</span>
+        <span class="p">},</span>
+        <span class="n">index</span><span class="o">=</span><span class="n">simulant_ids</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">age_start</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">age_params</span><span class="p">[</span><span class="s2">&quot;age_start&quot;</span><span class="p">])</span>
+    <span class="n">age_end</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">age_params</span><span class="p">[</span><span class="s2">&quot;age_end&quot;</span><span class="p">])</span>
+    <span class="k">if</span> <span class="n">age_start</span> <span class="o">==</span> <span class="n">age_end</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">_assign_demography_with_initial_age</span><span class="p">(</span>
+            <span class="n">simulants</span><span class="p">,</span>
+            <span class="n">demographic_proportions</span><span class="p">,</span>
+            <span class="n">age_start</span><span class="p">,</span>
+            <span class="n">step_size</span><span class="p">,</span>
+            <span class="n">randomness_streams</span><span class="p">,</span>
+            <span class="n">register_simulants</span><span class="p">,</span>
+        <span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>  <span class="c1"># age_params[&#39;age_start&#39;] is not None and age_params[&#39;age_end&#39;] is not None</span>
+        <span class="k">return</span> <span class="n">_assign_demography_with_age_bounds</span><span class="p">(</span>
+            <span class="n">simulants</span><span class="p">,</span>
+            <span class="n">demographic_proportions</span><span class="p">,</span>
+            <span class="n">age_start</span><span class="p">,</span>
+            <span class="n">age_end</span><span class="p">,</span>
+            <span class="n">randomness_streams</span><span class="p">,</span>
+            <span class="n">register_simulants</span><span class="p">,</span>
+            <span class="n">key_columns</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_assign_demography_with_initial_age</span><span class="p">(</span>
+    <span class="n">simulants</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span>
+    <span class="n">pop_data</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span>
+    <span class="n">initial_age</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">step_size</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">Timedelta</span><span class="p">,</span>
+    <span class="n">randomness_streams</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">RandomnessStream</span><span class="p">],</span>
+    <span class="n">register_simulants</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">],</span> <span class="kc">None</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Assigns age, sex, and location information to the provided simulants given a fixed age.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    simulants</span>
+<span class="sd">        Table that represents the new cohort of agents being added to the simulation.</span>
+<span class="sd">    pop_data</span>
+<span class="sd">        Table with columns &#39;age&#39;, &#39;age_start&#39;, &#39;age_end&#39;, &#39;sex&#39;, &#39;year&#39;,</span>
+<span class="sd">        &#39;location&#39;, &#39;population&#39;, &#39;P(sex, location, age| year)&#39;,</span>
+<span class="sd">        &#39;P(sex, location | age, year)&#39;</span>
+<span class="sd">    initial_age</span>
+<span class="sd">        The age to assign the new simulants.</span>
+<span class="sd">    randomness_streams</span>
+<span class="sd">        Source of random number generation within the vivarium common random number framework.</span>
+<span class="sd">    step_size</span>
+<span class="sd">        The size of the initial time step.</span>
+<span class="sd">    register_simulants</span>
+<span class="sd">        A function to register the new simulants with the CRN framework.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">        Table with same columns as `simulants` and with the additional</span>
+<span class="sd">        columns &#39;age&#39;, &#39;sex&#39;,  and &#39;location&#39;.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">pop_data</span> <span class="o">=</span> <span class="n">pop_data</span><span class="p">[</span>
+        <span class="p">(</span><span class="n">pop_data</span><span class="o">.</span><span class="n">age_start</span> <span class="o">&lt;=</span> <span class="n">initial_age</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">pop_data</span><span class="o">.</span><span class="n">age_end</span> <span class="o">&gt;=</span> <span class="n">initial_age</span><span class="p">)</span>
+    <span class="p">]</span>
+
+    <span class="k">if</span> <span class="n">pop_data</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="s2">&quot;The age </span><span class="si">{}</span><span class="s2"> is not represented by the population data structure&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
+                <span class="n">initial_age</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+
+    <span class="n">age_fuzz</span> <span class="o">=</span> <span class="n">randomness_streams</span><span class="p">[</span><span class="s2">&quot;age_smoothing&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">get_draw</span><span class="p">(</span>
+        <span class="n">simulants</span><span class="o">.</span><span class="n">index</span>
+    <span class="p">)</span> <span class="o">*</span> <span class="n">utilities</span><span class="o">.</span><span class="n">to_years</span><span class="p">(</span><span class="n">step_size</span><span class="p">)</span>
+    <span class="n">simulants</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">initial_age</span> <span class="o">+</span> <span class="n">age_fuzz</span>
+    <span class="n">register_simulants</span><span class="p">(</span><span class="n">simulants</span><span class="p">[[</span><span class="s2">&quot;entrance_time&quot;</span><span class="p">,</span> <span class="s2">&quot;age&quot;</span><span class="p">]])</span>
+
+    <span class="c1"># Assign a demographically accurate location and sex distribution.</span>
+    <span class="n">choices</span> <span class="o">=</span> <span class="n">pop_data</span><span class="o">.</span><span class="n">set_index</span><span class="p">([</span><span class="s2">&quot;sex&quot;</span><span class="p">,</span> <span class="s2">&quot;location&quot;</span><span class="p">])[</span>
+        <span class="s2">&quot;P(sex, location | age, year)&quot;</span>
+    <span class="p">]</span><span class="o">.</span><span class="n">reset_index</span><span class="p">()</span>
+    <span class="n">decisions</span> <span class="o">=</span> <span class="n">randomness_streams</span><span class="p">[</span><span class="s2">&quot;general_purpose&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span>
+        <span class="n">simulants</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="n">choices</span><span class="o">=</span><span class="n">choices</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="n">p</span><span class="o">=</span><span class="n">choices</span><span class="p">[</span><span class="s2">&quot;P(sex, location | age, year)&quot;</span><span class="p">]</span>
+    <span class="p">)</span>
+
+    <span class="n">simulants</span><span class="p">[</span><span class="s2">&quot;sex&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">choices</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">decisions</span><span class="p">,</span> <span class="s2">&quot;sex&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span>
+    <span class="n">simulants</span><span class="p">[</span><span class="s2">&quot;location&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">choices</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">decisions</span><span class="p">,</span> <span class="s2">&quot;location&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span>
+
+    <span class="k">return</span> <span class="n">simulants</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_assign_demography_with_age_bounds</span><span class="p">(</span>
+    <span class="n">simulants</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span>
+    <span class="n">pop_data</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span>
+    <span class="n">age_start</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">age_end</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">randomness_streams</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">RandomnessStream</span><span class="p">],</span>
+    <span class="n">register_simulants</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">],</span> <span class="kc">None</span><span class="p">],</span>
+    <span class="n">key_columns</span><span class="p">:</span> <span class="n">Iterable</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;entrance_time&quot;</span><span class="p">,</span> <span class="s2">&quot;age&quot;</span><span class="p">),</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Assigns an age, sex, and location to the provided simulants given a range of ages.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    simulants</span>
+<span class="sd">        Table that represents the new cohort of agents being added to the simulation.</span>
+<span class="sd">    pop_data</span>
+<span class="sd">        Table with columns &#39;age&#39;, &#39;age_start&#39;, &#39;age_end&#39;, &#39;sex&#39;, &#39;year&#39;,</span>
+<span class="sd">        &#39;location&#39;, &#39;population&#39;, &#39;P(sex, location, age| year)&#39;,</span>
+<span class="sd">        &#39;P(sex, location | age, year)&#39;</span>
+<span class="sd">    age_start, age_end</span>
+<span class="sd">        The start and end of the age range of interest, respectively.</span>
+<span class="sd">    randomness_streams</span>
+<span class="sd">        Source of random number generation within the vivarium common random number framework.</span>
+<span class="sd">    register_simulants</span>
+<span class="sd">        A function to register the new simulants with the CRN framework.</span>
+<span class="sd">    key_columns</span>
+<span class="sd">        A list of key columns for random number generation.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">        Table with same columns as `simulants` and with the additional columns</span>
+<span class="sd">        &#39;age&#39;, &#39;sex&#39;,  and &#39;location&#39;.</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">pop_data</span> <span class="o">=</span> <span class="n">rescale_binned_proportions</span><span class="p">(</span><span class="n">pop_data</span><span class="p">,</span> <span class="n">age_start</span><span class="p">,</span> <span class="n">age_end</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">pop_data</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;The age range (</span><span class="si">{</span><span class="n">age_start</span><span class="si">}</span><span class="s2">, </span><span class="si">{</span><span class="n">age_end</span><span class="si">}</span><span class="s2">) is not represented by the &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;population data structure.&quot;</span>
+        <span class="p">)</span>
+
+    <span class="c1"># Assign a demographically accurate age, location, and sex distribution.</span>
+    <span class="n">sub_pop_data</span> <span class="o">=</span> <span class="n">pop_data</span><span class="p">[(</span><span class="n">pop_data</span><span class="o">.</span><span class="n">age_start</span> <span class="o">&gt;=</span> <span class="n">age_start</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">pop_data</span><span class="o">.</span><span class="n">age_end</span> <span class="o">&lt;=</span> <span class="n">age_end</span><span class="p">)]</span>
+    <span class="n">choices</span> <span class="o">=</span> <span class="n">sub_pop_data</span><span class="o">.</span><span class="n">set_index</span><span class="p">([</span><span class="s2">&quot;age&quot;</span><span class="p">,</span> <span class="s2">&quot;sex&quot;</span><span class="p">,</span> <span class="s2">&quot;location&quot;</span><span class="p">])[</span>
+        <span class="s2">&quot;P(sex, location, age| year)&quot;</span>
+    <span class="p">]</span><span class="o">.</span><span class="n">reset_index</span><span class="p">()</span>
+    <span class="n">decisions</span> <span class="o">=</span> <span class="n">randomness_streams</span><span class="p">[</span><span class="s2">&quot;bin_selection&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span>
+        <span class="n">simulants</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="n">choices</span><span class="o">=</span><span class="n">choices</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="n">p</span><span class="o">=</span><span class="n">choices</span><span class="p">[</span><span class="s2">&quot;P(sex, location, age| year)&quot;</span><span class="p">]</span>
+    <span class="p">)</span>
+    <span class="n">simulants</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">choices</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">decisions</span><span class="p">,</span> <span class="s2">&quot;age&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span>
+    <span class="n">simulants</span><span class="p">[</span><span class="s2">&quot;sex&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">choices</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">decisions</span><span class="p">,</span> <span class="s2">&quot;sex&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span>
+    <span class="n">simulants</span><span class="p">[</span><span class="s2">&quot;location&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">choices</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">decisions</span><span class="p">,</span> <span class="s2">&quot;location&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span>
+    <span class="n">simulants</span> <span class="o">=</span> <span class="n">smooth_ages</span><span class="p">(</span>
+        <span class="n">simulants</span><span class="p">,</span> <span class="n">pop_data</span><span class="p">,</span> <span class="n">randomness_streams</span><span class="p">[</span><span class="s2">&quot;age_smoothing_age_bounds&quot;</span><span class="p">]</span>
+    <span class="p">)</span>
+    <span class="n">register_simulants</span><span class="p">(</span><span class="n">simulants</span><span class="p">[</span><span class="nb">list</span><span class="p">(</span><span class="n">key_columns</span><span class="p">)])</span>
+    <span class="k">return</span> <span class="n">simulants</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_find_bin_start_index</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">sorted_reference_values</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Finds the index of the closest reference value less than or equal to the provided value.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    value</span>
+<span class="sd">        The value for which to find the closest reference value.</span>
+<span class="sd">    sorted_reference_values</span>
+<span class="sd">        A sorted list of reference values.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">        The index of the closest reference value less than or equal to the provided value.</span>
+
+<span class="sd">    Raises</span>
+<span class="sd">    ------</span>
+<span class="sd">        ValueError</span>
+<span class="sd">            If the provided value is less than the minimum reference value.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">ref_value_index</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">digitize</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="n">sorted_reference_values</span><span class="p">)</span><span class="o">.</span><span class="n">item</span><span class="p">()</span> <span class="o">-</span> <span class="mi">1</span>
+    <span class="k">if</span> <span class="n">ref_value_index</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;The provided value </span><span class="si">{</span><span class="n">value</span><span class="si">}</span><span class="s2"> is less than the minimum reference value &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">min</span><span class="p">(</span><span class="n">sorted_reference_values</span><span class="p">)</span><span class="si">}</span><span class="s2">.&quot;</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="n">ref_value_index</span>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, The vivarium developers.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

@@ -1,0 +1,712 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>vivarium_public_health.mslt.delay &mdash; vivarium_public_health 4.3.15.dev2+g712190e05 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/plot_directive.css" />
+
+  
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=7ca62e9d"></script>
+      <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+    <link href="../../../_static/style.css" rel="stylesheet" type="text/css">
+
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            vivarium_public_health
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorials/index.html">Tutorials</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_reference/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">vivarium_public_health</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">vivarium_public_health.mslt.delay</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for vivarium_public_health.mslt.delay</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">===============</span>
+<span class="sd">Delayed Effects</span>
+<span class="sd">===============</span>
+
+<span class="sd">This module contains tools to represent delayed effects in a multi-state</span>
+<span class="sd">lifetable simulation.</span>
+
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium</span><span class="w"> </span><span class="kn">import</span> <span class="n">Component</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.engine</span><span class="w"> </span><span class="kn">import</span> <span class="n">Builder</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.event</span><span class="w"> </span><span class="kn">import</span> <span class="n">Event</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.population</span><span class="w"> </span><span class="kn">import</span> <span class="n">SimulantData</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.resource</span><span class="w"> </span><span class="kn">import</span> <span class="n">Resource</span>
+
+
+<div class="viewcode-block" id="DelayedRisk">
+<a class="viewcode-back" href="../../../api_reference/mslt/delay.html#vivarium_public_health.mslt.delay.DelayedRisk">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">DelayedRisk</span><span class="p">(</span><span class="n">Component</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A delayed risk represents an exposure whose impact takes time to come into</span>
+<span class="sd">    effect (e.g., smoking uptake and cessation).</span>
+
+<span class="sd">    The data required by this component are:</span>
+
+<span class="sd">    Initial prevalence</span>
+<span class="sd">        The initial level of exposure and post-exposure.</span>
+<span class="sd">    Incidence rate</span>
+<span class="sd">        The rate at which people begin to be exposed. This should be specified</span>
+<span class="sd">        separately for the BAU and the intervention scenario.</span>
+<span class="sd">    Remission rate</span>
+<span class="sd">        The rate at which people stop being exposed. This should be specified</span>
+<span class="sd">        separately for the BAU and the intervention scenario.</span>
+<span class="sd">    Relative risk of mortality for currently exposed</span>
+<span class="sd">        (e.g., currently smoking); and</span>
+<span class="sd">    Relative risk of mortality for post-exposure</span>
+<span class="sd">        (e.g., stopped smoking :math:`0..N` years ago).</span>
+<span class="sd">    Disease-specific relative risks for currently exposed</span>
+<span class="sd">        (e.g., currently smoking)</span>
+<span class="sd">    Disease-specific relative risks for post-exposure</span>
+<span class="sd">        (e.g., stopped smoking :math:`0..N` years ago).</span>
+
+<span class="sd">    .. note::</span>
+
+<span class="sd">       The relative risks are defined in relation to the pre-exposure</span>
+<span class="sd">       group (whose relative risks are therefore defined to be :math:`1`).</span>
+
+
+<span class="sd">    The configuration options for this component are:</span>
+
+<span class="sd">    ``constant_prevalence`` (boolean, default is ``False``)</span>
+<span class="sd">        If this is set to ``True``, the remission rate in both the BAU and</span>
+<span class="sd">        intervention will be kept fixed at 0 (i.e., no remission).</span>
+<span class="sd">    ``tobacco_tax`` (boolean, default is ``False``)</span>
+<span class="sd">        If this is set to ``True``, additional scaling effects are applied to</span>
+<span class="sd">        both the incidence and remission rates.</span>
+<span class="sd">    ``delay`` (integer, default is ``20``)</span>
+<span class="sd">        The number of years, after remission, during which relative risks</span>
+<span class="sd">        decrease back to their baseline values.</span>
+
+<span class="sd">    Identify the disease(s) for which this delayed risk will have an effect in</span>
+<span class="sd">    the simulation configuration. For example, to modify the incidence of CHD</span>
+<span class="sd">    and stroke, this would look like:</span>
+
+<span class="sd">    .. code-block:: yaml</span>
+
+<span class="sd">       components:</span>
+<span class="sd">           mslt_port:</span>
+<span class="sd">               population:</span>
+<span class="sd">                   - BasePopulation()</span>
+<span class="sd">                   - Mortality()</span>
+<span class="sd">                   - Disability()</span>
+<span class="sd">               disease:</span>
+<span class="sd">                   - Disease(&#39;CHD&#39;)</span>
+<span class="sd">                   - Disease(&#39;Stroke&#39;)</span>
+<span class="sd">               delay:</span>
+<span class="sd">                   - DelayedRisk(&#39;tobacco&#39;)</span>
+<span class="sd">               ...</span>
+<span class="sd">       configuration:</span>
+<span class="sd">           tobacco:</span>
+<span class="sd">               constant_prevalence: False</span>
+<span class="sd">               tobacco_tax: False</span>
+<span class="sd">               delay: 20</span>
+<span class="sd">               affects:</span>
+<span class="sd">                   # This is where the affected diseases should be listed.</span>
+<span class="sd">                   CHD:</span>
+<span class="sd">                   Stroke:</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="c1">##############</span>
+    <span class="c1"># Properties #</span>
+    <span class="c1">##############</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">configuration_defaults</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Provides default configuration values for this component.</span>
+
+<span class="sd">        Configuration structure::</span>
+
+<span class="sd">            {risk_name}:</span>
+<span class="sd">                constant_prevalence: bool</span>
+<span class="sd">                    If True, smoking prevalence remains constant over time</span>
+<span class="sd">                    (no remission). If False, prevalence can change as</span>
+<span class="sd">                    simulants quit smoking. Default is False.</span>
+<span class="sd">                tobacco_tax: bool</span>
+<span class="sd">                    If True, applies tobacco tax intervention effects.</span>
+<span class="sd">                    Default is False.</span>
+<span class="sd">                delay: int</span>
+<span class="sd">                    Number of years of delay before health effects manifest</span>
+<span class="sd">                    after exposure changes. Default is 20 years.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="p">:</span> <span class="p">{</span>
+                <span class="s2">&quot;constant_prevalence&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>
+                <span class="s2">&quot;tobacco_tax&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>
+                <span class="s2">&quot;delay&quot;</span><span class="p">:</span> <span class="mi">20</span><span class="p">,</span>
+            <span class="p">},</span>
+        <span class="p">}</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">columns_created</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_bin_names</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">columns_required</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">,</span> <span class="s2">&quot;sex&quot;</span><span class="p">,</span> <span class="s2">&quot;population&quot;</span><span class="p">]</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">initialization_requirements</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span> <span class="o">|</span> <span class="n">Resource</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">,</span> <span class="s2">&quot;sex&quot;</span><span class="p">,</span> <span class="s2">&quot;population&quot;</span><span class="p">]</span>
+
+    <span class="c1">#####################</span>
+    <span class="c1"># Lifecycle methods #</span>
+    <span class="c1">#####################</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">risk</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        risk</span>
+<span class="sd">            The name of the exposure (e.g., ``&quot;tobacco&quot;``).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">risk</span> <span class="o">=</span> <span class="n">risk</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_bin_names</span> <span class="o">=</span> <span class="p">[]</span>
+
+<div class="viewcode-block" id="DelayedRisk.setup">
+<a class="viewcode-back" href="../../../api_reference/mslt/delay.html#vivarium_public_health.mslt.delay.DelayedRisk.setup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Configure the delayed risk component.</span>
+
+<span class="sd">        This involves loading the required data tables, registering event</span>
+<span class="sd">        handlers and rate modifiers, and setting up the population view.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_bin_names</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_bin_names</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">config</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">configuration</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">start_year</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="o">.</span><span class="n">time</span><span class="o">.</span><span class="n">start</span><span class="o">.</span><span class="n">year</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">clock</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">time</span><span class="o">.</span><span class="n">clock</span><span class="p">()</span>
+
+        <span class="c1"># Determine whether smoking prevalence should change over time.</span>
+        <span class="c1"># The alternative scenario is that there is no remission; all people</span>
+        <span class="c1"># who begin smoking will continue to smoke.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">constant_prevalence</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="p">][</span><span class="s2">&quot;constant_prevalence&quot;</span><span class="p">]</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">tobacco_tax</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="p">][</span><span class="s2">&quot;tobacco_tax&quot;</span><span class="p">]</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">bin_years</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="p">][</span><span class="s2">&quot;delay&quot;</span><span class="p">])</span>
+
+        <span class="c1"># Load the initial prevalence.</span>
+        <span class="n">prev_data</span> <span class="o">=</span> <span class="n">pivot_load</span><span class="p">(</span><span class="n">builder</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;risk_factor.</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="si">}</span><span class="s2">.prevalence&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">initial_prevalence</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">lookup</span><span class="o">.</span><span class="n">build_table</span><span class="p">(</span>
+            <span class="n">prev_data</span><span class="p">,</span> <span class="n">key_columns</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;sex&quot;</span><span class="p">],</span> <span class="n">parameter_columns</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">,</span> <span class="s2">&quot;year&quot;</span><span class="p">]</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Load the incidence rates for the BAU and intervention scenarios.</span>
+        <span class="n">inc_data</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">lookup</span><span class="o">.</span><span class="n">build_table</span><span class="p">(</span>
+            <span class="n">pivot_load</span><span class="p">(</span><span class="n">builder</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;risk_factor.</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="si">}</span><span class="s2">.incidence&quot;</span><span class="p">),</span>
+            <span class="n">key_columns</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;sex&quot;</span><span class="p">],</span>
+            <span class="n">parameter_columns</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">,</span> <span class="s2">&quot;year&quot;</span><span class="p">],</span>
+        <span class="p">)</span>
+        <span class="n">inc_name</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">.incidence&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="p">)</span>
+        <span class="n">inc_int_name</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">_intervention.incidence&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">incidence</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">register_rate_producer</span><span class="p">(</span>
+            <span class="n">inc_name</span><span class="p">,</span> <span class="n">source</span><span class="o">=</span><span class="n">inc_data</span><span class="p">,</span> <span class="n">component</span><span class="o">=</span><span class="bp">self</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">int_incidence</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">register_rate_producer</span><span class="p">(</span>
+            <span class="n">inc_int_name</span><span class="p">,</span> <span class="n">source</span><span class="o">=</span><span class="n">inc_data</span><span class="p">,</span> <span class="n">component</span><span class="o">=</span><span class="bp">self</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Load the remission rates for the BAU and intervention scenarios.</span>
+        <span class="n">rem_df</span> <span class="o">=</span> <span class="n">pivot_load</span><span class="p">(</span><span class="n">builder</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;risk_factor.</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="si">}</span><span class="s2">.remission&quot;</span><span class="p">)</span>
+        <span class="c1"># In the constant-prevalence case, assume there is no remission.</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">constant_prevalence</span><span class="p">:</span>
+            <span class="n">rem_df</span><span class="p">[</span><span class="s2">&quot;value&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="n">rem_data</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">lookup</span><span class="o">.</span><span class="n">build_table</span><span class="p">(</span>
+            <span class="n">rem_df</span><span class="p">,</span> <span class="n">key_columns</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;sex&quot;</span><span class="p">],</span> <span class="n">parameter_columns</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">,</span> <span class="s2">&quot;year&quot;</span><span class="p">]</span>
+        <span class="p">)</span>
+        <span class="n">rem_name</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">.remission&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="p">)</span>
+        <span class="n">rem_int_name</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">_intervention.remission&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">remission</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">register_rate_producer</span><span class="p">(</span>
+            <span class="n">rem_name</span><span class="p">,</span> <span class="n">source</span><span class="o">=</span><span class="n">rem_data</span><span class="p">,</span> <span class="n">component</span><span class="o">=</span><span class="bp">self</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">int_remission</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">register_rate_producer</span><span class="p">(</span>
+            <span class="n">rem_int_name</span><span class="p">,</span> <span class="n">source</span><span class="o">=</span><span class="n">rem_data</span><span class="p">,</span> <span class="n">component</span><span class="o">=</span><span class="bp">self</span>
+        <span class="p">)</span>
+
+        <span class="c1"># We apply separate mortality rates to the different exposure bins.</span>
+        <span class="c1"># This requires having access to the life table mortality rate, and</span>
+        <span class="c1"># also the relative risks associated with each bin.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">acm_rate</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">get_value</span><span class="p">(</span><span class="s2">&quot;mortality_rate&quot;</span><span class="p">)</span>
+        <span class="n">mort_rr_data</span> <span class="o">=</span> <span class="n">pivot_load</span><span class="p">(</span><span class="n">builder</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;risk_factor.</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="si">}</span><span class="s2">.mortality_relative_risk&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">mortality_rr</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">lookup</span><span class="o">.</span><span class="n">build_table</span><span class="p">(</span>
+            <span class="n">mort_rr_data</span><span class="p">,</span> <span class="n">key_columns</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;sex&quot;</span><span class="p">],</span> <span class="n">parameter_columns</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">,</span> <span class="s2">&quot;year&quot;</span><span class="p">]</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Register a modifier for each disease affected by this delayed risk.</span>
+        <span class="n">diseases</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="p">]</span><span class="o">.</span><span class="n">affects</span><span class="o">.</span><span class="n">keys</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">ix</span><span class="p">,</span> <span class="n">disease</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">diseases</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">register_modifier</span><span class="p">(</span><span class="n">builder</span><span class="p">,</span> <span class="n">disease</span><span class="p">)</span>
+
+        <span class="c1"># Load the disease-specific relative risks for each exposure bin.</span>
+        <span class="n">dis_rr_data</span> <span class="o">=</span> <span class="n">pivot_load</span><span class="p">(</span><span class="n">builder</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;risk_factor.</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="si">}</span><span class="s2">.disease_relative_risk&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Check that the relative risk table includes required columns.</span>
+        <span class="n">key_columns</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;age_start&quot;</span><span class="p">,</span> <span class="s2">&quot;age_end&quot;</span><span class="p">,</span> <span class="s2">&quot;sex&quot;</span><span class="p">,</span> <span class="s2">&quot;year_start&quot;</span><span class="p">,</span> <span class="s2">&quot;year_end&quot;</span><span class="p">]</span>
+        <span class="k">if</span> <span class="nb">set</span><span class="p">(</span><span class="n">key_columns</span><span class="p">)</span> <span class="o">&amp;</span> <span class="nb">set</span><span class="p">(</span><span class="n">dis_rr_data</span><span class="o">.</span><span class="n">columns</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">set</span><span class="p">(</span><span class="n">key_columns</span><span class="p">):</span>
+            <span class="c1"># Fallback option, handle tables that do not define bin edges.</span>
+            <span class="n">key_columns</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">,</span> <span class="s2">&quot;sex&quot;</span><span class="p">,</span> <span class="s2">&quot;year&quot;</span><span class="p">]</span>
+        <span class="k">if</span> <span class="nb">set</span><span class="p">(</span><span class="n">key_columns</span><span class="p">)</span> <span class="o">&amp;</span> <span class="nb">set</span><span class="p">(</span><span class="n">dis_rr_data</span><span class="o">.</span><span class="n">columns</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">set</span><span class="p">(</span><span class="n">key_columns</span><span class="p">):</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s2">&quot;Missing index columns for disease-specific relative risks&quot;</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">dis_rr</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">disease</span> <span class="ow">in</span> <span class="n">diseases</span><span class="p">:</span>
+            <span class="n">dis_columns</span> <span class="o">=</span> <span class="p">[</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">dis_rr_data</span><span class="o">.</span><span class="n">columns</span> <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">disease</span><span class="p">)]</span>
+            <span class="n">dis_keys</span> <span class="o">=</span> <span class="p">[</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">dis_rr_data</span><span class="o">.</span><span class="n">columns</span> <span class="k">if</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">key_columns</span><span class="p">]</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">dis_columns</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">dis_keys</span><span class="p">:</span>
+                <span class="n">msg</span> <span class="o">=</span> <span class="s2">&quot;No </span><span class="si">{}</span><span class="s2"> relative risks for disease </span><span class="si">{}</span><span class="s2">&quot;</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="p">,</span> <span class="n">disease</span><span class="p">))</span>
+            <span class="n">rr_data</span> <span class="o">=</span> <span class="n">dis_rr_data</span><span class="o">.</span><span class="n">loc</span><span class="p">[:,</span> <span class="n">dis_keys</span> <span class="o">+</span> <span class="n">dis_columns</span><span class="p">]</span>
+            <span class="n">dis_prefix</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">_&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">disease</span><span class="p">)</span>
+            <span class="n">bau_prefix</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="p">)</span>
+            <span class="n">int_prefix</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">_intervention.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="p">)</span>
+            <span class="n">bau_col</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="n">c</span><span class="p">:</span> <span class="n">c</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">dis_prefix</span><span class="p">,</span> <span class="n">bau_prefix</span><span class="p">)</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;post_&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">dis_columns</span>
+            <span class="p">}</span>
+            <span class="n">int_col</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="n">c</span><span class="p">:</span> <span class="n">c</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">dis_prefix</span><span class="p">,</span> <span class="n">int_prefix</span><span class="p">)</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;post_&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">dis_columns</span>
+            <span class="p">}</span>
+            <span class="k">for</span> <span class="n">column</span> <span class="ow">in</span> <span class="n">dis_columns</span><span class="p">:</span>
+                <span class="c1"># NOTE: avoid SettingWithCopyWarning</span>
+                <span class="n">rr_data</span><span class="o">.</span><span class="n">loc</span><span class="p">[:,</span> <span class="n">int_col</span><span class="p">[</span><span class="n">column</span><span class="p">]]</span> <span class="o">=</span> <span class="n">rr_data</span><span class="p">[</span><span class="n">column</span><span class="p">]</span>
+            <span class="n">rr_data</span> <span class="o">=</span> <span class="n">rr_data</span><span class="o">.</span><span class="n">rename</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="n">bau_col</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">dis_rr</span><span class="p">[</span><span class="n">disease</span><span class="p">]</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">lookup</span><span class="o">.</span><span class="n">build_table</span><span class="p">(</span>
+                <span class="n">rr_data</span><span class="p">,</span> <span class="n">key_columns</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;sex&quot;</span><span class="p">],</span> <span class="n">parameter_columns</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">,</span> <span class="s2">&quot;year&quot;</span><span class="p">]</span>
+            <span class="p">)</span>
+
+        <span class="c1"># Load the effects of a tobacco tax.</span>
+        <span class="n">tax_inc</span> <span class="o">=</span> <span class="n">pivot_load</span><span class="p">(</span><span class="n">builder</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;risk_factor.</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="si">}</span><span class="s2">.tax_effect_incidence&quot;</span><span class="p">)</span>
+        <span class="n">tax_rem</span> <span class="o">=</span> <span class="n">pivot_load</span><span class="p">(</span><span class="n">builder</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;risk_factor.</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="si">}</span><span class="s2">.tax_effect_remission&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">tax_effect_inc</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">lookup</span><span class="o">.</span><span class="n">build_table</span><span class="p">(</span>
+            <span class="n">tax_inc</span><span class="p">,</span> <span class="n">key_columns</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;sex&quot;</span><span class="p">],</span> <span class="n">parameter_columns</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">,</span> <span class="s2">&quot;year&quot;</span><span class="p">]</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">tax_effect_rem</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">lookup</span><span class="o">.</span><span class="n">build_table</span><span class="p">(</span>
+            <span class="n">tax_rem</span><span class="p">,</span> <span class="n">key_columns</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;sex&quot;</span><span class="p">],</span> <span class="n">parameter_columns</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">,</span> <span class="s2">&quot;year&quot;</span><span class="p">]</span>
+        <span class="p">)</span>
+
+        <span class="n">mortality_data</span> <span class="o">=</span> <span class="n">pivot_load</span><span class="p">(</span><span class="n">builder</span><span class="p">,</span> <span class="s2">&quot;cause.all_causes.mortality&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">tobacco_acmr</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">register_rate_producer</span><span class="p">(</span>
+            <span class="s2">&quot;tobacco_acmr&quot;</span><span class="p">,</span>
+            <span class="n">source</span><span class="o">=</span><span class="n">builder</span><span class="o">.</span><span class="n">lookup</span><span class="o">.</span><span class="n">build_table</span><span class="p">(</span>
+                <span class="n">mortality_data</span><span class="p">,</span> <span class="n">key_columns</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;sex&quot;</span><span class="p">],</span> <span class="n">parameter_columns</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">,</span> <span class="s2">&quot;year&quot;</span><span class="p">]</span>
+            <span class="p">),</span>
+            <span class="n">component</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+    <span class="c1">#################</span>
+    <span class="c1"># Setup methods #</span>
+    <span class="c1">#################</span>
+
+<div class="viewcode-block" id="DelayedRisk.get_bin_names">
+<a class="viewcode-back" href="../../../api_reference/mslt/delay.html#vivarium_public_health.mslt.delay.DelayedRisk.get_bin_names">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_bin_names</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return the bin names for both the BAU and the intervention scenario.</span>
+
+<span class="sd">        These names take the following forms:</span>
+
+<span class="sd">        ``&quot;name.no&quot;``</span>
+<span class="sd">            The number of people who have never been exposed.</span>
+<span class="sd">        ``&quot;name.yes&quot;``</span>
+<span class="sd">            The number of people currently exposed.</span>
+<span class="sd">        ``&quot;name.N&quot;``</span>
+<span class="sd">            The number of people N years post-exposure.</span>
+
+<span class="sd">        The final bin is the number of people :math:`\ge N` years</span>
+<span class="sd">        post-exposure.</span>
+
+<span class="sd">        The intervention bin names take the form ``&quot;name_intervention.X&quot;``.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">bin_years</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">delay_bins</span> <span class="o">=</span> <span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="mi">0</span><span class="p">)]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">delay_bins</span> <span class="o">=</span> <span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">s</span><span class="p">)</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">bin_years</span> <span class="o">+</span> <span class="mi">2</span><span class="p">)]</span>
+        <span class="n">bins</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;no&quot;</span><span class="p">,</span> <span class="s2">&quot;yes&quot;</span><span class="p">]</span> <span class="o">+</span> <span class="n">delay_bins</span>
+        <span class="n">bau_bins</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;</span><span class="si">{}</span><span class="s2">.</span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="p">,</span> <span class="nb">bin</span><span class="p">)</span> <span class="k">for</span> <span class="nb">bin</span> <span class="ow">in</span> <span class="n">bins</span><span class="p">]</span>
+        <span class="n">int_bins</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;</span><span class="si">{}</span><span class="s2">_intervention.</span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="p">,</span> <span class="nb">bin</span><span class="p">)</span> <span class="k">for</span> <span class="nb">bin</span> <span class="ow">in</span> <span class="n">bins</span><span class="p">]</span>
+        <span class="n">all_bins</span> <span class="o">=</span> <span class="n">bau_bins</span> <span class="o">+</span> <span class="n">int_bins</span>
+        <span class="k">return</span> <span class="n">all_bins</span></div>
+
+
+<div class="viewcode-block" id="DelayedRisk.register_modifier">
+<a class="viewcode-back" href="../../../api_reference/mslt/delay.html#vivarium_public_health.mslt.delay.DelayedRisk.register_modifier">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">register_modifier</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">,</span> <span class="n">disease</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Register that a disease incidence rate will be modified by this</span>
+<span class="sd">        delayed risk in the intervention scenario.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        builder</span>
+<span class="sd">            The builder object for the simulation, which provides</span>
+<span class="sd">            access to event handlers and rate modifiers.</span>
+<span class="sd">        disease</span>
+<span class="sd">            The name of the disease whose incidence rate will be</span>
+<span class="sd">            modified.</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># NOTE: we need to modify different rates for chronic and acute</span>
+        <span class="c1"># diseases. For now, register modifiers for all possible rates.</span>
+        <span class="n">rate_templates</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">_intervention.incidence&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">_intervention.excess_mortality&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">_intervention.yld_rate&quot;</span><span class="p">,</span>
+        <span class="p">]</span>
+        <span class="k">for</span> <span class="n">template</span> <span class="ow">in</span> <span class="n">rate_templates</span><span class="p">:</span>
+            <span class="n">rate_name</span> <span class="o">=</span> <span class="n">template</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">disease</span><span class="p">)</span>
+            <span class="n">modifier</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">ix</span><span class="p">,</span> <span class="n">rate</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">incidence_adjustment</span><span class="p">(</span><span class="n">disease</span><span class="p">,</span> <span class="n">ix</span><span class="p">,</span> <span class="n">rate</span><span class="p">)</span>
+            <span class="n">builder</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">register_value_modifier</span><span class="p">(</span><span class="n">rate_name</span><span class="p">,</span> <span class="n">modifier</span><span class="p">,</span> <span class="n">component</span><span class="o">=</span><span class="bp">self</span><span class="p">)</span></div>
+
+
+    <span class="c1">########################</span>
+    <span class="c1"># Event-driven methods #</span>
+    <span class="c1">########################</span>
+
+<div class="viewcode-block" id="DelayedRisk.on_initialize_simulants">
+<a class="viewcode-back" href="../../../api_reference/mslt/delay.html#vivarium_public_health.mslt.delay.DelayedRisk.on_initialize_simulants">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">on_initialize_simulants</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pop_data</span><span class="p">:</span> <span class="n">SimulantData</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Define the initial distribution of the population across the bins, in</span>
+<span class="sd">        both the BAU and the intervention scenario.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Set all bins to zero, in order to create the required columns.</span>
+        <span class="n">pop</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">({},</span> <span class="n">index</span><span class="o">=</span><span class="n">pop_data</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">column</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_bin_names</span><span class="p">():</span>
+            <span class="n">pop</span><span class="p">[</span><span class="n">column</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.0</span>
+
+        <span class="c1"># Update the life table, so that we can then obtain a view that</span>
+        <span class="c1"># includes the population counts.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">population_view</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">pop</span><span class="p">)</span>
+        <span class="n">pop</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">population_view</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">pop_data</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+
+        <span class="c1"># Calculate the absolute prevalence by multiplying the fractional</span>
+        <span class="c1"># prevalence by the population size for each cohort.</span>
+        <span class="c1"># NOTE: the number of current smokers is defined at the middle of each</span>
+        <span class="c1"># year; i.e., it corresponds to the person_years.</span>
+        <span class="n">bau_acmr</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">tobacco_acmr</span><span class="o">.</span><span class="n">source</span><span class="p">(</span><span class="n">pop_data</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+        <span class="n">bau_probability_of_death</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="n">bau_acmr</span><span class="p">)</span>
+        <span class="n">pop</span><span class="o">.</span><span class="n">population</span> <span class="o">*=</span> <span class="mi">1</span> <span class="o">-</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="n">bau_probability_of_death</span>
+
+        <span class="n">prev</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">initial_prevalence</span><span class="p">(</span><span class="n">pop_data</span><span class="o">.</span><span class="n">index</span><span class="p">)</span><span class="o">.</span><span class="n">mul</span><span class="p">(</span><span class="n">pop</span><span class="p">[</span><span class="s2">&quot;population&quot;</span><span class="p">],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">population_view</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">prev</span><span class="p">)</span>
+
+        <span class="c1"># Rename the columns and apply the same initial prevalence for the</span>
+        <span class="c1"># intervention.</span>
+        <span class="n">bau_prefix</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="p">)</span>
+        <span class="n">int_prefix</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">_intervention.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="p">)</span>
+        <span class="n">rename_to</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="n">c</span><span class="p">:</span> <span class="n">c</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="n">bau_prefix</span><span class="p">,</span> <span class="n">int_prefix</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">prev</span><span class="o">.</span><span class="n">columns</span>
+            <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">bau_prefix</span><span class="p">)</span>
+        <span class="p">}</span>
+        <span class="n">int_prev</span> <span class="o">=</span> <span class="n">prev</span><span class="o">.</span><span class="n">rename</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="n">rename_to</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">population_view</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">int_prev</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="DelayedRisk.on_time_step_prepare">
+<a class="viewcode-back" href="../../../api_reference/mslt/delay.html#vivarium_public_health.mslt.delay.DelayedRisk.on_time_step_prepare">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">on_time_step_prepare</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event</span><span class="p">:</span> <span class="n">Event</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Account for transitions between bins, and for mortality rates.</span>
+
+<span class="sd">        These transitions include:</span>
+<span class="sd">        - New exposures</span>
+<span class="sd">        - Cessation of exposure</span>
+<span class="sd">        - Increased duration of time since exposure</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">clock</span><span class="p">()</span><span class="o">.</span><span class="n">year</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">start_year</span><span class="p">:</span>
+            <span class="k">return</span>
+
+        <span class="n">pop</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">population_view</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">pop</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="n">idx</span> <span class="o">=</span> <span class="n">pop</span><span class="o">.</span><span class="n">index</span>
+        <span class="n">bau_acmr</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">acm_rate</span><span class="o">.</span><span class="n">source</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>
+        <span class="n">inc_rate</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">incidence</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>
+        <span class="n">rem_rate</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">remission</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>
+        <span class="n">int_inc_rate</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">int_incidence</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>
+        <span class="n">int_rem_rate</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">int_remission</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>
+
+        <span class="c1"># Identify the relevant columns for the BAU and intervention.</span>
+        <span class="n">bin_cols</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_bin_names</span><span class="p">()</span>
+        <span class="n">bau_prefix</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="p">)</span>
+        <span class="n">int_prefix</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">_intervention.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="p">)</span>
+        <span class="n">bau_cols</span> <span class="o">=</span> <span class="p">[</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">bin_cols</span> <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">bau_prefix</span><span class="p">)]</span>
+        <span class="n">int_cols</span> <span class="o">=</span> <span class="p">[</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">bin_cols</span> <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">int_prefix</span><span class="p">)]</span>
+
+        <span class="c1"># Extract the RR of mortality associated with each exposure level.</span>
+        <span class="n">mort_rr</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">mortality_rr</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>
+
+        <span class="c1"># Normalise the survival rate; never-smokers should have a mortality</span>
+        <span class="c1"># rate that is lower than the ACMR, since current-smokers and</span>
+        <span class="c1"># previous-smokers have higher RRs of mortality.</span>
+        <span class="n">weight_by_initial_prevalence</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="k">if</span> <span class="n">weight_by_initial_prevalence</span><span class="p">:</span>
+            <span class="c1"># Load the initial exposure distribution, because it will be used</span>
+            <span class="c1"># to adjust the ACMR.</span>
+            <span class="n">prev</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">initial_prevalence</span><span class="p">(</span><span class="n">pop</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+            <span class="n">prev</span> <span class="o">=</span> <span class="n">prev</span><span class="o">.</span><span class="n">loc</span><span class="p">[:,</span> <span class="n">bau_cols</span><span class="p">]</span>
+            <span class="c1"># Multiply these fractions by the RR of mortality associated with</span>
+            <span class="c1"># each exposure level.</span>
+            <span class="n">bau_wtd_rr</span> <span class="o">=</span> <span class="n">prev</span><span class="o">.</span><span class="n">mul</span><span class="p">(</span><span class="n">mort_rr</span><span class="o">.</span><span class="n">loc</span><span class="p">[:,</span> <span class="n">bau_cols</span><span class="p">])</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># Calculate the fraction of the population in each exposure level.</span>
+            <span class="n">bau_popn</span> <span class="o">=</span> <span class="n">pop</span><span class="o">.</span><span class="n">loc</span><span class="p">[:,</span> <span class="n">bau_cols</span><span class="p">]</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+            <span class="n">bau_prev</span> <span class="o">=</span> <span class="n">pop</span><span class="o">.</span><span class="n">loc</span><span class="p">[:,</span> <span class="n">bau_cols</span><span class="p">]</span><span class="o">.</span><span class="n">divide</span><span class="p">(</span><span class="n">bau_popn</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+            <span class="c1"># Multiply these fractions by the RR of mortality associated with</span>
+            <span class="c1"># each exposure level.</span>
+            <span class="n">bau_wtd_rr</span> <span class="o">=</span> <span class="n">bau_prev</span><span class="o">.</span><span class="n">mul</span><span class="p">(</span><span class="n">mort_rr</span><span class="o">.</span><span class="n">loc</span><span class="p">[:,</span> <span class="n">bau_cols</span><span class="p">])</span>
+
+        <span class="c1"># Sum these terms to obtain the net RR of mortality.</span>
+        <span class="n">bau_net_rr</span> <span class="o">=</span> <span class="n">bau_wtd_rr</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+        <span class="c1"># The mortality rate for never-smokers is the population ACMR divided</span>
+        <span class="c1"># by this net RR of mortality.</span>
+        <span class="n">bau_acmr_no</span> <span class="o">=</span> <span class="n">bau_acmr</span><span class="o">.</span><span class="n">divide</span><span class="p">(</span><span class="n">bau_net_rr</span><span class="p">)</span>
+
+        <span class="c1"># NOTE: adjust the RR *after* calculating the ACMR adjustments, but</span>
+        <span class="c1"># *before* calculating the survival probability for each exposure</span>
+        <span class="c1"># level.</span>
+        <span class="n">penultimate_cols</span> <span class="o">=</span> <span class="p">[</span><span class="n">s</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">bin_years</span><span class="p">)</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="p">[</span><span class="n">bau_prefix</span><span class="p">,</span> <span class="n">int_prefix</span><span class="p">]]</span>
+        <span class="n">mort_rr</span><span class="o">.</span><span class="n">loc</span><span class="p">[:,</span> <span class="n">penultimate_cols</span><span class="p">]</span> <span class="o">=</span> <span class="mf">1.0</span>
+
+        <span class="c1"># Calculate the mortality risk for non-smokers.</span>
+        <span class="n">bau_surv_no</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">-</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="n">bau_acmr_no</span><span class="p">)</span>
+        <span class="c1"># Calculate the survival probability for each exposure level:</span>
+        <span class="c1">#     (1 - mort_risk_non_smokers)^RR</span>
+        <span class="n">bau_surv_rate</span> <span class="o">=</span> <span class="n">mort_rr</span><span class="o">.</span><span class="n">loc</span><span class="p">[:,</span> <span class="n">bau_cols</span><span class="p">]</span><span class="o">.</span><span class="n">rpow</span><span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">bau_surv_no</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+        <span class="c1"># Calculate the number of survivors for each exposure level (BAU).</span>
+        <span class="n">pop</span><span class="o">.</span><span class="n">loc</span><span class="p">[:,</span> <span class="n">bau_cols</span><span class="p">]</span> <span class="o">=</span> <span class="n">pop</span><span class="o">.</span><span class="n">loc</span><span class="p">[:,</span> <span class="n">bau_cols</span><span class="p">]</span><span class="o">.</span><span class="n">mul</span><span class="p">(</span><span class="n">bau_surv_rate</span><span class="p">)</span>
+
+        <span class="c1"># Calculate the number of survivors for each exposure level</span>
+        <span class="c1"># (intervention).</span>
+        <span class="c1"># NOTE: we apply the same survival rate to each exposure level for</span>
+        <span class="c1"># the intervention scenario as we used for the BAU scenario.</span>
+        <span class="n">rename_to</span> <span class="o">=</span> <span class="p">{</span><span class="n">c</span><span class="p">:</span> <span class="n">c</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;.&quot;</span><span class="p">,</span> <span class="s2">&quot;_intervention.&quot;</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">bau_surv_rate</span><span class="o">.</span><span class="n">columns</span><span class="p">}</span>
+        <span class="n">int_surv_rate</span> <span class="o">=</span> <span class="n">bau_surv_rate</span><span class="o">.</span><span class="n">rename</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="n">rename_to</span><span class="p">)</span>
+        <span class="n">pop</span><span class="o">.</span><span class="n">loc</span><span class="p">[:,</span> <span class="n">int_cols</span><span class="p">]</span> <span class="o">=</span> <span class="n">pop</span><span class="o">.</span><span class="n">loc</span><span class="p">[:,</span> <span class="n">int_cols</span><span class="p">]</span><span class="o">.</span><span class="n">mul</span><span class="p">(</span><span class="n">int_surv_rate</span><span class="p">)</span>
+
+        <span class="c1"># Account for transitions between bins.</span>
+        <span class="c1"># Note that the order of evaluation matters.</span>
+        <span class="n">suffixes</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="s2">&quot;_intervention&quot;</span><span class="p">]</span>
+        <span class="c1"># First, accumulate the final post-exposure bin.</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">bin_years</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">suffix</span> <span class="ow">in</span> <span class="n">suffixes</span><span class="p">:</span>
+                <span class="n">accum_col</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">{}{}</span><span class="s2">.</span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="p">,</span> <span class="n">suffix</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">bin_years</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+                <span class="n">from_col</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">{}{}</span><span class="s2">.</span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="p">,</span> <span class="n">suffix</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">bin_years</span><span class="p">)</span>
+                <span class="n">pop</span><span class="p">[</span><span class="n">accum_col</span><span class="p">]</span> <span class="o">+=</span> <span class="n">pop</span><span class="p">[</span><span class="n">from_col</span><span class="p">]</span>
+        <span class="c1"># Then increase time since exposure for all other post-exposure bins.</span>
+        <span class="k">for</span> <span class="n">n_years</span> <span class="ow">in</span> <span class="nb">reversed</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">bin_years</span><span class="p">)):</span>
+            <span class="k">for</span> <span class="n">suffix</span> <span class="ow">in</span> <span class="n">suffixes</span><span class="p">:</span>
+                <span class="n">source_col</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">{}{}</span><span class="s2">.</span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="p">,</span> <span class="n">suffix</span><span class="p">,</span> <span class="n">n_years</span><span class="p">)</span>
+                <span class="n">dest_col</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">{}{}</span><span class="s2">.</span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="p">,</span> <span class="n">suffix</span><span class="p">,</span> <span class="n">n_years</span> <span class="o">+</span> <span class="mi">1</span><span class="p">)</span>
+                <span class="n">pop</span><span class="p">[</span><span class="n">dest_col</span><span class="p">]</span> <span class="o">=</span> <span class="n">pop</span><span class="p">[</span><span class="n">source_col</span><span class="p">]</span>
+
+        <span class="c1"># Account for incidence and remission.</span>
+        <span class="n">col_no</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">.no&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="p">)</span>
+        <span class="n">col_int_no</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">_intervention.no&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="p">)</span>
+        <span class="n">col_yes</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">.yes&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="p">)</span>
+        <span class="n">col_int_yes</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">_intervention.yes&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="p">)</span>
+        <span class="n">col_zero</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">.0&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="p">)</span>
+        <span class="n">col_int_zero</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">_intervention.0&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="p">)</span>
+
+        <span class="n">inc</span> <span class="o">=</span> <span class="n">inc_rate</span> <span class="o">*</span> <span class="n">pop</span><span class="p">[</span><span class="n">col_no</span><span class="p">]</span>
+        <span class="n">int_inc</span> <span class="o">=</span> <span class="n">int_inc_rate</span> <span class="o">*</span> <span class="n">pop</span><span class="p">[</span><span class="n">col_int_no</span><span class="p">]</span>
+        <span class="n">rem</span> <span class="o">=</span> <span class="n">rem_rate</span> <span class="o">*</span> <span class="n">pop</span><span class="p">[</span><span class="n">col_yes</span><span class="p">]</span>
+        <span class="n">int_rem</span> <span class="o">=</span> <span class="n">int_rem_rate</span> <span class="o">*</span> <span class="n">pop</span><span class="p">[</span><span class="n">col_int_yes</span><span class="p">]</span>
+
+        <span class="c1"># Account for the effects of a tobacco tax.</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">tobacco_tax</span><span class="p">:</span>
+            <span class="c1"># The tax has a scaling effect (reduction) on incidence, and</span>
+            <span class="c1"># causes additional remission.</span>
+            <span class="n">tax_inc</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">tax_effect_inc</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>
+            <span class="n">tax_rem</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">tax_effect_rem</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>
+            <span class="n">int_inc</span> <span class="o">=</span> <span class="n">int_inc</span> <span class="o">*</span> <span class="n">tax_inc</span>
+            <span class="n">int_rem</span> <span class="o">=</span> <span class="n">int_rem</span> <span class="o">+</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">tax_rem</span><span class="p">)</span> <span class="o">*</span> <span class="n">pop</span><span class="p">[</span><span class="n">col_int_yes</span><span class="p">]</span>
+
+        <span class="c1"># Apply the incidence rate to the never-exposed population.</span>
+        <span class="n">pop</span><span class="p">[</span><span class="n">col_no</span><span class="p">]</span> <span class="o">=</span> <span class="n">pop</span><span class="p">[</span><span class="n">col_no</span><span class="p">]</span> <span class="o">-</span> <span class="n">inc</span>
+        <span class="n">pop</span><span class="p">[</span><span class="n">col_int_no</span><span class="p">]</span> <span class="o">=</span> <span class="n">pop</span><span class="p">[</span><span class="n">col_int_no</span><span class="p">]</span> <span class="o">-</span> <span class="n">int_inc</span>
+        <span class="c1"># Incidence and remission affect who is currently exposed.</span>
+        <span class="n">pop</span><span class="p">[</span><span class="n">col_yes</span><span class="p">]</span> <span class="o">=</span> <span class="n">pop</span><span class="p">[</span><span class="n">col_yes</span><span class="p">]</span> <span class="o">+</span> <span class="n">inc</span> <span class="o">-</span> <span class="n">rem</span>
+        <span class="n">pop</span><span class="p">[</span><span class="n">col_int_yes</span><span class="p">]</span> <span class="o">=</span> <span class="n">pop</span><span class="p">[</span><span class="n">col_int_yes</span><span class="p">]</span> <span class="o">+</span> <span class="n">int_inc</span> <span class="o">-</span> <span class="n">int_rem</span>
+        <span class="c1"># Those who have just remitted enter the first post-remission bin.</span>
+        <span class="n">pop</span><span class="p">[</span><span class="n">col_zero</span><span class="p">]</span> <span class="o">=</span> <span class="n">rem</span>
+        <span class="n">pop</span><span class="p">[</span><span class="n">col_int_zero</span><span class="p">]</span> <span class="o">=</span> <span class="n">int_rem</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">population_view</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">pop</span><span class="p">)</span></div>
+
+
+    <span class="c1">##################################</span>
+    <span class="c1"># Pipeline sources and modifiers #</span>
+    <span class="c1">##################################</span>
+
+<div class="viewcode-block" id="DelayedRisk.incidence_adjustment">
+<a class="viewcode-back" href="../../../api_reference/mslt/delay.html#vivarium_public_health.mslt.delay.DelayedRisk.incidence_adjustment">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">incidence_adjustment</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">disease</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">index</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">Index</span><span class="p">,</span> <span class="n">incidence_rate</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Modify a disease incidence rate in the intervention scenario.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        disease</span>
+<span class="sd">            The name of the disease.</span>
+<span class="sd">        index</span>
+<span class="sd">            The index into the population life table.</span>
+<span class="sd">        incidence_rate</span>
+<span class="sd">            The un-adjusted disease incidence rate.</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Multiply the population in each bin by the associated relative risk.</span>
+        <span class="n">bin_cols</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_bin_names</span><span class="p">()</span>
+        <span class="n">pop</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">population_view</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">index</span><span class="p">)</span>
+        <span class="n">incidence_rr</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">dis_rr</span><span class="p">[</span><span class="n">disease</span><span class="p">](</span><span class="n">pop</span><span class="o">.</span><span class="n">index</span><span class="p">)[</span><span class="n">bin_cols</span><span class="p">]</span>
+        <span class="n">rr_values</span> <span class="o">=</span> <span class="n">pop</span><span class="p">[</span><span class="n">bin_cols</span><span class="p">]</span> <span class="o">*</span> <span class="n">incidence_rr</span>
+
+        <span class="c1"># Calculate the mean relative-risk for the BAU scenario.</span>
+        <span class="n">bau_prefix</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="p">)</span>
+        <span class="n">bau_cols</span> <span class="o">=</span> <span class="p">[</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">bin_cols</span> <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">bau_prefix</span><span class="p">)]</span>
+        <span class="c1"># Sum over all of the bins in each row.</span>
+        <span class="n">mean_bau_rr</span> <span class="o">=</span> <span class="n">rr_values</span><span class="p">[</span><span class="n">bau_cols</span><span class="p">]</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span> <span class="o">/</span> <span class="n">pop</span><span class="p">[</span><span class="n">bau_cols</span><span class="p">]</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+        <span class="c1"># Handle cases where the population size is zero.</span>
+        <span class="n">mean_bau_rr</span> <span class="o">=</span> <span class="n">mean_bau_rr</span><span class="o">.</span><span class="n">fillna</span><span class="p">(</span><span class="mf">1.0</span><span class="p">)</span>
+
+        <span class="c1"># Calculate the mean relative-risk for the intervention scenario.</span>
+        <span class="n">int_prefix</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">_intervention.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="p">)</span>
+        <span class="n">int_cols</span> <span class="o">=</span> <span class="p">[</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">bin_cols</span> <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="n">int_prefix</span><span class="p">)]</span>
+        <span class="c1"># Sum over all of the bins in each row.</span>
+        <span class="n">mean_int_rr</span> <span class="o">=</span> <span class="n">rr_values</span><span class="p">[</span><span class="n">int_cols</span><span class="p">]</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span> <span class="o">/</span> <span class="n">pop</span><span class="p">[</span><span class="n">int_cols</span><span class="p">]</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+        <span class="c1"># Handle cases where the population size is zero.</span>
+        <span class="n">mean_int_rr</span> <span class="o">=</span> <span class="n">mean_int_rr</span><span class="o">.</span><span class="n">fillna</span><span class="p">(</span><span class="mf">1.0</span><span class="p">)</span>
+
+        <span class="c1"># Calculate the disease incidence PIF for the intervention scenario.</span>
+        <span class="n">pif</span> <span class="o">=</span> <span class="p">(</span><span class="n">mean_bau_rr</span> <span class="o">-</span> <span class="n">mean_int_rr</span><span class="p">)</span> <span class="o">/</span> <span class="n">mean_bau_rr</span>
+        <span class="n">pif</span> <span class="o">=</span> <span class="n">pif</span><span class="o">.</span><span class="n">fillna</span><span class="p">(</span><span class="mf">0.0</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">incidence_rate</span> <span class="o">*</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">pif</span><span class="p">)</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="pivot_load">
+<a class="viewcode-back" href="../../../api_reference/mslt/delay.html#vivarium_public_health.mslt.delay.pivot_load">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">pivot_load</span><span class="p">(</span><span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">,</span> <span class="n">entity_key</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Helper method for loading dataframe from artifact.</span>
+
+<span class="sd">    Performs a long to wide conversion if dataframe has an index column</span>
+<span class="sd">    named &#39;measure&#39;.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    builder</span>
+<span class="sd">        The builder object for the simulation.</span>
+<span class="sd">    entity_key</span>
+<span class="sd">        The key for the entity to be loaded.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    pd.DataFrame</span>
+<span class="sd">        The loaded data and potentially pivoted data.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">data</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">entity_key</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="s2">&quot;measure&quot;</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">data</span><span class="o">.</span><span class="n">pivot_table</span><span class="p">(</span>
+                <span class="n">index</span><span class="o">=</span><span class="p">[</span><span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">columns</span> <span class="k">if</span> <span class="n">i</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;measure&quot;</span><span class="p">,</span> <span class="s2">&quot;value&quot;</span><span class="p">]],</span>
+                <span class="n">columns</span><span class="o">=</span><span class="s2">&quot;measure&quot;</span><span class="p">,</span>
+                <span class="n">values</span><span class="o">=</span><span class="s2">&quot;value&quot;</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="o">.</span><span class="n">rename_axis</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+            <span class="o">.</span><span class="n">reset_index</span><span class="p">()</span>
+        <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">data</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, The vivarium developers.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

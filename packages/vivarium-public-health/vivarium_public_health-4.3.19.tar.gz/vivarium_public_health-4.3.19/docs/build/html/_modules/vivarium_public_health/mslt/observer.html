@@ -1,0 +1,601 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>vivarium_public_health.mslt.observer &mdash; vivarium_public_health 4.3.15.dev2+g712190e05 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/plot_directive.css" />
+
+  
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=7ca62e9d"></script>
+      <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+    <link href="../../../_static/style.css" rel="stylesheet" type="text/css">
+
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            vivarium_public_health
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorials/index.html">Tutorials</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_reference/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">vivarium_public_health</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">vivarium_public_health.mslt.observer</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for vivarium_public_health.mslt.observer</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">=========</span>
+<span class="sd">Observers</span>
+<span class="sd">=========</span>
+
+<span class="sd">This module contains tools for recording various outputs of interest in</span>
+<span class="sd">multi-state lifetable simulations.</span>
+
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium</span><span class="w"> </span><span class="kn">import</span> <span class="n">Component</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.engine</span><span class="w"> </span><span class="kn">import</span> <span class="n">Builder</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.event</span><span class="w"> </span><span class="kn">import</span> <span class="n">Event</span>
+
+
+<div class="viewcode-block" id="output_file">
+<a class="viewcode-back" href="../../../api_reference/mslt/observer.html#vivarium_public_health.mslt.observer.output_file">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">output_file</span><span class="p">(</span><span class="n">config</span><span class="p">,</span> <span class="n">suffix</span><span class="p">,</span> <span class="n">sep</span><span class="o">=</span><span class="s2">&quot;_&quot;</span><span class="p">,</span> <span class="n">ext</span><span class="o">=</span><span class="s2">&quot;csv&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Determine the output file name for an observer, based on the prefix</span>
+<span class="sd">    defined in ``config.observer.output_prefix`` and the (optional)</span>
+<span class="sd">    ``config.input_data.input_draw_number``.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    config</span>
+<span class="sd">        The builder configuration object.</span>
+<span class="sd">    suffix</span>
+<span class="sd">        The observer-specific suffix.</span>
+<span class="sd">    sep</span>
+<span class="sd">        The separator between prefix, suffix, and draw number.</span>
+<span class="sd">    ext</span>
+<span class="sd">        The output file extension.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">        The output file name for the observer.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="s2">&quot;observer&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">config</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;observer.output_prefix not defined&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="s2">&quot;output_prefix&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">config</span><span class="o">.</span><span class="n">observer</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;observer.output_prefix not defined&quot;</span><span class="p">)</span>
+    <span class="n">prefix</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">observer</span><span class="o">.</span><span class="n">output_prefix</span>
+    <span class="k">if</span> <span class="s2">&quot;input_draw_number&quot;</span> <span class="ow">in</span> <span class="n">config</span><span class="o">.</span><span class="n">input_data</span><span class="p">:</span>
+        <span class="n">draw</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">input_data</span><span class="o">.</span><span class="n">input_draw_number</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">draw</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="n">out_file</span> <span class="o">=</span> <span class="n">prefix</span> <span class="o">+</span> <span class="n">sep</span> <span class="o">+</span> <span class="n">suffix</span>
+    <span class="k">if</span> <span class="n">draw</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">out_file</span> <span class="o">+=</span> <span class="s2">&quot;</span><span class="si">{}{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">sep</span><span class="p">,</span> <span class="n">draw</span><span class="p">)</span>
+    <span class="n">out_file</span> <span class="o">+=</span> <span class="s2">&quot;.</span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">ext</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">out_file</span></div>
+
+
+
+<div class="viewcode-block" id="MorbidityMortality">
+<a class="viewcode-back" href="../../../api_reference/mslt/observer.html#vivarium_public_health.mslt.observer.MorbidityMortality">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">MorbidityMortality</span><span class="p">(</span><span class="n">Component</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;This class records the all-cause morbidity and mortality rates for each</span>
+<span class="sd">    cohort at each year of the simulation.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    output_suffix</span>
+<span class="sd">        The suffix for the CSV file in which to record the</span>
+<span class="sd">        morbidity and mortality data.</span>
+<span class="sd">    clock</span>
+<span class="sd">        The simulation clock.</span>
+<span class="sd">    tables</span>
+<span class="sd">        The tables of morbidity and mortality data.</span>
+<span class="sd">    table_cols</span>
+<span class="sd">        The columns in the tables.</span>
+<span class="sd">    output_file</span>
+<span class="sd">        The output file for the morbidity and mortality data.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="c1">##############</span>
+    <span class="c1"># Properties #</span>
+    <span class="c1">##############</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">columns_required</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">[</span>
+            <span class="s2">&quot;age&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;sex&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;population&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;bau_population&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;acmr&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;bau_acmr&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;pr_death&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;bau_pr_death&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;deaths&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;bau_deaths&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;yld_rate&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;bau_yld_rate&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;person_years&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;bau_person_years&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;HALY&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;bau_HALY&quot;</span><span class="p">,</span>
+        <span class="p">]</span>
+
+    <span class="c1">#####################</span>
+    <span class="c1"># Lifecycle methods #</span>
+    <span class="c1">#####################</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">output_suffix</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;mm&quot;</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">output_suffix</span> <span class="o">=</span> <span class="n">output_suffix</span>
+
+<div class="viewcode-block" id="MorbidityMortality.setup">
+<a class="viewcode-back" href="../../../api_reference/mslt/observer.html#vivarium_public_health.mslt.observer.MorbidityMortality.setup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="c1"># Record the key columns from the core multi-state life table.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">clock</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">time</span><span class="o">.</span><span class="n">clock</span><span class="p">()</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">tables</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">table_cols</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">columns_required</span> <span class="o">+</span> <span class="p">[</span>
+            <span class="s2">&quot;year&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;prev_population&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;bau_prev_population&quot;</span><span class="p">,</span>
+        <span class="p">]</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">output_file</span> <span class="o">=</span> <span class="n">output_file</span><span class="p">(</span><span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">output_suffix</span><span class="p">)</span></div>
+
+
+    <span class="c1">########################</span>
+    <span class="c1"># Event-driven methods #</span>
+    <span class="c1">########################</span>
+
+<div class="viewcode-block" id="MorbidityMortality.on_collect_metrics">
+<a class="viewcode-back" href="../../../api_reference/mslt/observer.html#vivarium_public_health.mslt.observer.MorbidityMortality.on_collect_metrics">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">on_collect_metrics</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event</span><span class="p">:</span> <span class="n">Event</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">pop</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">population_view</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">pop</span><span class="o">.</span><span class="n">index</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="c1"># No tracked population remains.</span>
+            <span class="k">return</span>
+
+        <span class="n">pop</span><span class="p">[</span><span class="s2">&quot;year&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">clock</span><span class="p">()</span><span class="o">.</span><span class="n">year</span>
+        <span class="c1"># Record the population size prior to the deaths.</span>
+        <span class="n">pop</span><span class="p">[</span><span class="s2">&quot;prev_population&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">pop</span><span class="p">[</span><span class="s2">&quot;population&quot;</span><span class="p">]</span> <span class="o">+</span> <span class="n">pop</span><span class="p">[</span><span class="s2">&quot;deaths&quot;</span><span class="p">]</span>
+        <span class="n">pop</span><span class="p">[</span><span class="s2">&quot;bau_prev_population&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">pop</span><span class="p">[</span><span class="s2">&quot;bau_population&quot;</span><span class="p">]</span> <span class="o">+</span> <span class="n">pop</span><span class="p">[</span><span class="s2">&quot;bau_deaths&quot;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">tables</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">pop</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">table_cols</span><span class="p">])</span></div>
+
+
+<div class="viewcode-block" id="MorbidityMortality.on_simulation_end">
+<a class="viewcode-back" href="../../../api_reference/mslt/observer.html#vivarium_public_health.mslt.observer.MorbidityMortality.on_simulation_end">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">on_simulation_end</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event</span><span class="p">:</span> <span class="n">Event</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">concat</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">tables</span><span class="p">,</span> <span class="n">ignore_index</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">data</span><span class="p">[</span><span class="s2">&quot;year_of_birth&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="s2">&quot;year&quot;</span><span class="p">]</span> <span class="o">-</span> <span class="n">data</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">]</span>
+        <span class="c1"># Sort the table by cohort (i.e., generation and sex), and then by</span>
+        <span class="c1"># calendar year, so that results are output in the same order as in</span>
+        <span class="c1"># the spreadsheet models.</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">sort_values</span><span class="p">(</span><span class="n">by</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;year_of_birth&quot;</span><span class="p">,</span> <span class="s2">&quot;sex&quot;</span><span class="p">,</span> <span class="s2">&quot;age&quot;</span><span class="p">],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="c1"># Re-order the table columns.</span>
+        <span class="n">cols</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;year_of_birth&quot;</span><span class="p">]</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">table_cols</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">cols</span><span class="p">]</span>
+        <span class="c1"># Calculate life expectancy and HALE for the BAU and intervention,</span>
+        <span class="c1"># with respect to the initial population, not the survivors.</span>
+        <span class="n">data</span><span class="p">[</span><span class="s2">&quot;LE&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">calculate_LE</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;person_years&quot;</span><span class="p">,</span> <span class="s2">&quot;prev_population&quot;</span><span class="p">)</span>
+        <span class="n">data</span><span class="p">[</span><span class="s2">&quot;bau_LE&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">calculate_LE</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;bau_person_years&quot;</span><span class="p">,</span> <span class="s2">&quot;bau_prev_population&quot;</span><span class="p">)</span>
+        <span class="n">data</span><span class="p">[</span><span class="s2">&quot;HALE&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">calculate_LE</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;HALY&quot;</span><span class="p">,</span> <span class="s2">&quot;prev_population&quot;</span><span class="p">)</span>
+        <span class="n">data</span><span class="p">[</span><span class="s2">&quot;bau_HALE&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">calculate_LE</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="s2">&quot;bau_HALY&quot;</span><span class="p">,</span> <span class="s2">&quot;bau_prev_population&quot;</span><span class="p">)</span>
+        <span class="n">data</span><span class="o">.</span><span class="n">to_csv</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">output_file</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></div>
+
+
+    <span class="c1">##################</span>
+    <span class="c1"># Helper methods #</span>
+    <span class="c1">##################</span>
+
+<div class="viewcode-block" id="MorbidityMortality.calculate_LE">
+<a class="viewcode-back" href="../../../api_reference/mslt/observer.html#vivarium_public_health.mslt.observer.MorbidityMortality.calculate_LE">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">calculate_LE</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">table</span><span class="p">,</span> <span class="n">py_col</span><span class="p">,</span> <span class="n">denom_col</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Calculate the life expectancy for each cohort at each time-step.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        table</span>
+<span class="sd">            The population life table.</span>
+<span class="sd">        py_col</span>
+<span class="sd">            The name of the person-years column.</span>
+<span class="sd">        denom_col</span>
+<span class="sd">            The name of the population denominator column.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">            The life expectancy for each table row.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Group the person-years by cohort.</span>
+        <span class="n">group_cols</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;year_of_birth&quot;</span><span class="p">,</span> <span class="s2">&quot;sex&quot;</span><span class="p">]</span>
+        <span class="n">subset_cols</span> <span class="o">=</span> <span class="n">group_cols</span> <span class="o">+</span> <span class="p">[</span><span class="n">py_col</span><span class="p">]</span>
+        <span class="n">grouped</span> <span class="o">=</span> <span class="n">table</span><span class="o">.</span><span class="n">loc</span><span class="p">[:,</span> <span class="n">subset_cols</span><span class="p">]</span><span class="o">.</span><span class="n">groupby</span><span class="p">(</span><span class="n">by</span><span class="o">=</span><span class="n">group_cols</span><span class="p">)[</span><span class="n">py_col</span><span class="p">]</span>
+        <span class="c1"># Calculate the reverse-cumulative sums of the adjusted person-years</span>
+        <span class="c1"># (i.e., the present and future person-years) by:</span>
+        <span class="c1">#   (a) reversing the adjusted person-years values in each cohort;</span>
+        <span class="c1">#   (b) calculating the cumulative sums in each cohort; and</span>
+        <span class="c1">#   (c) restoring the original order.</span>
+        <span class="n">cumsum</span> <span class="o">=</span> <span class="n">grouped</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">x</span><span class="p">[::</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">cumsum</span><span class="p">())</span><span class="o">.</span><span class="n">iloc</span><span class="p">[::</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+        <span class="k">return</span> <span class="n">cumsum</span> <span class="o">/</span> <span class="n">table</span><span class="p">[</span><span class="n">denom_col</span><span class="p">]</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="Disease">
+<a class="viewcode-back" href="../../../api_reference/mslt/observer.html#vivarium_public_health.mslt.observer.Disease">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">Disease</span><span class="p">(</span><span class="n">Component</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;This class records the disease incidence rate and disease prevalence for</span>
+<span class="sd">    each cohort at each year of the simulation.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    disease</span>
+<span class="sd">        The name of the chronic disease.</span>
+<span class="sd">    output_suffix</span>
+<span class="sd">        The suffix for the CSV file in which to record the</span>
+<span class="sd">        disease data.</span>
+<span class="sd">    bau_S_col</span>
+<span class="sd">        The name of the BAU susceptible column.</span>
+<span class="sd">    bau_C_col</span>
+<span class="sd">        The name of the BAU chronic column.</span>
+<span class="sd">    int_S_col</span>
+<span class="sd">        The name of the intervention susceptible column.</span>
+<span class="sd">    int_C_col</span>
+<span class="sd">        The name of the intervention chronic column.</span>
+<span class="sd">    bau_incidence</span>
+<span class="sd">        The incidence rate for the BAU scenario.</span>
+<span class="sd">    int_incidence</span>
+<span class="sd">        The incidence rate for the intervention scenario.</span>
+<span class="sd">    tables</span>
+<span class="sd">        The tables of disease data.</span>
+<span class="sd">    table_cols</span>
+<span class="sd">        The columns in the tables.</span>
+<span class="sd">    clock</span>
+<span class="sd">        The simulation clock.</span>
+<span class="sd">    output_file</span>
+<span class="sd">        The output file for the disease data.</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="c1">##############</span>
+    <span class="c1"># Properties #</span>
+    <span class="c1">##############</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">columns_required</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">[</span>
+            <span class="s2">&quot;age&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;sex&quot;</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">bau_S_col</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">bau_C_col</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">int_S_col</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">int_C_col</span><span class="p">,</span>
+        <span class="p">]</span>
+
+    <span class="c1">#####################</span>
+    <span class="c1"># Lifecycle methods #</span>
+    <span class="c1">#####################</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">disease</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">output_suffix</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">disease</span> <span class="o">=</span> <span class="n">disease</span>
+        <span class="k">if</span> <span class="n">output_suffix</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">output_suffix</span> <span class="o">=</span> <span class="n">disease</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">output_suffix</span> <span class="o">=</span> <span class="n">output_suffix</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">bau_S_col</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">_S&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">bau_C_col</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">_C&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">int_S_col</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">_S_intervention&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">int_C_col</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">_C_intervention&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="p">)</span>
+
+<div class="viewcode-block" id="Disease.setup">
+<a class="viewcode-back" href="../../../api_reference/mslt/observer.html#vivarium_public_health.mslt.observer.Disease.setup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">bau_incidence_value</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">.incidence&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="p">)</span>
+        <span class="n">int_incidence_value</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">_intervention.incidence&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">bau_incidence</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">get_value</span><span class="p">(</span><span class="n">bau_incidence_value</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">int_incidence</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">get_value</span><span class="p">(</span><span class="n">int_incidence_value</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">tables</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">table_cols</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="s2">&quot;sex&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;age&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;year&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;bau_incidence&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;int_incidence&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;bau_prevalence&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;int_prevalence&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;bau_deaths&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;int_deaths&quot;</span><span class="p">,</span>
+        <span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">clock</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">time</span><span class="o">.</span><span class="n">clock</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">output_file</span> <span class="o">=</span> <span class="n">output_file</span><span class="p">(</span><span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">output_suffix</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Disease.on_collect_metrics">
+<a class="viewcode-back" href="../../../api_reference/mslt/observer.html#vivarium_public_health.mslt.observer.Disease.on_collect_metrics">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">on_collect_metrics</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event</span><span class="p">:</span> <span class="n">Event</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">pop</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">population_view</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">pop</span><span class="o">.</span><span class="n">index</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="c1"># No tracked population remains.</span>
+            <span class="k">return</span>
+
+        <span class="n">pop</span><span class="p">[</span><span class="s2">&quot;year&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">clock</span><span class="p">()</span><span class="o">.</span><span class="n">year</span>
+        <span class="n">pop</span><span class="p">[</span><span class="s2">&quot;bau_incidence&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bau_incidence</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+        <span class="n">pop</span><span class="p">[</span><span class="s2">&quot;int_incidence&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">int_incidence</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+        <span class="n">pop</span><span class="p">[</span><span class="s2">&quot;bau_prevalence&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">pop</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">bau_C_col</span><span class="p">]</span> <span class="o">/</span> <span class="p">(</span>
+            <span class="n">pop</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">bau_C_col</span><span class="p">]</span> <span class="o">+</span> <span class="n">pop</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">bau_S_col</span><span class="p">]</span>
+        <span class="p">)</span>
+        <span class="n">pop</span><span class="p">[</span><span class="s2">&quot;int_prevalence&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">pop</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">int_C_col</span><span class="p">]</span> <span class="o">/</span> <span class="p">(</span>
+            <span class="n">pop</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">bau_C_col</span><span class="p">]</span> <span class="o">+</span> <span class="n">pop</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">bau_S_col</span><span class="p">]</span>
+        <span class="p">)</span>
+        <span class="n">pop</span><span class="p">[</span><span class="s2">&quot;bau_deaths&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">1000</span> <span class="o">-</span> <span class="n">pop</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">bau_S_col</span><span class="p">]</span> <span class="o">-</span> <span class="n">pop</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">bau_C_col</span><span class="p">]</span>
+        <span class="n">pop</span><span class="p">[</span><span class="s2">&quot;int_deaths&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">1000</span> <span class="o">-</span> <span class="n">pop</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">int_S_col</span><span class="p">]</span> <span class="o">-</span> <span class="n">pop</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">int_C_col</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">tables</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">pop</span><span class="o">.</span><span class="n">loc</span><span class="p">[:,</span> <span class="bp">self</span><span class="o">.</span><span class="n">table_cols</span><span class="p">])</span></div>
+
+
+<div class="viewcode-block" id="Disease.on_simulation_end">
+<a class="viewcode-back" href="../../../api_reference/mslt/observer.html#vivarium_public_health.mslt.observer.Disease.on_simulation_end">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">on_simulation_end</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event</span><span class="p">:</span> <span class="n">Event</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">concat</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">tables</span><span class="p">,</span> <span class="n">ignore_index</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">data</span><span class="p">[</span><span class="s2">&quot;diff_incidence&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="s2">&quot;int_incidence&quot;</span><span class="p">]</span> <span class="o">-</span> <span class="n">data</span><span class="p">[</span><span class="s2">&quot;bau_incidence&quot;</span><span class="p">]</span>
+        <span class="n">data</span><span class="p">[</span><span class="s2">&quot;diff_prevalence&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="s2">&quot;int_prevalence&quot;</span><span class="p">]</span> <span class="o">-</span> <span class="n">data</span><span class="p">[</span><span class="s2">&quot;bau_prevalence&quot;</span><span class="p">]</span>
+        <span class="n">data</span><span class="p">[</span><span class="s2">&quot;year_of_birth&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="s2">&quot;year&quot;</span><span class="p">]</span> <span class="o">-</span> <span class="n">data</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">]</span>
+        <span class="n">data</span><span class="p">[</span><span class="s2">&quot;disease&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">disease</span>
+        <span class="c1"># Sort the table by cohort (i.e., generation and sex), and then by</span>
+        <span class="c1"># calendar year, so that results are output in the same order as in</span>
+        <span class="c1"># the spreadsheet models.</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">sort_values</span><span class="p">(</span><span class="n">by</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;year_of_birth&quot;</span><span class="p">,</span> <span class="s2">&quot;sex&quot;</span><span class="p">,</span> <span class="s2">&quot;age&quot;</span><span class="p">],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="c1"># Re-order the table columns.</span>
+        <span class="n">diff_cols</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;diff_incidence&quot;</span><span class="p">,</span> <span class="s2">&quot;diff_prevalence&quot;</span><span class="p">]</span>
+        <span class="n">cols</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;disease&quot;</span><span class="p">,</span> <span class="s2">&quot;year_of_birth&quot;</span><span class="p">]</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">table_cols</span> <span class="o">+</span> <span class="n">diff_cols</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">cols</span><span class="p">]</span>
+        <span class="n">data</span><span class="o">.</span><span class="n">to_csv</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">output_file</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="TobaccoPrevalence">
+<a class="viewcode-back" href="../../../api_reference/mslt/observer.html#vivarium_public_health.mslt.observer.TobaccoPrevalence">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">TobaccoPrevalence</span><span class="p">(</span><span class="n">Component</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;This class records the prevalence of tobacco use in the population.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    output_suffix</span>
+<span class="sd">        The suffix for the CSV file in which to record the</span>
+<span class="sd">        prevalence data.</span>
+<span class="sd">    config</span>
+<span class="sd">        The builder configuration object.</span>
+<span class="sd">    clock</span>
+<span class="sd">        The simulation clock.</span>
+<span class="sd">    bin_years</span>
+<span class="sd">        The number of years post-exposure to consider.</span>
+<span class="sd">    tables</span>
+<span class="sd">        The tables of tobacco prevalence data.</span>
+<span class="sd">    table_cols</span>
+<span class="sd">        The columns in the tables.</span>
+<span class="sd">    output_file</span>
+<span class="sd">        The output file for the tobacco prevalence data.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="c1">##############</span>
+    <span class="c1"># Properties #</span>
+    <span class="c1">##############</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">columns_required</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">,</span> <span class="s2">&quot;sex&quot;</span><span class="p">,</span> <span class="s2">&quot;bau_population&quot;</span><span class="p">,</span> <span class="s2">&quot;population&quot;</span><span class="p">]</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">_bin_names</span>
+
+    <span class="c1">#####################</span>
+    <span class="c1"># Lifecycle methods #</span>
+    <span class="c1">#####################</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">output_suffix</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;tobacco&quot;</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">output_suffix</span> <span class="o">=</span> <span class="n">output_suffix</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_bin_names</span> <span class="o">=</span> <span class="p">[]</span>
+
+<div class="viewcode-block" id="TobaccoPrevalence.setup">
+<a class="viewcode-back" href="../../../api_reference/mslt/observer.html#vivarium_public_health.mslt.observer.TobaccoPrevalence.setup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_bin_names</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_bin_names</span><span class="p">()</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">config</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">configuration</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">clock</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">time</span><span class="o">.</span><span class="n">clock</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">bin_years</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;tobacco&quot;</span><span class="p">][</span><span class="s2">&quot;delay&quot;</span><span class="p">])</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">tables</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">table_cols</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="s2">&quot;age&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;sex&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;year&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;bau_no&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;bau_yes&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;bau_previously&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;bau_population&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;int_no&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;int_yes&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;int_previously&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;int_population&quot;</span><span class="p">,</span>
+        <span class="p">]</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">output_file</span> <span class="o">=</span> <span class="n">output_file</span><span class="p">(</span><span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">output_suffix</span><span class="p">)</span></div>
+
+
+    <span class="c1">#################</span>
+    <span class="c1"># Setup methods #</span>
+    <span class="c1">#################</span>
+
+<div class="viewcode-block" id="TobaccoPrevalence.get_bin_names">
+<a class="viewcode-back" href="../../../api_reference/mslt/observer.html#vivarium_public_health.mslt.observer.TobaccoPrevalence.get_bin_names">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_bin_names</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return the bin names for both the BAU and the intervention scenario.</span>
+
+<span class="sd">        These names take the following forms:</span>
+
+<span class="sd">        ``&quot;name.no&quot;``</span>
+<span class="sd">            The number of people who have never been exposed.</span>
+<span class="sd">        ``&quot;name.yes&quot;``</span>
+<span class="sd">            The number of people currently exposed.</span>
+<span class="sd">        ``&quot;name.N&quot;``</span>
+<span class="sd">            The number of people N years post-exposure.</span>
+
+<span class="sd">        The final bin is the number of people :math:`\ge N` years</span>
+<span class="sd">        post-exposure.</span>
+
+<span class="sd">        The intervention bin names take the form ``&quot;name_intervention.X&quot;``.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">            The bin names for tobacco use.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">bin_years</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">delay_bins</span> <span class="o">=</span> <span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="mi">0</span><span class="p">)]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">delay_bins</span> <span class="o">=</span> <span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">s</span><span class="p">)</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">bin_years</span> <span class="o">+</span> <span class="mi">2</span><span class="p">)]</span>
+        <span class="n">bins</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;no&quot;</span><span class="p">,</span> <span class="s2">&quot;yes&quot;</span><span class="p">]</span> <span class="o">+</span> <span class="n">delay_bins</span>
+        <span class="n">bau_bins</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;</span><span class="si">{}</span><span class="s2">.</span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="s2">&quot;tobacco&quot;</span><span class="p">,</span> <span class="nb">bin</span><span class="p">)</span> <span class="k">for</span> <span class="nb">bin</span> <span class="ow">in</span> <span class="n">bins</span><span class="p">]</span>
+        <span class="n">int_bins</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;</span><span class="si">{}</span><span class="s2">_intervention.</span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="s2">&quot;tobacco&quot;</span><span class="p">,</span> <span class="nb">bin</span><span class="p">)</span> <span class="k">for</span> <span class="nb">bin</span> <span class="ow">in</span> <span class="n">bins</span><span class="p">]</span>
+        <span class="n">all_bins</span> <span class="o">=</span> <span class="n">bau_bins</span> <span class="o">+</span> <span class="n">int_bins</span>
+        <span class="k">return</span> <span class="n">all_bins</span></div>
+
+
+    <span class="c1">########################</span>
+    <span class="c1"># Event-driven methods #</span>
+    <span class="c1">########################</span>
+
+<div class="viewcode-block" id="TobaccoPrevalence.on_collect_metrics">
+<a class="viewcode-back" href="../../../api_reference/mslt/observer.html#vivarium_public_health.mslt.observer.TobaccoPrevalence.on_collect_metrics">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">on_collect_metrics</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event</span><span class="p">:</span> <span class="n">Event</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">pop</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">population_view</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">pop</span><span class="o">.</span><span class="n">index</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="c1"># No tracked population remains.</span>
+            <span class="k">return</span>
+
+        <span class="n">bau_cols</span> <span class="o">=</span> <span class="p">[</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">pop</span><span class="o">.</span><span class="n">columns</span><span class="o">.</span><span class="n">values</span> <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">{}</span><span class="s2">.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="s2">&quot;tobacco&quot;</span><span class="p">))]</span>
+        <span class="n">int_cols</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">c</span>
+            <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">pop</span><span class="o">.</span><span class="n">columns</span><span class="o">.</span><span class="n">values</span>
+            <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">{}</span><span class="s2">_intervention.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="s2">&quot;tobacco&quot;</span><span class="p">))</span>
+        <span class="p">]</span>
+
+        <span class="n">bau_denom</span> <span class="o">=</span> <span class="n">pop</span><span class="o">.</span><span class="n">reindex</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="n">bau_cols</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">int_denom</span> <span class="o">=</span> <span class="n">pop</span><span class="o">.</span><span class="n">reindex</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="n">int_cols</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+
+        <span class="c1"># Normalise prevalence with respect to the total population.</span>
+        <span class="n">pop</span><span class="p">[</span><span class="s2">&quot;bau_no&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">pop</span><span class="p">[</span><span class="s2">&quot;</span><span class="si">{}</span><span class="s2">.no&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="s2">&quot;tobacco&quot;</span><span class="p">)]</span> <span class="o">/</span> <span class="n">bau_denom</span>
+        <span class="n">pop</span><span class="p">[</span><span class="s2">&quot;bau_yes&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">pop</span><span class="p">[</span><span class="s2">&quot;</span><span class="si">{}</span><span class="s2">.yes&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="s2">&quot;tobacco&quot;</span><span class="p">)]</span> <span class="o">/</span> <span class="n">bau_denom</span>
+        <span class="n">pop</span><span class="p">[</span><span class="s2">&quot;bau_previously&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">-</span> <span class="n">pop</span><span class="p">[</span><span class="s2">&quot;bau_no&quot;</span><span class="p">]</span> <span class="o">-</span> <span class="n">pop</span><span class="p">[</span><span class="s2">&quot;bau_yes&quot;</span><span class="p">]</span>
+        <span class="n">pop</span><span class="p">[</span><span class="s2">&quot;int_no&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">pop</span><span class="p">[</span><span class="s2">&quot;</span><span class="si">{}</span><span class="s2">_intervention.no&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="s2">&quot;tobacco&quot;</span><span class="p">)]</span> <span class="o">/</span> <span class="n">int_denom</span>
+        <span class="n">pop</span><span class="p">[</span><span class="s2">&quot;int_yes&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">pop</span><span class="p">[</span><span class="s2">&quot;</span><span class="si">{}</span><span class="s2">_intervention.yes&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="s2">&quot;tobacco&quot;</span><span class="p">)]</span> <span class="o">/</span> <span class="n">int_denom</span>
+        <span class="n">pop</span><span class="p">[</span><span class="s2">&quot;int_previously&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">-</span> <span class="n">pop</span><span class="p">[</span><span class="s2">&quot;int_no&quot;</span><span class="p">]</span> <span class="o">-</span> <span class="n">pop</span><span class="p">[</span><span class="s2">&quot;int_yes&quot;</span><span class="p">]</span>
+
+        <span class="n">pop</span> <span class="o">=</span> <span class="n">pop</span><span class="o">.</span><span class="n">rename</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;population&quot;</span><span class="p">:</span> <span class="s2">&quot;int_population&quot;</span><span class="p">})</span>
+
+        <span class="n">pop</span><span class="p">[</span><span class="s2">&quot;year&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">clock</span><span class="p">()</span><span class="o">.</span><span class="n">year</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">tables</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">pop</span><span class="o">.</span><span class="n">reindex</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">table_cols</span><span class="p">)</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">))</span></div>
+
+
+<div class="viewcode-block" id="TobaccoPrevalence.on_simulation_end">
+<a class="viewcode-back" href="../../../api_reference/mslt/observer.html#vivarium_public_health.mslt.observer.TobaccoPrevalence.on_simulation_end">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">on_simulation_end</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event</span><span class="p">:</span> <span class="n">Event</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">concat</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">tables</span><span class="p">,</span> <span class="n">ignore_index</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">data</span><span class="p">[</span><span class="s2">&quot;year_of_birth&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="s2">&quot;year&quot;</span><span class="p">]</span> <span class="o">-</span> <span class="n">data</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">]</span>
+        <span class="c1"># Sort the table by cohort (i.e., generation and sex), and then by</span>
+        <span class="c1"># calendar year, so that results are output in the same order as in</span>
+        <span class="c1"># the spreadsheet models.</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">sort_values</span><span class="p">(</span><span class="n">by</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;year_of_birth&quot;</span><span class="p">,</span> <span class="s2">&quot;sex&quot;</span><span class="p">,</span> <span class="s2">&quot;age&quot;</span><span class="p">],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="c1"># Re-order the table columns.</span>
+        <span class="n">cols</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;year_of_birth&quot;</span><span class="p">]</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">table_cols</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">reindex</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="n">cols</span><span class="p">)</span>
+        <span class="n">data</span><span class="o">.</span><span class="n">to_csv</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">output_file</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, The vivarium developers.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

@@ -1,0 +1,552 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>vivarium_public_health.disease.special_disease &mdash; vivarium_public_health 4.3.15.dev2+g712190e05 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/plot_directive.css" />
+
+  
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=7ca62e9d"></script>
+      <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+    <link href="../../../_static/style.css" rel="stylesheet" type="text/css">
+
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            vivarium_public_health
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorials/index.html">Tutorials</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_reference/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">vivarium_public_health</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">vivarium_public_health.disease.special_disease</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for vivarium_public_health.disease.special_disease</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">========================</span>
+<span class="sd">&quot;Special&quot; Disease Models</span>
+<span class="sd">========================</span>
+
+<span class="sd">This module contains frequently used, but non-standard disease models.</span>
+
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections</span><span class="w"> </span><span class="kn">import</span> <span class="n">namedtuple</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">operator</span><span class="w"> </span><span class="kn">import</span> <span class="n">gt</span><span class="p">,</span> <span class="n">lt</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium</span><span class="w"> </span><span class="kn">import</span> <span class="n">Component</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.event</span><span class="w"> </span><span class="kn">import</span> <span class="n">Event</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.population</span><span class="w"> </span><span class="kn">import</span> <span class="n">SimulantData</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.resource</span><span class="w"> </span><span class="kn">import</span> <span class="n">Resource</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.values</span><span class="w"> </span><span class="kn">import</span> <span class="n">list_combiner</span><span class="p">,</span> <span class="n">union_post_processor</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium_public_health.disease.transition</span><span class="w"> </span><span class="kn">import</span> <span class="n">TransitionString</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium_public_health.utilities</span><span class="w"> </span><span class="kn">import</span> <span class="n">EntityString</span><span class="p">,</span> <span class="n">get_lookup_columns</span><span class="p">,</span> <span class="n">is_non_zero</span>
+
+
+<div class="viewcode-block" id="RiskAttributableDisease">
+<a class="viewcode-back" href="../../../api_reference/disease/special_disease.html#vivarium_public_health.disease.special_disease.RiskAttributableDisease">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">RiskAttributableDisease</span><span class="p">(</span><span class="n">Component</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Component to model a disease fully attributed by a risk.</span>
+
+<span class="sd">    For some (risk, cause) pairs with population attributable fraction</span>
+<span class="sd">    equal to 1, the clinical definition of the with condition state</span>
+<span class="sd">    corresponds to a particular exposure of a risk.</span>
+
+<span class="sd">    For example, a diagnosis of ``diabetes_mellitus`` occurs after</span>
+<span class="sd">    repeated measurements of fasting plasma glucose above 7 mmol/L.</span>
+<span class="sd">    Similarly, ``protein_energy_malnutrition`` corresponds to a weight</span>
+<span class="sd">    for height ratio that is more than two standard deviations below</span>
+<span class="sd">    the WHO guideline median weight for height.  In the Global Burden</span>
+<span class="sd">    of Disease, this corresponds to a categorical exposure to</span>
+<span class="sd">    ``child_wasting`` in either ``cat1`` or ``cat2``.</span>
+
+<span class="sd">    The definition of the disease in terms of exposure should be provided</span>
+<span class="sd">    in the ``threshold`` configuration flag.  For risks with continuous</span>
+<span class="sd">    exposure models, the threshold should be provided as a single</span>
+<span class="sd">    ``float`` or ``int`` with a proper sign between &quot;&gt;&quot; and &quot;&lt;&quot;, implying</span>
+<span class="sd">    that disease is defined by the exposure level &quot;&gt;&quot; than threshold level</span>
+<span class="sd">    or, &quot;&lt;&quot; than threshold level, respectively.</span>
+
+<span class="sd">    For categorical risks, the threshold should be provided as a</span>
+<span class="sd">    list of categories. This list contains the categories that indicate</span>
+<span class="sd">    the simulant is experiencing the condition. For a dichotomous risk</span>
+<span class="sd">    there will be 2 categories. By convention ``cat1`` is used to</span>
+<span class="sd">    indicate the with condition state and would be the single item in</span>
+<span class="sd">    the ``threshold`` setting list.</span>
+
+<span class="sd">    In addition to the threshold level, you may configure whether</span>
+<span class="sd">    there is any mortality associated with this disease with the</span>
+<span class="sd">    ``mortality`` configuration flag.</span>
+
+<span class="sd">    Finally, you may specify whether an individual should &quot;recover&quot;</span>
+<span class="sd">    from the disease if their exposure level falls outside the</span>
+<span class="sd">    provided threshold.</span>
+
+<span class="sd">    In our provided examples, a person would no longer be experiencing</span>
+<span class="sd">    ``protein_energy_malnutrition`` if their exposure drift out (or</span>
+<span class="sd">    changes via an intervention) of the provided exposure categories.</span>
+<span class="sd">    Having your ``fasting_plasma_glucose`` drop below a provided level</span>
+<span class="sd">    does not necessarily mean you&#39;re no longer diabetic.</span>
+
+<span class="sd">    To add this component, you need to initialize it with full cause name</span>
+<span class="sd">    and full risk name, e.g.,</span>
+
+<span class="sd">    RiskAttributableDisease(&#39;cause.protein_energy_malnutrition&#39;,</span>
+<span class="sd">                            &#39;risk_factor.child_wasting&#39;)</span>
+
+<span class="sd">    Configuration defaults should be given as, for the continuous risk factor,</span>
+
+<span class="sd">    diabetes_mellitus:</span>
+<span class="sd">        threshold : &quot;&gt;7&quot;</span>
+<span class="sd">        mortality : True</span>
+<span class="sd">        recoverable : False</span>
+
+<span class="sd">    For the categorical risk factor,</span>
+
+<span class="sd">    protein_energy_malnutrition:</span>
+<span class="sd">        threshold : [&#39;cat1&#39;, &#39;cat2&#39;] # provide the categories to get PEM.</span>
+<span class="sd">        mortality : True</span>
+<span class="sd">        recoverable : True</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="c1">##############</span>
+    <span class="c1"># Properties #</span>
+    <span class="c1">##############</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">name</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;risk_attributable_disease.</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">cause</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">configuration_defaults</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Provides default configuration values for this component.</span>
+
+<span class="sd">        Configuration structure::</span>
+
+<span class="sd">            {component_name}:</span>
+<span class="sd">                data_sources:</span>
+<span class="sd">                    raw_disability_weight:</span>
+<span class="sd">                        Source for disability weight data. Default is the</span>
+<span class="sd">                        artifact key ``{cause}.disability_weight``.</span>
+<span class="sd">                    cause_specific_mortality_rate:</span>
+<span class="sd">                        Source for cause-specific mortality rate data. Default</span>
+<span class="sd">                        uses ``load_cause_specific_mortality_rate_data`` method</span>
+<span class="sd">                        which loads from artifact if ``mortality`` is True.</span>
+<span class="sd">                    excess_mortality_rate:</span>
+<span class="sd">                        Source for excess mortality rate data. Default uses</span>
+<span class="sd">                        ``load_excess_mortality_rate_data`` method which loads</span>
+<span class="sd">                        from artifact if ``mortality`` is True.</span>
+<span class="sd">                    population_attributable_fraction:</span>
+<span class="sd">                        Source for PAF data. Default is 0, indicating no</span>
+<span class="sd">                        mediated effects from other risks.</span>
+<span class="sd">                threshold: str or list</span>
+<span class="sd">                    Exposure threshold defining disease state. For continuous</span>
+<span class="sd">                    risks, provide a string like ``&quot;&gt;7&quot;`` or ``&quot;&lt;5&quot;``.</span>
+<span class="sd">                    For categorical risks, provide a list of categories</span>
+<span class="sd">                    (e.g., ``[&#39;cat1&#39;, &#39;cat2&#39;]``).</span>
+<span class="sd">                mortality: bool</span>
+<span class="sd">                    Whether this disease has associated mortality. Default</span>
+<span class="sd">                    is True.</span>
+<span class="sd">                recoverable: bool</span>
+<span class="sd">                    Whether simulants can recover from this disease when</span>
+<span class="sd">                    their exposure falls outside the threshold. Default</span>
+<span class="sd">                    is True.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">:</span> <span class="p">{</span>
+                <span class="s2">&quot;data_sources&quot;</span><span class="p">:</span> <span class="p">{</span>
+                    <span class="s2">&quot;raw_disability_weight&quot;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">cause</span><span class="si">}</span><span class="s2">.disability_weight&quot;</span><span class="p">,</span>
+                    <span class="s2">&quot;cause_specific_mortality_rate&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">load_cause_specific_mortality_rate_data</span><span class="p">,</span>
+                    <span class="s2">&quot;excess_mortality_rate&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">load_excess_mortality_rate_data</span><span class="p">,</span>
+                    <span class="s2">&quot;population_attributable_fraction&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+                <span class="p">},</span>
+                <span class="s2">&quot;threshold&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+                <span class="s2">&quot;mortality&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+                <span class="s2">&quot;recoverable&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+            <span class="p">}</span>
+        <span class="p">}</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">columns_created</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="p">[</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">cause</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">diseased_event_time_column</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">susceptible_event_time_column</span><span class="p">,</span>
+        <span class="p">]</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">columns_required</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">[</span><span class="s2">&quot;alive&quot;</span><span class="p">]</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">initialization_requirements</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span> <span class="o">|</span> <span class="n">Resource</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">exposure_pipeline</span><span class="p">]</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">state_names</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state_names</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">transition_names</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_transition_names</span>
+
+    <span class="c1">#####################</span>
+    <span class="c1"># Lifecycle methods #</span>
+    <span class="c1">#####################</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cause</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">risk</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cause</span> <span class="o">=</span> <span class="n">EntityString</span><span class="p">(</span><span class="n">cause</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">risk</span> <span class="o">=</span> <span class="n">EntityString</span><span class="p">(</span><span class="n">risk</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">state_column</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cause</span><span class="o">.</span><span class="n">name</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cause_type</span> <span class="o">=</span> <span class="s2">&quot;risk_attributable_disease&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">model</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="o">.</span><span class="n">name</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">state_id</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cause</span><span class="o">.</span><span class="n">name</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">diseased_event_time_column</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">cause</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">_event_time&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">susceptible_event_time_column</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;susceptible_to_</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">cause</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">_event_time&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_state_names</span> <span class="o">=</span> <span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">cause</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;susceptible_to_</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">cause</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_transition_names</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">TransitionString</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;susceptible_to_</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">cause</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">_TO_</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">cause</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="p">]</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">excess_mortality_rate_pipeline_name</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">cause</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">.excess_mortality_rate&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">excess_mortality_rate_paf_pipeline_name</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">excess_mortality_rate_pipeline_name</span><span class="si">}</span><span class="s2">.paf&quot;</span>
+        <span class="p">)</span>
+
+    <span class="c1"># noinspection PyAttributeOutsideInit</span>
+<div class="viewcode-block" id="RiskAttributableDisease.setup">
+<a class="viewcode-back" href="../../../api_reference/disease/special_disease.html#vivarium_public_health.disease.special_disease.RiskAttributableDisease.setup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">recoverable</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">recoverable</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">adjust_state_and_transitions</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">clock</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">time</span><span class="o">.</span><span class="n">clock</span><span class="p">()</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">disability_weight</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">register_value_producer</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">cause</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">.disability_weight&quot;</span><span class="p">,</span>
+            <span class="n">source</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">compute_disability_weight</span><span class="p">,</span>
+            <span class="n">component</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span>
+            <span class="n">required_resources</span><span class="o">=</span><span class="n">get_lookup_columns</span><span class="p">(</span>
+                <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">lookup_tables</span><span class="p">[</span><span class="s2">&quot;raw_disability_weight&quot;</span><span class="p">]]</span>
+            <span class="p">),</span>
+        <span class="p">)</span>
+        <span class="n">builder</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">register_value_modifier</span><span class="p">(</span>
+            <span class="s2">&quot;all_causes.disability_weight&quot;</span><span class="p">,</span>
+            <span class="n">modifier</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">disability_weight</span><span class="p">,</span>
+            <span class="n">component</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">builder</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">register_value_modifier</span><span class="p">(</span>
+            <span class="s2">&quot;cause_specific_mortality_rate&quot;</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">adjust_cause_specific_mortality_rate</span><span class="p">,</span>
+            <span class="n">component</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span>
+            <span class="n">required_resources</span><span class="o">=</span><span class="n">get_lookup_columns</span><span class="p">(</span>
+                <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">lookup_tables</span><span class="p">[</span><span class="s2">&quot;cause_specific_mortality_rate&quot;</span><span class="p">]]</span>
+            <span class="p">),</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">has_excess_mortality</span> <span class="o">=</span> <span class="n">is_non_zero</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">lookup_tables</span><span class="p">[</span><span class="s2">&quot;excess_mortality_rate&quot;</span><span class="p">])</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">excess_mortality_rate</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">register_value_producer</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">excess_mortality_rate_pipeline_name</span><span class="p">,</span>
+            <span class="n">source</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">compute_excess_mortality_rate</span><span class="p">,</span>
+            <span class="n">component</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span>
+            <span class="n">required_resources</span><span class="o">=</span><span class="n">get_lookup_columns</span><span class="p">(</span>
+                <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">lookup_tables</span><span class="p">[</span><span class="s2">&quot;excess_mortality_rate&quot;</span><span class="p">]]</span>
+            <span class="p">)</span>
+            <span class="o">+</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">joint_paf</span><span class="p">],</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">joint_paf</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">register_value_producer</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">excess_mortality_rate_paf_pipeline_name</span><span class="p">,</span>
+            <span class="n">source</span><span class="o">=</span><span class="k">lambda</span> <span class="n">idx</span><span class="p">:</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">lookup_tables</span><span class="p">[</span><span class="s2">&quot;population_attributable_fraction&quot;</span><span class="p">](</span><span class="n">idx</span><span class="p">)],</span>
+            <span class="n">component</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span>
+            <span class="n">preferred_combiner</span><span class="o">=</span><span class="n">list_combiner</span><span class="p">,</span>
+            <span class="n">preferred_post_processor</span><span class="o">=</span><span class="n">union_post_processor</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">builder</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">register_value_modifier</span><span class="p">(</span>
+            <span class="s2">&quot;mortality_rate&quot;</span><span class="p">,</span>
+            <span class="n">modifier</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">adjust_mortality_rate</span><span class="p">,</span>
+            <span class="n">component</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span>
+            <span class="n">required_resources</span><span class="o">=</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">excess_mortality_rate</span><span class="p">],</span>
+        <span class="p">)</span>
+
+        <span class="n">distribution</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="si">}</span><span class="s2">.distribution&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">exposure_pipeline</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">get_value</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">.exposure&quot;</span><span class="p">)</span>
+        <span class="n">threshold</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">threshold</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">filter_by_exposure</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_exposure_filter</span><span class="p">(</span>
+            <span class="n">distribution</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">exposure_pipeline</span><span class="p">,</span> <span class="n">threshold</span>
+        <span class="p">)</span></div>
+
+
+    <span class="c1">#################</span>
+    <span class="c1"># Setup methods #</span>
+    <span class="c1">#################</span>
+
+<div class="viewcode-block" id="RiskAttributableDisease.adjust_state_and_transitions">
+<a class="viewcode-back" href="../../../api_reference/disease/special_disease.html#vivarium_public_health.disease.special_disease.RiskAttributableDisease.adjust_state_and_transitions">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">adjust_state_and_transitions</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">recoverable</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_transition_names</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="n">TransitionString</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">cause</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">_TO_susceptible_to_</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">cause</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+            <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="RiskAttributableDisease.load_cause_specific_mortality_rate_data">
+<a class="viewcode-back" href="../../../api_reference/disease/special_disease.html#vivarium_public_health.disease.special_disease.RiskAttributableDisease.load_cause_specific_mortality_rate_data">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">load_cause_specific_mortality_rate_data</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">mortality</span><span class="p">:</span>
+            <span class="n">csmr_data</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">load</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;cause.</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">cause</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">.cause_specific_mortality_rate&quot;</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">csmr_data</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">return</span> <span class="n">csmr_data</span></div>
+
+
+<div class="viewcode-block" id="RiskAttributableDisease.load_excess_mortality_rate_data">
+<a class="viewcode-back" href="../../../api_reference/disease/special_disease.html#vivarium_public_health.disease.special_disease.RiskAttributableDisease.load_excess_mortality_rate_data">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">load_excess_mortality_rate_data</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">mortality</span><span class="p">:</span>
+            <span class="n">emr_data</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;cause.</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">cause</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">.excess_mortality_rate&quot;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">emr_data</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">return</span> <span class="n">emr_data</span></div>
+
+
+<div class="viewcode-block" id="RiskAttributableDisease.get_exposure_filter">
+<a class="viewcode-back" href="../../../api_reference/disease/special_disease.html#vivarium_public_health.disease.special_disease.RiskAttributableDisease.get_exposure_filter">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_exposure_filter</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">distribution</span><span class="p">,</span> <span class="n">exposure_pipeline</span><span class="p">,</span> <span class="n">threshold</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">distribution</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;dichotomous&quot;</span><span class="p">,</span> <span class="s2">&quot;ordered_polytomous&quot;</span><span class="p">,</span> <span class="s2">&quot;unordered_polytomous&quot;</span><span class="p">]:</span>
+
+            <span class="k">def</span><span class="w"> </span><span class="nf">categorical_filter</span><span class="p">(</span><span class="n">index</span><span class="p">):</span>
+                <span class="n">exposure</span> <span class="o">=</span> <span class="n">exposure_pipeline</span><span class="p">(</span><span class="n">index</span><span class="p">)</span>
+                <span class="k">return</span> <span class="n">exposure</span><span class="o">.</span><span class="n">isin</span><span class="p">(</span><span class="n">threshold</span><span class="p">)</span>
+
+            <span class="n">filter_function</span> <span class="o">=</span> <span class="n">categorical_filter</span>
+
+        <span class="k">else</span><span class="p">:</span>  <span class="c1"># continuous</span>
+            <span class="n">Threshold</span> <span class="o">=</span> <span class="n">namedtuple</span><span class="p">(</span><span class="s2">&quot;Threshold&quot;</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;operator&quot;</span><span class="p">,</span> <span class="s2">&quot;value&quot;</span><span class="p">])</span>
+            <span class="n">threshold_val</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;[-+]?\d*\.?\d+&quot;</span><span class="p">,</span> <span class="n">threshold</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">threshold_val</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;Your </span><span class="si">{</span><span class="n">threshold</span><span class="si">}</span><span class="s2"> is an incorrect threshold format. It should include &quot;</span>
+                    <span class="sa">f</span><span class="s1">&#39;&quot;&lt;&quot; or &quot;&gt;&quot; along with an integer or float number. Your threshold does not &#39;</span>
+                    <span class="sa">f</span><span class="s2">&quot;include a number or more than one number.&quot;</span>
+                <span class="p">)</span>
+
+            <span class="n">allowed_operator</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;&lt;&quot;</span><span class="p">,</span> <span class="s2">&quot;&gt;&quot;</span><span class="p">}</span>
+            <span class="n">threshold_op</span> <span class="o">=</span> <span class="p">[</span><span class="n">s</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">threshold</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">threshold_val</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="k">if</span> <span class="n">s</span><span class="p">]</span>
+            <span class="c1">#  if threshold_op has more than 1 operators or 0 operator</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">threshold_op</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">1</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">allowed_operator</span><span class="o">.</span><span class="n">intersection</span><span class="p">(</span><span class="n">threshold_op</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;Your </span><span class="si">{</span><span class="n">threshold</span><span class="si">}</span><span class="s2"> is an incorrect threshold format. It should include &quot;</span>
+                    <span class="sa">f</span><span class="s1">&#39;&quot;&lt;&quot; or &quot;&gt;&quot; along with an integer or float number.&#39;</span>
+                <span class="p">)</span>
+
+            <span class="n">op</span> <span class="o">=</span> <span class="n">gt</span> <span class="k">if</span> <span class="n">threshold_op</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;&gt;&quot;</span> <span class="k">else</span> <span class="n">lt</span>
+            <span class="n">threshold</span> <span class="o">=</span> <span class="n">Threshold</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="nb">float</span><span class="p">(</span><span class="n">threshold_val</span><span class="p">[</span><span class="mi">0</span><span class="p">]))</span>
+
+            <span class="k">def</span><span class="w"> </span><span class="nf">continuous_filter</span><span class="p">(</span><span class="n">index</span><span class="p">):</span>
+                <span class="n">exposure</span> <span class="o">=</span> <span class="n">exposure_pipeline</span><span class="p">(</span><span class="n">index</span><span class="p">)</span>
+                <span class="k">return</span> <span class="n">threshold</span><span class="o">.</span><span class="n">operator</span><span class="p">(</span><span class="n">exposure</span><span class="p">,</span> <span class="n">threshold</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
+
+            <span class="n">filter_function</span> <span class="o">=</span> <span class="n">continuous_filter</span>
+
+        <span class="k">return</span> <span class="n">filter_function</span></div>
+
+
+    <span class="c1">########################</span>
+    <span class="c1"># Event-driven methods #</span>
+    <span class="c1">########################</span>
+
+<div class="viewcode-block" id="RiskAttributableDisease.on_initialize_simulants">
+<a class="viewcode-back" href="../../../api_reference/disease/special_disease.html#vivarium_public_health.disease.special_disease.RiskAttributableDisease.on_initialize_simulants">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">on_initialize_simulants</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pop_data</span><span class="p">:</span> <span class="n">SimulantData</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">new_pop</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span>
+            <span class="p">{</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">cause</span><span class="o">.</span><span class="n">name</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;susceptible_to_</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">cause</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">diseased_event_time_column</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">pd</span><span class="o">.</span><span class="n">NaT</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="n">pop_data</span><span class="o">.</span><span class="n">index</span><span class="p">),</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">susceptible_event_time_column</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">pd</span><span class="o">.</span><span class="n">NaT</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="n">pop_data</span><span class="o">.</span><span class="n">index</span><span class="p">),</span>
+            <span class="p">},</span>
+            <span class="n">index</span><span class="o">=</span><span class="n">pop_data</span><span class="o">.</span><span class="n">index</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">sick</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">filter_by_exposure</span><span class="p">(</span><span class="n">pop_data</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+        <span class="n">new_pop</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">sick</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">cause</span><span class="o">.</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cause</span><span class="o">.</span><span class="n">name</span>
+        <span class="n">new_pop</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span>
+            <span class="n">sick</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">diseased_event_time_column</span>
+        <span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">clock</span><span class="p">()</span>  <span class="c1"># match VPH disease, only set w/ condition</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">population_view</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">new_pop</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="RiskAttributableDisease.on_time_step">
+<a class="viewcode-back" href="../../../api_reference/disease/special_disease.html#vivarium_public_health.disease.special_disease.RiskAttributableDisease.on_time_step">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">on_time_step</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event</span><span class="p">:</span> <span class="n">Event</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">pop</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">population_view</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="n">query</span><span class="o">=</span><span class="s1">&#39;alive == &quot;alive&quot;&#39;</span><span class="p">)</span>
+        <span class="n">sick</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">filter_by_exposure</span><span class="p">(</span><span class="n">pop</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+        <span class="c1">#  if this is recoverable, anyone who gets lower exposure in the event goes back in to susceptible status.</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">recoverable</span><span class="p">:</span>
+            <span class="n">change_to_susceptible</span> <span class="o">=</span> <span class="p">(</span><span class="o">~</span><span class="n">sick</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span>
+                <span class="n">pop</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">cause</span><span class="o">.</span><span class="n">name</span><span class="p">]</span> <span class="o">!=</span> <span class="sa">f</span><span class="s2">&quot;susceptible_to_</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">cause</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+            <span class="n">pop</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">change_to_susceptible</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">susceptible_event_time_column</span><span class="p">]</span> <span class="o">=</span> <span class="n">event</span><span class="o">.</span><span class="n">time</span>
+            <span class="n">pop</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span>
+                <span class="n">change_to_susceptible</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">cause</span><span class="o">.</span><span class="n">name</span>
+            <span class="p">]</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;susceptible_to_</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">cause</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="n">change_to_diseased</span> <span class="o">=</span> <span class="n">sick</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">pop</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">cause</span><span class="o">.</span><span class="n">name</span><span class="p">]</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cause</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+        <span class="n">pop</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">change_to_diseased</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">diseased_event_time_column</span><span class="p">]</span> <span class="o">=</span> <span class="n">event</span><span class="o">.</span><span class="n">time</span>
+        <span class="n">pop</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">change_to_diseased</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">cause</span><span class="o">.</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cause</span><span class="o">.</span><span class="n">name</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">population_view</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">pop</span><span class="p">)</span></div>
+
+
+    <span class="c1">##################################</span>
+    <span class="c1"># Pipeline sources and modifiers #</span>
+    <span class="c1">##################################</span>
+
+<div class="viewcode-block" id="RiskAttributableDisease.compute_disability_weight">
+<a class="viewcode-back" href="../../../api_reference/disease/special_disease.html#vivarium_public_health.disease.special_disease.RiskAttributableDisease.compute_disability_weight">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">compute_disability_weight</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">index</span><span class="p">):</span>
+        <span class="n">disability_weight</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="n">index</span><span class="p">)</span>
+        <span class="n">with_condition</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">with_condition</span><span class="p">(</span><span class="n">index</span><span class="p">)</span>
+        <span class="n">disability_weight</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">with_condition</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lookup_tables</span><span class="p">[</span><span class="s2">&quot;raw_disability_weight&quot;</span><span class="p">](</span>
+            <span class="n">with_condition</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">disability_weight</span></div>
+
+
+<div class="viewcode-block" id="RiskAttributableDisease.compute_excess_mortality_rate">
+<a class="viewcode-back" href="../../../api_reference/disease/special_disease.html#vivarium_public_health.disease.special_disease.RiskAttributableDisease.compute_excess_mortality_rate">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">compute_excess_mortality_rate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">index</span><span class="p">):</span>
+        <span class="n">excess_mortality_rate</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="n">index</span><span class="p">)</span>
+        <span class="n">with_condition</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">with_condition</span><span class="p">(</span><span class="n">index</span><span class="p">)</span>
+        <span class="n">base_excess_mort</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lookup_tables</span><span class="p">[</span><span class="s2">&quot;excess_mortality_rate&quot;</span><span class="p">](</span><span class="n">with_condition</span><span class="p">)</span>
+        <span class="n">joint_mediated_paf</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">joint_paf</span><span class="p">(</span><span class="n">with_condition</span><span class="p">)</span>
+        <span class="n">excess_mortality_rate</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">with_condition</span><span class="p">]</span> <span class="o">=</span> <span class="n">base_excess_mort</span> <span class="o">*</span> <span class="p">(</span>
+            <span class="mi">1</span> <span class="o">-</span> <span class="n">joint_mediated_paf</span><span class="o">.</span><span class="n">values</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">excess_mortality_rate</span></div>
+
+
+<div class="viewcode-block" id="RiskAttributableDisease.adjust_cause_specific_mortality_rate">
+<a class="viewcode-back" href="../../../api_reference/disease/special_disease.html#vivarium_public_health.disease.special_disease.RiskAttributableDisease.adjust_cause_specific_mortality_rate">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">adjust_cause_specific_mortality_rate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">index</span><span class="p">,</span> <span class="n">rate</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">rate</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">lookup_tables</span><span class="p">[</span><span class="s2">&quot;cause_specific_mortality_rate&quot;</span><span class="p">](</span><span class="n">index</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="RiskAttributableDisease.adjust_mortality_rate">
+<a class="viewcode-back" href="../../../api_reference/disease/special_disease.html#vivarium_public_health.disease.special_disease.RiskAttributableDisease.adjust_mortality_rate">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">adjust_mortality_rate</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">index</span><span class="p">,</span> <span class="n">rates_df</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Modifies the baseline mortality rate for a simulant if they are in this state.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        index</span>
+<span class="sd">            An iterable of integer labels for the simulants.</span>
+<span class="sd">        rates_df</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">rate</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">excess_mortality_rate</span><span class="p">(</span><span class="n">index</span><span class="p">,</span> <span class="n">skip_post_processor</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">rates_df</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">cause</span><span class="o">.</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">rate</span>
+        <span class="k">return</span> <span class="n">rates_df</span></div>
+
+
+    <span class="c1">##################</span>
+    <span class="c1"># Helper methods #</span>
+    <span class="c1">##################</span>
+
+<div class="viewcode-block" id="RiskAttributableDisease.with_condition">
+<a class="viewcode-back" href="../../../api_reference/disease/special_disease.html#vivarium_public_health.disease.special_disease.RiskAttributableDisease.with_condition">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">with_condition</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">index</span><span class="p">):</span>
+        <span class="n">pop</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">population_view</span><span class="o">.</span><span class="n">subview</span><span class="p">([</span><span class="s2">&quot;alive&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">cause</span><span class="o">.</span><span class="n">name</span><span class="p">])</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">index</span><span class="p">)</span>
+        <span class="n">with_condition</span> <span class="o">=</span> <span class="n">pop</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span>
+            <span class="p">(</span><span class="n">pop</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">cause</span><span class="o">.</span><span class="n">name</span><span class="p">]</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">cause</span><span class="o">.</span><span class="n">name</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">pop</span><span class="p">[</span><span class="s2">&quot;alive&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;alive&quot;</span><span class="p">)</span>
+        <span class="p">]</span><span class="o">.</span><span class="n">index</span>
+        <span class="k">return</span> <span class="n">with_condition</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, The vivarium developers.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

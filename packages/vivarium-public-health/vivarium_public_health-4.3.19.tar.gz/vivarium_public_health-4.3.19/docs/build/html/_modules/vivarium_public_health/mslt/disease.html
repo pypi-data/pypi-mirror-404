@@ -1,0 +1,587 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>vivarium_public_health.mslt.disease &mdash; vivarium_public_health 4.3.15.dev2+g712190e05 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/plot_directive.css" />
+
+  
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=7ca62e9d"></script>
+      <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+    <link href="../../../_static/style.css" rel="stylesheet" type="text/css">
+
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            vivarium_public_health
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorials/index.html">Tutorials</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_reference/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">vivarium_public_health</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">vivarium_public_health.mslt.disease</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for vivarium_public_health.mslt.disease</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">==============</span>
+<span class="sd">Disease Models</span>
+<span class="sd">==============</span>
+
+<span class="sd">This module contains tools for modeling diseases in multi-state lifetable</span>
+<span class="sd">simulations.</span>
+
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium</span><span class="w"> </span><span class="kn">import</span> <span class="n">Component</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.engine</span><span class="w"> </span><span class="kn">import</span> <span class="n">Builder</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.event</span><span class="w"> </span><span class="kn">import</span> <span class="n">Event</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.population</span><span class="w"> </span><span class="kn">import</span> <span class="n">SimulantData</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.resource</span><span class="w"> </span><span class="kn">import</span> <span class="n">Resource</span>
+
+
+<div class="viewcode-block" id="AcuteDisease">
+<a class="viewcode-back" href="../../../api_reference/mslt/disease.html#vivarium_public_health.mslt.disease.AcuteDisease">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">AcuteDisease</span><span class="p">(</span><span class="n">Component</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;This component characterises an acute disease.</span>
+
+<span class="sd">    An acute disease has a sufficiently short duration, relative to the</span>
+<span class="sd">    time-step size, that it is not meaningful to talk about prevalence.</span>
+<span class="sd">    Instead, it simply contributes an excess mortality rate, and/or a</span>
+<span class="sd">    disability rate.</span>
+
+<span class="sd">    Interventions may affect these rates:</span>
+
+<span class="sd">    - `&lt;disease&gt;_intervention.excess_mortality`</span>
+<span class="sd">    - `&lt;disease&gt;_intervention.yld_rate`</span>
+
+<span class="sd">    where `&lt;disease&gt;` is the name as provided to the constructor.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    disease</span>
+<span class="sd">        The disease name (referred to as `&lt;disease&gt;` here).</span>
+<span class="sd">    excess_mortality</span>
+<span class="sd">        The excess mortality rate for the disease.</span>
+<span class="sd">    int_excess_mortality</span>
+<span class="sd">        The excess mortality rate for the disease in the intervention scenario.</span>
+<span class="sd">    disability_rate</span>
+<span class="sd">        The years lost due to disability (YLD) rate for the disease.</span>
+<span class="sd">    int_disability_rate</span>
+<span class="sd">        The YLD rate for the disease in the intervention scenario.</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="c1">#####################</span>
+    <span class="c1"># Lifecycle methods #</span>
+    <span class="c1">#####################</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">disease</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">disease</span> <span class="o">=</span> <span class="n">disease</span>
+
+<div class="viewcode-block" id="AcuteDisease.setup">
+<a class="viewcode-back" href="../../../api_reference/mslt/disease.html#vivarium_public_health.mslt.disease.AcuteDisease.setup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Load the morbidity and mortality data.&quot;&quot;&quot;</span>
+        <span class="n">mty_data</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;acute_disease.</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">.mortality&quot;</span><span class="p">)</span>
+        <span class="n">mty_rate</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">lookup</span><span class="o">.</span><span class="n">build_table</span><span class="p">(</span>
+            <span class="n">mty_data</span><span class="p">,</span> <span class="n">key_columns</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;sex&quot;</span><span class="p">],</span> <span class="n">parameter_columns</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">,</span> <span class="s2">&quot;year&quot;</span><span class="p">]</span>
+        <span class="p">)</span>
+        <span class="n">yld_data</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;acute_disease.</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">.morbidity&quot;</span><span class="p">)</span>
+        <span class="n">yld_rate</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">lookup</span><span class="o">.</span><span class="n">build_table</span><span class="p">(</span>
+            <span class="n">yld_data</span><span class="p">,</span> <span class="n">key_columns</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;sex&quot;</span><span class="p">],</span> <span class="n">parameter_columns</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">,</span> <span class="s2">&quot;year&quot;</span><span class="p">]</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">excess_mortality</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">register_rate_producer</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">.excess_mortality&quot;</span><span class="p">,</span> <span class="n">source</span><span class="o">=</span><span class="n">mty_rate</span><span class="p">,</span> <span class="n">component</span><span class="o">=</span><span class="bp">self</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">int_excess_mortality</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">register_rate_producer</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">_intervention.excess_mortality&quot;</span><span class="p">,</span> <span class="n">source</span><span class="o">=</span><span class="n">mty_rate</span><span class="p">,</span> <span class="n">component</span><span class="o">=</span><span class="bp">self</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">disability_rate</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">register_rate_producer</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">.yld_rate&quot;</span><span class="p">,</span> <span class="n">source</span><span class="o">=</span><span class="n">yld_rate</span><span class="p">,</span> <span class="n">component</span><span class="o">=</span><span class="bp">self</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">int_disability_rate</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">register_rate_producer</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">_intervention.yld_rate&quot;</span><span class="p">,</span> <span class="n">source</span><span class="o">=</span><span class="n">yld_rate</span><span class="p">,</span> <span class="n">component</span><span class="o">=</span><span class="bp">self</span>
+        <span class="p">)</span>
+        <span class="n">builder</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">register_value_modifier</span><span class="p">(</span>
+            <span class="s2">&quot;mortality_rate&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">mortality_adjustment</span><span class="p">,</span> <span class="n">component</span><span class="o">=</span><span class="bp">self</span>
+        <span class="p">)</span>
+        <span class="n">builder</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">register_value_modifier</span><span class="p">(</span>
+            <span class="s2">&quot;yld_rate&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">disability_adjustment</span><span class="p">,</span> <span class="n">component</span><span class="o">=</span><span class="bp">self</span>
+        <span class="p">)</span></div>
+
+
+    <span class="c1">##################################</span>
+    <span class="c1"># Pipeline sources and modifiers #</span>
+    <span class="c1">##################################</span>
+
+<div class="viewcode-block" id="AcuteDisease.mortality_adjustment">
+<a class="viewcode-back" href="../../../api_reference/mslt/disease.html#vivarium_public_health.mslt.disease.AcuteDisease.mortality_adjustment">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">mortality_adjustment</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">index</span><span class="p">,</span> <span class="n">mortality_rate</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Adjust the all-cause mortality rate in the intervention scenario, to</span>
+<span class="sd">        account for any change in prevalence (relative to the BAU scenario).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">delta</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">int_excess_mortality</span><span class="p">(</span><span class="n">index</span><span class="p">)</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">excess_mortality</span><span class="p">(</span><span class="n">index</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">mortality_rate</span> <span class="o">+</span> <span class="n">delta</span></div>
+
+
+<div class="viewcode-block" id="AcuteDisease.disability_adjustment">
+<a class="viewcode-back" href="../../../api_reference/mslt/disease.html#vivarium_public_health.mslt.disease.AcuteDisease.disability_adjustment">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">disability_adjustment</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">index</span><span class="p">,</span> <span class="n">yld_rate</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Adjust the years lost due to disability (YLD) rate in the intervention</span>
+<span class="sd">        scenario, to account for any change in prevalence (relative to the BAU</span>
+<span class="sd">        scenario).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">delta</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">int_disability_rate</span><span class="p">(</span><span class="n">index</span><span class="p">)</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">disability_rate</span><span class="p">(</span><span class="n">index</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">yld_rate</span> <span class="o">+</span> <span class="n">delta</span></div>
+</div>
+
+
+
+<div class="viewcode-block" id="Disease">
+<a class="viewcode-back" href="../../../api_reference/mslt/disease.html#vivarium_public_health.mslt.disease.Disease">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">Disease</span><span class="p">(</span><span class="n">Component</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;This component characterises a chronic disease.</span>
+
+<span class="sd">    It defines the following rates, which may be affected by interventions:</span>
+
+<span class="sd">    - `&lt;disease&gt;_intervention.incidence`</span>
+<span class="sd">    - `&lt;disease&gt;_intervention.remission`</span>
+<span class="sd">    - `&lt;disease&gt;_intervention.mortality`</span>
+<span class="sd">    - `&lt;disease&gt;_intervention.morbidity`</span>
+
+<span class="sd">    where `&lt;disease&gt;` is the name as provided to the constructor.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    disease</span>
+<span class="sd">        The disease name (referred to as `&lt;disease&gt;` here).</span>
+<span class="sd">    clock</span>
+<span class="sd">        The simulation clock.</span>
+<span class="sd">    start_year</span>
+<span class="sd">        The simulation start year.</span>
+<span class="sd">    simplified_equations</span>
+<span class="sd">        Whether to use simplified equations for the disease model.</span>
+<span class="sd">    incidence</span>
+<span class="sd">        The incidence rate for the disease.</span>
+<span class="sd">    incidence_intervention</span>
+<span class="sd">        The incidence rate for the disease in the intervention scenario.</span>
+<span class="sd">    remission</span>
+<span class="sd">        The remission rate for the disease.</span>
+<span class="sd">    excess_mortality</span>
+<span class="sd">        The excess mortality rate for the disease.</span>
+<span class="sd">    disability_rate</span>
+<span class="sd">        The years lost due to disability (YLD) rate for the disease.</span>
+<span class="sd">    initial_prevalence</span>
+<span class="sd">        The initial prevalence of the disease.</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="c1">##############</span>
+    <span class="c1"># Properties #</span>
+    <span class="c1">##############</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">configuration_defaults</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Provides default configuration values for this disease model.</span>
+
+<span class="sd">        Configuration structure::</span>
+
+<span class="sd">            {disease_name}:</span>
+<span class="sd">                simplified_no_remission_equations: bool</span>
+<span class="sd">                    If True, uses simplified differential equations for</span>
+<span class="sd">                    diseases with no remission. This can improve</span>
+<span class="sd">                    computational efficiency. Default is False.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="p">:</span> <span class="p">{</span>
+                <span class="s2">&quot;simplified_no_remission_equations&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>
+            <span class="p">},</span>
+        <span class="p">}</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">columns_created</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+        <span class="n">columns</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">scenario</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="s2">&quot;_intervention&quot;</span><span class="p">]:</span>
+            <span class="k">for</span> <span class="n">rate</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;_S&quot;</span><span class="p">,</span> <span class="s2">&quot;_C&quot;</span><span class="p">]:</span>
+                <span class="k">for</span> <span class="n">when</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="s2">&quot;_previous&quot;</span><span class="p">]:</span>
+                    <span class="n">columns</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span> <span class="o">+</span> <span class="n">rate</span> <span class="o">+</span> <span class="n">scenario</span> <span class="o">+</span> <span class="n">when</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">columns</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">columns_required</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">,</span> <span class="s2">&quot;sex&quot;</span><span class="p">]</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">initialization_requirements</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span> <span class="o">|</span> <span class="n">Resource</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">,</span> <span class="s2">&quot;sex&quot;</span><span class="p">]</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">disease</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">disease</span> <span class="o">=</span> <span class="n">disease</span>
+
+<div class="viewcode-block" id="Disease.setup">
+<a class="viewcode-back" href="../../../api_reference/mslt/disease.html#vivarium_public_health.mslt.disease.Disease.setup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Load the disease prevalence and rates data.&quot;&quot;&quot;</span>
+        <span class="n">data_prefix</span> <span class="o">=</span> <span class="s2">&quot;chronic_disease.</span><span class="si">{}</span><span class="s2">.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="p">)</span>
+        <span class="n">bau_prefix</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">disease</span> <span class="o">+</span> <span class="s2">&quot;.&quot;</span>
+        <span class="n">int_prefix</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">disease</span> <span class="o">+</span> <span class="s2">&quot;_intervention.&quot;</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">clock</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">time</span><span class="o">.</span><span class="n">clock</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">start_year</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="o">.</span><span class="n">time</span><span class="o">.</span><span class="n">start</span><span class="o">.</span><span class="n">year</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">simplified_equations</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="p">[</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">disease</span>
+        <span class="p">]</span><span class="o">.</span><span class="n">simplified_no_remission_equations</span>
+
+        <span class="n">inc_data</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">data_prefix</span> <span class="o">+</span> <span class="s2">&quot;incidence&quot;</span><span class="p">)</span>
+        <span class="n">i</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">lookup</span><span class="o">.</span><span class="n">build_table</span><span class="p">(</span>
+            <span class="n">inc_data</span><span class="p">,</span> <span class="n">key_columns</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;sex&quot;</span><span class="p">],</span> <span class="n">parameter_columns</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">,</span> <span class="s2">&quot;year&quot;</span><span class="p">]</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">incidence</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">register_rate_producer</span><span class="p">(</span>
+            <span class="n">bau_prefix</span> <span class="o">+</span> <span class="s2">&quot;incidence&quot;</span><span class="p">,</span> <span class="n">source</span><span class="o">=</span><span class="n">i</span><span class="p">,</span> <span class="n">component</span><span class="o">=</span><span class="bp">self</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">incidence_intervention</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">register_rate_producer</span><span class="p">(</span>
+            <span class="n">int_prefix</span> <span class="o">+</span> <span class="s2">&quot;incidence&quot;</span><span class="p">,</span> <span class="n">source</span><span class="o">=</span><span class="n">i</span><span class="p">,</span> <span class="n">component</span><span class="o">=</span><span class="bp">self</span>
+        <span class="p">)</span>
+
+        <span class="n">rem_data</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">data_prefix</span> <span class="o">+</span> <span class="s2">&quot;remission&quot;</span><span class="p">)</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">lookup</span><span class="o">.</span><span class="n">build_table</span><span class="p">(</span>
+            <span class="n">rem_data</span><span class="p">,</span> <span class="n">key_columns</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;sex&quot;</span><span class="p">],</span> <span class="n">parameter_columns</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">,</span> <span class="s2">&quot;year&quot;</span><span class="p">]</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">remission</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">register_rate_producer</span><span class="p">(</span>
+            <span class="n">bau_prefix</span> <span class="o">+</span> <span class="s2">&quot;remission&quot;</span><span class="p">,</span> <span class="n">source</span><span class="o">=</span><span class="n">r</span><span class="p">,</span> <span class="n">component</span><span class="o">=</span><span class="bp">self</span>
+        <span class="p">)</span>
+
+        <span class="n">mty_data</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">data_prefix</span> <span class="o">+</span> <span class="s2">&quot;mortality&quot;</span><span class="p">)</span>
+        <span class="n">f</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">lookup</span><span class="o">.</span><span class="n">build_table</span><span class="p">(</span>
+            <span class="n">mty_data</span><span class="p">,</span> <span class="n">key_columns</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;sex&quot;</span><span class="p">],</span> <span class="n">parameter_columns</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">,</span> <span class="s2">&quot;year&quot;</span><span class="p">]</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">excess_mortality</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">register_rate_producer</span><span class="p">(</span>
+            <span class="n">bau_prefix</span> <span class="o">+</span> <span class="s2">&quot;excess_mortality&quot;</span><span class="p">,</span> <span class="n">source</span><span class="o">=</span><span class="n">f</span><span class="p">,</span> <span class="n">component</span><span class="o">=</span><span class="bp">self</span>
+        <span class="p">)</span>
+
+        <span class="n">yld_data</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">data_prefix</span> <span class="o">+</span> <span class="s2">&quot;morbidity&quot;</span><span class="p">)</span>
+        <span class="n">yld_rate</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">lookup</span><span class="o">.</span><span class="n">build_table</span><span class="p">(</span>
+            <span class="n">yld_data</span><span class="p">,</span> <span class="n">key_columns</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;sex&quot;</span><span class="p">],</span> <span class="n">parameter_columns</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">,</span> <span class="s2">&quot;year&quot;</span><span class="p">]</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">disability_rate</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">register_rate_producer</span><span class="p">(</span>
+            <span class="n">bau_prefix</span> <span class="o">+</span> <span class="s2">&quot;yld_rate&quot;</span><span class="p">,</span> <span class="n">source</span><span class="o">=</span><span class="n">yld_rate</span><span class="p">,</span> <span class="n">component</span><span class="o">=</span><span class="bp">self</span>
+        <span class="p">)</span>
+
+        <span class="n">prev_data</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">data_prefix</span> <span class="o">+</span> <span class="s2">&quot;prevalence&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">initial_prevalence</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">lookup</span><span class="o">.</span><span class="n">build_table</span><span class="p">(</span>
+            <span class="n">prev_data</span><span class="p">,</span> <span class="n">key_columns</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;sex&quot;</span><span class="p">],</span> <span class="n">parameter_columns</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">,</span> <span class="s2">&quot;year&quot;</span><span class="p">]</span>
+        <span class="p">)</span>
+
+        <span class="n">builder</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">register_value_modifier</span><span class="p">(</span>
+            <span class="s2">&quot;mortality_rate&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">mortality_adjustment</span><span class="p">,</span> <span class="n">component</span><span class="o">=</span><span class="bp">self</span>
+        <span class="p">)</span>
+        <span class="n">builder</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">register_value_modifier</span><span class="p">(</span>
+            <span class="s2">&quot;yld_rate&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">disability_adjustment</span><span class="p">,</span> <span class="n">component</span><span class="o">=</span><span class="bp">self</span>
+        <span class="p">)</span></div>
+
+
+    <span class="c1">########################</span>
+    <span class="c1"># Event-driven methods #</span>
+    <span class="c1">########################</span>
+
+<div class="viewcode-block" id="Disease.on_initialize_simulants">
+<a class="viewcode-back" href="../../../api_reference/mslt/disease.html#vivarium_public_health.mslt.disease.Disease.on_initialize_simulants">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">on_initialize_simulants</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pop_data</span><span class="p">:</span> <span class="n">SimulantData</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Initialize the test population for which this disease is modeled.&quot;&quot;&quot;</span>
+        <span class="n">C</span> <span class="o">=</span> <span class="mi">1000</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">initial_prevalence</span><span class="p">(</span><span class="n">pop_data</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+        <span class="n">S</span> <span class="o">=</span> <span class="mi">1000</span> <span class="o">-</span> <span class="n">C</span>
+
+        <span class="n">pop</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span>
+            <span class="p">{</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">_S&quot;</span><span class="p">:</span> <span class="n">S</span><span class="p">,</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">_C&quot;</span><span class="p">:</span> <span class="n">C</span><span class="p">,</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">_S_previous&quot;</span><span class="p">:</span> <span class="n">S</span><span class="p">,</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">_C_previous&quot;</span><span class="p">:</span> <span class="n">C</span><span class="p">,</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">_S_intervention&quot;</span><span class="p">:</span> <span class="n">S</span><span class="p">,</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">_C_intervention&quot;</span><span class="p">:</span> <span class="n">C</span><span class="p">,</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">_S_intervention_previous&quot;</span><span class="p">:</span> <span class="n">S</span><span class="p">,</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">_C_intervention_previous&quot;</span><span class="p">:</span> <span class="n">C</span><span class="p">,</span>
+            <span class="p">},</span>
+            <span class="n">index</span><span class="o">=</span><span class="n">pop_data</span><span class="o">.</span><span class="n">index</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">population_view</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">pop</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Disease.on_time_step_prepare">
+<a class="viewcode-back" href="../../../api_reference/mslt/disease.html#vivarium_public_health.mslt.disease.Disease.on_time_step_prepare">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">on_time_step_prepare</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event</span><span class="p">:</span> <span class="n">Event</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Update the disease status for both the BAU and intervention scenarios.&quot;&quot;&quot;</span>
+        <span class="c1"># Do not update the disease status in the first year, the initial data</span>
+        <span class="c1"># describe the disease state at the end of the year.</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">clock</span><span class="p">()</span><span class="o">.</span><span class="n">year</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">start_year</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="n">pop</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">population_view</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">pop</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+            <span class="k">return</span>
+        <span class="n">idx</span> <span class="o">=</span> <span class="n">pop</span><span class="o">.</span><span class="n">index</span>
+        <span class="n">S_bau</span><span class="p">,</span> <span class="n">C_bau</span> <span class="o">=</span> <span class="n">pop</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">_S&quot;</span><span class="p">],</span> <span class="n">pop</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">_C&quot;</span><span class="p">]</span>
+        <span class="n">S_int</span> <span class="o">=</span> <span class="n">pop</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">_S_intervention&quot;</span><span class="p">]</span>
+        <span class="n">C_int</span> <span class="o">=</span> <span class="n">pop</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">_C_intervention&quot;</span><span class="p">]</span>
+
+        <span class="c1"># Extract all of the required rates *once only*.</span>
+        <span class="n">i_bau</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">incidence</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>
+        <span class="n">i_int</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">incidence_intervention</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">remission</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>
+        <span class="n">f</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">excess_mortality</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>
+
+        <span class="c1"># NOTE: if the remission rate is always zero, which is the case for a</span>
+        <span class="c1"># number of chronic diseases, we can make some simplifications.</span>
+        <span class="k">if</span> <span class="n">np</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">r</span> <span class="o">==</span> <span class="mi">0</span><span class="p">):</span>
+            <span class="n">r</span> <span class="o">=</span> <span class="mi">0</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">simplified_equations</span><span class="p">:</span>
+                <span class="c1"># NOTE: for the &#39;mslt_reduce_chd&#39; experiment, this results in a</span>
+                <span class="c1"># slightly lower HALY gain than that obtained when using the</span>
+                <span class="c1"># full equations (below).</span>
+                <span class="n">new_S_bau</span> <span class="o">=</span> <span class="n">S_bau</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="n">i_bau</span><span class="p">)</span>
+                <span class="n">new_S_int</span> <span class="o">=</span> <span class="n">S_int</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="n">i_int</span><span class="p">)</span>
+                <span class="n">new_C_bau</span> <span class="o">=</span> <span class="n">C_bau</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="n">f</span><span class="p">)</span> <span class="o">+</span> <span class="n">S_bau</span> <span class="o">-</span> <span class="n">new_S_bau</span>
+                <span class="n">new_C_int</span> <span class="o">=</span> <span class="n">C_int</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="n">f</span><span class="p">)</span> <span class="o">+</span> <span class="n">S_int</span> <span class="o">-</span> <span class="n">new_S_int</span>
+                <span class="n">pop_update</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span>
+                    <span class="p">{</span>
+                        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">_S&quot;</span><span class="p">:</span> <span class="n">new_S_bau</span><span class="p">,</span>
+                        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">_C&quot;</span><span class="p">:</span> <span class="n">new_C_bau</span><span class="p">,</span>
+                        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">_S_previous&quot;</span><span class="p">:</span> <span class="n">S_bau</span><span class="p">,</span>
+                        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">_C_previous&quot;</span><span class="p">:</span> <span class="n">C_bau</span><span class="p">,</span>
+                        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">_S_intervention&quot;</span><span class="p">:</span> <span class="n">new_S_int</span><span class="p">,</span>
+                        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">_C_intervention&quot;</span><span class="p">:</span> <span class="n">new_C_int</span><span class="p">,</span>
+                        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">_S_intervention_previous&quot;</span><span class="p">:</span> <span class="n">S_int</span><span class="p">,</span>
+                        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">_C_intervention_previous&quot;</span><span class="p">:</span> <span class="n">C_int</span><span class="p">,</span>
+                    <span class="p">},</span>
+                    <span class="n">index</span><span class="o">=</span><span class="n">pop</span><span class="o">.</span><span class="n">index</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">population_view</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">pop_update</span><span class="p">)</span>
+                <span class="k">return</span>
+
+        <span class="c1"># Calculate common factors.</span>
+        <span class="n">i_bau2</span> <span class="o">=</span> <span class="n">i_bau</span><span class="o">**</span><span class="mi">2</span>
+        <span class="n">i_int2</span> <span class="o">=</span> <span class="n">i_int</span><span class="o">**</span><span class="mi">2</span>
+        <span class="n">r2</span> <span class="o">=</span> <span class="n">r</span><span class="o">**</span><span class="mi">2</span>
+        <span class="n">f2</span> <span class="o">=</span> <span class="n">f</span><span class="o">**</span><span class="mi">2</span>
+        <span class="n">f_r</span> <span class="o">=</span> <span class="n">f</span> <span class="o">*</span> <span class="n">r</span>
+        <span class="n">i_bau_r</span> <span class="o">=</span> <span class="n">i_bau</span> <span class="o">*</span> <span class="n">r</span>
+        <span class="n">i_int_r</span> <span class="o">=</span> <span class="n">i_int</span> <span class="o">*</span> <span class="n">r</span>
+        <span class="n">i_bau_f</span> <span class="o">=</span> <span class="n">i_bau</span> <span class="o">*</span> <span class="n">f</span>
+        <span class="n">i_int_f</span> <span class="o">=</span> <span class="n">i_int</span> <span class="o">*</span> <span class="n">f</span>
+        <span class="n">f_plus_r</span> <span class="o">=</span> <span class="n">f</span> <span class="o">+</span> <span class="n">r</span>
+
+        <span class="c1"># Calculate convenience terms.</span>
+        <span class="n">l_bau</span> <span class="o">=</span> <span class="n">i_bau</span> <span class="o">+</span> <span class="n">f_plus_r</span>
+        <span class="n">l_int</span> <span class="o">=</span> <span class="n">i_int</span> <span class="o">+</span> <span class="n">f_plus_r</span>
+        <span class="n">q_bau</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">i_bau2</span> <span class="o">+</span> <span class="n">r2</span> <span class="o">+</span> <span class="n">f2</span> <span class="o">+</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">i_bau_r</span> <span class="o">+</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">f_r</span> <span class="o">-</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">i_bau_f</span><span class="p">)</span>
+        <span class="n">q_int</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">i_int2</span> <span class="o">+</span> <span class="n">r2</span> <span class="o">+</span> <span class="n">f2</span> <span class="o">+</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">i_int_r</span> <span class="o">+</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">f_r</span> <span class="o">-</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">i_int_f</span><span class="p">)</span>
+        <span class="n">w_bau</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="p">(</span><span class="n">l_bau</span> <span class="o">+</span> <span class="n">q_bau</span><span class="p">)</span> <span class="o">/</span> <span class="mi">2</span><span class="p">)</span>
+        <span class="n">w_int</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="p">(</span><span class="n">l_int</span> <span class="o">+</span> <span class="n">q_int</span><span class="p">)</span> <span class="o">/</span> <span class="mi">2</span><span class="p">)</span>
+        <span class="n">v_bau</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="p">(</span><span class="n">l_bau</span> <span class="o">-</span> <span class="n">q_bau</span><span class="p">)</span> <span class="o">/</span> <span class="mi">2</span><span class="p">)</span>
+        <span class="n">v_int</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">exp</span><span class="p">(</span><span class="o">-</span><span class="p">(</span><span class="n">l_int</span> <span class="o">-</span> <span class="n">q_int</span><span class="p">)</span> <span class="o">/</span> <span class="mi">2</span><span class="p">)</span>
+
+        <span class="c1"># Identify where the denominators are non-zero.</span>
+        <span class="n">nz_bau</span> <span class="o">=</span> <span class="n">q_bau</span> <span class="o">!=</span> <span class="mi">0</span>
+        <span class="n">nz_int</span> <span class="o">=</span> <span class="n">q_int</span> <span class="o">!=</span> <span class="mi">0</span>
+        <span class="n">denom_bau</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">q_bau</span>
+        <span class="n">denom_int</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">q_int</span>
+
+        <span class="n">new_S_bau</span> <span class="o">=</span> <span class="n">S_bau</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="n">new_C_bau</span> <span class="o">=</span> <span class="n">C_bau</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="n">new_S_int</span> <span class="o">=</span> <span class="n">S_int</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="n">new_C_int</span> <span class="o">=</span> <span class="n">C_int</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+
+        <span class="c1"># Calculate new_S_bau, new_C_bau, new_S_int, new_C_int.</span>
+        <span class="n">num_S_bau</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="p">(</span><span class="n">v_bau</span> <span class="o">-</span> <span class="n">w_bau</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="n">S_bau</span> <span class="o">*</span> <span class="n">f_plus_r</span> <span class="o">+</span> <span class="n">C_bau</span> <span class="o">*</span> <span class="n">r</span><span class="p">)</span> <span class="o">+</span> <span class="n">S_bau</span> <span class="o">*</span> <span class="p">(</span>
+            <span class="n">v_bau</span> <span class="o">*</span> <span class="p">(</span><span class="n">q_bau</span> <span class="o">-</span> <span class="n">l_bau</span><span class="p">)</span> <span class="o">+</span> <span class="n">w_bau</span> <span class="o">*</span> <span class="p">(</span><span class="n">q_bau</span> <span class="o">+</span> <span class="n">l_bau</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="n">num_S_int</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="p">(</span><span class="n">v_int</span> <span class="o">-</span> <span class="n">w_int</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="n">S_int</span> <span class="o">*</span> <span class="n">f_plus_r</span> <span class="o">+</span> <span class="n">C_int</span> <span class="o">*</span> <span class="n">r</span><span class="p">)</span> <span class="o">+</span> <span class="n">S_int</span> <span class="o">*</span> <span class="p">(</span>
+            <span class="n">v_int</span> <span class="o">*</span> <span class="p">(</span><span class="n">q_int</span> <span class="o">-</span> <span class="n">l_int</span><span class="p">)</span> <span class="o">+</span> <span class="n">w_int</span> <span class="o">*</span> <span class="p">(</span><span class="n">q_int</span> <span class="o">+</span> <span class="n">l_int</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="n">new_S_bau</span><span class="p">[</span><span class="n">nz_bau</span><span class="p">]</span> <span class="o">=</span> <span class="n">num_S_bau</span><span class="p">[</span><span class="n">nz_bau</span><span class="p">]</span> <span class="o">/</span> <span class="n">denom_bau</span><span class="p">[</span><span class="n">nz_bau</span><span class="p">]</span>
+        <span class="n">new_S_int</span><span class="p">[</span><span class="n">nz_int</span><span class="p">]</span> <span class="o">=</span> <span class="n">num_S_int</span><span class="p">[</span><span class="n">nz_int</span><span class="p">]</span> <span class="o">/</span> <span class="n">denom_int</span><span class="p">[</span><span class="n">nz_int</span><span class="p">]</span>
+
+        <span class="n">num_C_bau</span> <span class="o">=</span> <span class="o">-</span><span class="p">(</span>
+            <span class="p">(</span><span class="n">v_bau</span> <span class="o">-</span> <span class="n">w_bau</span><span class="p">)</span>
+            <span class="o">*</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="p">(</span><span class="n">f_plus_r</span> <span class="o">*</span> <span class="p">(</span><span class="n">S_bau</span> <span class="o">+</span> <span class="n">C_bau</span><span class="p">)</span> <span class="o">-</span> <span class="n">l_bau</span> <span class="o">*</span> <span class="n">S_bau</span><span class="p">)</span> <span class="o">-</span> <span class="n">l_bau</span> <span class="o">*</span> <span class="n">C_bau</span><span class="p">)</span>
+            <span class="o">-</span> <span class="p">(</span><span class="n">v_bau</span> <span class="o">+</span> <span class="n">w_bau</span><span class="p">)</span> <span class="o">*</span> <span class="n">q_bau</span> <span class="o">*</span> <span class="n">C_bau</span>
+        <span class="p">)</span>
+        <span class="n">num_C_int</span> <span class="o">=</span> <span class="o">-</span><span class="p">(</span>
+            <span class="p">(</span><span class="n">v_int</span> <span class="o">-</span> <span class="n">w_int</span><span class="p">)</span>
+            <span class="o">*</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="p">(</span><span class="n">f_plus_r</span> <span class="o">*</span> <span class="p">(</span><span class="n">S_int</span> <span class="o">+</span> <span class="n">C_int</span><span class="p">)</span> <span class="o">-</span> <span class="n">l_int</span> <span class="o">*</span> <span class="n">S_int</span><span class="p">)</span> <span class="o">-</span> <span class="n">l_int</span> <span class="o">*</span> <span class="n">C_int</span><span class="p">)</span>
+            <span class="o">-</span> <span class="p">(</span><span class="n">v_int</span> <span class="o">+</span> <span class="n">w_int</span><span class="p">)</span> <span class="o">*</span> <span class="n">q_int</span> <span class="o">*</span> <span class="n">C_int</span>
+        <span class="p">)</span>
+        <span class="n">new_C_bau</span><span class="p">[</span><span class="n">nz_bau</span><span class="p">]</span> <span class="o">=</span> <span class="n">num_C_bau</span><span class="p">[</span><span class="n">nz_bau</span><span class="p">]</span> <span class="o">/</span> <span class="n">denom_bau</span><span class="p">[</span><span class="n">nz_bau</span><span class="p">]</span>
+        <span class="n">new_C_int</span><span class="p">[</span><span class="n">nz_int</span><span class="p">]</span> <span class="o">=</span> <span class="n">num_C_int</span><span class="p">[</span><span class="n">nz_int</span><span class="p">]</span> <span class="o">/</span> <span class="n">denom_int</span><span class="p">[</span><span class="n">nz_int</span><span class="p">]</span>
+
+        <span class="n">pop_update</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span>
+            <span class="p">{</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">_S&quot;</span><span class="p">:</span> <span class="n">new_S_bau</span><span class="p">,</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">_C&quot;</span><span class="p">:</span> <span class="n">new_C_bau</span><span class="p">,</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">_S_previous&quot;</span><span class="p">:</span> <span class="n">S_bau</span><span class="p">,</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">_C_previous&quot;</span><span class="p">:</span> <span class="n">C_bau</span><span class="p">,</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">_S_intervention&quot;</span><span class="p">:</span> <span class="n">new_S_int</span><span class="p">,</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">_C_intervention&quot;</span><span class="p">:</span> <span class="n">new_C_int</span><span class="p">,</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">_S_intervention_previous&quot;</span><span class="p">:</span> <span class="n">S_int</span><span class="p">,</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">_C_intervention_previous&quot;</span><span class="p">:</span> <span class="n">C_int</span><span class="p">,</span>
+            <span class="p">},</span>
+            <span class="n">index</span><span class="o">=</span><span class="n">pop</span><span class="o">.</span><span class="n">index</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">population_view</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">pop_update</span><span class="p">)</span></div>
+
+
+    <span class="c1">##################################</span>
+    <span class="c1"># Pipeline sources and modifiers #</span>
+    <span class="c1">##################################</span>
+
+<div class="viewcode-block" id="Disease.mortality_adjustment">
+<a class="viewcode-back" href="../../../api_reference/mslt/disease.html#vivarium_public_health.mslt.disease.Disease.mortality_adjustment">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">mortality_adjustment</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">index</span><span class="p">,</span> <span class="n">mortality_rate</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Adjust the all-cause mortality rate in the intervention scenario, to</span>
+<span class="sd">        account for any change in disease prevalence (relative to the BAU</span>
+<span class="sd">        scenario).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">pop</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">population_view</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">index</span><span class="p">)</span>
+
+        <span class="n">S</span><span class="p">,</span> <span class="n">C</span> <span class="o">=</span> <span class="n">pop</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">_S&quot;</span><span class="p">],</span> <span class="n">pop</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">_C&quot;</span><span class="p">]</span>
+        <span class="n">S_prev</span><span class="p">,</span> <span class="n">C_prev</span> <span class="o">=</span> <span class="n">pop</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">_S_previous&quot;</span><span class="p">],</span> <span class="n">pop</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">_C_previous&quot;</span><span class="p">]</span>
+        <span class="n">D</span><span class="p">,</span> <span class="n">D_prev</span> <span class="o">=</span> <span class="mi">1000</span> <span class="o">-</span> <span class="n">S</span> <span class="o">-</span> <span class="n">C</span><span class="p">,</span> <span class="mi">1000</span> <span class="o">-</span> <span class="n">S_prev</span> <span class="o">-</span> <span class="n">C_prev</span>
+
+        <span class="n">S_int</span><span class="p">,</span> <span class="n">C_int</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">pop</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">_S_intervention&quot;</span><span class="p">],</span>
+            <span class="n">pop</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">_C_intervention&quot;</span><span class="p">],</span>
+        <span class="p">)</span>
+        <span class="n">S_int_prev</span><span class="p">,</span> <span class="n">C_int_prev</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">pop</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">_S_intervention_previous&quot;</span><span class="p">],</span>
+            <span class="n">pop</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">_C_intervention_previous&quot;</span><span class="p">],</span>
+        <span class="p">)</span>
+        <span class="n">D_int</span><span class="p">,</span> <span class="n">D_int_prev</span> <span class="o">=</span> <span class="mi">1000</span> <span class="o">-</span> <span class="n">S_int</span> <span class="o">-</span> <span class="n">C_int</span><span class="p">,</span> <span class="mi">1000</span> <span class="o">-</span> <span class="n">S_int_prev</span> <span class="o">-</span> <span class="n">C_int_prev</span>
+
+        <span class="c1"># NOTE: as per the spreadsheet, the denominator is from the same point</span>
+        <span class="c1"># in time as the term being subtracted in the numerator.</span>
+        <span class="n">mortality_risk</span> <span class="o">=</span> <span class="p">(</span><span class="n">D</span> <span class="o">-</span> <span class="n">D_prev</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">S_prev</span> <span class="o">+</span> <span class="n">C_prev</span><span class="p">)</span>
+        <span class="n">mortality_risk_int</span> <span class="o">=</span> <span class="p">(</span><span class="n">D_int</span> <span class="o">-</span> <span class="n">D_int_prev</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">S_int_prev</span> <span class="o">+</span> <span class="n">C_int_prev</span><span class="p">)</span>
+
+        <span class="n">delta</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">log</span><span class="p">((</span><span class="mi">1</span> <span class="o">-</span> <span class="n">mortality_risk</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">mortality_risk_int</span><span class="p">))</span>
+
+        <span class="k">return</span> <span class="n">mortality_rate</span> <span class="o">+</span> <span class="n">delta</span></div>
+
+
+<div class="viewcode-block" id="Disease.disability_adjustment">
+<a class="viewcode-back" href="../../../api_reference/mslt/disease.html#vivarium_public_health.mslt.disease.Disease.disability_adjustment">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">disability_adjustment</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">index</span><span class="p">,</span> <span class="n">yld_rate</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Adjust the years lost due to disability (YLD) rate in the intervention</span>
+<span class="sd">        scenario, to account for any change in disease prevalence (relative to</span>
+<span class="sd">        the BAU scenario).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">pop</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">population_view</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">index</span><span class="p">)</span>
+
+        <span class="n">S</span><span class="p">,</span> <span class="n">S_prev</span> <span class="o">=</span> <span class="n">pop</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">_S&quot;</span><span class="p">],</span> <span class="n">pop</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">_S_previous&quot;</span><span class="p">]</span>
+        <span class="n">C</span><span class="p">,</span> <span class="n">C_prev</span> <span class="o">=</span> <span class="n">pop</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">_C&quot;</span><span class="p">],</span> <span class="n">pop</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">_C_previous&quot;</span><span class="p">]</span>
+        <span class="n">S_int</span><span class="p">,</span> <span class="n">S_int_prev</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">pop</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">_S_intervention&quot;</span><span class="p">],</span>
+            <span class="n">pop</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">_S_intervention_previous&quot;</span><span class="p">],</span>
+        <span class="p">)</span>
+        <span class="n">C_int</span><span class="p">,</span> <span class="n">C_int_prev</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">pop</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">_C_intervention&quot;</span><span class="p">],</span>
+            <span class="n">pop</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">disease</span><span class="si">}</span><span class="s2">_C_intervention_previous&quot;</span><span class="p">],</span>
+        <span class="p">)</span>
+
+        <span class="c1"># The prevalence rate is the mean number of diseased people over the</span>
+        <span class="c1"># year, divided by the mean number of alive people over the year.</span>
+        <span class="c1"># The 0.5 multipliers in the numerator and denominator therefore cancel</span>
+        <span class="c1"># each other out, and can be removed.</span>
+        <span class="n">prevalence_rate</span> <span class="o">=</span> <span class="p">(</span><span class="n">C</span> <span class="o">+</span> <span class="n">C_prev</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">S</span> <span class="o">+</span> <span class="n">C</span> <span class="o">+</span> <span class="n">S_prev</span> <span class="o">+</span> <span class="n">C_prev</span><span class="p">)</span>
+        <span class="n">prevalence_rate_int</span> <span class="o">=</span> <span class="p">(</span><span class="n">C_int</span> <span class="o">+</span> <span class="n">C_int_prev</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">S_int</span> <span class="o">+</span> <span class="n">C_int</span> <span class="o">+</span> <span class="n">S_int_prev</span> <span class="o">+</span> <span class="n">C_int_prev</span><span class="p">)</span>
+
+        <span class="n">delta</span> <span class="o">=</span> <span class="n">prevalence_rate_int</span> <span class="o">-</span> <span class="n">prevalence_rate</span>
+        <span class="k">return</span> <span class="n">yld_rate</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">disability_rate</span><span class="p">(</span><span class="n">index</span><span class="p">)</span> <span class="o">*</span> <span class="n">delta</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, The vivarium developers.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

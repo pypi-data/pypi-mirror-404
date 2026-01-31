@@ -1,0 +1,725 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>vivarium_public_health.population.data_transformations &mdash; vivarium_public_health 4.3.15.dev2+g712190e05 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/plot_directive.css" />
+
+  
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=7ca62e9d"></script>
+      <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+    <link href="../../../_static/style.css" rel="stylesheet" type="text/css">
+
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            vivarium_public_health
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorials/index.html">Tutorials</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_reference/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">vivarium_public_health</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">vivarium_public_health.population.data_transformations</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for vivarium_public_health.population.data_transformations</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">===============================</span>
+<span class="sd">Population Data Transformations</span>
+<span class="sd">===============================</span>
+
+<span class="sd">This module contains tools for handling raw demographic data and transforming</span>
+<span class="sd">it into different distributions for sampling.</span>
+
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections</span><span class="w"> </span><span class="kn">import</span> <span class="n">namedtuple</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.engine</span><span class="w"> </span><span class="kn">import</span> <span class="n">Builder</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.randomness</span><span class="w"> </span><span class="kn">import</span> <span class="n">RandomnessStream</span>
+
+<span class="n">_SORT_ORDER</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;location&quot;</span><span class="p">,</span> <span class="s2">&quot;year_start&quot;</span><span class="p">,</span> <span class="s2">&quot;sex&quot;</span><span class="p">,</span> <span class="s2">&quot;age_start&quot;</span><span class="p">]</span>
+
+
+<div class="viewcode-block" id="assign_demographic_proportions">
+<a class="viewcode-back" href="../../../api_reference/population/data_transformations.html#vivarium_public_health.population.data_transformations.assign_demographic_proportions">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">assign_demographic_proportions</span><span class="p">(</span>
+    <span class="n">population_data</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span>
+    <span class="n">include_sex</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Calculates conditional probabilities on the provided population data for sampling.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    population_data</span>
+<span class="sd">        Table with columns &#39;age&#39;, &#39;sex&#39;, &#39;year&#39;, &#39;location&#39;, and &#39;value&#39;</span>
+<span class="sd">    include_sex</span>
+<span class="sd">        &#39;Female&#39;, &#39;Male&#39;, or &#39;Both&#39;.  Sexes to include in the distribution.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">        Table with columns</span>
+<span class="sd">            &#39;age&#39; : Midpoint of the age group,</span>
+<span class="sd">            &#39;age_start&#39; : Lower bound of the age group,</span>
+<span class="sd">            &#39;age_end&#39; : Upper bound of the age group,</span>
+<span class="sd">            &#39;sex&#39; : &#39;Male&#39; or &#39;Female&#39;,</span>
+<span class="sd">            &#39;location&#39; : location,</span>
+<span class="sd">            &#39;year&#39; : Year,</span>
+<span class="sd">            &#39;population&#39; : Total population estimate,</span>
+<span class="sd">            &#39;P(sex, location | age, year)&#39; : Conditional probability of sex and</span>
+<span class="sd">            location given age and year,</span>
+<span class="sd">            &#39;P(sex, location, age | year)&#39; : Conditional probability of sex, location,</span>
+<span class="sd">            and age given year,</span>
+<span class="sd">            &#39;P(age | year, sex, location)&#39; : Conditional probability of age given</span>
+<span class="sd">            year, sex, and location.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">population_data</span> <span class="o">=</span> <span class="n">population_data</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">include_sex</span> <span class="o">!=</span> <span class="s2">&quot;Both&quot;</span><span class="p">:</span>
+        <span class="n">population_data</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">population_data</span><span class="o">.</span><span class="n">sex</span> <span class="o">!=</span> <span class="n">include_sex</span><span class="p">,</span> <span class="s2">&quot;value&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.0</span>
+
+    <span class="n">year_start_groups</span> <span class="o">=</span> <span class="n">population_data</span><span class="o">.</span><span class="n">groupby</span><span class="p">(</span><span class="s2">&quot;year_start&quot;</span><span class="p">,</span> <span class="n">as_index</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="n">population_data</span><span class="p">[</span><span class="s2">&quot;P(sex, location, age| year)&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">year_start_groups</span><span class="p">[</span><span class="n">year_start_groups</span><span class="o">.</span><span class="n">obj</span><span class="o">.</span><span class="n">columns</span><span class="p">]</span>
+        <span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="k">lambda</span> <span class="n">sub_pop</span><span class="p">:</span> <span class="n">sub_pop</span><span class="p">[[</span><span class="s2">&quot;value&quot;</span><span class="p">]]</span> <span class="o">/</span> <span class="n">sub_pop</span><span class="p">[</span><span class="s2">&quot;value&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">sum</span><span class="p">())</span>
+        <span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">level</span><span class="o">=</span><span class="mi">0</span><span class="p">)[</span><span class="s2">&quot;value&quot;</span><span class="p">]</span>
+        <span class="o">.</span><span class="n">fillna</span><span class="p">(</span><span class="mf">0.0</span><span class="p">)</span>
+    <span class="p">)</span>
+
+    <span class="n">age_year_start_groups</span> <span class="o">=</span> <span class="n">population_data</span><span class="o">.</span><span class="n">groupby</span><span class="p">([</span><span class="s2">&quot;age&quot;</span><span class="p">,</span> <span class="s2">&quot;year_start&quot;</span><span class="p">],</span> <span class="n">as_index</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="n">population_data</span><span class="p">[</span><span class="s2">&quot;P(sex, location | age, year)&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">age_year_start_groups</span><span class="p">[</span><span class="n">age_year_start_groups</span><span class="o">.</span><span class="n">obj</span><span class="o">.</span><span class="n">columns</span><span class="p">]</span>
+        <span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="k">lambda</span> <span class="n">sub_pop</span><span class="p">:</span> <span class="n">sub_pop</span><span class="p">[[</span><span class="s2">&quot;value&quot;</span><span class="p">]]</span> <span class="o">/</span> <span class="n">sub_pop</span><span class="p">[</span><span class="s2">&quot;value&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">sum</span><span class="p">())</span>
+        <span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">level</span><span class="o">=</span><span class="mi">0</span><span class="p">)[</span><span class="s2">&quot;value&quot;</span><span class="p">]</span>
+        <span class="o">.</span><span class="n">fillna</span><span class="p">(</span><span class="mf">0.0</span><span class="p">)</span>
+    <span class="p">)</span>
+
+    <span class="n">year_start_sex_location_groups</span> <span class="o">=</span> <span class="n">population_data</span><span class="o">.</span><span class="n">groupby</span><span class="p">(</span>
+        <span class="p">[</span><span class="s2">&quot;year_start&quot;</span><span class="p">,</span> <span class="s2">&quot;sex&quot;</span><span class="p">,</span> <span class="s2">&quot;location&quot;</span><span class="p">],</span> <span class="n">as_index</span><span class="o">=</span><span class="kc">False</span>
+    <span class="p">)</span>
+    <span class="n">population_data</span><span class="p">[</span><span class="s2">&quot;P(age | year, sex, location)&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">year_start_sex_location_groups</span><span class="p">[</span><span class="n">year_start_sex_location_groups</span><span class="o">.</span><span class="n">obj</span><span class="o">.</span><span class="n">columns</span><span class="p">]</span>
+        <span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="k">lambda</span> <span class="n">sub_pop</span><span class="p">:</span> <span class="n">sub_pop</span><span class="p">[[</span><span class="s2">&quot;value&quot;</span><span class="p">]]</span> <span class="o">/</span> <span class="n">sub_pop</span><span class="p">[</span><span class="s2">&quot;value&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">sum</span><span class="p">())</span>
+        <span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">level</span><span class="o">=</span><span class="mi">0</span><span class="p">)[</span><span class="s2">&quot;value&quot;</span><span class="p">]</span>
+        <span class="o">.</span><span class="n">fillna</span><span class="p">(</span><span class="mf">0.0</span><span class="p">)</span>
+    <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">population_data</span><span class="o">.</span><span class="n">sort_values</span><span class="p">(</span><span class="n">_SORT_ORDER</span><span class="p">)</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span></div>
+
+
+
+<span class="c1">#  FIXME: This step should definitely be happening after we get some approximation of the</span>
+<span class="c1">#   underlying distribution.  It makes an assumption of uniformity in the age bin.</span>
+<span class="c1">#   This only happens at the edges, and is unlikely to be used to clip a neonatal age bin</span>
+<span class="c1">#   where the impact would be significant.</span>
+<div class="viewcode-block" id="rescale_binned_proportions">
+<a class="viewcode-back" href="../../../api_reference/population/data_transformations.html#vivarium_public_health.population.data_transformations.rescale_binned_proportions">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">rescale_binned_proportions</span><span class="p">(</span>
+    <span class="n">pop_data</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span>
+    <span class="n">age_start</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">age_end</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Reshapes the distribution so that bin edges fall on the age_start and age_end.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    pop_data</span>
+<span class="sd">        Table with columns &#39;age&#39;, &#39;age_start&#39;, &#39;age_end&#39;, &#39;sex&#39;, &#39;year&#39;,</span>
+<span class="sd">        &#39;location&#39;, &#39;population&#39;, &#39;P(sex, location, age| year)&#39;,</span>
+<span class="sd">        &#39;P(sex, location | age, year)&#39;, &#39;P(age | year, sex, location)&#39;</span>
+<span class="sd">    age_start</span>
+<span class="sd">        The starting age for the rescaled bins.</span>
+<span class="sd">    age_end</span>
+<span class="sd">        The terminal age for the rescaled bins.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">        Table with the same columns as `pop_data` where all bins outside the range</span>
+<span class="sd">        (age_start, age_end) have been discarded.  If age_start and age_end</span>
+<span class="sd">        don&#39;t fall cleanly on age boundaries, the bins in which they lie are clipped and</span>
+<span class="sd">        the &#39;population&#39;, &#39;P(sex, location, age| year)&#39;, and &#39;P(age | year, sex, location)&#39;</span>
+<span class="sd">        values are rescaled to reflect their smaller representation.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">col_order</span> <span class="o">=</span> <span class="n">pop_data</span><span class="o">.</span><span class="n">columns</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">age_start</span> <span class="o">&gt;</span> <span class="n">pop_data</span><span class="p">[</span><span class="s2">&quot;age_end&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">max</span><span class="p">():</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="s2">&quot;Provided population data is insufficient to model the requested age range.&quot;</span>
+        <span class="p">)</span>
+
+    <span class="n">age_start</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">pop_data</span><span class="p">[</span><span class="s2">&quot;age_start&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">min</span><span class="p">(),</span> <span class="n">age_start</span><span class="p">)</span>
+    <span class="n">age_end</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">pop_data</span><span class="p">[</span><span class="s2">&quot;age_end&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">max</span><span class="p">(),</span> <span class="n">age_end</span><span class="p">)</span> <span class="o">-</span> <span class="mf">1e-8</span>
+    <span class="n">pop_data</span> <span class="o">=</span> <span class="n">_add_edge_age_groups</span><span class="p">(</span><span class="n">pop_data</span><span class="o">.</span><span class="n">copy</span><span class="p">())</span>
+
+    <span class="n">columns_to_scale</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="s2">&quot;P(sex, location, age| year)&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;P(age | year, sex, location)&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;value&quot;</span><span class="p">,</span>
+    <span class="p">]</span>
+    <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">sub_pop</span> <span class="ow">in</span> <span class="n">pop_data</span><span class="o">.</span><span class="n">groupby</span><span class="p">([</span><span class="s2">&quot;sex&quot;</span><span class="p">,</span> <span class="s2">&quot;location&quot;</span><span class="p">]):</span>
+        <span class="n">min_bin</span> <span class="o">=</span> <span class="n">sub_pop</span><span class="p">[</span>
+            <span class="p">(</span><span class="n">sub_pop</span><span class="p">[</span><span class="s2">&quot;age_start&quot;</span><span class="p">]</span> <span class="o">&lt;=</span> <span class="n">age_start</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">age_start</span> <span class="o">&lt;</span> <span class="n">sub_pop</span><span class="p">[</span><span class="s2">&quot;age_end&quot;</span><span class="p">])</span>
+        <span class="p">]</span>
+        <span class="n">padding_bin</span> <span class="o">=</span> <span class="n">sub_pop</span><span class="p">[</span><span class="n">sub_pop</span><span class="p">[</span><span class="s2">&quot;age_end&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="nb">float</span><span class="p">(</span><span class="n">min_bin</span><span class="p">[</span><span class="s2">&quot;age_start&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">])]</span>
+
+        <span class="n">min_scale</span> <span class="o">=</span> <span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">min_bin</span><span class="p">[</span><span class="s2">&quot;age_end&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span> <span class="o">-</span> <span class="n">age_start</span><span class="p">)</span> <span class="o">/</span> <span class="nb">float</span><span class="p">(</span>
+            <span class="n">min_bin</span><span class="p">[</span><span class="s2">&quot;age_end&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">-</span> <span class="n">min_bin</span><span class="p">[</span><span class="s2">&quot;age_start&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="p">)</span>
+
+        <span class="n">remainder</span> <span class="o">=</span> <span class="n">pop_data</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">min_bin</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="n">columns_to_scale</span><span class="p">]</span><span class="o">.</span><span class="n">values</span> <span class="o">*</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">min_scale</span><span class="p">)</span>
+        <span class="n">pop_data</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">min_bin</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="n">columns_to_scale</span><span class="p">]</span> <span class="o">*=</span> <span class="n">min_scale</span>
+        <span class="n">pop_data</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">padding_bin</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="n">columns_to_scale</span><span class="p">]</span> <span class="o">+=</span> <span class="n">remainder</span>
+
+        <span class="n">pop_data</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">min_bin</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="s2">&quot;age_start&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">age_start</span>
+        <span class="n">pop_data</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">min_bin</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="s2">&quot;age&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span>
+            <span class="p">(</span>
+                <span class="n">pop_data</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">min_bin</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="s2">&quot;age_start&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+                <span class="o">+</span> <span class="n">pop_data</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">min_bin</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="s2">&quot;age_end&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="p">)</span>
+            <span class="o">/</span> <span class="mi">2</span>
+        <span class="p">)</span>
+        <span class="n">pop_data</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">padding_bin</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="s2">&quot;age_end&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">age_start</span>
+        <span class="n">pop_data</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">padding_bin</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="s2">&quot;age&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span>
+            <span class="p">(</span>
+                <span class="n">pop_data</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">padding_bin</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="s2">&quot;age_start&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+                <span class="o">+</span> <span class="n">pop_data</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">padding_bin</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="s2">&quot;age_end&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="p">)</span>
+            <span class="o">/</span> <span class="mi">2</span>
+        <span class="p">)</span>
+
+        <span class="n">max_bin</span> <span class="o">=</span> <span class="n">sub_pop</span><span class="p">[(</span><span class="n">sub_pop</span><span class="p">[</span><span class="s2">&quot;age_end&quot;</span><span class="p">]</span> <span class="o">&gt;</span> <span class="n">age_end</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">age_end</span> <span class="o">&gt;=</span> <span class="n">sub_pop</span><span class="p">[</span><span class="s2">&quot;age_start&quot;</span><span class="p">])]</span>
+        <span class="n">padding_bin</span> <span class="o">=</span> <span class="n">sub_pop</span><span class="p">[</span><span class="n">sub_pop</span><span class="p">[</span><span class="s2">&quot;age_start&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="nb">float</span><span class="p">(</span><span class="n">max_bin</span><span class="p">[</span><span class="s2">&quot;age_end&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">])]</span>
+
+        <span class="n">max_scale</span> <span class="o">=</span> <span class="p">(</span><span class="n">age_end</span> <span class="o">-</span> <span class="nb">float</span><span class="p">(</span><span class="n">max_bin</span><span class="p">[</span><span class="s2">&quot;age_start&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">]))</span> <span class="o">/</span> <span class="nb">float</span><span class="p">(</span>
+            <span class="n">max_bin</span><span class="p">[</span><span class="s2">&quot;age_end&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">-</span> <span class="n">max_bin</span><span class="p">[</span><span class="s2">&quot;age_start&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="p">)</span>
+
+        <span class="n">remainder</span> <span class="o">=</span> <span class="n">pop_data</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">max_bin</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="n">columns_to_scale</span><span class="p">]</span> <span class="o">*</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">max_scale</span><span class="p">)</span>
+        <span class="n">pop_data</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">max_bin</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="n">columns_to_scale</span><span class="p">]</span> <span class="o">*=</span> <span class="n">max_scale</span>
+        <span class="n">pop_data</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">padding_bin</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="n">columns_to_scale</span><span class="p">]</span> <span class="o">+=</span> <span class="n">remainder</span><span class="o">.</span><span class="n">values</span>
+
+        <span class="n">pop_data</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">max_bin</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="s2">&quot;age_end&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">age_end</span>
+        <span class="n">pop_data</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">padding_bin</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="s2">&quot;age_start&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">age_end</span>
+
+    <span class="k">return</span> <span class="n">pop_data</span><span class="p">[</span><span class="n">col_order</span><span class="p">]</span><span class="o">.</span><span class="n">sort_values</span><span class="p">(</span><span class="n">_SORT_ORDER</span><span class="p">)</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span></div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_add_edge_age_groups</span><span class="p">(</span><span class="n">pop_data</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Pads the population data with age groups that enforce constant</span>
+<span class="sd">    left interpolation and interpolation to zero on the right.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">index_cols</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;location&quot;</span><span class="p">,</span> <span class="s2">&quot;year_start&quot;</span><span class="p">,</span> <span class="s2">&quot;year_end&quot;</span><span class="p">,</span> <span class="s2">&quot;sex&quot;</span><span class="p">]</span>
+    <span class="n">age_cols</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">,</span> <span class="s2">&quot;age_start&quot;</span><span class="p">,</span> <span class="s2">&quot;age_end&quot;</span><span class="p">]</span>
+    <span class="n">other_cols</span> <span class="o">=</span> <span class="p">[</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">pop_data</span><span class="o">.</span><span class="n">columns</span> <span class="k">if</span> <span class="n">c</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">index_cols</span> <span class="o">+</span> <span class="n">age_cols</span><span class="p">]</span>
+    <span class="n">pop_data</span> <span class="o">=</span> <span class="n">pop_data</span><span class="o">.</span><span class="n">set_index</span><span class="p">(</span><span class="n">index_cols</span><span class="p">)</span>
+
+    <span class="c1"># For the lower bin, we want constant interpolation off the left side</span>
+    <span class="n">min_valid_age</span> <span class="o">=</span> <span class="n">pop_data</span><span class="p">[</span><span class="s2">&quot;age_start&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">min</span><span class="p">()</span>
+    <span class="c1"># This bin width needs to be the same as the lowest bin.</span>
+    <span class="n">min_pad_age</span> <span class="o">=</span> <span class="n">min_valid_age</span> <span class="o">-</span> <span class="p">(</span><span class="n">pop_data</span><span class="p">[</span><span class="s2">&quot;age_end&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">min</span><span class="p">()</span> <span class="o">-</span> <span class="n">min_valid_age</span><span class="p">)</span>
+    <span class="n">min_pad_age_midpoint</span> <span class="o">=</span> <span class="p">(</span><span class="n">min_valid_age</span> <span class="o">+</span> <span class="n">min_pad_age</span><span class="p">)</span> <span class="o">*</span> <span class="mf">0.5</span>
+
+    <span class="n">lower_bin</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span>
+        <span class="p">{</span><span class="s2">&quot;age_start&quot;</span><span class="p">:</span> <span class="n">min_pad_age</span><span class="p">,</span> <span class="s2">&quot;age_end&quot;</span><span class="p">:</span> <span class="n">min_valid_age</span><span class="p">,</span> <span class="s2">&quot;age&quot;</span><span class="p">:</span> <span class="n">min_pad_age_midpoint</span><span class="p">},</span>
+        <span class="n">index</span><span class="o">=</span><span class="n">pop_data</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">unique</span><span class="p">(),</span>
+    <span class="p">)</span>
+    <span class="n">lower_bin</span><span class="p">[</span><span class="n">other_cols</span><span class="p">]</span> <span class="o">=</span> <span class="n">pop_data</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">pop_data</span><span class="p">[</span><span class="s2">&quot;age_start&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="n">min_valid_age</span><span class="p">,</span> <span class="n">other_cols</span><span class="p">]</span>
+
+    <span class="c1"># For the upper bin, we want our interpolation to go to zero.</span>
+    <span class="n">max_valid_age</span> <span class="o">=</span> <span class="n">pop_data</span><span class="p">[</span><span class="s2">&quot;age_end&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">max</span><span class="p">()</span>
+    <span class="c1"># This bin width is not arbitrary.  It effects the rate at which our interpolation</span>
+    <span class="c1"># zeros out. Since for the 2016 round the maximum age is 125, we&#39;re assuming almost no</span>
+    <span class="c1"># one lives past that age, so we make this bin 1 week.  A more robust technique for</span>
+    <span class="c1"># this would be better.</span>
+    <span class="n">max_pad_age</span> <span class="o">=</span> <span class="n">max_valid_age</span> <span class="o">+</span> <span class="mi">7</span> <span class="o">/</span> <span class="mi">365</span>
+    <span class="n">max_pad_age_midpoint</span> <span class="o">=</span> <span class="p">(</span><span class="n">max_valid_age</span> <span class="o">+</span> <span class="n">max_pad_age</span><span class="p">)</span> <span class="o">*</span> <span class="mf">0.5</span>
+
+    <span class="n">upper_bin</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span>
+        <span class="p">{</span><span class="s2">&quot;age_start&quot;</span><span class="p">:</span> <span class="n">max_valid_age</span><span class="p">,</span> <span class="s2">&quot;age_end&quot;</span><span class="p">:</span> <span class="n">max_pad_age</span><span class="p">,</span> <span class="s2">&quot;age&quot;</span><span class="p">:</span> <span class="n">max_pad_age_midpoint</span><span class="p">},</span>
+        <span class="n">index</span><span class="o">=</span><span class="n">pop_data</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">unique</span><span class="p">(),</span>
+    <span class="p">)</span>
+    <span class="c1"># We&#39;re doing the multiplication to ensure we get the correct data shape and index.</span>
+    <span class="n">upper_bin</span><span class="p">[</span><span class="n">other_cols</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span> <span class="o">*</span> <span class="n">pop_data</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">pop_data</span><span class="p">[</span><span class="s2">&quot;age_end&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="n">max_valid_age</span><span class="p">,</span> <span class="n">other_cols</span><span class="p">]</span>
+
+    <span class="n">pop_data</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">concat</span><span class="p">([</span><span class="n">lower_bin</span><span class="p">,</span> <span class="n">pop_data</span><span class="p">,</span> <span class="n">upper_bin</span><span class="p">],</span> <span class="n">sort</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span><span class="o">.</span><span class="n">reset_index</span><span class="p">()</span>
+
+    <span class="n">pop_data</span> <span class="o">=</span> <span class="n">pop_data</span><span class="o">.</span><span class="n">rename</span><span class="p">(</span>
+        <span class="n">columns</span><span class="o">=</span><span class="p">{</span>
+            <span class="s2">&quot;level_0&quot;</span><span class="p">:</span> <span class="s2">&quot;location&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;level_1&quot;</span><span class="p">:</span> <span class="s2">&quot;year_start&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;level_2&quot;</span><span class="p">:</span> <span class="s2">&quot;year_end&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;level_3&quot;</span><span class="p">:</span> <span class="s2">&quot;sex&quot;</span><span class="p">,</span>
+        <span class="p">}</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="p">(</span>
+        <span class="n">pop_data</span><span class="p">[</span><span class="n">index_cols</span> <span class="o">+</span> <span class="n">age_cols</span> <span class="o">+</span> <span class="n">other_cols</span><span class="p">]</span>
+        <span class="o">.</span><span class="n">sort_values</span><span class="p">(</span><span class="n">by</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;location&quot;</span><span class="p">,</span> <span class="s2">&quot;year_start&quot;</span><span class="p">,</span> <span class="s2">&quot;year_end&quot;</span><span class="p">,</span> <span class="s2">&quot;age&quot;</span><span class="p">])</span>
+        <span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="p">)</span>
+
+
+<span class="n">AgeValues</span> <span class="o">=</span> <span class="n">namedtuple</span><span class="p">(</span><span class="s2">&quot;AgeValues&quot;</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;current&quot;</span><span class="p">,</span> <span class="s2">&quot;young&quot;</span><span class="p">,</span> <span class="s2">&quot;old&quot;</span><span class="p">])</span>
+<span class="n">EndpointValues</span> <span class="o">=</span> <span class="n">namedtuple</span><span class="p">(</span><span class="s2">&quot;EndpointValues&quot;</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;left&quot;</span><span class="p">,</span> <span class="s2">&quot;right&quot;</span><span class="p">])</span>
+
+
+<div class="viewcode-block" id="smooth_ages">
+<a class="viewcode-back" href="../../../api_reference/population/data_transformations.html#vivarium_public_health.population.data_transformations.smooth_ages">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">smooth_ages</span><span class="p">(</span>
+    <span class="n">simulants</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span>
+    <span class="n">population_data</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span>
+    <span class="n">randomness</span><span class="p">:</span> <span class="n">RandomnessStream</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Distributes simulants among ages within their assigned age bins.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    simulants</span>
+<span class="sd">        Table with columns &#39;age&#39;, &#39;sex&#39;, and &#39;location&#39;</span>
+<span class="sd">    population_data</span>
+<span class="sd">        Table with columns &#39;age&#39;, &#39;sex&#39;, &#39;year&#39;, &#39;location&#39;, &#39;population&#39;,</span>
+<span class="sd">        &#39;P(sex, location, age| year)&#39;, &#39;P(sex, location | age, year)&#39;,</span>
+<span class="sd">        &#39;P(age | year, sex, location)&#39;</span>
+<span class="sd">    randomness</span>
+<span class="sd">        Source of random number generation within the vivarium common random number framework.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">        Table with same columns as `simulants` with ages smoothed out within the age bins.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">simulants</span> <span class="o">=</span> <span class="n">simulants</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    <span class="k">for</span> <span class="p">(</span><span class="n">sex</span><span class="p">,</span> <span class="n">location</span><span class="p">),</span> <span class="n">sub_pop</span> <span class="ow">in</span> <span class="n">population_data</span><span class="o">.</span><span class="n">groupby</span><span class="p">([</span><span class="s2">&quot;sex&quot;</span><span class="p">,</span> <span class="s2">&quot;location&quot;</span><span class="p">]):</span>
+        <span class="n">ages</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">sub_pop</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">unique</span><span class="p">())</span>
+        <span class="n">younger</span> <span class="o">=</span> <span class="p">[</span><span class="nb">float</span><span class="p">(</span><span class="n">sub_pop</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">sub_pop</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="n">ages</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="s2">&quot;age_start&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">])]</span> <span class="o">+</span> <span class="n">ages</span><span class="p">[</span>
+            <span class="p">:</span><span class="o">-</span><span class="mi">1</span>
+        <span class="p">]</span>
+        <span class="n">older</span> <span class="o">=</span> <span class="n">ages</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">+</span> <span class="p">[</span><span class="nb">float</span><span class="p">(</span><span class="n">sub_pop</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">sub_pop</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="n">ages</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="s2">&quot;age_end&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">])]</span>
+
+        <span class="n">uniform_all</span> <span class="o">=</span> <span class="n">randomness</span><span class="o">.</span><span class="n">get_draw</span><span class="p">(</span><span class="n">simulants</span><span class="o">.</span><span class="n">index</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">age_set</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">ages</span><span class="p">,</span> <span class="n">younger</span><span class="p">,</span> <span class="n">older</span><span class="p">):</span>
+            <span class="n">age</span> <span class="o">=</span> <span class="n">AgeValues</span><span class="p">(</span><span class="o">*</span><span class="n">age_set</span><span class="p">)</span>
+
+            <span class="n">has_correct_demography</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="p">(</span><span class="n">simulants</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="n">age</span><span class="o">.</span><span class="n">current</span><span class="p">)</span>
+                <span class="o">&amp;</span> <span class="p">(</span><span class="n">simulants</span><span class="p">[</span><span class="s2">&quot;sex&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="n">sex</span><span class="p">)</span>
+                <span class="o">&amp;</span> <span class="p">(</span><span class="n">simulants</span><span class="p">[</span><span class="s2">&quot;location&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="n">location</span><span class="p">)</span>
+            <span class="p">)</span>
+            <span class="n">affected</span> <span class="o">=</span> <span class="n">simulants</span><span class="p">[</span><span class="n">has_correct_demography</span><span class="p">]</span>
+
+            <span class="k">if</span> <span class="n">affected</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+                <span class="k">continue</span>
+
+            <span class="c1"># bin endpoints</span>
+            <span class="n">endpoints</span><span class="p">,</span> <span class="n">proportions</span> <span class="o">=</span> <span class="n">_get_bins_and_proportions</span><span class="p">(</span><span class="n">sub_pop</span><span class="p">,</span> <span class="n">age</span><span class="p">)</span>
+            <span class="n">pdf</span><span class="p">,</span> <span class="n">slope</span><span class="p">,</span> <span class="n">area</span><span class="p">,</span> <span class="n">cdf_inflection_point</span> <span class="o">=</span> <span class="n">_construct_sampling_parameters</span><span class="p">(</span>
+                <span class="n">age</span><span class="p">,</span> <span class="n">endpoints</span><span class="p">,</span> <span class="n">proportions</span>
+            <span class="p">)</span>
+
+            <span class="c1"># Make a draw from a uniform distribution</span>
+            <span class="n">uniform_rv</span> <span class="o">=</span> <span class="n">uniform_all</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">affected</span><span class="o">.</span><span class="n">index</span><span class="p">]</span>
+
+            <span class="n">left_sims</span> <span class="o">=</span> <span class="n">affected</span><span class="p">[</span><span class="n">uniform_rv</span> <span class="o">&lt;=</span> <span class="n">cdf_inflection_point</span><span class="p">]</span>
+            <span class="n">right_sims</span> <span class="o">=</span> <span class="n">affected</span><span class="p">[</span><span class="n">uniform_rv</span> <span class="o">&gt;</span> <span class="n">cdf_inflection_point</span><span class="p">]</span>
+
+            <span class="n">simulants</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">left_sims</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="s2">&quot;age&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">_compute_ages</span><span class="p">(</span>
+                <span class="n">uniform_rv</span><span class="p">[</span><span class="n">left_sims</span><span class="o">.</span><span class="n">index</span><span class="p">],</span> <span class="n">endpoints</span><span class="o">.</span><span class="n">left</span><span class="p">,</span> <span class="n">pdf</span><span class="o">.</span><span class="n">left</span><span class="p">,</span> <span class="n">slope</span><span class="o">.</span><span class="n">left</span><span class="p">,</span> <span class="n">area</span>
+            <span class="p">)</span>
+            <span class="n">simulants</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">right_sims</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="s2">&quot;age&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">_compute_ages</span><span class="p">(</span>
+                <span class="n">uniform_rv</span><span class="p">[</span><span class="n">right_sims</span><span class="o">.</span><span class="n">index</span><span class="p">]</span> <span class="o">-</span> <span class="n">cdf_inflection_point</span><span class="p">,</span>
+                <span class="n">age</span><span class="o">.</span><span class="n">current</span><span class="p">,</span>
+                <span class="n">proportions</span><span class="o">.</span><span class="n">current</span><span class="p">,</span>
+                <span class="n">slope</span><span class="o">.</span><span class="n">right</span><span class="p">,</span>
+                <span class="n">area</span><span class="p">,</span>
+            <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">simulants</span></div>
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_get_bins_and_proportions</span><span class="p">(</span>
+    <span class="n">pop_data</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span>
+    <span class="n">age</span><span class="p">:</span> <span class="n">AgeValues</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">EndpointValues</span><span class="p">,</span> <span class="n">AgeValues</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Finds and returns the bin edges and the population proportions in</span>
+<span class="sd">    the current and neighboring bins.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    pop_data</span>
+<span class="sd">        Table with columns &#39;age&#39;, &#39;sex&#39;, &#39;year&#39;, &#39;location&#39;, &#39;population&#39;,</span>
+<span class="sd">        &#39;P(sex, location, age| year)&#39;, &#39;P(sex, location | age, year)&#39;,</span>
+<span class="sd">        &#39;P(age | year, sex, location)&#39;</span>
+<span class="sd">    age</span>
+<span class="sd">        Tuple with values (</span>
+<span class="sd">            midpoint of current age bin,</span>
+<span class="sd">            midpoint of previous age bin,</span>
+<span class="sd">            midpoint of next age bin,</span>
+<span class="sd">        )</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">        A tuple of endpoints tuples and ages tuples.</span>
+<span class="sd">        The `EndpointValues` tuple has values (</span>
+<span class="sd">            age at left edge of bin,</span>
+<span class="sd">            age at right edge of bin,</span>
+<span class="sd">        )</span>
+<span class="sd">        The `AgeValues` tuple has values (</span>
+<span class="sd">            proportion of pop in current bin,</span>
+<span class="sd">            proportion of pop in previous bin,</span>
+<span class="sd">            proportion of pop in next bin,</span>
+<span class="sd">        )</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">left</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">pop_data</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">pop_data</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="n">age</span><span class="o">.</span><span class="n">current</span><span class="p">,</span> <span class="s2">&quot;age_start&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+    <span class="n">right</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">pop_data</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">pop_data</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="n">age</span><span class="o">.</span><span class="n">current</span><span class="p">,</span> <span class="s2">&quot;age_end&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">pop_data</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">pop_data</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="n">age</span><span class="o">.</span><span class="n">young</span><span class="p">,</span> <span class="s2">&quot;age_start&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+        <span class="n">lower_left</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">pop_data</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">pop_data</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="n">age</span><span class="o">.</span><span class="n">young</span><span class="p">,</span> <span class="s2">&quot;age_start&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">lower_left</span> <span class="o">=</span> <span class="n">left</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">pop_data</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">pop_data</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="n">age</span><span class="o">.</span><span class="n">old</span><span class="p">,</span> <span class="s2">&quot;age_end&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+        <span class="n">upper_right</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">pop_data</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">pop_data</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="n">age</span><span class="o">.</span><span class="n">old</span><span class="p">,</span> <span class="s2">&quot;age_end&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">upper_right</span> <span class="o">=</span> <span class="n">right</span>
+
+    <span class="c1"># proportion in this bin and the neighboring bins</span>
+    <span class="n">proportion_column</span> <span class="o">=</span> <span class="s2">&quot;P(age | year, sex, location)&quot;</span>
+    <span class="c1"># Here we make the assumption that</span>
+    <span class="c1"># P(left &lt; age &lt; right | year, sex, location)  = p * (right - left)</span>
+    <span class="c1"># in order to back out a point estimate for the probability density at the center</span>
+    <span class="c1"># of the interval. This not the best assumption, but it&#39;ll do.</span>
+    <span class="n">p_age</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span>
+        <span class="n">pop_data</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">pop_data</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="n">age</span><span class="o">.</span><span class="n">current</span><span class="p">,</span> <span class="n">proportion_column</span><span class="p">]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="o">/</span> <span class="p">(</span><span class="n">right</span> <span class="o">-</span> <span class="n">left</span><span class="p">)</span>
+    <span class="p">)</span>
+    <span class="n">p_young</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="nb">float</span><span class="p">(</span>
+            <span class="n">pop_data</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">pop_data</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="n">age</span><span class="o">.</span><span class="n">young</span><span class="p">,</span> <span class="n">proportion_column</span><span class="p">]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="o">/</span> <span class="p">(</span><span class="n">left</span> <span class="o">-</span> <span class="n">lower_left</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">age</span><span class="o">.</span><span class="n">young</span> <span class="o">!=</span> <span class="n">left</span>
+        <span class="k">else</span> <span class="n">p_age</span>
+    <span class="p">)</span>
+    <span class="n">p_old</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="nb">float</span><span class="p">(</span>
+            <span class="n">pop_data</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">pop_data</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="n">age</span><span class="o">.</span><span class="n">old</span><span class="p">,</span> <span class="n">proportion_column</span><span class="p">]</span><span class="o">.</span><span class="n">iloc</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="o">/</span> <span class="p">(</span><span class="n">upper_right</span> <span class="o">-</span> <span class="n">right</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">age</span><span class="o">.</span><span class="n">old</span> <span class="o">!=</span> <span class="n">right</span>
+        <span class="k">else</span> <span class="mi">0</span>
+    <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">EndpointValues</span><span class="p">(</span><span class="n">left</span><span class="p">,</span> <span class="n">right</span><span class="p">),</span> <span class="n">AgeValues</span><span class="p">(</span><span class="n">p_age</span><span class="p">,</span> <span class="n">p_young</span><span class="p">,</span> <span class="n">p_old</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_construct_sampling_parameters</span><span class="p">(</span>
+    <span class="n">age</span><span class="p">:</span> <span class="n">AgeValues</span><span class="p">,</span> <span class="n">endpoint</span><span class="p">:</span> <span class="n">EndpointValues</span><span class="p">,</span> <span class="n">proportion</span><span class="p">:</span> <span class="n">AgeValues</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">EndpointValues</span><span class="p">,</span> <span class="n">EndpointValues</span><span class="p">,</span> <span class="nb">float</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Calculates some sampling distribution parameters from known values.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    age</span>
+<span class="sd">        Tuple with values (</span>
+<span class="sd">            midpoint of current age bin,</span>
+<span class="sd">            midpoint of previous age bin,</span>
+<span class="sd">            midpoint of next age bin,</span>
+<span class="sd">        )</span>
+<span class="sd">    endpoint : EndpointValues</span>
+<span class="sd">        Tuple with values (</span>
+<span class="sd">            age at left edge of bin,</span>
+<span class="sd">            age at right edge of bin,</span>
+<span class="sd">        )</span>
+<span class="sd">    proportion : AgeValues</span>
+<span class="sd">        Tuple with values (</span>
+<span class="sd">            proportion of pop in current bin,</span>
+<span class="sd">            proportion of pop in previous bin,</span>
+<span class="sd">            proportion of pop in next bin,</span>
+<span class="sd">        )</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">        A tuple of (pdf, slope, area, cdf_inflection_point) where</span>
+<span class="sd">            pdf is a tuple with values (</span>
+<span class="sd">                pdf evaluated at left bin edge,</span>
+<span class="sd">                pdf evaluated at right bin edge,</span>
+<span class="sd">            )</span>
+<span class="sd">            slope is a tuple with values (</span>
+<span class="sd">                slope of pdf in left half bin,</span>
+<span class="sd">                slope of pdf in right half bin,</span>
+<span class="sd">            )</span>
+<span class="sd">            area is the total area under the pdf, used for normalization</span>
+<span class="sd">            cdf_inflection_point is the value of the cdf at the midpoint of the age bin.</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># pdf value at bin endpoints</span>
+    <span class="n">pdf_left</span> <span class="o">=</span> <span class="p">(</span><span class="n">proportion</span><span class="o">.</span><span class="n">current</span> <span class="o">-</span> <span class="n">proportion</span><span class="o">.</span><span class="n">young</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">age</span><span class="o">.</span><span class="n">current</span> <span class="o">-</span> <span class="n">age</span><span class="o">.</span><span class="n">young</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span>
+        <span class="n">endpoint</span><span class="o">.</span><span class="n">left</span> <span class="o">-</span> <span class="n">age</span><span class="o">.</span><span class="n">young</span>
+    <span class="p">)</span> <span class="o">+</span> <span class="n">proportion</span><span class="o">.</span><span class="n">young</span>
+    <span class="n">pdf_right</span> <span class="o">=</span> <span class="p">(</span><span class="n">proportion</span><span class="o">.</span><span class="n">old</span> <span class="o">-</span> <span class="n">proportion</span><span class="o">.</span><span class="n">current</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">age</span><span class="o">.</span><span class="n">old</span> <span class="o">-</span> <span class="n">age</span><span class="o">.</span><span class="n">current</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span>
+        <span class="n">endpoint</span><span class="o">.</span><span class="n">right</span> <span class="o">-</span> <span class="n">age</span><span class="o">.</span><span class="n">current</span>
+    <span class="p">)</span> <span class="o">+</span> <span class="n">proportion</span><span class="o">.</span><span class="n">current</span>
+    <span class="n">area</span> <span class="o">=</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span>
+        <span class="p">(</span><span class="n">proportion</span><span class="o">.</span><span class="n">current</span> <span class="o">+</span> <span class="n">pdf_left</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="n">age</span><span class="o">.</span><span class="n">current</span> <span class="o">-</span> <span class="n">endpoint</span><span class="o">.</span><span class="n">left</span><span class="p">)</span>
+        <span class="o">+</span> <span class="p">(</span><span class="n">pdf_right</span> <span class="o">+</span> <span class="n">proportion</span><span class="o">.</span><span class="n">current</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="n">endpoint</span><span class="o">.</span><span class="n">right</span> <span class="o">-</span> <span class="n">age</span><span class="o">.</span><span class="n">current</span><span class="p">)</span>
+    <span class="p">)</span>
+
+    <span class="n">pdf</span> <span class="o">=</span> <span class="n">EndpointValues</span><span class="p">(</span><span class="n">pdf_left</span><span class="p">,</span> <span class="n">pdf_right</span><span class="p">)</span>
+
+    <span class="c1"># pdf slopes.</span>
+    <span class="n">m_left</span> <span class="o">=</span> <span class="p">(</span><span class="n">proportion</span><span class="o">.</span><span class="n">current</span> <span class="o">-</span> <span class="n">pdf</span><span class="o">.</span><span class="n">left</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">age</span><span class="o">.</span><span class="n">current</span> <span class="o">-</span> <span class="n">endpoint</span><span class="o">.</span><span class="n">left</span><span class="p">)</span>
+    <span class="n">m_right</span> <span class="o">=</span> <span class="p">(</span><span class="n">pdf</span><span class="o">.</span><span class="n">right</span> <span class="o">-</span> <span class="n">proportion</span><span class="o">.</span><span class="n">current</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">endpoint</span><span class="o">.</span><span class="n">right</span> <span class="o">-</span> <span class="n">age</span><span class="o">.</span><span class="n">current</span><span class="p">)</span>
+    <span class="n">slope</span> <span class="o">=</span> <span class="n">EndpointValues</span><span class="p">(</span><span class="n">m_left</span><span class="p">,</span> <span class="n">m_right</span><span class="p">)</span>
+
+    <span class="c1"># The decision bound on the uniform rv.</span>
+    <span class="n">cdf_inflection_point</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="mi">1</span> <span class="o">/</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">area</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="n">proportion</span><span class="o">.</span><span class="n">current</span> <span class="o">+</span> <span class="n">pdf</span><span class="o">.</span><span class="n">left</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="n">age</span><span class="o">.</span><span class="n">current</span> <span class="o">-</span> <span class="n">endpoint</span><span class="o">.</span><span class="n">left</span><span class="p">)</span>
+    <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">pdf</span><span class="p">,</span> <span class="n">slope</span><span class="p">,</span> <span class="n">area</span><span class="p">,</span> <span class="n">cdf_inflection_point</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_compute_ages</span><span class="p">(</span>
+    <span class="n">uniform_rv</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">start</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">height</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">slope</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">normalization</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Produces samples from the local age distribution.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    uniform_rv</span>
+<span class="sd">        Values pulled from a uniform distribution and belonging to either the left or</span>
+<span class="sd">        right half of the local distribution. The halves are determined by the point Z</span>
+<span class="sd">        in [0, 1] such that Q(Z) = the midpoint of the age bin in question, where Q is</span>
+<span class="sd">        inverse of the local cumulative distribution function.</span>
+<span class="sd">    start</span>
+<span class="sd">        Either the left edge of the age bin (if we&#39;re in the left half of the distribution) or</span>
+<span class="sd">        the midpoint of the age bin (if we&#39;re in the right half of the distribution).</span>
+<span class="sd">    height</span>
+<span class="sd">        The value of the local distribution at `start`</span>
+<span class="sd">    slope</span>
+<span class="sd">        The slope of the local distribution.</span>
+<span class="sd">    normalization</span>
+<span class="sd">        The total area under the distribution.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">        Smoothed ages from one half of the age bin distribution.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="nb">abs</span><span class="p">(</span><span class="n">slope</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">np</span><span class="o">.</span><span class="n">finfo</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span><span class="o">.</span><span class="n">eps</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">start</span> <span class="o">+</span> <span class="n">normalization</span> <span class="o">/</span> <span class="n">height</span> <span class="o">*</span> <span class="n">uniform_rv</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">start</span> <span class="o">+</span> <span class="n">height</span> <span class="o">/</span> <span class="n">slope</span> <span class="o">*</span> <span class="p">(</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="mi">1</span> <span class="o">+</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">normalization</span> <span class="o">*</span> <span class="n">slope</span> <span class="o">/</span> <span class="n">height</span><span class="o">**</span><span class="mi">2</span> <span class="o">*</span> <span class="n">uniform_rv</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span>
+        <span class="p">)</span>
+
+
+<div class="viewcode-block" id="get_cause_deleted_mortality_rate">
+<a class="viewcode-back" href="../../../api_reference/population/data_transformations.html#vivarium_public_health.population.data_transformations.get_cause_deleted_mortality_rate">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">get_cause_deleted_mortality_rate</span><span class="p">(</span><span class="n">all_cause_mortality_rate</span><span class="p">,</span> <span class="n">list_of_csmrs</span><span class="p">):</span>
+    <span class="n">index_cols</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;age_start&quot;</span><span class="p">,</span> <span class="s2">&quot;age_end&quot;</span><span class="p">,</span> <span class="s2">&quot;sex&quot;</span><span class="p">,</span> <span class="s2">&quot;year_start&quot;</span><span class="p">,</span> <span class="s2">&quot;year_end&quot;</span><span class="p">]</span>
+    <span class="n">all_cause_mortality_rate</span> <span class="o">=</span> <span class="n">all_cause_mortality_rate</span><span class="o">.</span><span class="n">set_index</span><span class="p">(</span><span class="n">index_cols</span><span class="p">)</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">csmr</span> <span class="ow">in</span> <span class="n">list_of_csmrs</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">csmr</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="n">all_cause_mortality_rate</span> <span class="o">=</span> <span class="n">all_cause_mortality_rate</span><span class="o">.</span><span class="n">subtract</span><span class="p">(</span>
+            <span class="n">csmr</span><span class="o">.</span><span class="n">set_index</span><span class="p">(</span><span class="n">index_cols</span><span class="p">)</span>
+        <span class="p">)</span><span class="o">.</span><span class="n">dropna</span><span class="p">()</span>
+
+    <span class="k">return</span> <span class="n">all_cause_mortality_rate</span><span class="o">.</span><span class="n">reset_index</span><span class="p">()</span><span class="o">.</span><span class="n">rename</span><span class="p">(</span>
+        <span class="n">columns</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;value&quot;</span><span class="p">:</span> <span class="s2">&quot;death_due_to_other_causes&quot;</span><span class="p">}</span>
+    <span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="load_population_structure">
+<a class="viewcode-back" href="../../../api_reference/population/data_transformations.html#vivarium_public_health.population.data_transformations.load_population_structure">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">load_population_structure</span><span class="p">(</span><span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+    <span class="n">data</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="s2">&quot;population.structure&quot;</span><span class="p">)</span>
+    <span class="c1"># create an age column which is the midpoint of the age group</span>
+    <span class="n">data</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="k">lambda</span> <span class="n">row</span><span class="p">:</span> <span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="s2">&quot;age_start&quot;</span><span class="p">]</span> <span class="o">+</span> <span class="n">row</span><span class="p">[</span><span class="s2">&quot;age_end&quot;</span><span class="p">])</span> <span class="o">/</span> <span class="mi">2</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">data</span><span class="p">[</span><span class="s2">&quot;location&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="s2">&quot;population.location&quot;</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">data</span></div>
+
+
+
+<div class="viewcode-block" id="get_live_births_per_year">
+<a class="viewcode-back" href="../../../api_reference/population/data_transformations.html#vivarium_public_health.population.data_transformations.get_live_births_per_year">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">get_live_births_per_year</span><span class="p">(</span><span class="n">builder</span><span class="p">):</span>
+    <span class="n">population_data</span> <span class="o">=</span> <span class="n">load_population_structure</span><span class="p">(</span><span class="n">builder</span><span class="p">)</span>
+    <span class="n">birth_data</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="s2">&quot;covariate.live_births_by_sex.estimate&quot;</span><span class="p">)</span>
+
+    <span class="n">validate_crude_birth_rate_data</span><span class="p">(</span><span class="n">builder</span><span class="p">,</span> <span class="n">population_data</span><span class="o">.</span><span class="n">year_end</span><span class="o">.</span><span class="n">max</span><span class="p">())</span>
+    <span class="n">population_data</span> <span class="o">=</span> <span class="n">rescale_final_age_bin</span><span class="p">(</span><span class="n">builder</span><span class="p">,</span> <span class="n">population_data</span><span class="p">)</span>
+
+    <span class="n">initial_population_size</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="o">.</span><span class="n">population</span><span class="o">.</span><span class="n">population_size</span>
+    <span class="n">population_data</span> <span class="o">=</span> <span class="n">population_data</span><span class="o">.</span><span class="n">groupby</span><span class="p">([</span><span class="s2">&quot;year_start&quot;</span><span class="p">])[</span><span class="s2">&quot;value&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+    <span class="n">birth_data</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">birth_data</span><span class="p">[</span><span class="n">birth_data</span><span class="o">.</span><span class="n">parameter</span> <span class="o">==</span> <span class="s2">&quot;mean_value&quot;</span><span class="p">]</span>
+        <span class="o">.</span><span class="n">drop</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;parameter&quot;</span><span class="p">])</span>
+        <span class="o">.</span><span class="n">groupby</span><span class="p">([</span><span class="s2">&quot;year_start&quot;</span><span class="p">])[</span><span class="s2">&quot;value&quot;</span><span class="p">]</span>
+        <span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+    <span class="p">)</span>
+
+    <span class="n">start_year</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="o">.</span><span class="n">time</span><span class="o">.</span><span class="n">start</span><span class="o">.</span><span class="n">year</span>
+    <span class="k">if</span> <span class="p">(</span>
+        <span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="o">.</span><span class="n">interpolation</span><span class="o">.</span><span class="n">extrapolate</span>
+        <span class="ow">and</span> <span class="n">start_year</span> <span class="o">&gt;</span> <span class="n">birth_data</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">max</span><span class="p">()</span>
+    <span class="p">):</span>
+        <span class="n">start_year</span> <span class="o">=</span> <span class="n">birth_data</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">max</span><span class="p">()</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="o">.</span><span class="n">fertility</span><span class="o">.</span><span class="n">time_dependent_live_births</span><span class="p">:</span>
+        <span class="n">birth_data</span> <span class="o">=</span> <span class="n">birth_data</span><span class="o">.</span><span class="n">at</span><span class="p">[</span><span class="n">start_year</span><span class="p">]</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="o">.</span><span class="n">fertility</span><span class="o">.</span><span class="n">time_dependent_population_fraction</span><span class="p">:</span>
+        <span class="n">population_data</span> <span class="o">=</span> <span class="n">population_data</span><span class="o">.</span><span class="n">at</span><span class="p">[</span><span class="n">start_year</span><span class="p">]</span>
+
+    <span class="n">live_birth_rate</span> <span class="o">=</span> <span class="n">initial_population_size</span> <span class="o">/</span> <span class="n">population_data</span> <span class="o">*</span> <span class="n">birth_data</span>
+
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">live_birth_rate</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">)):</span>
+        <span class="n">live_birth_rate</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span>
+            <span class="n">live_birth_rate</span><span class="p">,</span>
+            <span class="n">index</span><span class="o">=</span><span class="n">pd</span><span class="o">.</span><span class="n">RangeIndex</span><span class="p">(</span>
+                <span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="o">.</span><span class="n">time</span><span class="o">.</span><span class="n">start</span><span class="o">.</span><span class="n">year</span><span class="p">,</span>
+                <span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="o">.</span><span class="n">time</span><span class="o">.</span><span class="n">end</span><span class="o">.</span><span class="n">year</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span>
+                <span class="n">name</span><span class="o">=</span><span class="s2">&quot;year&quot;</span><span class="p">,</span>
+            <span class="p">),</span>
+        <span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">live_birth_rate</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">live_birth_rate</span><span class="o">.</span><span class="n">reset_index</span><span class="p">()</span>
+            <span class="o">.</span><span class="n">rename</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;year_start&quot;</span><span class="p">:</span> <span class="s2">&quot;year&quot;</span><span class="p">})</span>
+            <span class="o">.</span><span class="n">set_index</span><span class="p">(</span><span class="s2">&quot;year&quot;</span><span class="p">)</span>
+            <span class="o">.</span><span class="n">value</span>
+        <span class="p">)</span>
+        <span class="n">exceeds_data</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="o">.</span><span class="n">time</span><span class="o">.</span><span class="n">end</span><span class="o">.</span><span class="n">year</span> <span class="o">&gt;</span> <span class="n">live_birth_rate</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">max</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">exceeds_data</span><span class="p">:</span>
+            <span class="n">new_index</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">RangeIndex</span><span class="p">(</span>
+                <span class="n">live_birth_rate</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">min</span><span class="p">(),</span> <span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="o">.</span><span class="n">time</span><span class="o">.</span><span class="n">end</span><span class="o">.</span><span class="n">year</span> <span class="o">+</span> <span class="mi">1</span>
+            <span class="p">)</span>
+            <span class="n">live_birth_rate</span> <span class="o">=</span> <span class="n">live_birth_rate</span><span class="o">.</span><span class="n">reindex</span><span class="p">(</span>
+                <span class="n">new_index</span><span class="p">,</span> <span class="n">fill_value</span><span class="o">=</span><span class="n">live_birth_rate</span><span class="o">.</span><span class="n">at</span><span class="p">[</span><span class="n">live_birth_rate</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">max</span><span class="p">()]</span>
+            <span class="p">)</span>
+    <span class="k">return</span> <span class="n">live_birth_rate</span></div>
+
+
+
+<div class="viewcode-block" id="rescale_final_age_bin">
+<a class="viewcode-back" href="../../../api_reference/population/data_transformations.html#vivarium_public_health.population.data_transformations.rescale_final_age_bin">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">rescale_final_age_bin</span><span class="p">(</span><span class="n">builder</span><span class="p">,</span> <span class="n">population_data</span><span class="p">):</span>
+    <span class="n">untracking_age</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="o">.</span><span class="n">population</span><span class="o">.</span><span class="n">to_dict</span><span class="p">()</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;untracking_age&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">untracking_age</span><span class="p">:</span>
+        <span class="n">population_data</span> <span class="o">=</span> <span class="n">population_data</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span>
+            <span class="n">population_data</span><span class="p">[</span><span class="s2">&quot;age_start&quot;</span><span class="p">]</span> <span class="o">&lt;</span> <span class="n">untracking_age</span>
+        <span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="n">cut_bin_idx</span> <span class="o">=</span> <span class="n">untracking_age</span> <span class="o">&lt;=</span> <span class="n">population_data</span><span class="p">[</span><span class="s2">&quot;age_end&quot;</span><span class="p">]</span>
+        <span class="n">cut_age_start</span> <span class="o">=</span> <span class="n">population_data</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">cut_bin_idx</span><span class="p">,</span> <span class="s2">&quot;age_start&quot;</span><span class="p">]</span>
+        <span class="n">cut_age_end</span> <span class="o">=</span> <span class="n">population_data</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">cut_bin_idx</span><span class="p">,</span> <span class="s2">&quot;age_end&quot;</span><span class="p">]</span>
+        <span class="n">population_data</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">cut_bin_idx</span><span class="p">,</span> <span class="s2">&quot;value&quot;</span><span class="p">]</span> <span class="o">*=</span> <span class="p">(</span><span class="n">untracking_age</span> <span class="o">-</span> <span class="n">cut_age_start</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span>
+            <span class="n">cut_age_end</span> <span class="o">-</span> <span class="n">cut_age_start</span>
+        <span class="p">)</span>
+        <span class="n">population_data</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">cut_bin_idx</span><span class="p">,</span> <span class="s2">&quot;age_end&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">untracking_age</span>
+    <span class="k">return</span> <span class="n">population_data</span></div>
+
+
+
+<div class="viewcode-block" id="validate_crude_birth_rate_data">
+<a class="viewcode-back" href="../../../api_reference/population/data_transformations.html#vivarium_public_health.population.data_transformations.validate_crude_birth_rate_data">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">validate_crude_birth_rate_data</span><span class="p">(</span><span class="n">builder</span><span class="p">,</span> <span class="n">data_year_max</span><span class="p">):</span>
+    <span class="n">population_config</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="o">.</span><span class="n">population</span><span class="o">.</span><span class="n">to_dict</span><span class="p">()</span>
+    <span class="n">untracking_age</span> <span class="o">=</span> <span class="n">population_config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;untracking_age&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="n">age_end</span> <span class="o">=</span> <span class="n">population_config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;age_end&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">untracking_age</span> <span class="ow">and</span> <span class="n">age_end</span> <span class="ow">and</span> <span class="n">age_end</span> <span class="o">!=</span> <span class="n">untracking_age</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="s2">&quot;If you specify an exit age, the initial population age end must be the same &quot;</span>
+            <span class="s2">&quot;for the crude birth rate calculation to work.&quot;</span>
+        <span class="p">)</span>
+
+    <span class="n">exceeds_data</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="o">.</span><span class="n">time</span><span class="o">.</span><span class="n">end</span><span class="o">.</span><span class="n">year</span> <span class="o">&gt;</span> <span class="n">data_year_max</span>
+    <span class="k">if</span> <span class="n">exceeds_data</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="o">.</span><span class="n">interpolation</span><span class="o">.</span><span class="n">extrapolate</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Trying to extrapolate beyond the end of available birth data.&quot;</span><span class="p">)</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, The vivarium developers.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

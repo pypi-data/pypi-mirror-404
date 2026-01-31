@@ -1,0 +1,808 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>vivarium_public_health.risks.effect &mdash; vivarium_public_health 4.3.15.dev2+g712190e05 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/plot_directive.css" />
+
+  
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=7ca62e9d"></script>
+      <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+    <link href="../../../_static/style.css" rel="stylesheet" type="text/css">
+
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            vivarium_public_health
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorials/index.html">Tutorials</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_reference/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">vivarium_public_health</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">vivarium_public_health.risks.effect</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for vivarium_public_health.risks.effect</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">==================</span>
+<span class="sd">Risk Effect Models</span>
+<span class="sd">==================</span>
+
+<span class="sd">This module contains tools for modeling the relationship between risk</span>
+<span class="sd">exposure models and disease models.</span>
+
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Callable</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">importlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">import_module</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">scipy</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">layered_config_tree</span><span class="w"> </span><span class="kn">import</span> <span class="n">ConfigurationError</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium</span><span class="w"> </span><span class="kn">import</span> <span class="n">Component</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.engine</span><span class="w"> </span><span class="kn">import</span> <span class="n">Builder</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.values</span><span class="w"> </span><span class="kn">import</span> <span class="n">Pipeline</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium_public_health.risks</span><span class="w"> </span><span class="kn">import</span> <span class="n">Risk</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium_public_health.risks.data_transformations</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">load_exposure_data</span><span class="p">,</span>
+    <span class="n">pivot_categorical</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium_public_health.risks.distributions</span><span class="w"> </span><span class="kn">import</span> <span class="n">MissingDataError</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium_public_health.utilities</span><span class="w"> </span><span class="kn">import</span> <span class="n">EntityString</span><span class="p">,</span> <span class="n">TargetString</span><span class="p">,</span> <span class="n">get_lookup_columns</span>
+
+
+<div class="viewcode-block" id="RiskEffect">
+<a class="viewcode-back" href="../../../api_reference/risks/effect.html#vivarium_public_health.risks.effect.RiskEffect">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">RiskEffect</span><span class="p">(</span><span class="n">Component</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A component to model the effect of a risk factor on an affected entity&#39;s target rate.</span>
+
+<span class="sd">    This component can source data either from builder.data or from parameters</span>
+<span class="sd">    supplied in the configuration.</span>
+
+<span class="sd">    For a risk named &#39;risk&#39; that affects  &#39;affected_risk&#39; and &#39;affected_cause&#39;,</span>
+<span class="sd">    the configuration would look like:</span>
+
+<span class="sd">    .. code-block:: yaml</span>
+
+<span class="sd">       configuration:</span>
+<span class="sd">            risk_effect.risk_name_on_affected_target:</span>
+<span class="sd">               exposure_parameters: 2</span>
+<span class="sd">               incidence_rate: 10</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="c1">###############</span>
+    <span class="c1"># Properties #</span>
+    <span class="c1">##############</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">name</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_name</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">target</span><span class="p">)</span>
+
+<div class="viewcode-block" id="RiskEffect.get_name">
+<a class="viewcode-back" href="../../../api_reference/risks/effect.html#vivarium_public_health.risks.effect.RiskEffect.get_name">[docs]</a>
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_name</span><span class="p">(</span><span class="n">risk</span><span class="p">:</span> <span class="n">EntityString</span><span class="p">,</span> <span class="n">target</span><span class="p">:</span> <span class="n">TargetString</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;risk_effect.</span><span class="si">{</span><span class="n">risk</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">_on_</span><span class="si">{</span><span class="n">target</span><span class="si">}</span><span class="s2">&quot;</span></div>
+
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">configuration_defaults</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Provides default configuration values for this component.</span>
+
+<span class="sd">        Configuration structure::</span>
+
+<span class="sd">            {risk_effect_name}:</span>
+<span class="sd">                data_sources:</span>
+<span class="sd">                    relative_risk:</span>
+<span class="sd">                        Source for relative risk data. Default is the artifact</span>
+<span class="sd">                        key ``{risk}.relative_risk``. Can also be:</span>
+<span class="sd">                        - A scalar value (e.g., ``1.5``)</span>
+<span class="sd">                        - A scipy.stats distribution name (e.g., ``&quot;uniform&quot;``)</span>
+<span class="sd">                          with parameters in ``data_source_parameters``</span>
+<span class="sd">                    population_attributable_fraction:</span>
+<span class="sd">                        Source for PAF data. Default is the artifact key</span>
+<span class="sd">                        ``{risk}.population_attributable_fraction``. Used to</span>
+<span class="sd">                        adjust the target rate to account for the portion</span>
+<span class="sd">                        attributable to this risk.</span>
+<span class="sd">                data_source_parameters:</span>
+<span class="sd">                    relative_risk: dict</span>
+<span class="sd">                        Parameters for scipy.stats distributions when using</span>
+<span class="sd">                        a distribution name as the ``relative_risk`` source.</span>
+<span class="sd">                        For example, ``{&quot;loc&quot;: 1.0, &quot;scale&quot;: 0.5}`` for a</span>
+<span class="sd">                        uniform distribution.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">:</span> <span class="p">{</span>
+                <span class="s2">&quot;data_sources&quot;</span><span class="p">:</span> <span class="p">{</span>
+                    <span class="s2">&quot;relative_risk&quot;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="si">}</span><span class="s2">.relative_risk&quot;</span><span class="p">,</span>
+                    <span class="s2">&quot;population_attributable_fraction&quot;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="si">}</span><span class="s2">.population_attributable_fraction&quot;</span><span class="p">,</span>
+                <span class="p">},</span>
+                <span class="s2">&quot;data_source_parameters&quot;</span><span class="p">:</span> <span class="p">{</span>
+                    <span class="s2">&quot;relative_risk&quot;</span><span class="p">:</span> <span class="p">{},</span>
+                <span class="p">},</span>
+            <span class="p">}</span>
+        <span class="p">}</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">is_exposure_categorical</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_exposure_distribution_type</span> <span class="ow">in</span> <span class="p">[</span>
+            <span class="s2">&quot;dichotomous&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;ordered_polytomous&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;unordered_polytomous&quot;</span><span class="p">,</span>
+        <span class="p">]</span>
+
+    <span class="c1">#####################</span>
+    <span class="c1"># Lifecycle methods #</span>
+    <span class="c1">#####################</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">risk</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">target</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        risk</span>
+<span class="sd">            Type and name of risk factor, supplied in the form</span>
+<span class="sd">            &quot;risk_type.risk_name&quot; where risk_type should be singular (e.g.,</span>
+<span class="sd">            risk_factor instead of risk_factors).</span>
+<span class="sd">        target</span>
+<span class="sd">            Type, name, and target rate of entity to be affected by risk factor,</span>
+<span class="sd">            supplied in the form &quot;entity_type.entity_name.measure&quot;</span>
+<span class="sd">            where entity_type should be singular (e.g., cause instead of causes).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">risk</span> <span class="o">=</span> <span class="n">EntityString</span><span class="p">(</span><span class="n">risk</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">target</span> <span class="o">=</span> <span class="n">TargetString</span><span class="p">(</span><span class="n">target</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_exposure_distribution_type</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">exposure_pipeline_name</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">.exposure&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">target_pipeline_name</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">target</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">.</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">target</span><span class="o">.</span><span class="n">measure</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">target_paf_pipeline_name</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">target_pipeline_name</span><span class="si">}</span><span class="s2">.paf&quot;</span>
+
+    <span class="c1"># noinspection PyAttributeOutsideInit</span>
+<div class="viewcode-block" id="RiskEffect.setup">
+<a class="viewcode-back" href="../../../api_reference/risks/effect.html#vivarium_public_health.risks.effect.RiskEffect.setup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">exposure</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_risk_exposure</span><span class="p">(</span><span class="n">builder</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_relative_risk_source</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_relative_risk_source</span><span class="p">(</span><span class="n">builder</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">relative_risk</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_relative_risk_pipeline</span><span class="p">(</span><span class="n">builder</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">register_target_modifier</span><span class="p">(</span><span class="n">builder</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">register_paf_modifier</span><span class="p">(</span><span class="n">builder</span><span class="p">)</span></div>
+
+
+    <span class="c1">#################</span>
+    <span class="c1"># Setup methods #</span>
+    <span class="c1">#################</span>
+
+<div class="viewcode-block" id="RiskEffect.build_all_lookup_tables">
+<a class="viewcode-back" href="../../../api_reference/risks/effect.html#vivarium_public_health.risks.effect.RiskEffect.build_all_lookup_tables">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">build_all_lookup_tables</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Build lookup tables for relative risk and population attributable fraction.</span>
+
+<span class="sd">        This method overrides the default lookup table building to handle the</span>
+<span class="sd">        special processing required for relative risk data, including:</span>
+
+<span class="sd">        - Loading relative risk from artifact, scalar, or scipy.stats distribution</span>
+<span class="sd">        - Pivoting categorical relative risk data from long to wide format</span>
+<span class="sd">        - Filtering data by affected entity and measure</span>
+
+<span class="sd">        Lookup Tables Created</span>
+<span class="sd">        ---------------------</span>
+<span class="sd">        relative_risk</span>
+<span class="sd">            Relative risk values. For categorical exposures, value columns are</span>
+<span class="sd">            the category names (e.g., &#39;cat1&#39;, &#39;cat2&#39;). For continuous exposures,</span>
+<span class="sd">            a single value column is used.</span>
+<span class="sd">        population_attributable_fraction</span>
+<span class="sd">            PAF values used to modify the target pipeline&#39;s PAF.</span>
+
+<span class="sd">        Data Sources Used</span>
+<span class="sd">        -----------------</span>
+<span class="sd">        - ``relative_risk``: From ``data_sources.relative_risk``. Can be an</span>
+<span class="sd">          artifact key, scalar, or scipy.stats distribution name (with params</span>
+<span class="sd">          in ``data_source_parameters.relative_risk``).</span>
+<span class="sd">        - ``population_attributable_fraction``: From</span>
+<span class="sd">          ``data_sources.population_attributable_fraction``.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_exposure_distribution_type</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_distribution_type</span><span class="p">(</span><span class="n">builder</span><span class="p">)</span>
+
+        <span class="n">rr_data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">load_relative_risk</span><span class="p">(</span><span class="n">builder</span><span class="p">)</span>
+        <span class="n">rr_value_cols</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_exposure_categorical</span><span class="p">:</span>
+            <span class="n">rr_data</span><span class="p">,</span> <span class="n">rr_value_cols</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">process_categorical_data</span><span class="p">(</span><span class="n">builder</span><span class="p">,</span> <span class="n">rr_data</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lookup_tables</span><span class="p">[</span><span class="s2">&quot;relative_risk&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">build_lookup_table</span><span class="p">(</span>
+            <span class="n">builder</span><span class="p">,</span> <span class="n">rr_data</span><span class="p">,</span> <span class="n">rr_value_cols</span>
+        <span class="p">)</span>
+
+        <span class="n">paf_data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_filtered_data</span><span class="p">(</span>
+            <span class="n">builder</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">configuration</span><span class="o">.</span><span class="n">data_sources</span><span class="o">.</span><span class="n">population_attributable_fraction</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lookup_tables</span><span class="p">[</span><span class="s2">&quot;population_attributable_fraction&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">build_lookup_table</span><span class="p">(</span>
+            <span class="n">builder</span><span class="p">,</span> <span class="n">paf_data</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="RiskEffect.get_distribution_type">
+<a class="viewcode-back" href="../../../api_reference/risks/effect.html#vivarium_public_health.risks.effect.RiskEffect.get_distribution_type">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_distribution_type</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the distribution type for the risk from the configuration.&quot;&quot;&quot;</span>
+        <span class="n">risk_exposure_component</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_risk_exposure_class</span><span class="p">(</span><span class="n">builder</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">risk_exposure_component</span><span class="o">.</span><span class="n">distribution_type</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">risk_exposure_component</span><span class="o">.</span><span class="n">distribution_type</span>
+        <span class="k">return</span> <span class="n">risk_exposure_component</span><span class="o">.</span><span class="n">get_distribution_type</span><span class="p">(</span><span class="n">builder</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="RiskEffect.load_relative_risk">
+<a class="viewcode-back" href="../../../api_reference/risks/effect.html#vivarium_public_health.risks.effect.RiskEffect.load_relative_risk">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">load_relative_risk</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">,</span>
+        <span class="n">configuration</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span> <span class="o">|</span> <span class="nb">float</span> <span class="o">|</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">configuration</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">configuration</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">configuration</span>
+
+        <span class="n">rr_source</span> <span class="o">=</span> <span class="n">configuration</span><span class="o">.</span><span class="n">data_sources</span><span class="o">.</span><span class="n">relative_risk</span>
+        <span class="n">rr_dist_parameters</span> <span class="o">=</span> <span class="n">configuration</span><span class="o">.</span><span class="n">data_source_parameters</span><span class="o">.</span><span class="n">relative_risk</span><span class="o">.</span><span class="n">to_dict</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">rr_source</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">distribution</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">import_module</span><span class="p">(</span><span class="s2">&quot;scipy.stats&quot;</span><span class="p">),</span> <span class="n">rr_source</span><span class="p">)</span>
+                <span class="n">rng</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">(</span><span class="n">builder</span><span class="o">.</span><span class="n">randomness</span><span class="o">.</span><span class="n">get_seed</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">))</span>
+                <span class="n">rr_data</span> <span class="o">=</span> <span class="n">distribution</span><span class="p">(</span><span class="o">**</span><span class="n">rr_dist_parameters</span><span class="p">)</span><span class="o">.</span><span class="n">ppf</span><span class="p">(</span><span class="n">rng</span><span class="o">.</span><span class="n">random</span><span class="p">())</span>
+            <span class="k">except</span> <span class="ne">AttributeError</span><span class="p">:</span>
+                <span class="n">rr_data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_filtered_data</span><span class="p">(</span><span class="n">builder</span><span class="p">,</span> <span class="n">rr_source</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">TypeError</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">ConfigurationError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;Parameters </span><span class="si">{</span><span class="n">rr_dist_parameters</span><span class="si">}</span><span class="s2"> are not valid for distribution </span><span class="si">{</span><span class="n">rr_source</span><span class="si">}</span><span class="s2">.&quot;</span>
+                <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">rr_data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_filtered_data</span><span class="p">(</span><span class="n">builder</span><span class="p">,</span> <span class="n">rr_source</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">rr_data</span></div>
+
+
+<div class="viewcode-block" id="RiskEffect.get_filtered_data">
+<a class="viewcode-back" href="../../../api_reference/risks/effect.html#vivarium_public_health.risks.effect.RiskEffect.get_filtered_data">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_filtered_data</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="s2">&quot;Builder&quot;</span><span class="p">,</span> <span class="n">data_source</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="nb">float</span> <span class="o">|</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span> <span class="o">|</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">get_data</span><span class="p">(</span><span class="n">builder</span><span class="p">,</span> <span class="n">data_source</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">):</span>
+            <span class="c1"># filter data to only include the target entity and measure</span>
+            <span class="n">correct_target_mask</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="n">columns_to_drop</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="k">if</span> <span class="s2">&quot;affected_entity&quot;</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+                <span class="n">correct_target_mask</span> <span class="o">&amp;=</span> <span class="n">data</span><span class="p">[</span><span class="s2">&quot;affected_entity&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">target</span><span class="o">.</span><span class="n">name</span>
+                <span class="n">columns_to_drop</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;affected_entity&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="s2">&quot;affected_measure&quot;</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+                <span class="n">correct_target_mask</span> <span class="o">&amp;=</span> <span class="n">data</span><span class="p">[</span><span class="s2">&quot;affected_measure&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">target</span><span class="o">.</span><span class="n">measure</span>
+                <span class="n">columns_to_drop</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;affected_measure&quot;</span><span class="p">)</span>
+            <span class="n">data</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">correct_target_mask</span><span class="p">]</span><span class="o">.</span><span class="n">drop</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="n">columns_to_drop</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">data</span></div>
+
+
+<div class="viewcode-block" id="RiskEffect.process_categorical_data">
+<a class="viewcode-back" href="../../../api_reference/risks/effect.html#vivarium_public_health.risks.effect.RiskEffect.process_categorical_data">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">process_categorical_data</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">,</span> <span class="n">rr_data</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="nb">float</span> <span class="o">|</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span> <span class="o">|</span> <span class="nb">float</span> <span class="o">|</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]]:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">rr_data</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">):</span>
+            <span class="n">cat1</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="s2">&quot;population.demographic_dimensions&quot;</span><span class="p">)</span>
+            <span class="n">cat1</span><span class="p">[</span><span class="s2">&quot;parameter&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;cat1&quot;</span>
+            <span class="n">cat1</span><span class="p">[</span><span class="s2">&quot;value&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">rr_data</span>
+            <span class="n">cat2</span> <span class="o">=</span> <span class="n">cat1</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+            <span class="n">cat2</span><span class="p">[</span><span class="s2">&quot;parameter&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;cat2&quot;</span>
+            <span class="n">cat2</span><span class="p">[</span><span class="s2">&quot;value&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">1</span>
+            <span class="n">rr_data</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">concat</span><span class="p">([</span><span class="n">cat1</span><span class="p">,</span> <span class="n">cat2</span><span class="p">],</span> <span class="n">ignore_index</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="k">if</span> <span class="s2">&quot;parameter&quot;</span> <span class="ow">in</span> <span class="n">rr_data</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">names</span><span class="p">:</span>
+            <span class="n">rr_data</span> <span class="o">=</span> <span class="n">rr_data</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="s2">&quot;parameter&quot;</span><span class="p">)</span>
+
+        <span class="n">rr_value_cols</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">rr_data</span><span class="p">[</span><span class="s2">&quot;parameter&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">unique</span><span class="p">())</span>
+        <span class="n">rr_data</span> <span class="o">=</span> <span class="n">pivot_categorical</span><span class="p">(</span><span class="n">builder</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="p">,</span> <span class="n">rr_data</span><span class="p">,</span> <span class="s2">&quot;parameter&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">rr_data</span><span class="p">,</span> <span class="n">rr_value_cols</span></div>
+
+
+    <span class="c1"># todo currently this isn&#39;t being called. we need to properly set rrs if</span>
+    <span class="c1">#  the exposure has been rebinned</span>
+<div class="viewcode-block" id="RiskEffect.rebin_relative_risk_data">
+<a class="viewcode-back" href="../../../api_reference/risks/effect.html#vivarium_public_health.risks.effect.RiskEffect.rebin_relative_risk_data">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">rebin_relative_risk_data</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">,</span> <span class="n">relative_risk_data</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Rebin relative risk data.</span>
+
+<span class="sd">        When the polytomous risk is rebinned, matching relative risk needs to be rebinned.</span>
+<span class="sd">        After rebinning, rr for both exposed and unexposed categories should be the weighted sum of relative risk</span>
+<span class="sd">        of the component categories where weights are relative proportions of exposure of those categories.</span>
+<span class="sd">        For example, if cat1, cat2, cat3 are exposed categories and cat4 is unexposed with exposure [0.1,0.2,0.3,0.4],</span>
+<span class="sd">        for the matching rr = [rr1, rr2, rr3, 1], rebinned rr for the rebinned cat1 should be:</span>
+<span class="sd">        (0.1 *rr1 + 0.2 * rr2 + 0.3* rr3) / (0.1+0.2+0.3)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">risk</span> <span class="ow">in</span> <span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="o">.</span><span class="n">to_dict</span><span class="p">():</span>
+            <span class="k">return</span> <span class="n">relative_risk_data</span>
+
+        <span class="n">rebin_exposed_categories</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="p">][</span><span class="s2">&quot;rebinned_exposed&quot;</span><span class="p">])</span>
+
+        <span class="k">if</span> <span class="n">rebin_exposed_categories</span><span class="p">:</span>
+            <span class="c1"># todo make sure this works</span>
+            <span class="n">exposure_data</span> <span class="o">=</span> <span class="n">load_exposure_data</span><span class="p">(</span><span class="n">builder</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="p">)</span>
+            <span class="n">relative_risk_data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_rebin_relative_risk_data</span><span class="p">(</span>
+                <span class="n">relative_risk_data</span><span class="p">,</span> <span class="n">exposure_data</span><span class="p">,</span> <span class="n">rebin_exposed_categories</span>
+            <span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">relative_risk_data</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_rebin_relative_risk_data</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">relative_risk_data</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span>
+        <span class="n">exposure_data</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span>
+        <span class="n">rebin_exposed_categories</span><span class="p">:</span> <span class="nb">set</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+        <span class="n">cols</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">exposure_data</span><span class="o">.</span><span class="n">columns</span><span class="o">.</span><span class="n">difference</span><span class="p">([</span><span class="s2">&quot;value&quot;</span><span class="p">]))</span>
+
+        <span class="n">relative_risk_data</span> <span class="o">=</span> <span class="n">relative_risk_data</span><span class="o">.</span><span class="n">merge</span><span class="p">(</span><span class="n">exposure_data</span><span class="p">,</span> <span class="n">on</span><span class="o">=</span><span class="n">cols</span><span class="p">)</span>
+        <span class="n">relative_risk_data</span><span class="p">[</span><span class="s2">&quot;value_x&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">relative_risk_data</span><span class="o">.</span><span class="n">value_x</span><span class="o">.</span><span class="n">multiply</span><span class="p">(</span>
+            <span class="n">relative_risk_data</span><span class="o">.</span><span class="n">value_y</span>
+        <span class="p">)</span>
+        <span class="n">relative_risk_data</span><span class="o">.</span><span class="n">parameter</span> <span class="o">=</span> <span class="n">relative_risk_data</span><span class="p">[</span><span class="s2">&quot;parameter&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">map</span><span class="p">(</span>
+            <span class="k">lambda</span> <span class="n">p</span><span class="p">:</span> <span class="s2">&quot;cat1&quot;</span> <span class="k">if</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">rebin_exposed_categories</span> <span class="k">else</span> <span class="s2">&quot;cat2&quot;</span>
+        <span class="p">)</span>
+        <span class="n">relative_risk_data</span> <span class="o">=</span> <span class="n">relative_risk_data</span><span class="o">.</span><span class="n">groupby</span><span class="p">(</span><span class="n">cols</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span><span class="o">.</span><span class="n">reset_index</span><span class="p">()</span>
+        <span class="n">relative_risk_data</span><span class="p">[</span><span class="s2">&quot;value&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">relative_risk_data</span><span class="o">.</span><span class="n">value_x</span><span class="o">.</span><span class="n">divide</span><span class="p">(</span>
+            <span class="n">relative_risk_data</span><span class="o">.</span><span class="n">value_y</span>
+        <span class="p">)</span><span class="o">.</span><span class="n">fillna</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">relative_risk_data</span><span class="o">.</span><span class="n">drop</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;value_x&quot;</span><span class="p">,</span> <span class="s2">&quot;value_y&quot;</span><span class="p">])</span>
+
+<div class="viewcode-block" id="RiskEffect.get_risk_exposure">
+<a class="viewcode-back" href="../../../api_reference/risks/effect.html#vivarium_public_health.risks.effect.RiskEffect.get_risk_exposure">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_risk_exposure</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">pd</span><span class="o">.</span><span class="n">Index</span><span class="p">],</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="n">builder</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">get_value</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">exposure_pipeline_name</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="RiskEffect.adjust_target">
+<a class="viewcode-back" href="../../../api_reference/risks/effect.html#vivarium_public_health.risks.effect.RiskEffect.adjust_target">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">adjust_target</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">index</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">Index</span><span class="p">,</span> <span class="n">target</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">:</span>
+        <span class="n">relative_risk</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">relative_risk</span><span class="p">(</span><span class="n">index</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">target</span> <span class="o">*</span> <span class="n">relative_risk</span></div>
+
+
+<div class="viewcode-block" id="RiskEffect.get_relative_risk_source">
+<a class="viewcode-back" href="../../../api_reference/risks/effect.html#vivarium_public_health.risks.effect.RiskEffect.get_relative_risk_source">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_relative_risk_source</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">pd</span><span class="o">.</span><span class="n">Index</span><span class="p">],</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">]:</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_exposure_categorical</span><span class="p">:</span>
+            <span class="n">tmred</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="si">}</span><span class="s2">.tmred&quot;</span><span class="p">)</span>
+            <span class="n">tmrel</span> <span class="o">=</span> <span class="mf">0.5</span> <span class="o">*</span> <span class="p">(</span><span class="n">tmred</span><span class="p">[</span><span class="s2">&quot;min&quot;</span><span class="p">]</span> <span class="o">+</span> <span class="n">tmred</span><span class="p">[</span><span class="s2">&quot;max&quot;</span><span class="p">])</span>
+            <span class="n">scale</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="si">}</span><span class="s2">.relative_risk_scalar&quot;</span><span class="p">)</span>
+
+            <span class="k">def</span><span class="w"> </span><span class="nf">generate_relative_risk</span><span class="p">(</span><span class="n">index</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">Index</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">:</span>
+                <span class="n">rr</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lookup_tables</span><span class="p">[</span><span class="s2">&quot;relative_risk&quot;</span><span class="p">](</span><span class="n">index</span><span class="p">)</span>
+                <span class="n">exposure</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">exposure</span><span class="p">(</span><span class="n">index</span><span class="p">)</span>
+                <span class="n">relative_risk</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">maximum</span><span class="p">(</span><span class="n">rr</span><span class="o">.</span><span class="n">values</span> <span class="o">**</span> <span class="p">((</span><span class="n">exposure</span> <span class="o">-</span> <span class="n">tmrel</span><span class="p">)</span> <span class="o">/</span> <span class="n">scale</span><span class="p">),</span> <span class="mi">1</span><span class="p">)</span>
+                <span class="k">return</span> <span class="n">relative_risk</span>
+
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">index_columns</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;index&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="o">.</span><span class="n">name</span><span class="p">]</span>
+
+            <span class="k">def</span><span class="w"> </span><span class="nf">generate_relative_risk</span><span class="p">(</span><span class="n">index</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">Index</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">:</span>
+                <span class="n">rr</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lookup_tables</span><span class="p">[</span><span class="s2">&quot;relative_risk&quot;</span><span class="p">](</span><span class="n">index</span><span class="p">)</span>
+                <span class="n">exposure</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">exposure</span><span class="p">(</span><span class="n">index</span><span class="p">)</span><span class="o">.</span><span class="n">reset_index</span><span class="p">()</span>
+                <span class="n">exposure</span><span class="o">.</span><span class="n">columns</span> <span class="o">=</span> <span class="n">index_columns</span>
+                <span class="n">exposure</span> <span class="o">=</span> <span class="n">exposure</span><span class="o">.</span><span class="n">set_index</span><span class="p">(</span><span class="n">index_columns</span><span class="p">)</span>
+
+                <span class="n">relative_risk</span> <span class="o">=</span> <span class="n">rr</span><span class="o">.</span><span class="n">stack</span><span class="p">()</span><span class="o">.</span><span class="n">reset_index</span><span class="p">()</span>
+                <span class="n">relative_risk</span><span class="o">.</span><span class="n">columns</span> <span class="o">=</span> <span class="n">index_columns</span> <span class="o">+</span> <span class="p">[</span><span class="s2">&quot;value&quot;</span><span class="p">]</span>
+                <span class="n">relative_risk</span> <span class="o">=</span> <span class="n">relative_risk</span><span class="o">.</span><span class="n">set_index</span><span class="p">(</span><span class="n">index_columns</span><span class="p">)</span>
+
+                <span class="n">effect</span> <span class="o">=</span> <span class="n">relative_risk</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">exposure</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="s2">&quot;value&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">droplevel</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+                <span class="k">return</span> <span class="n">effect</span>
+
+        <span class="k">return</span> <span class="n">generate_relative_risk</span></div>
+
+
+<div class="viewcode-block" id="RiskEffect.get_relative_risk_pipeline">
+<a class="viewcode-back" href="../../../api_reference/risks/effect.html#vivarium_public_health.risks.effect.RiskEffect.get_relative_risk_pipeline">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_relative_risk_pipeline</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Pipeline</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">builder</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">register_value_producer</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">_on_</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">target</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">.relative_risk&quot;</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_relative_risk_source</span><span class="p">,</span>
+            <span class="n">component</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span>
+            <span class="n">required_resources</span><span class="o">=</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">exposure</span><span class="p">],</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="RiskEffect.register_target_modifier">
+<a class="viewcode-back" href="../../../api_reference/risks/effect.html#vivarium_public_health.risks.effect.RiskEffect.register_target_modifier">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">register_target_modifier</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">builder</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">register_value_modifier</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">target_pipeline_name</span><span class="p">,</span>
+            <span class="n">modifier</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">adjust_target</span><span class="p">,</span>
+            <span class="n">component</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span>
+            <span class="n">required_resources</span><span class="o">=</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">relative_risk</span><span class="p">],</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="RiskEffect.register_paf_modifier">
+<a class="viewcode-back" href="../../../api_reference/risks/effect.html#vivarium_public_health.risks.effect.RiskEffect.register_paf_modifier">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">register_paf_modifier</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">required_columns</span> <span class="o">=</span> <span class="n">get_lookup_columns</span><span class="p">(</span>
+            <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">lookup_tables</span><span class="p">[</span><span class="s2">&quot;population_attributable_fraction&quot;</span><span class="p">]]</span>
+        <span class="p">)</span>
+        <span class="n">builder</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">register_value_modifier</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">target_paf_pipeline_name</span><span class="p">,</span>
+            <span class="n">modifier</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">lookup_tables</span><span class="p">[</span><span class="s2">&quot;population_attributable_fraction&quot;</span><span class="p">],</span>
+            <span class="n">component</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span>
+            <span class="n">required_resources</span><span class="o">=</span><span class="n">required_columns</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+    <span class="c1">##################</span>
+    <span class="c1"># Helper methods #</span>
+    <span class="c1">##################</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_get_risk_exposure_class</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Risk</span><span class="p">:</span>
+        <span class="n">risk_exposure_component</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">components</span><span class="o">.</span><span class="n">get_component</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">risk_exposure_component</span><span class="p">,</span> <span class="n">Risk</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Risk effect model </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> requires a Risk component named </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">risk_exposure_component</span></div>
+
+
+
+<div class="viewcode-block" id="NonLogLinearRiskEffect">
+<a class="viewcode-back" href="../../../api_reference/risks/effect.html#vivarium_public_health.risks.effect.NonLogLinearRiskEffect">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">NonLogLinearRiskEffect</span><span class="p">(</span><span class="n">RiskEffect</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A component to model the exposure-parametrized effect of a risk factor.</span>
+
+<span class="sd">    More specifically, this models the effect of the risk factor on the target rate of</span>
+<span class="sd">    some affected entity.</span>
+
+<span class="sd">    This component:</span>
+<span class="sd">    1) reads TMRED data from the artifact and define the TMREL</span>
+<span class="sd">    2) calculates the relative risk at TMREL by linearly interpolating over</span>
+<span class="sd">    relative risk data defined in the configuration</span>
+<span class="sd">    3) divides relative risk data from configuration by RR at TMREL</span>
+<span class="sd">    and clip to be greater than 1</span>
+<span class="sd">    4) builds a LookupTable which returns the exposure and RR of the left and right edges</span>
+<span class="sd">    of the RR bin containing a simulant&#39;s exposure</span>
+<span class="sd">    5) uses this LookupTable to modify the target pipeline by linearly interpolating</span>
+<span class="sd">    a simulant&#39;s RR value and multiplying it by the intended target rate</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="c1">##############</span>
+    <span class="c1"># Properties #</span>
+    <span class="c1">##############</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">configuration_defaults</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Provides default configuration values for this component.</span>
+
+<span class="sd">        Configuration structure::</span>
+
+<span class="sd">            {risk_effect_name}:</span>
+<span class="sd">                data_sources:</span>
+<span class="sd">                    relative_risk:</span>
+<span class="sd">                        Source for relative risk data. Default is the artifact</span>
+<span class="sd">                        key ``{risk}.relative_risk``. The data must be a</span>
+<span class="sd">                        DataFrame with a numeric ``parameter`` column containing</span>
+<span class="sd">                        exposure thresholds and a ``value`` column with the</span>
+<span class="sd">                        corresponding relative risks.</span>
+<span class="sd">                    population_attributable_fraction:</span>
+<span class="sd">                        Source for PAF data. Default is the artifact key</span>
+<span class="sd">                        ``{risk}.population_attributable_fraction``. Used to</span>
+<span class="sd">                        adjust the target rate to account for the portion</span>
+<span class="sd">                        attributable to this risk.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">:</span> <span class="p">{</span>
+                <span class="s2">&quot;data_sources&quot;</span><span class="p">:</span> <span class="p">{</span>
+                    <span class="s2">&quot;relative_risk&quot;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="si">}</span><span class="s2">.relative_risk&quot;</span><span class="p">,</span>
+                    <span class="s2">&quot;population_attributable_fraction&quot;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="si">}</span><span class="s2">.population_attributable_fraction&quot;</span><span class="p">,</span>
+                <span class="p">},</span>
+            <span class="p">}</span>
+        <span class="p">}</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">columns_required</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">_exposure&quot;</span><span class="p">]</span>
+
+    <span class="c1">#################</span>
+    <span class="c1"># Setup methods #</span>
+    <span class="c1">#################</span>
+
+<div class="viewcode-block" id="NonLogLinearRiskEffect.get_name">
+<a class="viewcode-back" href="../../../api_reference/risks/effect.html#vivarium_public_health.risks.effect.NonLogLinearRiskEffect.get_name">[docs]</a>
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_name</span><span class="p">(</span><span class="n">risk</span><span class="p">:</span> <span class="n">EntityString</span><span class="p">,</span> <span class="n">target</span><span class="p">:</span> <span class="n">TargetString</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;non_log_linear_risk_effect.</span><span class="si">{</span><span class="n">risk</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">_on_</span><span class="si">{</span><span class="n">target</span><span class="si">}</span><span class="s2">&quot;</span></div>
+
+
+<div class="viewcode-block" id="NonLogLinearRiskEffect.build_all_lookup_tables">
+<a class="viewcode-back" href="../../../api_reference/risks/effect.html#vivarium_public_health.risks.effect.NonLogLinearRiskEffect.build_all_lookup_tables">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">build_all_lookup_tables</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Build lookup tables for non-log-linear relative risk interpolation.</span>
+
+<span class="sd">        This method builds lookup tables that enable piecewise linear</span>
+<span class="sd">        interpolation of relative risk based on continuous exposure values.</span>
+<span class="sd">        It creates exposure bins from the relative risk data and stores the</span>
+<span class="sd">        left and right boundaries of each bin for runtime interpolation.</span>
+
+<span class="sd">        Lookup Tables Created</span>
+<span class="sd">        ---------------------</span>
+<span class="sd">        relative_risk</span>
+<span class="sd">            Contains interval data for piecewise linear interpolation:</span>
+
+<span class="sd">            - ``left_exposure``: Left boundary of exposure bin</span>
+<span class="sd">            - ``left_rr``: Relative risk at left boundary</span>
+<span class="sd">            - ``right_exposure``: Right boundary of exposure bin</span>
+<span class="sd">            - ``right_rr``: Relative risk at right boundary</span>
+
+<span class="sd">            The table uses ``{risk}_exposure_start`` and ``{risk}_exposure_end``</span>
+<span class="sd">            as parameter columns, enabling lookup by simulant exposure level.</span>
+
+<span class="sd">        population_attributable_fraction</span>
+<span class="sd">            PAF values used to modify the target pipeline&#39;s PAF.</span>
+
+<span class="sd">        Data Sources Used</span>
+<span class="sd">        -----------------</span>
+<span class="sd">        - ``relative_risk``: Must be a DataFrame with numeric &#39;parameter&#39;</span>
+<span class="sd">          column (exposure thresholds) and &#39;value&#39; column (relative risks).</span>
+<span class="sd">          Values are normalized by the RR at TMREL.</span>
+<span class="sd">        - ``population_attributable_fraction``: Standard PAF data.</span>
+
+<span class="sd">        Notes</span>
+<span class="sd">        -----</span>
+<span class="sd">        The relative risk values are normalized by dividing by the RR at TMREL</span>
+<span class="sd">        (theoretical minimum risk exposure level), then clipped to be &gt;= 1.0.</span>
+<span class="sd">        This ensures the baseline (TMREL) has RR = 1.0.</span>
+
+<span class="sd">        At runtime, ``get_relative_risk_source`` performs linear interpolation</span>
+<span class="sd">        within each simulant&#39;s exposure bin using: RR = m * exposure + b</span>
+<span class="sd">        where m and b are computed from the bin boundaries.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">rr_data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">load_relative_risk</span><span class="p">(</span><span class="n">builder</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">validate_rr_data</span><span class="p">(</span><span class="n">rr_data</span><span class="p">)</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">define_rr_intervals</span><span class="p">(</span><span class="n">df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+            <span class="c1"># create new row for right-most exposure bin (RR is same as max RR)</span>
+            <span class="n">max_exposure_row</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">tail</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+            <span class="n">max_exposure_row</span><span class="p">[</span><span class="s2">&quot;parameter&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">inf</span>
+            <span class="n">rr_data</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">concat</span><span class="p">([</span><span class="n">df</span><span class="p">,</span> <span class="n">max_exposure_row</span><span class="p">])</span><span class="o">.</span><span class="n">reset_index</span><span class="p">()</span>
+
+            <span class="n">rr_data</span><span class="p">[</span><span class="s2">&quot;left_exposure&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="n">rr_data</span><span class="p">[</span><span class="s2">&quot;parameter&quot;</span><span class="p">][:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+            <span class="n">rr_data</span><span class="p">[</span><span class="s2">&quot;left_rr&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="n">rr_data</span><span class="p">[</span><span class="s2">&quot;value&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">min</span><span class="p">()]</span> <span class="o">+</span> <span class="n">rr_data</span><span class="p">[</span><span class="s2">&quot;value&quot;</span><span class="p">][:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
+            <span class="n">rr_data</span><span class="p">[</span><span class="s2">&quot;right_exposure&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">rr_data</span><span class="p">[</span><span class="s2">&quot;parameter&quot;</span><span class="p">]</span>
+            <span class="n">rr_data</span><span class="p">[</span><span class="s2">&quot;right_rr&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">rr_data</span><span class="p">[</span><span class="s2">&quot;value&quot;</span><span class="p">]</span>
+
+            <span class="k">return</span> <span class="n">rr_data</span><span class="p">[</span>
+                <span class="p">[</span><span class="s2">&quot;parameter&quot;</span><span class="p">,</span> <span class="s2">&quot;left_exposure&quot;</span><span class="p">,</span> <span class="s2">&quot;left_rr&quot;</span><span class="p">,</span> <span class="s2">&quot;right_exposure&quot;</span><span class="p">,</span> <span class="s2">&quot;right_rr&quot;</span><span class="p">]</span>
+            <span class="p">]</span>
+
+        <span class="c1"># define exposure and rr interval columns</span>
+        <span class="n">demographic_cols</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">col</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">rr_data</span><span class="o">.</span><span class="n">columns</span> <span class="k">if</span> <span class="n">col</span> <span class="o">!=</span> <span class="s2">&quot;parameter&quot;</span> <span class="ow">and</span> <span class="n">col</span> <span class="o">!=</span> <span class="s2">&quot;value&quot;</span>
+        <span class="p">]</span>
+        <span class="n">rr_data</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">rr_data</span><span class="o">.</span><span class="n">groupby</span><span class="p">(</span><span class="n">demographic_cols</span><span class="p">)</span>
+            <span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="n">define_rr_intervals</span><span class="p">)</span>
+            <span class="o">.</span><span class="n">reset_index</span><span class="p">(</span><span class="n">level</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span> <span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="o">.</span><span class="n">reset_index</span><span class="p">()</span>
+        <span class="p">)</span>
+        <span class="n">rr_data</span> <span class="o">=</span> <span class="n">rr_data</span><span class="o">.</span><span class="n">drop</span><span class="p">(</span><span class="s2">&quot;parameter&quot;</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">rr_data</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">_exposure_start&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">rr_data</span><span class="p">[</span><span class="s2">&quot;left_exposure&quot;</span><span class="p">]</span>
+        <span class="n">rr_data</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">_exposure_end&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">rr_data</span><span class="p">[</span><span class="s2">&quot;right_exposure&quot;</span><span class="p">]</span>
+        <span class="c1"># build lookup table</span>
+        <span class="n">rr_value_cols</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;left_exposure&quot;</span><span class="p">,</span> <span class="s2">&quot;left_rr&quot;</span><span class="p">,</span> <span class="s2">&quot;right_exposure&quot;</span><span class="p">,</span> <span class="s2">&quot;right_rr&quot;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lookup_tables</span><span class="p">[</span><span class="s2">&quot;relative_risk&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">build_lookup_table</span><span class="p">(</span>
+            <span class="n">builder</span><span class="p">,</span> <span class="n">rr_data</span><span class="p">,</span> <span class="n">rr_value_cols</span>
+        <span class="p">)</span>
+
+        <span class="n">paf_data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_filtered_data</span><span class="p">(</span>
+            <span class="n">builder</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">configuration</span><span class="o">.</span><span class="n">data_sources</span><span class="o">.</span><span class="n">population_attributable_fraction</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lookup_tables</span><span class="p">[</span><span class="s2">&quot;population_attributable_fraction&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">build_lookup_table</span><span class="p">(</span>
+            <span class="n">builder</span><span class="p">,</span> <span class="n">paf_data</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="NonLogLinearRiskEffect.load_relative_risk">
+<a class="viewcode-back" href="../../../api_reference/risks/effect.html#vivarium_public_health.risks.effect.NonLogLinearRiskEffect.load_relative_risk">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">load_relative_risk</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">,</span>
+        <span class="n">configuration</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span> <span class="o">|</span> <span class="nb">float</span> <span class="o">|</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">configuration</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">configuration</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">configuration</span>
+
+        <span class="c1"># get TMREL</span>
+        <span class="n">tmred</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="si">}</span><span class="s2">.tmred&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">tmred</span><span class="p">[</span><span class="s2">&quot;distribution&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;uniform&quot;</span><span class="p">:</span>
+            <span class="n">draw</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="o">.</span><span class="n">input_data</span><span class="o">.</span><span class="n">input_draw_number</span>
+            <span class="n">rng</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">(</span><span class="n">builder</span><span class="o">.</span><span class="n">randomness</span><span class="o">.</span><span class="n">get_seed</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">draw</span><span class="p">)))</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">tmrel</span> <span class="o">=</span> <span class="n">rng</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="n">tmred</span><span class="p">[</span><span class="s2">&quot;min&quot;</span><span class="p">],</span> <span class="n">tmred</span><span class="p">[</span><span class="s2">&quot;max&quot;</span><span class="p">])</span>
+        <span class="k">elif</span> <span class="n">tmred</span><span class="p">[</span><span class="s2">&quot;distribution&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;draws&quot;</span><span class="p">:</span>  <span class="c1"># currently only for iron deficiency</span>
+            <span class="k">raise</span> <span class="n">MissingDataError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;This data has draw-level TMRELs. You will need to contact the research team that models </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> to get this data.&quot;</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">MissingDataError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;No TMRED found in gbd_mapping for risk </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="c1"># calculate RR at TMREL</span>
+        <span class="n">rr_source</span> <span class="o">=</span> <span class="n">configuration</span><span class="o">.</span><span class="n">data_sources</span><span class="o">.</span><span class="n">relative_risk</span>
+        <span class="n">original_rrs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_filtered_data</span><span class="p">(</span><span class="n">builder</span><span class="p">,</span> <span class="n">rr_source</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">validate_rr_data</span><span class="p">(</span><span class="n">original_rrs</span><span class="p">)</span>
+
+        <span class="n">demographic_cols</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">col</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">original_rrs</span><span class="o">.</span><span class="n">columns</span> <span class="k">if</span> <span class="n">col</span> <span class="o">!=</span> <span class="s2">&quot;parameter&quot;</span> <span class="ow">and</span> <span class="n">col</span> <span class="o">!=</span> <span class="s2">&quot;value&quot;</span>
+        <span class="p">]</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">get_rr_at_tmrel</span><span class="p">(</span><span class="n">rr_data</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+            <span class="n">interpolated_rr_function</span> <span class="o">=</span> <span class="n">scipy</span><span class="o">.</span><span class="n">interpolate</span><span class="o">.</span><span class="n">interp1d</span><span class="p">(</span>
+                <span class="n">rr_data</span><span class="p">[</span><span class="s2">&quot;parameter&quot;</span><span class="p">],</span>
+                <span class="n">rr_data</span><span class="p">[</span><span class="s2">&quot;value&quot;</span><span class="p">],</span>
+                <span class="n">kind</span><span class="o">=</span><span class="s2">&quot;linear&quot;</span><span class="p">,</span>
+                <span class="n">bounds_error</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+                <span class="n">fill_value</span><span class="o">=</span><span class="p">(</span>
+                    <span class="n">rr_data</span><span class="p">[</span><span class="s2">&quot;value&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">min</span><span class="p">(),</span>
+                    <span class="n">rr_data</span><span class="p">[</span><span class="s2">&quot;value&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">max</span><span class="p">(),</span>
+                <span class="p">),</span>
+            <span class="p">)</span>
+            <span class="n">rr_at_tmrel</span> <span class="o">=</span> <span class="n">interpolated_rr_function</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">tmrel</span><span class="p">)</span><span class="o">.</span><span class="n">item</span><span class="p">()</span>
+            <span class="k">return</span> <span class="n">rr_at_tmrel</span>
+
+        <span class="n">rrs_at_tmrel</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">original_rrs</span><span class="o">.</span><span class="n">groupby</span><span class="p">(</span><span class="n">demographic_cols</span><span class="p">)</span>
+            <span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="n">get_rr_at_tmrel</span><span class="p">)</span>
+            <span class="o">.</span><span class="n">rename</span><span class="p">(</span><span class="s2">&quot;rr_at_tmrel&quot;</span><span class="p">)</span>
+        <span class="p">)</span>
+        <span class="n">rr_data</span> <span class="o">=</span> <span class="n">original_rrs</span><span class="o">.</span><span class="n">merge</span><span class="p">(</span><span class="n">rrs_at_tmrel</span><span class="o">.</span><span class="n">reset_index</span><span class="p">())</span>
+        <span class="n">rr_data</span><span class="p">[</span><span class="s2">&quot;value&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">rr_data</span><span class="p">[</span><span class="s2">&quot;value&quot;</span><span class="p">]</span> <span class="o">/</span> <span class="n">rr_data</span><span class="p">[</span><span class="s2">&quot;rr_at_tmrel&quot;</span><span class="p">]</span>
+        <span class="n">rr_data</span><span class="p">[</span><span class="s2">&quot;value&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">clip</span><span class="p">(</span><span class="n">rr_data</span><span class="p">[</span><span class="s2">&quot;value&quot;</span><span class="p">],</span> <span class="mf">1.0</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">inf</span><span class="p">)</span>
+        <span class="n">rr_data</span> <span class="o">=</span> <span class="n">rr_data</span><span class="o">.</span><span class="n">drop</span><span class="p">(</span><span class="s2">&quot;rr_at_tmrel&quot;</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">rr_data</span></div>
+
+
+<div class="viewcode-block" id="NonLogLinearRiskEffect.get_relative_risk_source">
+<a class="viewcode-back" href="../../../api_reference/risks/effect.html#vivarium_public_health.risks.effect.NonLogLinearRiskEffect.get_relative_risk_source">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_relative_risk_source</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">pd</span><span class="o">.</span><span class="n">Index</span><span class="p">],</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">]:</span>
+        <span class="k">def</span><span class="w"> </span><span class="nf">generate_relative_risk</span><span class="p">(</span><span class="n">index</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">Index</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">:</span>
+            <span class="n">rr_intervals</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lookup_tables</span><span class="p">[</span><span class="s2">&quot;relative_risk&quot;</span><span class="p">](</span><span class="n">index</span><span class="p">)</span>
+            <span class="n">exposure</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">population_view</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">index</span><span class="p">)[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">_exposure&quot;</span><span class="p">]</span>
+            <span class="n">x1</span><span class="p">,</span> <span class="n">x2</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">rr_intervals</span><span class="p">[</span><span class="s2">&quot;left_exposure&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="p">,</span>
+                <span class="n">rr_intervals</span><span class="p">[</span><span class="s2">&quot;right_exposure&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">y1</span><span class="p">,</span> <span class="n">y2</span> <span class="o">=</span> <span class="n">rr_intervals</span><span class="p">[</span><span class="s2">&quot;left_rr&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="p">,</span> <span class="n">rr_intervals</span><span class="p">[</span><span class="s2">&quot;right_rr&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span>
+            <span class="n">m</span> <span class="o">=</span> <span class="p">(</span><span class="n">y2</span> <span class="o">-</span> <span class="n">y1</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">x2</span> <span class="o">-</span> <span class="n">x1</span><span class="p">)</span>
+            <span class="n">b</span> <span class="o">=</span> <span class="n">y1</span> <span class="o">-</span> <span class="n">m</span> <span class="o">*</span> <span class="n">x1</span>
+            <span class="n">relative_risk</span> <span class="o">=</span> <span class="n">b</span> <span class="o">+</span> <span class="n">m</span> <span class="o">*</span> <span class="n">exposure</span>
+            <span class="k">return</span> <span class="n">relative_risk</span>
+
+        <span class="k">return</span> <span class="n">generate_relative_risk</span></div>
+
+
+    <span class="c1">##############</span>
+    <span class="c1"># Validators #</span>
+    <span class="c1">##############</span>
+
+<div class="viewcode-block" id="NonLogLinearRiskEffect.validate_rr_data">
+<a class="viewcode-back" href="../../../api_reference/risks/effect.html#vivarium_public_health.risks.effect.NonLogLinearRiskEffect.validate_rr_data">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">validate_rr_data</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">rr_data</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Validate the relative risk data.&quot;&quot;&quot;</span>
+        <span class="c1"># check that rr_data has numeric parameter data</span>
+        <span class="n">parameter_data_is_numeric</span> <span class="o">=</span> <span class="n">rr_data</span><span class="p">[</span><span class="s2">&quot;parameter&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">dtype</span><span class="o">.</span><span class="n">kind</span> <span class="ow">in</span> <span class="s2">&quot;biufc&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">parameter_data_is_numeric</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;The parameter column in your </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">risk</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> relative risk data must contain numeric data. Its dtype is </span><span class="si">{</span><span class="n">rr_data</span><span class="p">[</span><span class="s1">&#39;parameter&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">dtype</span><span class="si">}</span><span class="s2"> instead.&quot;</span>
+            <span class="p">)</span>
+
+        <span class="c1"># and that these RR values are monotonically increasing within each demographic group</span>
+        <span class="c1"># so that each simulant&#39;s exposure will assign them to either one bin or one RR value</span>
+        <span class="n">demographic_cols</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">col</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">rr_data</span><span class="o">.</span><span class="n">columns</span> <span class="k">if</span> <span class="n">col</span> <span class="o">!=</span> <span class="s2">&quot;parameter&quot;</span> <span class="ow">and</span> <span class="n">col</span> <span class="o">!=</span> <span class="s2">&quot;value&quot;</span>
+        <span class="p">]</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">values_are_monotonically_increasing</span><span class="p">(</span><span class="n">df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">df</span><span class="p">[</span><span class="s2">&quot;parameter&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span> <span class="o">&gt;=</span> <span class="n">df</span><span class="p">[</span><span class="s2">&quot;parameter&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+
+        <span class="n">group_is_increasing</span> <span class="o">=</span> <span class="n">rr_data</span><span class="o">.</span><span class="n">groupby</span><span class="p">(</span><span class="n">demographic_cols</span><span class="p">)</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span>
+            <span class="n">values_are_monotonically_increasing</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">group_is_increasing</span><span class="o">.</span><span class="n">all</span><span class="p">():</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;The parameter column in your relative risk data must be monotonically increasing to be used in NonLogLinearRiskEffect.&quot;</span>
+            <span class="p">)</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, The vivarium developers.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

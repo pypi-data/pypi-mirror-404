@@ -1,0 +1,388 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>vivarium_public_health.results.disability &mdash; vivarium_public_health 4.3.15.dev2+g712190e05 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/plot_directive.css" />
+
+  
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=7ca62e9d"></script>
+      <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+    <link href="../../../_static/style.css" rel="stylesheet" type="text/css">
+
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            vivarium_public_health
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorials/index.html">Tutorials</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_reference/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">vivarium_public_health</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">vivarium_public_health.results.disability</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for vivarium_public_health.results.disability</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">====================</span>
+<span class="sd">Disability Observers</span>
+<span class="sd">====================</span>
+
+<span class="sd">This module contains tools for observing years lived with disability (YLDs)</span>
+<span class="sd">in the simulation.</span>
+
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">layered_config_tree</span><span class="w"> </span><span class="kn">import</span> <span class="n">LayeredConfigTree</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">loguru</span><span class="w"> </span><span class="kn">import</span> <span class="n">logger</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pandas.api.types</span><span class="w"> </span><span class="kn">import</span> <span class="n">CategoricalDtype</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.engine</span><span class="w"> </span><span class="kn">import</span> <span class="n">Builder</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.values</span><span class="w"> </span><span class="kn">import</span> <span class="n">Pipeline</span><span class="p">,</span> <span class="n">list_combiner</span><span class="p">,</span> <span class="n">union_post_processor</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium_public_health.disease</span><span class="w"> </span><span class="kn">import</span> <span class="n">DiseaseState</span><span class="p">,</span> <span class="n">RiskAttributableDisease</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium_public_health.results.columns</span><span class="w"> </span><span class="kn">import</span> <span class="n">COLUMNS</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium_public_health.results.observer</span><span class="w"> </span><span class="kn">import</span> <span class="n">PublicHealthObserver</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium_public_health.results.simple_cause</span><span class="w"> </span><span class="kn">import</span> <span class="n">SimpleCause</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium_public_health.utilities</span><span class="w"> </span><span class="kn">import</span> <span class="n">to_years</span>
+
+
+<div class="viewcode-block" id="DisabilityObserver">
+<a class="viewcode-back" href="../../../api_reference/results/disability.html#vivarium_public_health.results.disability.DisabilityObserver">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">DisabilityObserver</span><span class="p">(</span><span class="n">PublicHealthObserver</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Counts years lived with disability.</span>
+
+<span class="sd">    By default, this counts both aggregate and cause-specific years lived</span>
+<span class="sd">    with disability over the full course of the simulation.</span>
+
+<span class="sd">    In the model specification, your configuration for this component should</span>
+<span class="sd">    be specified as, e.g.:</span>
+
+<span class="sd">    .. code-block:: yaml</span>
+
+<span class="sd">        configuration:</span>
+<span class="sd">            stratification:</span>
+<span class="sd">                disability:</span>
+<span class="sd">                    exclude:</span>
+<span class="sd">                        - &quot;sex&quot;</span>
+<span class="sd">                    include:</span>
+<span class="sd">                        - &quot;sample_stratification&quot;</span>
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    disability_weight_pipeline_name</span>
+<span class="sd">        The name of the pipeline that produces disability weights.</span>
+<span class="sd">    step_size</span>
+<span class="sd">        The time step size of the simulation.</span>
+<span class="sd">    disability_weight</span>
+<span class="sd">        The pipeline that produces disability weights.</span>
+<span class="sd">    causes_of_disability</span>
+<span class="sd">        The causes of disability to be observed.</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="c1">##############</span>
+    <span class="c1"># Properties #</span>
+    <span class="c1">##############</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">disability_classes</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">type</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;The classes to be considered as causes of disability.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="p">[</span><span class="n">DiseaseState</span><span class="p">,</span> <span class="n">RiskAttributableDisease</span><span class="p">]</span>
+
+    <span class="c1">#####################</span>
+    <span class="c1"># Lifecycle methods #</span>
+    <span class="c1">#####################</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">disability_weight_pipeline_name</span> <span class="o">=</span> <span class="s2">&quot;all_causes.disability_weight&quot;</span>
+
+    <span class="c1">#################</span>
+    <span class="c1"># Setup methods #</span>
+    <span class="c1">#################</span>
+
+<div class="viewcode-block" id="DisabilityObserver.setup">
+<a class="viewcode-back" href="../../../api_reference/results/disability.html#vivarium_public_health.results.disability.DisabilityObserver.setup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Set up the observer.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">step_size</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">Timedelta</span><span class="p">(</span><span class="n">days</span><span class="o">=</span><span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="o">.</span><span class="n">time</span><span class="o">.</span><span class="n">step_size</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">disability_weight</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_disability_weight_pipeline</span><span class="p">(</span><span class="n">builder</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">set_causes_of_disability</span><span class="p">(</span><span class="n">builder</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="DisabilityObserver.set_causes_of_disability">
+<a class="viewcode-back" href="../../../api_reference/results/disability.html#vivarium_public_health.results.disability.DisabilityObserver.set_causes_of_disability">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_causes_of_disability</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Set the causes of disability to be observed.</span>
+
+<span class="sd">        The causes to be observed are any registered components of class types</span>
+<span class="sd">        found in the ``disability_classes`` property *excluding* any listed in</span>
+<span class="sd">        the model spec as ``excluded_categories``.</span>
+
+<span class="sd">        Notes</span>
+<span class="sd">        -----</span>
+<span class="sd">        We implement exclusions here instead of during the stratification call</span>
+<span class="sd">        like most other categories because disabilities are unique in that they are</span>
+<span class="sd">        *not* actually registered stratifications.</span>
+
+<span class="sd">        Also note that we add an &#39;all_causes&#39; category here.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">causes_of_disability</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">components</span><span class="o">.</span><span class="n">get_components_by_type</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">disability_classes</span>
+        <span class="p">)</span>
+        <span class="c1"># Convert to SimpleCause instances and add on all_causes</span>
+        <span class="n">causes_of_disability</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">SimpleCause</span><span class="o">.</span><span class="n">create_from_specific_cause</span><span class="p">(</span><span class="n">cause</span><span class="p">)</span> <span class="k">for</span> <span class="n">cause</span> <span class="ow">in</span> <span class="n">causes_of_disability</span>
+        <span class="p">]</span> <span class="o">+</span> <span class="p">[</span><span class="n">SimpleCause</span><span class="p">(</span><span class="s2">&quot;all_causes&quot;</span><span class="p">,</span> <span class="s2">&quot;all_causes&quot;</span><span class="p">,</span> <span class="s2">&quot;cause&quot;</span><span class="p">)]</span>
+
+        <span class="n">excluded_causes</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="o">.</span><span class="n">stratification</span><span class="o">.</span><span class="n">excluded_categories</span><span class="o">.</span><span class="n">to_dict</span><span class="p">()</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+                <span class="s2">&quot;disability&quot;</span><span class="p">,</span> <span class="p">[]</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Handle exclusions that don&#39;t exist in the list of causes</span>
+        <span class="n">cause_names</span> <span class="o">=</span> <span class="p">[</span><span class="n">cause</span><span class="o">.</span><span class="n">state_id</span> <span class="k">for</span> <span class="n">cause</span> <span class="ow">in</span> <span class="n">causes_of_disability</span><span class="p">]</span>
+        <span class="n">unknown_exclusions</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">excluded_causes</span><span class="p">)</span> <span class="o">-</span> <span class="nb">set</span><span class="p">(</span><span class="n">cause_names</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">unknown_exclusions</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Excluded &#39;disability&#39; causes </span><span class="si">{</span><span class="n">unknown_exclusions</span><span class="si">}</span><span class="s2"> not found in &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;expected categories categories: </span><span class="si">{</span><span class="n">cause_names</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+
+        <span class="c1"># Drop excluded causes</span>
+        <span class="k">if</span> <span class="n">excluded_causes</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;&#39;disability&#39; has category exclusion requests: </span><span class="si">{</span><span class="n">excluded_causes</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span>
+                <span class="s2">&quot;Removing these from the allowable categories.&quot;</span>
+            <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">causes_of_disability</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">cause</span> <span class="k">for</span> <span class="n">cause</span> <span class="ow">in</span> <span class="n">causes_of_disability</span> <span class="k">if</span> <span class="n">cause</span><span class="o">.</span><span class="n">state_id</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">excluded_causes</span>
+        <span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="DisabilityObserver.register_observations">
+<a class="viewcode-back" href="../../../api_reference/results/disability.html#vivarium_public_health.results.disability.DisabilityObserver.register_observations">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">register_observations</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Register an observation for years lived with disability.&quot;&quot;&quot;</span>
+        <span class="n">cause_pipelines</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">cause</span><span class="o">.</span><span class="n">state_id</span><span class="si">}</span><span class="s2">.disability_weight&quot;</span> <span class="k">for</span> <span class="n">cause</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">causes_of_disability</span>
+        <span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">register_adding_observation</span><span class="p">(</span>
+            <span class="n">builder</span><span class="o">=</span><span class="n">builder</span><span class="p">,</span>
+            <span class="n">name</span><span class="o">=</span><span class="s2">&quot;ylds&quot;</span><span class="p">,</span>
+            <span class="n">pop_filter</span><span class="o">=</span><span class="s1">&#39;tracked == True and alive == &quot;alive&quot;&#39;</span><span class="p">,</span>
+            <span class="n">when</span><span class="o">=</span><span class="s2">&quot;time_step__prepare&quot;</span><span class="p">,</span>
+            <span class="n">requires_columns</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;alive&quot;</span><span class="p">],</span>
+            <span class="n">requires_values</span><span class="o">=</span><span class="n">cause_pipelines</span><span class="p">,</span>
+            <span class="n">additional_stratifications</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">configuration</span><span class="o">.</span><span class="n">include</span><span class="p">,</span>
+            <span class="n">excluded_stratifications</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">configuration</span><span class="o">.</span><span class="n">exclude</span><span class="p">,</span>
+            <span class="n">aggregator_sources</span><span class="o">=</span><span class="n">cause_pipelines</span><span class="p">,</span>
+            <span class="n">aggregator</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">disability_weight_aggregator</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="DisabilityObserver.get_disability_weight_pipeline">
+<a class="viewcode-back" href="../../../api_reference/results/disability.html#vivarium_public_health.results.disability.DisabilityObserver.get_disability_weight_pipeline">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_disability_weight_pipeline</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Pipeline</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Register (and return) the pipeline that produces disability weights.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        builder</span>
+<span class="sd">            The builder object for the simulation.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">            The pipeline that produces disability weights.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">builder</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">register_value_producer</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">disability_weight_pipeline_name</span><span class="p">,</span>
+            <span class="n">source</span><span class="o">=</span><span class="k">lambda</span> <span class="n">index</span><span class="p">:</span> <span class="p">[</span><span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="n">index</span><span class="p">)],</span>
+            <span class="n">component</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span>
+            <span class="n">preferred_combiner</span><span class="o">=</span><span class="n">list_combiner</span><span class="p">,</span>
+            <span class="n">preferred_post_processor</span><span class="o">=</span><span class="n">union_post_processor</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+    <span class="c1">###############</span>
+    <span class="c1"># Aggregators #</span>
+    <span class="c1">###############</span>
+
+<div class="viewcode-block" id="DisabilityObserver.disability_weight_aggregator">
+<a class="viewcode-back" href="../../../api_reference/results/disability.html#vivarium_public_health.results.disability.DisabilityObserver.disability_weight_aggregator">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">disability_weight_aggregator</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dw</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span> <span class="o">|</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Aggregate disability weights for the time step.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        dw</span>
+<span class="sd">            The disability weights to aggregate.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">            The aggregated disability weights.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">aggregated_dw</span> <span class="o">=</span> <span class="p">(</span><span class="n">dw</span> <span class="o">*</span> <span class="n">to_years</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">step_size</span><span class="p">))</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span><span class="o">.</span><span class="n">squeeze</span><span class="p">()</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">aggregated_dw</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">):</span>
+            <span class="n">aggregated_dw</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="s2">&quot;cause_of_disability&quot;</span>
+        <span class="k">return</span> <span class="n">aggregated_dw</span></div>
+
+
+    <span class="c1">##############################</span>
+    <span class="c1"># Results formatting methods #</span>
+    <span class="c1">##############################</span>
+
+<div class="viewcode-block" id="DisabilityObserver.format">
+<a class="viewcode-back" href="../../../api_reference/results/disability.html#vivarium_public_health.results.disability.DisabilityObserver.format">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">format</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">measure</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">results</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Format wide YLD results to match typical/long stratified results.</span>
+
+<span class="sd">        YLDs are unique in that we can&#39;t stratify by cause of disability (because</span>
+<span class="sd">        there can be multiple at once), and so the results here are actually wide</span>
+<span class="sd">        by disability weight pipeline name. This method formats the results to be</span>
+<span class="sd">        long by cause of disability.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        measure</span>
+<span class="sd">            The measure.</span>
+<span class="sd">        results</span>
+<span class="sd">            The wide results to format.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">            The results stacked by causes of disability.</span>
+
+<span class="sd">        Notes</span>
+<span class="sd">        -----</span>
+<span class="sd">        This method also adds the &#39;sub_entity&#39; column to the results.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">causes_of_disability</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="c1"># Drop the unused &#39;value&#39; column and rename the remaining pipeline names to cause names</span>
+            <span class="n">results</span> <span class="o">=</span> <span class="n">results</span><span class="o">.</span><span class="n">rename</span><span class="p">(</span>
+                <span class="n">columns</span><span class="o">=</span><span class="p">{</span>
+                    <span class="n">col</span><span class="p">:</span> <span class="n">col</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;.disability_weight&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">results</span><span class="o">.</span><span class="n">columns</span>
+                <span class="p">}</span>
+            <span class="p">)[[</span><span class="n">col</span><span class="o">.</span><span class="n">state_id</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">causes_of_disability</span><span class="p">]]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># Rename the &#39;value&#39; column to the single cause of disability</span>
+            <span class="n">results</span> <span class="o">=</span> <span class="n">results</span><span class="o">.</span><span class="n">rename</span><span class="p">(</span>
+                <span class="n">columns</span><span class="o">=</span><span class="p">{</span><span class="n">COLUMNS</span><span class="o">.</span><span class="n">VALUE</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">causes_of_disability</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">state_id</span><span class="p">}</span>
+            <span class="p">)</span>
+        <span class="c1"># Get desired index names prior to stacking</span>
+        <span class="n">idx_names</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">results</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">names</span><span class="p">)</span> <span class="o">+</span> <span class="p">[</span><span class="n">COLUMNS</span><span class="o">.</span><span class="n">SUB_ENTITY</span><span class="p">]</span>
+        <span class="n">results</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">results</span><span class="o">.</span><span class="n">stack</span><span class="p">(),</span> <span class="n">columns</span><span class="o">=</span><span class="p">[</span><span class="n">COLUMNS</span><span class="o">.</span><span class="n">VALUE</span><span class="p">])</span>
+        <span class="c1"># Name the new index level</span>
+        <span class="n">results</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">set_names</span><span class="p">(</span><span class="n">idx_names</span><span class="p">,</span> <span class="n">inplace</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">results</span> <span class="o">=</span> <span class="n">results</span><span class="o">.</span><span class="n">reset_index</span><span class="p">()</span>
+        <span class="n">results</span><span class="p">[</span><span class="n">COLUMNS</span><span class="o">.</span><span class="n">SUB_ENTITY</span><span class="p">]</span> <span class="o">=</span> <span class="n">results</span><span class="p">[</span><span class="n">COLUMNS</span><span class="o">.</span><span class="n">SUB_ENTITY</span><span class="p">]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">CategoricalDtype</span><span class="p">())</span>
+        <span class="k">return</span> <span class="n">results</span></div>
+
+
+<div class="viewcode-block" id="DisabilityObserver.get_entity_type_column">
+<a class="viewcode-back" href="../../../api_reference/results/disability.html#vivarium_public_health.results.disability.DisabilityObserver.get_entity_type_column">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_entity_type_column</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">measure</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">results</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the &#39;entity_type&#39; column values.&quot;&quot;&quot;</span>
+        <span class="n">entity_type_map</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="n">cause</span><span class="o">.</span><span class="n">state_id</span><span class="p">:</span> <span class="n">cause</span><span class="o">.</span><span class="n">cause_type</span> <span class="k">for</span> <span class="n">cause</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">causes_of_disability</span>
+        <span class="p">}</span>
+        <span class="k">return</span> <span class="n">results</span><span class="p">[</span><span class="n">COLUMNS</span><span class="o">.</span><span class="n">SUB_ENTITY</span><span class="p">]</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">entity_type_map</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">CategoricalDtype</span><span class="p">())</span></div>
+
+
+<div class="viewcode-block" id="DisabilityObserver.get_entity_column">
+<a class="viewcode-back" href="../../../api_reference/results/disability.html#vivarium_public_health.results.disability.DisabilityObserver.get_entity_column">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_entity_column</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">measure</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">results</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the &#39;entity&#39; column values.&quot;&quot;&quot;</span>
+        <span class="n">entity_map</span> <span class="o">=</span> <span class="p">{</span><span class="n">cause</span><span class="o">.</span><span class="n">state_id</span><span class="p">:</span> <span class="n">cause</span><span class="o">.</span><span class="n">model</span> <span class="k">for</span> <span class="n">cause</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">causes_of_disability</span><span class="p">}</span>
+        <span class="k">return</span> <span class="n">results</span><span class="p">[</span><span class="n">COLUMNS</span><span class="o">.</span><span class="n">SUB_ENTITY</span><span class="p">]</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">entity_map</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">CategoricalDtype</span><span class="p">())</span></div>
+
+
+<div class="viewcode-block" id="DisabilityObserver.get_sub_entity_column">
+<a class="viewcode-back" href="../../../api_reference/results/disability.html#vivarium_public_health.results.disability.DisabilityObserver.get_sub_entity_column">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_sub_entity_column</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">measure</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">results</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the &#39;sub_entity&#39; column values.&quot;&quot;&quot;</span>
+        <span class="c1"># The sub-entity col was created in the &#39;format&#39; method</span>
+        <span class="k">return</span> <span class="n">results</span><span class="p">[</span><span class="n">COLUMNS</span><span class="o">.</span><span class="n">SUB_ENTITY</span><span class="p">]</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, The vivarium developers.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

@@ -1,0 +1,358 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>vivarium_public_health.results.observer &mdash; vivarium_public_health 4.3.15.dev2+g712190e05 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/plot_directive.css" />
+
+  
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=7ca62e9d"></script>
+      <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+    <link href="../../../_static/style.css" rel="stylesheet" type="text/css">
+
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            vivarium_public_health
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorials/index.html">Tutorials</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_reference/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">vivarium_public_health</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">vivarium_public_health.results.observer</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for vivarium_public_health.results.observer</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">===============</span>
+<span class="sd">Basic Observers</span>
+<span class="sd">===============</span>
+
+<span class="sd">This module contains convenience classes for building concrete observers in</span>
+<span class="sd">public health models.</span>
+
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Callable</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.engine</span><span class="w"> </span><span class="kn">import</span> <span class="n">Builder</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.event</span><span class="w"> </span><span class="kn">import</span> <span class="n">Event</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.results</span><span class="w"> </span><span class="kn">import</span> <span class="n">Observer</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium_public_health.results.columns</span><span class="w"> </span><span class="kn">import</span> <span class="n">COLUMNS</span>
+
+
+<div class="viewcode-block" id="PublicHealthObserver">
+<a class="viewcode-back" href="../../../api_reference/results/observer.html#vivarium_public_health.results.observer.PublicHealthObserver">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">PublicHealthObserver</span><span class="p">(</span><span class="n">Observer</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A convenience class for typical public health observers.</span>
+
+<span class="sd">    It exposes a method for registering the most common observation type</span>
+<span class="sd">    (adding observation) as well methods for formatting public health results</span>
+<span class="sd">    in a standardized way (to be overwritten as necessary).</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="PublicHealthObserver.register_adding_observation">
+<a class="viewcode-back" href="../../../api_reference/results/observer.html#vivarium_public_health.results.observer.PublicHealthObserver.register_adding_observation">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">register_adding_observation</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">,</span>
+        <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">pop_filter</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;tracked==True&quot;</span><span class="p">,</span>
+        <span class="n">when</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;collect_metrics&quot;</span><span class="p">,</span>
+        <span class="n">requires_columns</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[],</span>
+        <span class="n">requires_values</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[],</span>
+        <span class="n">additional_stratifications</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[],</span>
+        <span class="n">excluded_stratifications</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[],</span>
+        <span class="n">aggregator_sources</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">aggregator</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">],</span> <span class="nb">float</span> <span class="o">|</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">]</span> <span class="o">=</span> <span class="nb">len</span><span class="p">,</span>
+        <span class="n">to_observe</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">Event</span><span class="p">],</span> <span class="nb">bool</span><span class="p">]</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">event</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Registers an adding observation to the results system.</span>
+
+<span class="sd">        An &quot;adding&quot; observation is one that adds/sums new results to existing</span>
+<span class="sd">        result values. It is the most common type of observation used in public</span>
+<span class="sd">        health models.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        builder</span>
+<span class="sd">            The builder object.</span>
+<span class="sd">        name</span>
+<span class="sd">            Name of the observation. It will also be the name of the output results</span>
+<span class="sd">            file for this particular observation.</span>
+<span class="sd">        pop_filter</span>
+<span class="sd">            A Pandas query filter string to filter the population down to the</span>
+<span class="sd">            simulants who should be considered for the observation.</span>
+<span class="sd">        when</span>
+<span class="sd">            Name of the lifecycle phase the observation should happen. Valid values are:</span>
+<span class="sd">            &quot;time_step__prepare&quot;, &quot;time_step&quot;, &quot;time_step__cleanup&quot;, or &quot;collect_metrics&quot;.</span>
+<span class="sd">        requires_columns</span>
+<span class="sd">            List of the state table columns that are required by either the `pop_filter`</span>
+<span class="sd">            or the `aggregator`.</span>
+<span class="sd">        requires_values</span>
+<span class="sd">            List of the value pipelines that are required by either the `pop_filter`</span>
+<span class="sd">            or the `aggregator`.</span>
+<span class="sd">        additional_stratifications</span>
+<span class="sd">            List of additional stratification names by which to stratify this</span>
+<span class="sd">            observation by.</span>
+<span class="sd">        excluded_stratifications</span>
+<span class="sd">            List of default stratification names to remove from this observation.</span>
+<span class="sd">        aggregator_sources</span>
+<span class="sd">            List of population view columns to be used in the `aggregator`.</span>
+<span class="sd">        aggregator</span>
+<span class="sd">            Function that computes the quantity for this observation.</span>
+<span class="sd">        to_observe</span>
+<span class="sd">            Function that takes an event and returns a boolean indicating whether</span>
+<span class="sd">            the observation should be performed for that event.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">builder</span><span class="o">.</span><span class="n">results</span><span class="o">.</span><span class="n">register_adding_observation</span><span class="p">(</span>
+            <span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span>
+            <span class="n">pop_filter</span><span class="o">=</span><span class="n">pop_filter</span><span class="p">,</span>
+            <span class="n">when</span><span class="o">=</span><span class="n">when</span><span class="p">,</span>
+            <span class="n">requires_columns</span><span class="o">=</span><span class="n">requires_columns</span><span class="p">,</span>
+            <span class="n">requires_values</span><span class="o">=</span><span class="n">requires_values</span><span class="p">,</span>
+            <span class="n">results_formatter</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">format_results</span><span class="p">,</span>
+            <span class="n">additional_stratifications</span><span class="o">=</span><span class="n">additional_stratifications</span><span class="p">,</span>
+            <span class="n">excluded_stratifications</span><span class="o">=</span><span class="n">excluded_stratifications</span><span class="p">,</span>
+            <span class="n">aggregator_sources</span><span class="o">=</span><span class="n">aggregator_sources</span><span class="p">,</span>
+            <span class="n">aggregator</span><span class="o">=</span><span class="n">aggregator</span><span class="p">,</span>
+            <span class="n">to_observe</span><span class="o">=</span><span class="n">to_observe</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="PublicHealthObserver.format_results">
+<a class="viewcode-back" href="../../../api_reference/results/observer.html#vivarium_public_health.results.observer.PublicHealthObserver.format_results">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">format_results</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">measure</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">results</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Top-level results formatter that calls standard sub-methods to be</span>
+<span class="sd">        overwritten as necessary.</span>
+
+<span class="sd">        Public health observations typically require four columns in addition to</span>
+<span class="sd">        any stratifications and results columns: &#39;measure&#39;, &#39;entity_type&#39;, &#39;entity&#39;,</span>
+<span class="sd">        and &#39;sub_entity&#39;. This method provides a standardized way to format</span>
+<span class="sd">        results by providing five sub-methods to be overwritten as necessary:</span>
+<span class="sd">        - format()</span>
+<span class="sd">        - get_measure_column()</span>
+<span class="sd">        - get_entity_type_column()</span>
+<span class="sd">        - get_entity_column()</span>
+<span class="sd">        - get_sub_entity_column()</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        measure</span>
+<span class="sd">            The measure name.</span>
+<span class="sd">        results</span>
+<span class="sd">            The raw results.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">            The formatted results.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">results</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">measure</span><span class="p">,</span> <span class="n">results</span><span class="p">)</span>
+        <span class="n">results</span><span class="p">[</span><span class="n">COLUMNS</span><span class="o">.</span><span class="n">MEASURE</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_measure_column</span><span class="p">(</span><span class="n">measure</span><span class="p">,</span> <span class="n">results</span><span class="p">)</span>
+        <span class="n">results</span><span class="p">[</span><span class="n">COLUMNS</span><span class="o">.</span><span class="n">ENTITY_TYPE</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_entity_type_column</span><span class="p">(</span><span class="n">measure</span><span class="p">,</span> <span class="n">results</span><span class="p">)</span>
+        <span class="n">results</span><span class="p">[</span><span class="n">COLUMNS</span><span class="o">.</span><span class="n">ENTITY</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_entity_column</span><span class="p">(</span><span class="n">measure</span><span class="p">,</span> <span class="n">results</span><span class="p">)</span>
+        <span class="n">results</span><span class="p">[</span><span class="n">COLUMNS</span><span class="o">.</span><span class="n">SUB_ENTITY</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_sub_entity_column</span><span class="p">(</span><span class="n">measure</span><span class="p">,</span> <span class="n">results</span><span class="p">)</span>
+
+        <span class="n">ordered_columns</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">COLUMNS</span><span class="o">.</span><span class="n">MEASURE</span><span class="p">,</span>
+            <span class="n">COLUMNS</span><span class="o">.</span><span class="n">ENTITY_TYPE</span><span class="p">,</span>
+            <span class="n">COLUMNS</span><span class="o">.</span><span class="n">ENTITY</span><span class="p">,</span>
+            <span class="n">COLUMNS</span><span class="o">.</span><span class="n">SUB_ENTITY</span><span class="p">,</span>
+        <span class="p">]</span>
+        <span class="n">ordered_columns</span> <span class="o">+=</span> <span class="p">[</span>
+            <span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">results</span><span class="o">.</span><span class="n">columns</span> <span class="k">if</span> <span class="n">c</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">ordered_columns</span> <span class="o">+</span> <span class="p">[</span><span class="n">COLUMNS</span><span class="o">.</span><span class="n">VALUE</span><span class="p">]</span>
+        <span class="p">]</span>
+        <span class="n">ordered_columns</span> <span class="o">+=</span> <span class="p">[</span><span class="n">COLUMNS</span><span class="o">.</span><span class="n">VALUE</span><span class="p">]</span>
+        <span class="k">return</span> <span class="n">results</span><span class="p">[</span><span class="n">ordered_columns</span><span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="PublicHealthObserver.format">
+<a class="viewcode-back" href="../../../api_reference/results/observer.html#vivarium_public_health.results.observer.PublicHealthObserver.format">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">format</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">measure</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">results</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Format results.</span>
+
+<span class="sd">        This method can be overwritten in subclasses to provide custom formatting</span>
+<span class="sd">        for the results.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        measure</span>
+<span class="sd">            The measure name.</span>
+<span class="sd">        results</span>
+<span class="sd">            The raw results.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">            The formatted results.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">results</span><span class="o">.</span><span class="n">reset_index</span><span class="p">()</span></div>
+
+
+<div class="viewcode-block" id="PublicHealthObserver.get_measure_column">
+<a class="viewcode-back" href="../../../api_reference/results/observer.html#vivarium_public_health.results.observer.PublicHealthObserver.get_measure_column">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_measure_column</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">measure</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">results</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the &#39;measure&#39; column.</span>
+
+<span class="sd">        This method can be overwritten in subclasses to provide the &#39;measure&#39; column.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        measure</span>
+<span class="sd">            The measure name.</span>
+<span class="sd">        results</span>
+<span class="sd">            The raw results.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">            The &#39;measure&#39; column values.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">measure</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="n">results</span><span class="o">.</span><span class="n">index</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="PublicHealthObserver.get_entity_type_column">
+<a class="viewcode-back" href="../../../api_reference/results/observer.html#vivarium_public_health.results.observer.PublicHealthObserver.get_entity_type_column">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_entity_type_column</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">measure</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">results</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the &#39;entity_type&#39; column.</span>
+
+<span class="sd">        This method can be overwritten in subclasses to provide the &#39;entity_type&#39; column.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        measure</span>
+<span class="sd">            The measure name.</span>
+<span class="sd">        results</span>
+<span class="sd">            The raw results.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">            The &#39;entity_type&#39; column values.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="n">results</span><span class="o">.</span><span class="n">index</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="PublicHealthObserver.get_entity_column">
+<a class="viewcode-back" href="../../../api_reference/results/observer.html#vivarium_public_health.results.observer.PublicHealthObserver.get_entity_column">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_entity_column</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">measure</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">results</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the &#39;entity&#39; column.</span>
+
+<span class="sd">        This method can be overwritten in subclasses to provide the &#39;entity&#39; column.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        measure</span>
+<span class="sd">            The measure name.</span>
+<span class="sd">        results</span>
+<span class="sd">            The raw results.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">            The &#39;entity&#39; column values.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="n">results</span><span class="o">.</span><span class="n">index</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="PublicHealthObserver.get_sub_entity_column">
+<a class="viewcode-back" href="../../../api_reference/results/observer.html#vivarium_public_health.results.observer.PublicHealthObserver.get_sub_entity_column">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_sub_entity_column</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">measure</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">results</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the &#39;sub_entity&#39; column.</span>
+
+<span class="sd">        This method can be overwritten in subclasses to provide the &#39;sub_entity&#39; column.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        measure</span>
+<span class="sd">            The measure name.</span>
+<span class="sd">        results</span>
+<span class="sd">            The raw results.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">            The &#39;sub_entity&#39; column values.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="n">results</span><span class="o">.</span><span class="n">index</span><span class="p">)</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, The vivarium developers.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

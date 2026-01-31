@@ -1,0 +1,372 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>vivarium_public_health.treatment.scale_up &mdash; vivarium_public_health 4.3.15.dev2+g712190e05 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=03e43079" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../../_static/plot_directive.css" />
+
+  
+      <script src="../../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../../_static/documentation_options.js?v=7ca62e9d"></script>
+      <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+    <link href="../../../_static/style.css" rel="stylesheet" type="text/css">
+
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../../index.html" class="icon icon-home">
+            vivarium_public_health
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../../tutorials/index.html">Tutorials</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../api_reference/index.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">vivarium_public_health</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">vivarium_public_health.treatment.scale_up</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for vivarium_public_health.treatment.scale_up</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">=====================</span>
+<span class="sd">Linear Scale-Up Model</span>
+<span class="sd">=====================</span>
+
+<span class="sd">This module contains tools for applying a linear scale-up to an intervention</span>
+
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections.abc</span><span class="w"> </span><span class="kn">import</span> <span class="n">Callable</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium</span><span class="w"> </span><span class="kn">import</span> <span class="n">Component</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.engine</span><span class="w"> </span><span class="kn">import</span> <span class="n">Builder</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.lookup</span><span class="w"> </span><span class="kn">import</span> <span class="n">LookupTable</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.framework.values</span><span class="w"> </span><span class="kn">import</span> <span class="n">Pipeline</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium.types</span><span class="w"> </span><span class="kn">import</span> <span class="n">Time</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">vivarium_public_health.utilities</span><span class="w"> </span><span class="kn">import</span> <span class="n">EntityString</span>
+
+
+<div class="viewcode-block" id="LinearScaleUp">
+<a class="viewcode-back" href="../../../api_reference/treatment/scale_up.html#vivarium_public_health.treatment.scale_up.LinearScaleUp">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">LinearScaleUp</span><span class="p">(</span><span class="n">Component</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A model for applying a linear scale-up to an intervention.</span>
+
+<span class="sd">    This component requires input data for beginning and end dates, as well as</span>
+<span class="sd">    beginning and end values. Scale-up start and end dates are by default the</span>
+<span class="sd">    beginning and end of the simulation, but they can both be set to other</span>
+<span class="sd">    values in the configuration. Data for the values at scale-up endpoints can</span>
+<span class="sd">    be sourced either from builder.data or from parameters provided in the</span>
+<span class="sd">    configuration. For example, for an intervention called &#39;treatment&#39; the</span>
+<span class="sd">    configuration could look like this:</span>
+
+<span class="sd">    .. code-block:: yaml</span>
+
+<span class="sd">        configuration:</span>
+<span class="sd">            treatment_scale_up:</span>
+<span class="sd">                start:</span>
+<span class="sd">                    date: &quot;2020-01-01&quot;</span>
+<span class="sd">                    value: 0.0</span>
+<span class="sd">                end:</span>
+<span class="sd">                    date: &quot;2020-12-31&quot;</span>
+<span class="sd">                    value: 0.9</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">CONFIGURATION_DEFAULTS</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;treatment&quot;</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s2">&quot;date&quot;</span><span class="p">:</span> <span class="p">{</span>
+                <span class="s2">&quot;start&quot;</span><span class="p">:</span> <span class="s2">&quot;2020-01-01&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;end&quot;</span><span class="p">:</span> <span class="s2">&quot;2020-12-31&quot;</span><span class="p">,</span>
+            <span class="p">},</span>
+            <span class="s2">&quot;value&quot;</span><span class="p">:</span> <span class="p">{</span>
+                <span class="s2">&quot;start&quot;</span><span class="p">:</span> <span class="s2">&quot;data&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;end&quot;</span><span class="p">:</span> <span class="s2">&quot;data&quot;</span><span class="p">,</span>
+            <span class="p">},</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+
+    <span class="c1">##############</span>
+    <span class="c1"># Properties #</span>
+    <span class="c1">##############</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">configuration_defaults</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Provides default configuration values for this component.</span>
+
+<span class="sd">        Configuration structure::</span>
+
+<span class="sd">            {treatment_name}_scale_up:</span>
+<span class="sd">                date:</span>
+<span class="sd">                    start: str</span>
+<span class="sd">                        Start date for the scale-up period in ISO format</span>
+<span class="sd">                        (``&quot;YYYY-MM-DD&quot;``). Default is ``&quot;2020-01-01&quot;``.</span>
+<span class="sd">                    end: str</span>
+<span class="sd">                        End date for the scale-up period in ISO format.</span>
+<span class="sd">                        Default is ``&quot;2020-12-31&quot;``.</span>
+<span class="sd">                value:</span>
+<span class="sd">                    start: str or float</span>
+<span class="sd">                        Value at the start of scale-up. Can be ``&quot;data&quot;``</span>
+<span class="sd">                        to load from artifact, or a numeric value.</span>
+<span class="sd">                        Default is ``&quot;data&quot;``.</span>
+<span class="sd">                    end: str or float</span>
+<span class="sd">                        Value at the end of scale-up. Can be ``&quot;data&quot;``</span>
+<span class="sd">                        to load from artifact, or a numeric value.</span>
+<span class="sd">                        Default is ``&quot;data&quot;``.</span>
+
+<span class="sd">        The scale-up linearly interpolates between start and end values</span>
+<span class="sd">        over the specified date range. Outside this range, values are</span>
+<span class="sd">        clamped to the nearest endpoint value.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="p">{</span><span class="bp">self</span><span class="o">.</span><span class="n">configuration_key</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">CONFIGURATION_DEFAULTS</span><span class="p">[</span><span class="s2">&quot;treatment&quot;</span><span class="p">]}</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">configuration_key</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">treatment</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">_scale_up&quot;</span>
+
+    <span class="c1">#####################</span>
+    <span class="c1"># Lifecycle methods #</span>
+    <span class="c1">#####################</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">treatment</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        treatment</span>
+<span class="sd">            The type and name of a treatment, specified as &quot;type.name&quot;. Type is singular.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">treatment</span> <span class="o">=</span> <span class="n">EntityString</span><span class="p">(</span><span class="n">treatment</span><span class="p">)</span>
+
+    <span class="c1">#################</span>
+    <span class="c1"># Setup methods #</span>
+    <span class="c1">#################</span>
+
+    <span class="c1"># noinspection PyAttributeOutsideInit</span>
+<div class="viewcode-block" id="LinearScaleUp.setup">
+<a class="viewcode-back" href="../../../api_reference/treatment/scale_up.html#vivarium_public_health.treatment.scale_up.LinearScaleUp.setup">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">setup</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Perform this component&#39;s setup.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">is_intervention_scenario</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_is_intervention_scenario</span><span class="p">(</span><span class="n">builder</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">clock</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_clock</span><span class="p">(</span><span class="n">builder</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">scale_up_start_date</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">scale_up_end_date</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_scale_up_dates</span><span class="p">(</span><span class="n">builder</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">scale_up_start_value</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">scale_up_end_value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_scale_up_values</span><span class="p">(</span><span class="n">builder</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">pipelines</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_required_pipelines</span><span class="p">(</span><span class="n">builder</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">register_intervention_modifiers</span><span class="p">(</span><span class="n">builder</span><span class="p">)</span></div>
+
+
+    <span class="c1"># noinspection PyMethodMayBeStatic</span>
+<div class="viewcode-block" id="LinearScaleUp.get_is_intervention_scenario">
+<a class="viewcode-back" href="../../../api_reference/treatment/scale_up.html#vivarium_public_health.treatment.scale_up.LinearScaleUp.get_is_intervention_scenario">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_is_intervention_scenario</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="o">.</span><span class="n">intervention</span><span class="o">.</span><span class="n">scenario</span> <span class="o">!=</span> <span class="s2">&quot;baseline&quot;</span></div>
+
+
+    <span class="c1"># noinspection PyMethodMayBeStatic</span>
+<div class="viewcode-block" id="LinearScaleUp.get_clock">
+<a class="viewcode-back" href="../../../api_reference/treatment/scale_up.html#vivarium_public_health.treatment.scale_up.LinearScaleUp.get_clock">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_clock</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Callable</span><span class="p">[[],</span> <span class="n">Time</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="n">builder</span><span class="o">.</span><span class="n">time</span><span class="o">.</span><span class="n">clock</span><span class="p">()</span></div>
+
+
+    <span class="c1"># noinspection PyMethodMayBeStatic</span>
+<div class="viewcode-block" id="LinearScaleUp.get_scale_up_dates">
+<a class="viewcode-back" href="../../../api_reference/treatment/scale_up.html#vivarium_public_health.treatment.scale_up.LinearScaleUp.get_scale_up_dates">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_scale_up_dates</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">pd</span><span class="o">.</span><span class="n">Timestamp</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">Timestamp</span><span class="p">]:</span>
+        <span class="n">scale_up_config</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">configuration_key</span><span class="p">][</span><span class="s2">&quot;date&quot;</span><span class="p">]</span>
+        <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">Timestamp</span><span class="p">(</span><span class="n">scale_up_config</span><span class="p">[</span><span class="s2">&quot;start&quot;</span><span class="p">]),</span> <span class="n">pd</span><span class="o">.</span><span class="n">Timestamp</span><span class="p">(</span><span class="n">scale_up_config</span><span class="p">[</span><span class="s2">&quot;end&quot;</span><span class="p">])</span></div>
+
+
+<div class="viewcode-block" id="LinearScaleUp.get_scale_up_values">
+<a class="viewcode-back" href="../../../api_reference/treatment/scale_up.html#vivarium_public_health.treatment.scale_up.LinearScaleUp.get_scale_up_values">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_scale_up_values</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">LookupTable</span><span class="p">,</span> <span class="n">LookupTable</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the values at the start and end of the scale-up period.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        builder</span>
+<span class="sd">            Interface to access simulation managers.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">            A tuple of lookup tables returning the values at the start and end</span>
+<span class="sd">            of the scale-up period.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">scale_up_config</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">configuration</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">configuration_key</span><span class="p">][</span><span class="s2">&quot;value&quot;</span><span class="p">]</span>
+
+        <span class="k">def</span><span class="w"> </span><span class="nf">get_endpoint_value</span><span class="p">(</span><span class="n">endpoint_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">LookupTable</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">scale_up_config</span><span class="p">[</span><span class="n">endpoint_type</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;data&quot;</span><span class="p">:</span>
+                <span class="n">endpoint</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_endpoint_value_from_data</span><span class="p">(</span><span class="n">builder</span><span class="p">,</span> <span class="n">endpoint_type</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">endpoint</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">lookup</span><span class="o">.</span><span class="n">build_table</span><span class="p">(</span><span class="n">scale_up_config</span><span class="p">[</span><span class="n">endpoint_type</span><span class="p">])</span>
+            <span class="k">return</span> <span class="n">endpoint</span>
+
+        <span class="k">return</span> <span class="n">get_endpoint_value</span><span class="p">(</span><span class="s2">&quot;start&quot;</span><span class="p">),</span> <span class="n">get_endpoint_value</span><span class="p">(</span><span class="s2">&quot;end&quot;</span><span class="p">)</span></div>
+
+
+    <span class="c1"># noinspection PyMethodMayBeStatic</span>
+<div class="viewcode-block" id="LinearScaleUp.get_required_pipelines">
+<a class="viewcode-back" href="../../../api_reference/treatment/scale_up.html#vivarium_public_health.treatment.scale_up.LinearScaleUp.get_required_pipelines">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_required_pipelines</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Pipeline</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="p">{}</span></div>
+
+
+<div class="viewcode-block" id="LinearScaleUp.register_intervention_modifiers">
+<a class="viewcode-back" href="../../../api_reference/treatment/scale_up.html#vivarium_public_health.treatment.scale_up.LinearScaleUp.register_intervention_modifiers">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">register_intervention_modifiers</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">):</span>
+        <span class="n">builder</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">register_value_modifier</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">treatment</span><span class="si">}</span><span class="s2">.exposure_parameters&quot;</span><span class="p">,</span>
+            <span class="n">modifier</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">coverage_effect</span><span class="p">,</span>
+            <span class="n">component</span><span class="o">=</span><span class="bp">self</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+    <span class="c1">##################################</span>
+    <span class="c1"># Pipeline sources and modifiers #</span>
+    <span class="c1">##################################</span>
+
+<div class="viewcode-block" id="LinearScaleUp.coverage_effect">
+<a class="viewcode-back" href="../../../api_reference/treatment/scale_up.html#vivarium_public_health.treatment.scale_up.LinearScaleUp.coverage_effect">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">coverage_effect</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">Index</span><span class="p">,</span> <span class="n">target</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_intervention_scenario</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">clock</span><span class="p">()</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">scale_up_start_date</span><span class="p">:</span>
+            <span class="n">progress</span> <span class="o">=</span> <span class="mf">0.0</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">scale_up_start_date</span> <span class="o">&lt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">clock</span><span class="p">()</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">scale_up_end_date</span><span class="p">:</span>
+            <span class="n">progress</span> <span class="o">=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">clock</span><span class="p">()</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">scale_up_start_date</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">scale_up_end_date</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">scale_up_start_date</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">progress</span> <span class="o">=</span> <span class="mf">1.0</span>
+
+        <span class="n">target</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">apply_scale_up</span><span class="p">(</span><span class="n">idx</span><span class="p">,</span> <span class="n">target</span><span class="p">,</span> <span class="n">progress</span><span class="p">)</span> <span class="k">if</span> <span class="n">progress</span> <span class="k">else</span> <span class="n">target</span>
+        <span class="k">return</span> <span class="n">target</span></div>
+
+
+    <span class="c1">##################</span>
+    <span class="c1"># Helper methods #</span>
+    <span class="c1">##################</span>
+
+<div class="viewcode-block" id="LinearScaleUp.get_endpoint_value_from_data">
+<a class="viewcode-back" href="../../../api_reference/treatment/scale_up.html#vivarium_public_health.treatment.scale_up.LinearScaleUp.get_endpoint_value_from_data">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_endpoint_value_from_data</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">builder</span><span class="p">:</span> <span class="n">Builder</span><span class="p">,</span> <span class="n">endpoint_type</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">LookupTable</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get the value at the start or end of the scale-up period from data.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        builder</span>
+<span class="sd">            Interface to access simulation managers.</span>
+<span class="sd">        endpoint_type</span>
+<span class="sd">            The type of endpoint to get the value for. Allowed values are</span>
+<span class="sd">            &quot;start&quot; and &quot;end&quot;.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">            A lookup table returning the value at the start or end of the</span>
+<span class="sd">            scale-up period.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">endpoint_type</span> <span class="o">==</span> <span class="s2">&quot;start&quot;</span><span class="p">:</span>
+            <span class="n">endpoint_data</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">treatment</span><span class="si">}</span><span class="s2">.exposure&quot;</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">endpoint_type</span> <span class="o">==</span> <span class="s2">&quot;end&quot;</span><span class="p">:</span>
+            <span class="n">endpoint_data</span> <span class="o">=</span> <span class="n">builder</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;alternate_</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">treatment</span><span class="si">}</span><span class="s2">.exposure&quot;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s1">&#39;Invalid endpoint type </span><span class="si">{</span><span class="n">endpoint_type</span><span class="si">}</span><span class="s1">. Allowed types are &quot;start&quot; and &quot;end&quot;.&#39;</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">builder</span><span class="o">.</span><span class="n">lookup</span><span class="o">.</span><span class="n">build_table</span><span class="p">(</span><span class="n">endpoint_data</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="LinearScaleUp.apply_scale_up">
+<a class="viewcode-back" href="../../../api_reference/treatment/scale_up.html#vivarium_public_health.treatment.scale_up.LinearScaleUp.apply_scale_up">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">apply_scale_up</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">idx</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">Index</span><span class="p">,</span> <span class="n">target</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">,</span> <span class="n">scale_up_progress</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">Series</span><span class="p">:</span>
+        <span class="n">start_value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">scale_up_start_value</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>
+        <span class="n">end_value</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">scale_up_end_value</span><span class="p">(</span><span class="n">idx</span><span class="p">)</span>
+        <span class="n">value_increase</span> <span class="o">=</span> <span class="n">scale_up_progress</span> <span class="o">*</span> <span class="p">(</span><span class="n">end_value</span> <span class="o">-</span> <span class="n">start_value</span><span class="p">)</span>
+
+        <span class="n">target</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span> <span class="o">+=</span> <span class="n">value_increase</span>
+        <span class="k">return</span> <span class="n">target</span></div>
+</div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, The vivarium developers.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
