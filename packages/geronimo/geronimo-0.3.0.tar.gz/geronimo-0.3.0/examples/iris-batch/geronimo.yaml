@@ -1,0 +1,45 @@
+project:
+  name: iris-batch
+  version: "1.0.0"
+  description: "Batch scoring pipeline for Iris classification"
+
+model:
+  type: batch
+  framework: sklearn
+  artifact_path: models/model.joblib
+
+# Batch-specific configuration
+batch:
+  # Schedule configuration
+  schedule:
+    type: cron
+    expression: "0 6 * * *"  # Daily at 6 AM
+    timezone: "America/New_York"
+  
+  # Compute configuration
+  compute:
+    provider: aws_batch
+    instance_type: ml.m5.large
+    max_vcpus: 4
+    memory_mb: 8192
+    timeout_minutes: 60
+  
+  # I/O configuration
+  input:
+    source: s3
+    path: s3://my-bucket/iris/input/
+    format: csv
+  
+  output:
+    destination: s3
+    path: s3://my-bucket/iris/output/
+    format: parquet
+
+# Runtime configuration
+runtime:
+  python_version: "3.11"
+
+# Infrastructure
+infrastructure:
+  provider: aws
+  region: us-east-1
