@@ -1,0 +1,506 @@
+Metadata-Version: 2.4
+Name: bv-runtime
+Version: 0.2.6
+Summary: Runtime SDK for Bot Velocity automations
+Author: Bot Velocity Team
+License: Proprietary
+Keywords: agentic,bot-velocity,rpa,runtime
+Requires-Python: >=3.10
+Requires-Dist: httpx>=0.24.0
+Requires-Dist: tenacity>=8.0.0
+Description-Content-Type: text/markdown
+
+# bv-runtime
+
+Authoritative runtime SDK reference for Bot Velocity automations.
+
+## 1. Overview
+
+- **bv-runtime** is the in-runner SDK used by Bot Velocity automations during execution (`bv run` or runner-managed jobs).
+- It provides focused capabilities: asset access (including secrets and credentials), queue operations (lease/update one item at a time), structured logging to Orchestrator, execution context access, and agent tracing.
+- It is intentionally **not** a general-purpose or admin SDK; use platform admin APIs or CLI for management tasks.
+
+## 2. Installation
+
+```bash
+pip install bv-runtime
+```
+
+**Requirements:**
+- Python 3.10+
+- Dependencies: `httpx>=0.24.0`, `tenacity>=8.0.0`
+
+## 3. Execution Context & Guardrails
+
+- The runtime enforces execution inside a BV runner context via the `BV_SDK_RUN` guard (`require_bv_run()`); using these APIs outside `bv run` fails fast.
+- Authentication is required and already provisioned in runner context (robot token) or via local `bv auth login` for development.
+- Distinctions:
+  - **Runtime execution:** Automations running via runner use this SDK to talk to Orchestrator with scoped credentials.
+  - **Admin APIs:** Separate, not exposed here; this SDK cannot create queues or assets.
+  - **SDK CLI:** Developer tooling (`bv auth`, `bv run`) sets up context but is not part of the runtime API.
+
+## 4. Configuration
+
+> **Important:** Environment variables must not be used to configure platform URLs.
+> All routing originates from a single persisted `base_url`. The API URL is
+> derived internally by appending `/api` using `BaseUrlResolver`.
+
+The runtime receives configuration through the **runtime context API**, not environment variables. The runner sets up the context before executing automations via `set_runtime_context()`.
+
+### URL Resolution
+
+The runtime uses the `BaseUrlResolver` utility for consistent URL handling:
+
+- **Frontend URL**: The base URL without `/api` suffix (e.g., `https://cloud.botvelocity.com`)
+- **API URL**: Automatically derived by appending `/api` to the frontend URL
+
+```python
+# In auth.json or runtime context:
+# base_url: https://cloud.botvelocity.com
+# → api_url becomes: https://cloud.botvelocity.com/api
+```
+
+### Runtime Context
+
+The runner provides execution context including:
+- `base_url` - Orchestrator frontend URL
+- `robot_token` - Robot API token for authentication
+- `robot_name` - Name of the executing robot
+- `machine_name` - Name of the host machine
+- `execution_id` - Unique ID for the current job execution
+- `tenant_id` - Tenant ID for multi-tenant scoping (optional)
+- `folder_id` - Folder ID for folder-based scoping (optional)
+- `project_type` - Project type (`rpa` or `agent`)
+
+## 5. Execution Context API
+
+Access runtime metadata about the current execution.
+
+### 5.1 Get Full Execution Context
+
+```python
+from bv.runtime import get_execution_context
+
+ctx = get_execution_context()
+print(f"Job ID: {ctx.execution_id}")
+print(f"Robot: {ctx.robot_name}")
+print(f"Machine: {ctx.machine_name}")
+print(f"Orchestrator: {ctx.orchestrator_url}")
+print(f"Runner mode: {ctx.is_runner_mode}")
+```
+
+### 5.2 ExecutionContext Attributes
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `execution_id` | `str` | Unique job execution ID |
+| `robot_name` | `str` | Name of the executing robot |
+| `machine_name` | `str` | Name of the host machine |
+| `orchestrator_url` | `str` | Base URL of orchestrator API |
+| `tenant_id` | `Optional[str]` | Tenant ID for multi-tenant scoping |
+| `folder_id` | `Optional[str]` | Folder ID for folder-based scoping |
+| `is_runner_mode` | `bool` | True if running in a runner, False if local dev |
+| `project_type` | `Optional[str]` | Project type (`rpa` or `agent`) |
+
+### 5.3 Convenience Functions
+
+```python
+from bv.runtime import (
+    get_execution_id,
+    get_job_id,        # Alias for get_execution_id
+    get_robot_name,
+    get_machine_name,
+    get_tenant_id,
+    get_folder_id,
+    is_runner_mode,
+)
+
+job_id = get_job_id()
+robot = get_robot_name()
+is_prod = is_runner_mode()
+```
+
+## 6. Assets API
+
+### 6.1 Text / Int / Bool Assets
+
+```python
+from bv.runtime import assets
+
+value = assets.get_asset("CONFIG_VALUE")
+```
+
+### 6.2 Secrets (SecretHandle pattern)
+
+- `SecretHandle` defers plaintext retrieval until `.value()` is called.
+- Secrets are never printed; `str(secret)` is masked and JSON/boolean usage is blocked.
+
+```python
+from bv.runtime import assets
+
+secret = assets.get_secret("API_KEY")
+api_key = secret.value()
+```
+
+### 6.3 Credentials (CredentialHandle)
+
+- Provides `username` plus a password `SecretHandle`.
+- Password plaintext is only available via `.value()` on the handle.
+
+```python
+from bv.runtime import assets
+
+cred = assets.get_credential("DB_CREDENTIAL")
+
+cred.username
+password = cred.password.value()
+```
+
+**Security model:** Plaintext secrets and passwords are resolved just-in-time from Orchestrator; they are masked in representations and never stored in environment variables.
+
+## 7. Queue API (Primary Focus)
+
+Use the singular facade:
+
+```python
+from bv.runtime import queue
+```
+
+### 7.1 QueueItem Object
+
+Attributes (immutable, no dict access):
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `id` | `int` | Queue item ID |
+| `queue_name` | `str` | Name of the queue |
+| `reference` | `Optional[str]` | Optional reference string |
+| `priority` | `Priority` | Priority enum (`LOW`, `NORMAL`, `MEDIUM`, `HIGH`) |
+| `retries` | `int` | Number of previous failures |
+| `attempt` | `int` | Derived as `retries + 1` |
+| `content` | `dict` | Parsed JSON payload |
+
+`QueueItem` is immutable and blocks dict-style access to avoid silent mutations.
+
+### 7.2 Enqueue (queue.add)
+
+```python
+from bv.runtime import queue
+from bv.runtime.queue import Priority
+
+item = queue.add(
+    "orders",
+    content={"invoice": 123},
+    reference="INV-001",
+    priority=Priority.HIGH,
+)
+```
+
+- Default priority is `Priority.NORMAL`.
+- `reference` is optional metadata for downstream correlation.
+- Returns a `QueueItem` with retries=0 and attempt=1.
+
+**Note:** The runtime SDK checks for the `BV_SDK_RUN` environment variable to prevent accidental usage outside of a controlled runner context. If running scripts manually (e.g. `python main.py`), you must set `BV_SDK_RUN=1`.
+
+### 7.3 Dequeue (queue.get)
+
+```python
+item = queue.get("orders")
+
+if item is None:
+    return
+```
+
+- Returns the next available item or `None` when the queue is empty.
+- Items are leased; visibility timeouts and retries are handled by Orchestrator.
+- `retries` counts prior failures; `attempt` is derived as `retries + 1`.
+
+### 7.4 Update Status (queue.set_status)
+
+Use typed enums:
+
+```python
+from bv.runtime import queue
+from bv.runtime.queue import Status, ErrorType
+
+# DONE
+queue.set_status(
+    item.id,
+    Status.DONE,
+    output={"processed": True},
+)
+
+# FAILED (Business)
+queue.set_status(
+    item.id,
+    Status.FAILED,
+    error_type=ErrorType.BUSINESS,
+    error_reason="Invoice already paid",
+)
+
+# FAILED (Application)
+queue.set_status(
+    item.id,
+    Status.FAILED,
+    error_type=ErrorType.APPLICATION,
+    error_reason="Unhandled exception",
+)
+```
+
+- `Status` values: `DONE`, `FAILED`, `ABANDONED` (ABANDONED is set when leases expire ~24h without completion).
+- `ErrorType.BUSINESS` marks terminal business errors; `ErrorType.APPLICATION` is retryable depending on orchestrator policy.
+- Validation rules are enforced at runtime (DONE forbids errors; FAILED requires both error fields; ABANDONED requires an error reason).
+
+## 8. Logging API
+
+```python
+from bv.runtime import log_message, LogLevel
+
+log_message("Processing started", LogLevel.INFO)
+log_message("Validation failed", LogLevel.WARN)
+log_message("Unhandled error", LogLevel.ERROR)
+```
+
+- Logs are sent to Orchestrator with the current run context.
+- Levels: `DEBUG`, `INFO`, `WARN`, `ERROR` (see `LogLevel`).
+
+## 9. Agent Traces API
+
+The traces API enables observability for agent-based automations (LangGraph, LangChain, etc.).
+
+### 9.1 TraceSpan Object
+
+```python
+from bv.runtime import TraceSpan
+
+span = TraceSpan(
+    name="tool_call",
+    input_payload={"query": "search for documents"},
+    tags={"tool": "search"},
+)
+```
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `name` | `str` | Human-readable span name (e.g., "tool_call", "llm_request") |
+| `span_id` | `str` | Unique ID (auto-generated if not provided) |
+| `parent_span_id` | `Optional[str]` | Parent span for hierarchical traces |
+| `input_payload` | `Optional[dict]` | Input data (JSON-serializable) |
+| `output_payload` | `Optional[dict]` | Output/result (JSON-serializable) |
+| `start_time` | `Optional[datetime]` | When the span started (auto-set) |
+| `end_time` | `Optional[datetime]` | When the span ended |
+| `duration_ms` | `Optional[int]` | Duration in milliseconds |
+| `tags` | `Optional[dict]` | Metadata tags for filtering |
+| `metadata` | `Optional[dict]` | Arbitrary metadata |
+
+### 9.2 Emit a Single Span
+
+```python
+from bv.runtime import emit_span, TraceSpan
+
+span = TraceSpan(
+    name="api_call",
+    input_payload={"endpoint": "/users"},
+    output_payload={"count": 42},
+)
+span.complete()  # Sets end_time and computes duration
+
+success = emit_span(span)  # Returns True if successfully sent
+```
+
+### 9.3 Emit Multiple Spans (Batch)
+
+```python
+from bv.runtime import emit_spans, TraceSpan
+
+spans = [
+    TraceSpan(name="step_1", input_payload={"data": "a"}),
+    TraceSpan(name="step_2", input_payload={"data": "b"}),
+]
+for s in spans:
+    s.complete()
+
+emit_spans(spans)
+```
+
+### 9.4 Context Manager for Automatic Timing
+
+```python
+from bv.runtime import start_span
+
+with start_span("my_operation", input_payload={"key": "value"}) as span:
+    result = do_expensive_work()
+    span.output_payload = {"result": result}
+# Span is automatically completed and emitted on context exit
+```
+
+### 9.5 Hierarchical Tracing
+
+Nested spans automatically detect parent relationships:
+
+```python
+from bv.runtime import start_span
+
+with start_span("parent_operation") as parent:
+    # Child spans automatically link to parent
+    with start_span("child_step_1") as child1:
+        # do work
+        pass
+    
+    with start_span("child_step_2") as child2:
+        # do work
+        pass
+```
+
+### 9.6 Get Current Span
+
+```python
+from bv.runtime.traces import get_current_span, get_current_span_id
+
+# Inside a start_span context
+current = get_current_span()
+span_id = get_current_span_id()
+```
+
+## 10. End-to-End Examples
+
+### 10.1 Simple Queue Worker
+
+```python
+from bv.runtime import queue
+from bv.runtime.queue import Status, ErrorType
+
+item = queue.get("orders")
+if item is None:
+    return
+
+try:
+    # process item.content here
+    queue.set_status(item.id, Status.DONE, output={"processed": True})
+except ValueError as exc:  # business rule violation
+    queue.set_status(
+        item.id,
+        Status.FAILED,
+        error_type=ErrorType.BUSINESS,
+        error_reason=str(exc),
+    )
+except Exception as exc:
+    queue.set_status(
+        item.id,
+        Status.FAILED,
+        error_type=ErrorType.APPLICATION,
+        error_reason=str(exc),
+    )
+```
+
+### 10.2 Business vs Application Error Handling
+
+- Business errors (`ErrorType.BUSINESS`) are terminal and should be used for known, non-retryable conditions (e.g., duplicate invoice, already paid).
+- Application errors (`ErrorType.APPLICATION`) signal transient or unexpected failures and may be retried by orchestrator policies.
+
+### 10.3 Asset + Queue Combined Example
+
+```python
+from bv.runtime import assets, queue
+from bv.runtime.queue import Priority, Status, ErrorType
+
+api_key = assets.get_secret("API_KEY").value()
+item = queue.add(
+    "orders",
+    content={"invoice": 123, "api_key": api_key},
+    reference="INV-123",
+    priority=Priority.MEDIUM,
+)
+
+fetched = queue.get("orders")
+if fetched:
+    # do work...
+    queue.set_status(fetched.id, Status.DONE, output={"ok": True})
+```
+
+### 10.4 Agent with Tracing
+
+```python
+from bv.runtime import start_span, get_execution_context, log_message, LogLevel
+
+ctx = get_execution_context()
+log_message(f"Starting agent job {ctx.execution_id}", LogLevel.INFO)
+
+with start_span("agent_workflow", input_payload={"goal": "answer question"}) as root:
+    
+    with start_span("retrieve_context") as retrieval:
+        docs = retrieve_documents("user query")
+        retrieval.output_payload = {"doc_count": len(docs)}
+    
+    with start_span("llm_call", tags={"model": "gpt-4"}) as llm:
+        response = call_llm(docs, "user query")
+        llm.output_payload = {"tokens": 150}
+    
+    root.output_payload = {"answer": response}
+
+log_message("Agent completed successfully", LogLevel.INFO)
+```
+
+## 11. Design Principles
+
+- Typed APIs over raw dicts to prevent silent breakage.
+- No silent behavior: validation errors are explicit and fail fast.
+- No magic retries in the SDK; retry decisions are orchestrator-owned.
+- Security-first: secrets and credentials are masked, lazy-resolved, and never printed.
+- Runtime ≠ Admin: operational actions only; no management surfaces.
+- Best-effort traces: trace emission failures don't crash automations.
+
+## 12. What bv-runtime Does NOT Do
+
+- No admin operations (no asset/queue creation or deletion).
+- No manual requeue/backoff controls beyond status updates.
+- No background scheduling utilities.
+- No batch queue APIs; operations are single-item by design.
+- No trace storage; traces are forwarded to orchestrator only.
+
+## 13. API Reference Summary
+
+### Modules
+
+| Module | Import | Description |
+|--------|--------|-------------|
+| `assets` | `from bv.runtime import assets` | Asset, secret, and credential access |
+| `queue` | `from bv.runtime import queue` | Queue operations (add, get, set_status) |
+| `context` | `from bv.runtime import context` | Execution context access |
+| `traces` | `from bv.runtime import traces` | Agent trace emission |
+
+### Top-Level Exports
+
+```python
+from bv.runtime import (
+    # Modules
+    assets,
+    queue,
+    traces,
+    context,
+    # Logging
+    log_message,
+    LogLevel,
+    # Traces
+    emit_span,
+    emit_spans,
+    start_span,
+    TraceSpan,
+    # Context
+    get_execution_context,
+    get_execution_id,
+    get_job_id,
+    get_robot_name,
+    get_machine_name,
+    get_tenant_id,
+    get_folder_id,
+    is_runner_mode,
+    ExecutionContext,
+)
+```
+
+## 14. Versioning & Compatibility Notes
+
+- The runtime is allowed to introduce breaking changes aligned with orchestrator releases; always pin via your project lockfile.
+- Backward compatibility for deprecated APIs (e.g., plural queues) is intentionally not maintained.
+- Current version: **0.1.0**
