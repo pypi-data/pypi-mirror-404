@@ -1,0 +1,4 @@
+from .sinkhorn_log import SinkhornTwoMarginalLogJaxSolver
+from .sinkhorn import SinkhornTwoMarginalSolver
+
+from .divergence import sinkhorn_divergence_with_solver
