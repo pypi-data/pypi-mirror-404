@@ -1,0 +1,729 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "specfact-cli"
+version = "0.26.15"
+description = "Brownfield-first CLI: Reverse engineer legacy Python → specs → enforced contracts. Automate legacy code documentation and prevent modernization regressions."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE.md" }  # Apache License 2.0
+authors = [
+    {name = "NOLD AI (Owner: Dominikus Nold)", email = "hello@noldai.com"}
+]
+keywords = ["legacy-code", "brownfield", "code-to-spec", "reverse-engineering", "technical-debt", "code-documentation", "modernization", "refactoring", "spec-first", "contracts", "tdd", "async", "quality-gates", "contract-driven-development", "state-machine", "crosshair", "icontract", "beartype", "property-based-testing", "cli", "specfact"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",  # Apache License 2.0
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Software Development :: Testing",
+    "Topic :: Software Development :: Libraries :: Python Modules"
+]
+dependencies = [
+    # Core dependencies
+    "pydantic>=2.12.3",
+    "python-dotenv>=1.2.1",
+    "typing-extensions>=4.15.0",
+    "PyYAML>=6.0.3",
+    "requests>=2.32.3",
+    "azure-identity>=1.17.1",
+    
+    # CLI framework
+    "typer>=0.20.0",
+    "rich>=13.5.2,<13.6.0",  # Compatible with semgrep (requires rich~=13.5.2)
+    "questionary>=2.0.1",  # Interactive prompts with arrow key navigation
+    
+    # Template engine
+    "jinja2>=3.1.6",
+    
+    # Graph analysis
+    "networkx>=3.4.2",
+    "graphviz>=0.20.1",  # Graph visualization (requires system Graphviz: apt-get install graphviz)
+    
+    # Git operations
+    "gitpython>=3.1.45",
+    
+    # YAML utilities
+    "ruamel.yaml>=0.18.16",
+    
+    # Schema validation
+    "jsonschema>=4.23.0",
+    
+    # Contract-First Development Dependencies
+    "icontract>=2.7.1",  # Design-by-contract decorators
+    "beartype>=0.22.4",  # Runtime type checking
+    "crosshair-tool>=0.0.97",  # Contract exploration and counterexample discovery
+    "hypothesis>=6.142.4",  # Property-based testing
+    
+    # Code analysis
+    "ruff>=0.14.2",
+    
+    # File system watching
+    "watchdog>=6.0.0",
+
+    # Telemetry (opt-in; only active when SPECFACT_TELEMETRY_OPT_IN=true)
+    "opentelemetry-sdk>=1.27.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.27.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.4.2",
+    "pytest-cov>=7.0.0",
+    "pytest-mock>=3.15.1",
+    "pytest-asyncio>=1.2.0",
+    "pytest-xdist>=3.8.0",
+    "basedpyright>=1.32.1",
+    "isort>=7.0.0",
+    "pylint>=4.0.2",
+    "ruff>=0.14.2",
+    "tomlkit>=0.13.3",  # Style-preserving TOML library (recommended successor to pytoml)
+    "types-PyYAML>=6.0.12.20250516",
+    "pip-tools>=7.5.1",
+    "semgrep>=1.144.0",  # Latest version compatible with rich~=13.5.2
+    
+    # Contract-First Development Dependencies (dev)
+    "icontract>=2.7.1",
+    "beartype>=0.22.4", 
+    "crosshair-tool>=0.0.97",
+    "hypothesis>=6.142.4",
+    
+    # Enhanced Analysis Tools (for local development)
+    # Note: syft excluded from dev/test due to rich version conflict with semgrep
+    # Install separately: pip install specfact-cli[enhanced-analysis] if needed
+    "graphviz>=0.20.1",  # Graph visualization (requires system Graphviz: apt-get install graphviz)
+    "pyan3>=1.2.0",  # Python call graph analysis
+    "bearer>=3.1.0",  # Data flow analysis for security
+]
+
+scanning = [
+    "semgrep>=1.144.0",  # Optional: Only needed for code scanning features
+]
+
+enhanced-analysis = [
+    "graphviz>=0.20.1",  # Graph visualization (requires system Graphviz: apt-get install graphviz)
+    "pyan3>=1.2.0",  # Python call graph analysis
+    "syft>=0.9.5",  # Software Bill of Materials (SBOM) generation
+    "bearer>=3.1.0",  # Data flow analysis for security
+]
+
+# Note: Specmatic integration (specfact spec commands) requires the Specmatic CLI tool
+# to be installed separately. Specmatic is a Java-based CLI tool, not a Python package.
+# Install from: https://docs.specmatic.io/
+# The specfact spec commands will check for Specmatic availability and provide
+# helpful error messages if it's not found.
+
+# Add other optional dependency groups from your original if they existed and are still needed (e.g., server, client, devtools, full from tpl)
+
+[project.urls]
+Homepage = "https://github.com/nold-ai/specfact-cli"
+Repository = "https://github.com/nold-ai/specfact-cli.git"
+Documentation = "https://github.com/nold-ai/specfact-cli#readme"
+Issues = "https://github.com/nold-ai/specfact-cli/issues"
+Trademarks = "https://github.com/nold-ai/specfact-cli/blob/main/TRADEMARKS.md"
+
+[project.scripts]
+specfact = "specfact_cli.cli:cli_main"
+specfact-cli = "specfact_cli.cli:cli_main"  # Alias for uvx compatibility
+
+# [project.entry-points."pytest11"] # Add if you have pytest plugins
+# specfact_test_plugin = "specfact_cli.pytest_plugin"
+
+[tool.hatch.envs.default]
+python = "3.12"
+dependencies = [
+    "pip-tools",
+    "pytest",
+    "pytest-cov",
+    "pytest-mock",
+    "pytest-xdist",
+    "python-dotenv",
+    "pre-commit",
+    # Ensure format/lint tools are available in the hatch env
+    "isort>=7.0.0",
+    "basedpyright>=1.32.1",
+    "pylint>=4.0.2",
+    "ruff>=0.14.2",
+    "yamllint>=1.37.1",
+    "semgrep>=1.144.0",  # Latest version compatible with rich~=13.5.2
+    # Contract-First Development Dependencies
+    "icontract>=2.7.1",
+    "beartype>=0.22.4", 
+    "crosshair-tool>=0.0.97",
+    "hypothesis>=6.142.4",
+    # Enhanced Analysis Tools (for local development)
+    # Note: syft excluded from dev/test due to rich version conflict with semgrep
+    # Install separately: pip install specfact-cli[enhanced-analysis] if needed
+    "graphviz>=0.20.1",  # Graph visualization (requires system Graphviz: apt-get install graphviz)
+    "pyan3>=1.2.0",  # Python call graph analysis
+    "bearer>=3.1.0",  # Data flow analysis for security
+]
+
+[tool.hatch.envs.default.scripts]
+validate-prompts = "python tools/validate_prompts.py"
+# Development scripts
+test = "pytest {args}"
+test-cov = "pytest --cov=src --cov-report=term-missing {args}"
+type-check = "basedpyright {args}"
+lint = "ruff format . --check && basedpyright && ruff check . && pylint src tests tools"
+governance = "pylint src tests tools --reports=y --output-format=parseable"
+format = "ruff check . --fix && ruff format ."
+
+# Code scanning (Semgrep)
+scan = "semgrep --config tools/semgrep/async.yml {args}"
+scan-all = "semgrep --config tools/semgrep/async.yml ."
+scan-json = "semgrep --config tools/semgrep/async.yml --json . > logs/semgrep-results.json"
+scan-fix = "semgrep --config tools/semgrep/async.yml --autofix ."
+
+# YAML and Workflow linting
+yaml-fmt = "bash scripts/yaml-tools.sh fmt {args}"
+yaml-lint = "bash scripts/yaml-tools.sh lint {args}"
+workflows-fmt = "bash scripts/yaml-tools.sh workflows-fmt {args}"
+workflows-lint = "bash scripts/yaml-tools.sh workflows-lint {args}"
+yaml-fix-all = "bash scripts/yaml-tools.sh fix-all {args}"
+yaml-check-all = "bash scripts/yaml-tools.sh check-all {args}"
+
+# Legacy entry (kept for compatibility); prefer `workflows-lint` above
+lint-workflows = "bash scripts/run_actionlint.sh {args}"
+
+# Smart test coverage system
+smart-test = "python tools/smart_test_coverage.py run {args}"
+smart-test-check = "python tools/smart_test_coverage.py check"
+smart-test-force = "python tools/smart_test_coverage.py force {args}"
+smart-test-status = "python tools/smart_test_coverage.py status"
+smart-test-threshold = "python tools/smart_test_coverage.py threshold"
+smart-test-logs = "python tools/smart_test_coverage.py logs {args}"
+smart-test-latest = "python tools/smart_test_coverage.py latest"
+
+# Incremental testing levels (bottom-up approach)
+smart-test-unit = "python tools/smart_test_coverage.py run --level unit {args}"
+smart-test-folder = "python tools/smart_test_coverage.py run --level folder {args}"
+smart-test-integration = "python tools/smart_test_coverage.py run --level integration {args}"
+smart-test-e2e = "python tools/smart_test_coverage.py run --level e2e {args}"
+smart-test-full = "python tools/smart_test_coverage.py run --level full {args}"
+smart-test-auto = "python tools/smart_test_coverage.py run --level auto {args}"
+
+# Contract-First Smart Test System Scripts ⭐ NEW
+contract-test = "python tools/contract_first_smart_test.py run --level auto {args}"
+contract-test-contracts = "python tools/contract_first_smart_test.py contracts"
+contract-test-exploration = "python tools/contract_first_smart_test.py exploration {args}"
+contract-test-exploration-fast = "python tools/contract_first_smart_test.py exploration --crosshair-fast {args}"
+contract-test-scenarios = "python tools/contract_first_smart_test.py scenarios"
+contract-test-e2e = "python tools/contract_first_smart_test.py run --level e2e {args}"
+contract-test-full = "python tools/contract_first_smart_test.py run --level full {args}"
+contract-test-status = "python tools/contract_first_smart_test.py status"
+
+# Contract-First Development Scripts
+contract-check = "python -m crosshair check {args}"
+contract-explore = "python -m crosshair check {args} --timeout=60"
+contract-migrate = "python tools/contract_migration_helper.py --analyze-module {args}"
+contract-analyze = "python tools/migrate_tests_to_contracts.py --analyze --output logs/analysis/migration_analysis.json"
+contract-prune = "python tools/migrate_tests_to_contracts.py --prune --dry-run"
+
+# Pre-commit hooks
+pre-commit-install = "bash scripts/setup-git-hooks.sh"
+pre-commit-checks = "bash scripts/pre-commit-smart-checks.sh"
+pre-commit-test = "bash scripts/pre-commit-smart-test.sh"
+
+[tool.hatch.envs.py311]
+python = "3.11"
+
+[tool.hatch.envs.py311.scripts]
+contract-test = "python tools/contract_first_smart_test.py run --level auto {args}"
+contract-test-contracts = "python tools/contract_first_smart_test.py contracts"
+contract-test-exploration = "python tools/contract_first_smart_test.py exploration {args}"
+contract-test-exploration-fast = "python tools/contract_first_smart_test.py exploration --crosshair-fast {args}"
+contract-test-scenarios = "python tools/contract_first_smart_test.py scenarios"
+contract-test-e2e = "python tools/contract_first_smart_test.py run --level e2e {args}"
+contract-test-full = "python tools/contract_first_smart_test.py run --level full {args}"
+contract-test-status = "python tools/contract_first_smart_test.py status"
+
+[tool.hatch.envs.hatch-test]
+dependencies = [
+    "pytest>=8.4.2",
+    "pytest-mock>=3.15.1",
+    "pytest-asyncio>=1.2.0",
+    "pytest-xdist>=3.8.0",
+    "coverage[toml]>=7.7.1",
+    "pytest-timeout>=2.3.1",
+    "icontract>=2.7.1",
+    "beartype>=0.22.4", 
+    "crosshair-tool>=0.0.97",
+    "hypothesis>=6.142.4",
+    "yamllint>=1.37.1",
+    # Enhanced Analysis Tools (for testing)
+    # Note: syft excluded from test due to rich version conflict with semgrep
+    # Install separately: pip install specfact-cli[enhanced-analysis] if needed
+    "graphviz>=0.20.1",  # Graph visualization (requires system Graphviz: apt-get install graphviz)
+    "pyan3>=1.2.0",  # Python call graph analysis
+    "bearer>=3.1.0",  # Data flow analysis for security
+]
+dev-mode = true
+parallel = true
+
+[tool.hatch.envs.hatch-test.env-vars]
+TOKENIZERS_PARALLELISM = "false" # Good practice if using HuggingFace tokenizers
+
+[tool.hatch.envs.hatch-test.scripts]
+# Adapted from template, adjust JUnit path if necessary
+run = "pytest --timeout=5 --junitxml=logs/tests/junit/test-results.xml {args}" # Removed --auto-capture-workflow if not used
+run-cov = "coverage run -m pytest --timeout=5 --junitxml=logs/tests/junit/test-results.xml {args}"
+cov = "coverage run -m pytest --timeout=5 --junitxml=logs/tests/junit/test-results.xml {args}"
+cov-combine = "coverage combine --quiet"
+xml = "coverage xml -o logs/tests/coverage/coverage.xml"
+run-html = "coverage html --data-file=logs/tests/coverage/.coverage -d logs/tests/coverage/html"
+cov-report = "coverage report -m"
+
+[[tool.hatch.envs.hatch-test.matrix]]
+python = ["3.11","3.12","3.13"] # Dropped 3.10 per project minimum >=3.11
+
+[tool.coverage.run]
+branch = true # Generally good to enable branch coverage
+parallel = false # Set to true if you run tests in parallel
+source = ["src", "tools"] # Source directory for specfact-cli and tools
+relative_files = true
+data_file = "logs/tests/coverage/.coverage"
+omit = [
+    "*/tests/*",
+    "src/**/__init__.py", # Omit init files
+    "src/**/__main__.py", # Omit main files if they are just entry points
+    "tools/**/__init__.py", # Omit init files in tools
+    # Add other specific files/patterns to omit for specfact-cli
+]
+
+[tool.coverage.paths]
+source = [
+    "src/",
+    "*/site-packages/",
+    "tools/"
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "raise NotImplementedError",
+    "if __name__ == '__main__':",
+    "if TYPE_CHECKING:",
+    "pass",
+    "raise AssertionError",
+    "@abstractmethod",
+    "except ImportError:", # Often used for optional imports
+    "except Exception:", # Too broad, consider more specific exceptions
+]
+show_missing = true
+# Contract-first approach: Line coverage is advisory; thresholds are enforced by contract-first layers in CI.
+# Lower threshold (50%) recognizes that contracts provide runtime validation at API boundaries.
+# Focus on contract coverage (80%+) and scenario tests for comprehensive validation.
+fail_under = 50  # 50% line coverage for unit tests (contract-first: contracts provide primary validation)
+
+[tool.coverage.html]
+directory = "logs/tests/coverage/html"
+
+[tool.coverage.xml]
+output = "logs/tests/coverage/coverage.xml"
+
+[tool.pytest-asyncio] # Add if you use asyncio tests
+mode = "strict"
+default_fixture_loop_scope = "function"
+
+[tool.hatch.build]
+dev-mode-dirs = ["src","tools"]
+
+[tool.hatch.build.targets.wheel]
+packages = [
+    "src/specfact_cli",
+]
+
+[tool.hatch.build.targets.wheel.force-include]
+"resources/prompts" = "specfact_cli/resources/prompts"
+"resources/templates" = "specfact_cli/resources/templates"
+"resources/schemas" = "specfact_cli/resources/schemas"
+"resources/mappings" = "specfact_cli/resources/mappings"
+# Note: resources/semgrep files are in src/specfact_cli/resources/semgrep/ and are automatically included
+
+[tool.hatch.build.targets.sdist]
+# Only include essential files in source distribution
+include = [
+    "/src",
+    "/resources",
+    "/README.md",
+    "/LICENSE.md",
+    "/pyproject.toml",
+]
+# Exclude development files, tests, docs, tools, etc.
+exclude = [
+    "/.git",
+    "/.github",
+    "/.cursor",
+    "/.specfact",
+    "/tests",
+    "/tools",
+    "/docs",
+    "/contracts",
+    "/reports",
+    "/logs",
+    "/dist",
+    "/build",
+    "/.pytest_cache",
+    "/.coverage",
+    "/.coverage.*",
+    "/coverage.xml",
+    "/htmlcov",
+    "/__pycache__",
+    "/*.pyc",
+    "/*.pyo",
+    "/*.pyd",
+    "/.Python",
+    "/.env",
+    "/.venv",
+    "/venv",
+    "/env",
+    "/.mypy_cache",
+    "/.ruff_cache",
+    "/.pylint.d",
+    "/.cache",
+    "/.tox",
+    "/.eggs",
+    "/*.egg-info",
+    "/.DS_Store",
+    "/.vscode",
+    "/.idea",
+    "/*.code-workspace",
+    "/.cursorrules",
+    "/.prettierrc.json",
+    "/.yamllint",
+    "/pyrightconfig.json",
+    "/setup.py",
+    "/AGENTS.md",
+    "/CHANGELOG.md",
+    "/CLA.md",
+    "/CODE_OF_CONDUCT.md",
+    "/CONTRIBUTING.md",
+    "/SECURITY.md",
+    "/USAGE-FAQ.md",
+]
+
+# [tool.hatch.envs.default.env-vars] # Add if you have default env vars for hatch environments
+# MY_VAR = "value"
+
+[tool.isort]
+profile = "ruff"
+multi_line_output = 3 
+line_length = 120 # From your original config
+
+[tool.basedpyright]
+pythonVersion = "3.12"
+typeCheckingMode = "strict"
+useLibraryCodeForTypes = true
+reportMissingImports = true
+reportMissingTypeStubs = false
+reportImportCycles = false
+reportUnusedImport = true
+reportUnusedClass = true
+reportUnusedFunction = true
+reportUnusedVariable = true
+reportDuplicateImport = true
+reportOptionalSubscript = true
+reportOptionalMemberAccess = true
+reportOptionalCall = true
+reportOptionalIterable = true
+reportOptionalContextManager = true
+reportOptionalOperand = true
+reportUntypedFunctionDecorator = true
+reportUntypedClassDecorator = true
+reportUntypedBaseClass = true
+reportUntypedNamedTuple = true
+reportPrivateUsage = true
+reportConstantRedefinition = true
+reportIncompatibleMethodOverride = true
+reportIncompatibleVariableOverride = true
+reportOverlappingOverloads = true
+reportUninitializedInstanceVariable = true
+reportInvalidStringEscapeSequence = true
+reportUnknownParameterType = true
+reportUnknownArgumentType = true
+reportUnknownLambdaType = true
+reportUnknownVariableType = true
+reportUnknownMemberType = true
+reportMissingParameterType = true
+reportMissingTypeArgument = true
+reportInvalidTypeVarUse = true
+reportCallInDefaultInitializer = true
+reportUnnecessaryIsInstance = true
+reportUnnecessaryCast = true
+reportAssertAlwaysTrue = true
+reportSelfClsParameterName = true
+reportImplicitStringConcatenation = true
+reportUnboundVariable = true
+reportUndefinedVariable = true
+
+[tool.basedpyright.reportUnnecessaryComparison]
+enabled = true
+
+[tool.basedpyright.reportUnnecessaryContains]
+enabled = true
+
+[tool.basedpyright.reportUnnecessaryTypeIgnoreComment]
+enabled = true
+
+[tool.basedpyright.reportImplicitOverride]
+enabled = true
+
+[tool.basedpyright.reportShadowedImports]
+enabled = true
+
+# Module-specific overrides
+[[tool.basedpyright.override]]
+module = [
+    "numpy.*",
+    "pandas.*",
+    "matplotlib.*"
+]
+reportMissingImports = false
+
+[[tool.basedpyright.override]]
+module = [
+    "markdown.*",
+    "redis.*",
+    "dotenv.*",
+    "github.*",
+    "pytest.*",
+    "setuptools.*"
+]
+reportMissingImports = false
+
+[[tool.basedpyright.override]]
+module = [
+    "src.specfact_cli.common.*",
+    "tools.*"
+]
+typeCheckingMode = "basic"
+
+[[tool.basedpyright.override]]
+module = [
+    "specfact_cli.telemetry"
+]
+reportMissingImports = false
+
+[tool.pytest.ini_options]
+minversion = "8.4.2"
+addopts = "-ra -v --import-mode=importlib" # Combined and no coverage flags
+pythonpath = [
+    "src",
+    "tools"
+]
+testpaths = [
+    "tests",
+    # "../src" # pythonpath = ["src"] should cover imports from src for tests in /tests
+]
+# Note: TEST_MODE is set in tests/conftest.py to skip Semgrep in tests
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+markers = [
+    "asyncio: mark test as async",
+    "integration: marks tests as integration tests",
+    "timeout: mark tests with a timeout",
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "workflow_coverage: mark test for workflow coverage tracking",
+    "component_coverage: mark test for component coverage tracking",
+    "contract_coverage: mark test for contract coverage tracking",
+    "state_transition_coverage: mark test for state transition coverage tracking",
+]
+filterwarnings = [ # From pytest.ini
+    "ignore::UserWarning:rich.live",  # Filter Rich library warnings about ipywidgets (not needed for CLI tests)
+    "ignore::pytest.PytestAssertRewriteWarning",
+    "ignore::pytest.PytestDeprecationWarning",
+]
+log_cli = true  # From pytest.ini
+log_cli_level = "INFO" # From pytest.ini
+
+[tool.pylint.messages_control]
+disable = [
+    "C0114",  # missing-module-docstring
+    "C0115",  # missing-class-docstring
+    "C0116",  # missing-function-docstring
+    "C0103",  # invalid-name (too restrictive for some cases)
+    "C0330",  # bad-continuation (handled by ruff format)
+    "C0326",  # bad-whitespace (handled by ruff format)
+    "R0903",  # too-few-public-methods
+    "R0913",  # too-many-arguments (too restrictive for APIs)
+    "R0912",  # too-many-branches
+    "R0915",  # too-many-statements
+    "W0511",  # fixme
+    "C0413",  # wrong-import-position (handled by isort)
+    "E0401",  # unable-to-import (false positives for local modules in pylint)
+    "E0611",  # no-name-in-module (false positives for local modules in pylint)
+]
+
+[tool.pylint.master]
+# Allow pylint to analyze tools directory and src directory
+init-hook = """
+import sys
+import os
+sys.path.insert(0, 'tools')
+sys.path.insert(0, os.path.join(os.getcwd(), 'src'))
+"""
+
+[tool.pylint.format]
+max-line-length = 120
+
+[tool.pylint.reports]
+output-format = "parseable"
+reports = "no"
+
+[tool.pylint.design]
+max-args = 8  # Allow reasonable number of arguments
+max-locals = 20  # Allow reasonable number of local variables
+max-returns = 8  # Allow reasonable number of return statements
+max-branches = 15  # Allow reasonable number of branches
+max-statements = 60  # Allow reasonable number of statements
+max-parents = 8  # Allow reasonable inheritance depth
+max-attributes = 12  # Allow reasonable number of attributes
+
+[tool.pylint.similarities]
+min-similarity-lines = 6  # Minimum lines for similarity check
+ignore-comments = "yes"
+ignore-docstrings = "yes"
+ignore-imports = "yes"
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+# Enable pycodestyle (`E`) and Pyflakes (`F`) codes by default, complementing pylint
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # Pyflakes
+    "I",    # isort
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "T10",  # flake8-debugger
+    "T20",  # flake8-print
+    "SIM",  # flake8-simplify
+    "PIE",  # flake8-pie
+    "RET",  # flake8-return
+    "RUF",  # Ruff-specific rules
+]
+
+ignore = [
+    "E501",  # line too long (handled by ruff format)
+    "C901",  # too complex (leave to pylint for governance)
+    "PLR0913",  # too many arguments (pylint handles this better)
+    "PLR0912",  # too many branches (pylint handles this better)
+    "PLR0915",  # too many statements (pylint handles this better)
+    "PLR2004",  # magic value comparison (too restrictive)
+    "PLR0911",  # too many return statements (too restrictive)
+    "PLR0917",  # too many positional arguments (too restrictive)
+    "FBT001",  # boolean positional arg in function definition (too restrictive)
+    "FBT002",  # boolean default positional argument (too restrictive)
+    "FBT003",  # boolean positional value in function call (too restrictive)
+    "A003",   # class attribute shadows a python builtin (too restrictive)
+    "S101",   # assert used (too restrictive for tests)
+    "T20",    # print found (too restrictive)
+    "BLE001", # do not catch blind exception (too restrictive)
+    "EM101",  # exception must not use a string literal (too restrictive)
+    "EM102",  # exception must not use an f-string literal (too restrictive)
+    "TRY003", # avoid specifying long messages outside exception class (too restrictive)
+    "ERA001", # found commented-out code (too restrictive)
+    "PD",     # pandas-vet (not relevant)
+    "NPY",    # NumPy-specific rules (not relevant)
+    "AIR",    # airflow (not relevant)
+    "PERF",   # perflint (not relevant)
+    "LOG",    # flake8-logging (pylint handles logging better)
+    "G",      # flake8-logging-format (pylint handles logging better)
+    "INP",    # flake8-no-pep420 (too restrictive)
+    "SLF",    # flake8-self (too restrictive)
+    "SLOT",   # flake8-slots (too restrictive)
+    "TCH",    # flake8-type-checking (too restrictive)
+    "INT",    # flake8-gettext (not relevant)
+    "PYI",    # flake8-pyi (not relevant)
+    "RUF012", # mutable class attributes should be annotated with ClassVar (too restrictive)
+    "RUF001", # flake8-ruff ambiguous unicode character (e.g. emoticons in strings)
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests can be more lenient
+"tests/**/*" = [
+    "S101",   # assert used
+    "PLR2004", # magic value comparison
+    "T20",    # print found
+    "SLF001", # private member accessed
+]
+
+# Tools and scripts can be more lenient
+"tools/**/*" = [
+    "T20",    # print found
+    "S101",   # assert used
+    "INP001", # implicit namespace package
+    "PLR2004", # magic value comparison (acceptable in tools)
+]
+
+# Typer command files - B008 is acceptable for typer.Option/Argument patterns
+"src/specfact_cli/commands/**/*" = [
+    "B008",   # typer.Option/Argument in defaults (common Typer pattern)
+]
+
+[tool.ruff.lint.isort]
+# Match isort ruff profile configuration
+# Ruff-compatible: multi_line_output = 3, combine_as_imports = true
+force-single-line = false
+force-wrap-aliases = false
+combine-as-imports = true
+split-on-trailing-comma = true
+lines-after-imports = 2
+known-first-party = ["specfact_cli"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+
+# Add this if you plan to use hatch version command
+[tool.hatch.version]
+path = "src/__init__.py"
+
+# Add build hook configuration if needed, for example:
+# [tool.hatch.build.hooks.custom]
+# path = "hatch_hooks.py" # A custom script for build hooks
+
+# Contract-First Development Configuration
+[tool.icontract]
+enable = true
+violation_module = "common.contract_violations"
+violation_handler = "common.contract_violations:handle_contract_violation"
+include_origin = true
+include_contracts = true
+
+[tool.beartype]
+enable = true
+conflict_strategy = "first"
+violation_door_type = "exception"
+violation_verbosity = "verbose"
+
+[tool.crosshair]
+timeout = 60
+per_condition_timeout = 10
+per_path_timeout = 5
+max_iterations = 1000
+
+# Contract-First Coverage Metrics
+[tool.contract_coverage]
+# Contract coverage measures behavioral coverage, not line coverage
+# This is separate from traditional unit test line coverage
+fail_under = 80  # 80% of public APIs should have contracts
+contract_coverage_threshold = 80
+behavioral_coverage_threshold = 90 
