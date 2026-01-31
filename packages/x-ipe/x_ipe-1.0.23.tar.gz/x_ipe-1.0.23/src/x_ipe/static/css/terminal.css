@@ -1,0 +1,428 @@
+/**
+ * Terminal Panel Styles
+ * FEATURE-005: Interactive Console
+ * 
+ * Simplified CSS for reliable xterm.js rendering.
+ * Uses explicit heights instead of complex flex calculations.
+ */
+
+/* Terminal Panel - Bottom of page */
+/* Must be above middle-section (z-index: 400) so resize handle is draggable */
+.terminal-panel {
+    background-color: #1e1e1e;
+    border-top: 1px solid #333;
+    display: flex;
+    flex-direction: column;
+    z-index: 450;
+    position: relative;
+}
+
+/* Collapsed state - just show header */
+.terminal-panel.collapsed {
+    height: 36px;
+}
+
+/* Expanded state */
+.terminal-panel.expanded {
+    height: 300px;
+}
+
+/* Zen mode - full screen overlay */
+.terminal-panel.zen-mode {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 100vh !important;
+    z-index: 9999;
+}
+
+/* Resize handle */
+.terminal-resize-handle {
+    position: absolute;
+    top: -3px;
+    left: 0;
+    right: 0;
+    height: 6px;
+    cursor: ns-resize;
+    background: transparent;
+    z-index: 500;
+}
+
+/* When resizing, ensure panel is above middle-section (z-index 400) */
+.terminal-panel.resizing {
+    z-index: 500;
+}
+
+.terminal-resize-handle::before {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 40px;
+    height: 3px;
+    background: #555;
+    border-radius: 2px;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+.terminal-resize-handle:hover::before,
+.terminal-panel.resizing .terminal-resize-handle::before {
+    opacity: 1;
+}
+
+.terminal-resize-handle:hover,
+.terminal-panel.resizing .terminal-resize-handle {
+    background: rgba(0, 122, 204, 0.3);
+}
+
+.terminal-panel.collapsed .terminal-resize-handle,
+.terminal-panel.zen-mode .terminal-resize-handle {
+    display: none;
+}
+
+/* Terminal header bar - fixed 36px */
+.terminal-header {
+    height: 36px;
+    min-height: 36px;
+    max-height: 36px;
+    display: flex;
+    align-items: center;
+    padding: 0 10px;
+    background-color: #252526;
+    cursor: pointer;
+    -webkit-user-select: none;
+    user-select: none;
+    color: #ccc;
+    font-size: 13px;
+    gap: 10px;
+}
+
+.terminal-header:hover {
+    background: #2d2d2d;
+}
+
+.terminal-header .terminal-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* Status indicator */
+.terminal-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: #888;
+}
+
+.status-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    transition: background-color 0.3s;
+}
+
+.status-indicator.connected {
+    background-color: #4ec9b0;
+    box-shadow: 0 0 4px #4ec9b0;
+}
+
+.status-indicator.disconnected {
+    background-color: #f14c4c;
+    box-shadow: 0 0 4px #f14c4c;
+}
+
+/* Terminal actions */
+.terminal-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.terminal-actions button {
+    width: 28px;
+    height: 28px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: #ccc;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+}
+
+.terminal-actions button:hover {
+    background-color: #3c3c3c;
+    color: #fff;
+}
+
+/* Pane container - use calc for explicit height */
+.terminal-panes {
+    display: none;
+    flex-direction: row;
+    height: calc(100% - 36px);  /* Panel height minus header */
+    overflow: hidden;
+}
+
+.terminal-panel.expanded .terminal-panes,
+.terminal-panel.zen-mode .terminal-panes {
+    display: flex;
+}
+
+/* Horizontal splitter between panes */
+.pane-splitter {
+    flex: 0 0 4px;
+    background: #333;
+    cursor: ew-resize;
+    position: relative;
+    z-index: 10;
+}
+
+.pane-splitter::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 2px;
+    height: 30px;
+    background: #555;
+    border-radius: 1px;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+.pane-splitter:hover::before,
+.terminal-panes.dragging-splitter .pane-splitter::before {
+    opacity: 1;
+}
+
+.pane-splitter:hover,
+.terminal-panes.dragging-splitter .pane-splitter {
+    background: rgba(0, 122, 204, 0.5);
+}
+
+/* Individual terminal pane */
+.terminal-pane {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background-color: #1e1e1e;
+    border: 2px solid transparent;
+    transition: border-color 0.2s;
+    min-width: 100px;
+    height: 100%;
+    overflow: hidden;
+}
+
+.terminal-pane.focused {
+    border-color: #007acc;
+}
+
+/* Pane header - fixed 24px */
+.pane-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 2px 8px;
+    background-color: #252526;
+    height: 24px;
+    min-height: 24px;
+    max-height: 24px;
+}
+
+.pane-title {
+    font-size: 11px;
+    color: #888;
+    font-weight: 500;
+}
+
+.terminal-pane.focused .pane-title {
+    color: #ccc;
+}
+
+.close-pane-btn {
+    width: 18px;
+    height: 18px;
+    border: none;
+    border-radius: 3px;
+    background: transparent;
+    color: #888;
+    cursor: pointer;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.close-pane-btn:hover {
+    background-color: #c42b1c;
+    color: #fff;
+}
+
+/* Terminal content - xterm container with explicit height */
+.terminal-content {
+    height: calc(100% - 24px);  /* Pane height minus pane-header */
+    padding: 4px;
+    overflow: hidden;
+    position: relative;
+}
+
+/* xterm fills container */
+.terminal-content .xterm {
+    height: 100% !important;
+    width: 100% !important;
+}
+
+.terminal-content .xterm-screen {
+    width: 100% !important;
+}
+
+.terminal-content .xterm-viewport {
+    overflow-y: auto !important;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+.terminal-content .xterm-viewport::-webkit-scrollbar {
+    display: none;
+}
+
+/* Prevent scroll issues with xterm textarea */
+.terminal-content .xterm-helper-textarea {
+    position: absolute !important;
+}
+
+/* =============================================================================
+   FEATURE-021: Console Voice Input
+   ============================================================================= */
+
+/* Header layout for voice controls */
+.terminal-header-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.terminal-header-center {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+    margin-right: 10px;
+}
+
+/* Mic toggle button */
+.mic-toggle {
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 50%;
+    background: #3c3c3c;
+    color: #888;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    transition: all 0.2s ease;
+}
+
+.mic-toggle:hover {
+    background: #4c4c4c;
+    color: #ccc;
+}
+
+.mic-toggle.enabled {
+    background: #0e639c;
+    color: #fff;
+}
+
+.mic-toggle.enabled:hover {
+    background: #1177bb;
+}
+
+.mic-toggle.denied {
+    background: #5a3333;
+    color: #f88;
+}
+
+/* Voice indicator - waveform bars */
+.voice-indicator {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    height: 20px;
+    opacity: 0.3;
+    transition: opacity 0.2s;
+}
+
+.voice-indicator .waveform-bar {
+    width: 3px;
+    height: 8px;
+    background: #888;
+    border-radius: 1px;
+    transition: all 0.1s ease;
+}
+
+.voice-indicator.recording {
+    opacity: 1;
+}
+
+.voice-indicator.recording .waveform-bar {
+    background: #4ec9b0;
+    animation: voice-wave 0.5s ease-in-out infinite;
+}
+
+.voice-indicator.recording .waveform-bar:nth-child(1) { animation-delay: 0.0s; }
+.voice-indicator.recording .waveform-bar:nth-child(2) { animation-delay: 0.1s; }
+.voice-indicator.recording .waveform-bar:nth-child(3) { animation-delay: 0.2s; }
+.voice-indicator.recording .waveform-bar:nth-child(4) { animation-delay: 0.3s; }
+.voice-indicator.recording .waveform-bar:nth-child(5) { animation-delay: 0.4s; }
+
+.voice-indicator.processing .waveform-bar {
+    background: #dcdcaa;
+    animation: voice-pulse 0.8s ease-in-out infinite;
+}
+
+@keyframes voice-wave {
+    0%, 100% { height: 8px; }
+    50% { height: 18px; }
+}
+
+@keyframes voice-pulse {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 1; }
+}
+
+/* Transcription preview bar */
+.transcription-preview {
+    height: 0;
+    overflow: hidden;
+    background: #2d2d2d;
+    border-bottom: 1px solid #333;
+    font-size: 12px;
+    color: #ccc;
+    transition: height 0.2s ease;
+}
+
+.transcription-preview.visible {
+    height: 28px;
+    padding: 4px 12px;
+}
+
+.transcription-preview .transcription-text {
+    display: block;
+    line-height: 20px;
+    font-style: italic;
+    color: #9cdcfe;
+}
+
+
