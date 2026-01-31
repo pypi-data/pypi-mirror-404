@@ -1,0 +1,148 @@
+{% extends "django_agent_studio/base.html" %}
+
+{% block title %}Create System - Agent Studio{% endblock %}
+
+{% block breadcrumbs %}
+<nav class="flex items-center space-x-2 ml-4 text-sm">
+    <span class="text-gray-400">/</span>
+    <a href="{% url 'agent_studio:system_list' %}" class="text-gray-500 hover:text-gray-700">My Systems</a>
+    <span class="text-gray-400">/</span>
+    <span class="text-gray-600">Create</span>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="h-full p-6 overflow-auto">
+    <div class="max-w-2xl mx-auto">
+        <!-- Header -->
+        <div class="mb-6">
+            <h1 class="text-2xl font-bold text-gray-900">🔗 Create New System</h1>
+            <p class="text-gray-500 mt-1">A system combines multiple agents that work together.</p>
+        </div>
+
+        <!-- Form -->
+        <div class="bg-white border border-gray-200 rounded-lg p-6">
+            <form @submit.prevent="createSystem" class="space-y-6">
+                <!-- Name -->
+                <div>
+                    <label for="name" class="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+                    <input type="text" id="name" v-model="form.name" @input="generateSlug"
+                           class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                           placeholder="My Agent System" required>
+                </div>
+
+                <!-- Slug -->
+                <div>
+                    <label for="slug" class="block text-sm font-medium text-gray-700 mb-1">Slug *</label>
+                    <input type="text" id="slug" v-model="form.slug"
+                           class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm"
+                           placeholder="my-agent-system" required>
+                    <p class="text-xs text-gray-500 mt-1">URL-friendly identifier (auto-generated from name)</p>
+                </div>
+
+                <!-- Description -->
+                <div>
+                    <label for="description" class="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                    <textarea id="description" v-model="form.description" rows="3"
+                              class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                              placeholder="Describe what this system does..."></textarea>
+                </div>
+
+                <!-- Entry Agent -->
+                <div>
+                    <label for="entry_agent" class="block text-sm font-medium text-gray-700 mb-1">Entry Agent</label>
+                    <select id="entry_agent" v-model="form.entry_agent_id"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                        <option value="">-- Select an agent --</option>
+                        {% for agent in agents %}
+                        <option value="{{ agent.id }}">{{ agent.icon|default:"🤖" }} {{ agent.name }}</option>
+                        {% endfor %}
+                    </select>
+                    <p class="text-xs text-gray-500 mt-1">The agent that handles incoming conversations. Sub-agents will be auto-discovered.</p>
+                </div>
+
+                <!-- Error Message -->
+                <div v-if="error" class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+                    [[ error ]]
+                </div>
+
+                <!-- Actions -->
+                <div class="flex items-center justify-end space-x-3 pt-4 border-t border-gray-200">
+                    <a href="{% url 'agent_studio:system_list' %}"
+                       class="px-4 py-2 text-gray-700 hover:text-gray-900">Cancel</a>
+                    <button type="submit" :disabled="loading"
+                            class="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium disabled:opacity-50">
+                        <span v-if="loading">Creating...</span>
+                        <span v-else>Create System</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const { createApp } = Vue;
+
+createApp({
+    delimiters: ['[[', ']]'],
+    data() {
+        return {
+            form: {
+                name: '',
+                slug: '',
+                description: '',
+                entry_agent_id: '',
+            },
+            loading: false,
+            error: null,
+        }
+    },
+    methods: {
+        generateSlug() {
+            // Auto-generate slug from name
+            this.form.slug = this.form.name
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-|-$/g, '');
+        },
+        async createSystem() {
+            this.loading = true;
+            this.error = null;
+            try {
+                const payload = {
+                    name: this.form.name,
+                    slug: this.form.slug,
+                    description: this.form.description,
+                    auto_discover: true,
+                };
+                if (this.form.entry_agent_id) {
+                    payload.entry_agent_id = this.form.entry_agent_id;
+                }
+                const response = await fetch('{% url "agent_studio:api_system_list" %}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': '{{ csrf_token }}',
+                    },
+                    body: JSON.stringify(payload),
+                });
+                if (!response.ok) {
+                    const data = await response.json();
+                    throw new Error(data.detail || data.error || JSON.stringify(data));
+                }
+                const system = await response.json();
+                window.location.href = `/studio/systems/${system.id}/test/`;
+            } catch (err) {
+                this.error = err.message;
+            } finally {
+                this.loading = false;
+            }
+        }
+    }
+}).use(primevue.config.default).mount('#app');
+</script>
+{% endblock %}
+

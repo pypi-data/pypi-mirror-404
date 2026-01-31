@@ -1,0 +1,150 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Agent Studio{% endblock %}</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        primary: {"50":"#eff6ff","100":"#dbeafe","200":"#bfdbfe","300":"#93c5fd","400":"#60a5fa","500":"#3b82f6","600":"#2563eb","700":"#1d4ed8","800":"#1e40af","900":"#1e3a8a","950":"#172554"}
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <!-- PrimeVue -->
+    <link rel="stylesheet" href="https://unpkg.com/primevue@3/resources/themes/lara-light-blue/theme.css">
+    <link rel="stylesheet" href="https://unpkg.com/primevue@3/resources/primevue.min.css">
+    <link rel="stylesheet" href="https://unpkg.com/primeicons/primeicons.css">
+    
+    <!-- Vue 3 -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <script src="https://unpkg.com/primevue@3/core/core.min.js"></script>
+    <script src="https://unpkg.com/primevue@3/button/button.min.js"></script>
+    <script src="https://unpkg.com/primevue@3/inputtext/inputtext.min.js"></script>
+    <script src="https://unpkg.com/primevue@3/textarea/textarea.min.js"></script>
+    <script src="https://unpkg.com/primevue@3/dropdown/dropdown.min.js"></script>
+    <script src="https://unpkg.com/primevue@3/card/card.min.js"></script>
+    <script src="https://unpkg.com/primevue@3/panel/panel.min.js"></script>
+    <script src="https://unpkg.com/primevue@3/splitter/splitter.min.js"></script>
+    <script src="https://unpkg.com/primevue@3/splitterpanel/splitterpanel.min.js"></script>
+    <script src="https://unpkg.com/primevue@3/toast/toast.min.js"></script>
+    <script src="https://unpkg.com/primevue@3/toastservice/toastservice.min.js"></script>
+    <script src="https://unpkg.com/primevue@3/tabview/tabview.min.js"></script>
+    <script src="https://unpkg.com/primevue@3/tabpanel/tabpanel.min.js"></script>
+    
+    <!-- Agent Frontend (for chat widgets)
+         Local development: Files are in django_agent_studio/static/agent-frontend/
+         To update after changes to agent-frontend/dist/:
+           cp agent-frontend/dist/chat-widget.* django_agent_studio/static/agent-frontend/
+         For production, switch to unpkg CDN:
+           https://unpkg.com/@makemore/agent-frontend/dist/chat-widget.css
+           https://unpkg.com/@makemore/agent-frontend/dist/chat-widget.js
+    -->
+    <link rel="stylesheet" href="{% static 'agent-frontend/chat-widget.css' %}">
+    <script src="{% static 'agent-frontend/chat-widget.js' %}"></script>
+
+    <!-- Enhanced Markdown Support for Chat Widget -->
+    <!-- Syntax highlighting theme -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github-dark.min.css">
+    <!-- Marked.js for markdown parsing -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- Highlight.js - use the pre-bundled version with common languages included -->
+    <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
+    <!-- Chat widget markdown addon (must be after chat-widget.js and marked.js) -->
+    <script src="{% static 'agent-frontend/chat-widget-markdown.js' %}"></script>
+    
+    <style>
+        [v-cloak] { display: none; }
+        
+        /* Custom scrollbar */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 3px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #c1c1c1;
+            border-radius: 3px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #a1a1a1;
+        }
+        
+        /* Override agent-frontend styles for embedded mode */
+        .embedded-chat .cw-container {
+            position: relative !important;
+            width: 100% !important;
+            height: 100% !important;
+            max-height: none !important;
+            border-radius: 0 !important;
+            box-shadow: none !important;
+        }
+        .embedded-chat .cw-toggle-btn {
+            display: none !important;
+        }
+        .embedded-chat .cw-widget {
+            position: relative !important;
+            width: 100% !important;
+            height: 100% !important;
+            max-height: none !important;
+            border-radius: 0.5rem !important;
+            display: flex !important;
+            flex-direction: column !important;
+            overflow: hidden !important;
+        }
+        .embedded-chat .cw-messages {
+            flex: 1 !important;
+            min-height: 0 !important;
+            overflow-y: auto !important;
+        }
+    </style>
+    
+    {% block extra_head %}{% endblock %}
+</head>
+<body class="h-full bg-gray-50">
+    <div id="app" v-cloak class="h-full flex flex-col">
+        <!-- Header -->
+        <header class="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
+            <div class="flex items-center space-x-4">
+                <a href="{% url 'agent_studio:home' %}" class="flex items-center space-x-2">
+                    <span class="text-2xl">🤖</span>
+                    <span class="text-xl font-semibold text-gray-800">Agent Studio</span>
+                </a>
+                {% block breadcrumbs %}{% endblock %}
+            </div>
+            <div class="flex items-center space-x-4">
+                {% if request.user.is_authenticated %}
+                <span class="text-sm text-gray-600">{{ request.user.email|default:request.user }}</span>
+                <form method="post" action="{% url 'agent_studio:logout' %}" class="inline">
+                    {% csrf_token %}
+                    <button type="submit" class="text-sm text-gray-500 hover:text-gray-700">Logout</button>
+                </form>
+                {% endif %}
+            </div>
+        </header>
+        
+        <!-- Main Content -->
+        <main class="flex-1 overflow-hidden">
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+    
+    <!-- Toast container -->
+    <p-toast></p-toast>
+    
+    {% block extra_js %}{% endblock %}
+</body>
+</html>
+
