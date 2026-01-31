@@ -1,0 +1,106 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wormgear"
+version = "0.0.18"
+description = "Unified worm gear calculator and CNC-ready 3D geometry generator"
+readme = "README.md"
+requires-python = ">=3.12"
+license = {text = "MIT"}
+authors = [
+    {name = "Paul Fremantle", email = "paul@fremantle.org"}
+]
+keywords = ["worm gear", "gear calculator", "CAD", "build123d", "CNC", "STEP", "manufacturing"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Manufacturing",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering",
+]
+
+dependencies = [
+    "build123d>=0.6.0",
+    "click>=8.0",  # For CLI
+    "pydantic>=2.0,<3.0",  # Pydantic V2 required (V1 API incompatible)
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov",
+    "black",
+    "ruff",
+    "mypy>=1.0",
+]
+
+[project.scripts]
+wormgear = "wormgear.cli.generate:main"
+wormgear-geometry = "wormgear.cli.generate:main"  # Alias for backwards compatibility
+
+[project.urls]
+Homepage = "https://wormgear.studio"
+Documentation = "https://github.com/pzfreo/wormgear/blob/main/README.md"
+Repository = "https://github.com/pzfreo/wormgear"
+Issues = "https://github.com/pzfreo/wormgear/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]
+
+[tool.black]
+line-length = 100
+target-version = ['py312']
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+select = ["E", "F", "I", "N", "W"]
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_ignores = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = true
+ignore_missing_imports = true
+follow_imports = "skip"
+exclude = [
+    "tests/",
+    "web/",
+]
+
+# Phase 1: Strict type checking for calculator module
+[[tool.mypy.overrides]]
+module = "wormgear.calculator.*"
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+warn_return_any = true
+
+# Phase 2 (future): Uncomment to enable for core module
+# [[tool.mypy.overrides]]
+# module = "wormgear.core.*"
+# disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = "build123d.*"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "OCP.*"
+ignore_errors = true
