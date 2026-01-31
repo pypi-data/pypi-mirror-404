@@ -1,0 +1,589 @@
+"""HTTP client for {{ api.title }}."""
+
+from __future__ import annotations
+
+import base64
+import os
+import warnings
+from typing import Any, Callable
+
+import httpx
+
+
+# Environment variable prefix for this client
+ENV_PREFIX = "{{ env_prefix | default('API', true) }}"
+
+# API base path suffix (e.g., "/api/v1")
+BASE_PATH = "{{ base_path | default('', true) }}"
+
+# Default credentials (configured during generation)
+{% if oauth_config %}
+DEFAULT_CLIENT_ID = "{{ oauth_config.client_id }}"
+DEFAULT_CLIENT_SECRET = "{{ oauth_config.client_secret }}"
+DEFAULT_OAUTH_ENDPOINT = "{{ oauth_config.token_endpoint }}"
+DEFAULT_OAUTH_SCOPE = "{{ oauth_config.scope | default('') }}"
+{% endif %}
+{% if default_token %}
+DEFAULT_API_TOKEN = "{{ default_token }}"
+{% endif %}
+{% if basic_config %}
+DEFAULT_USERNAME = "{{ basic_config.default_username }}"
+DEFAULT_PASSWORD = "{{ basic_config.default_password }}"
+{% endif %}
+{% if session_config %}
+DEFAULT_USERNAME = "{{ session_config.default_username }}"
+DEFAULT_PASSWORD = "{{ session_config.default_password }}"
+DEFAULT_LOGIN_ENDPOINT = "{{ session_config.login_endpoint }}"
+{% endif %}
+
+
+def _get_env_config() -> tuple[str | None, dict[str, str]]:
+    """Get base URL and headers from environment variables.
+
+    Looks for:
+    - {PREFIX}_BASE_URL: Base URL for API requests
+    - {PREFIX}_API_TOKEN: Bearer token for Authorization header
+
+    Returns:
+        Tuple of (base_url, headers)
+    """
+    base_url = os.environ.get(f"{ENV_PREFIX}_BASE_URL")
+    headers: dict[str, str] = {}
+
+    # Check for bearer token
+    token = os.environ.get(f"{ENV_PREFIX}_API_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+{% if default_token %}
+    elif not token:
+        # Use default token if no env var set
+        headers["Authorization"] = f"Bearer {DEFAULT_API_TOKEN}"
+{% endif %}
+
+    return base_url, headers
+
+
+{% if oauth_config %}
+def _get_oauth_token(
+    base_url: str,
+    client_id: str | None = None,
+    client_secret: str | None = None,
+    scope: str | None = None,
+) -> str:
+    """Get OAuth access token using client credentials flow.
+
+    Args:
+        base_url: Base URL for the API
+        client_id: OAuth client ID (uses default if not provided)
+        client_secret: OAuth client secret (uses default if not provided)
+        scope: OAuth scope (uses default if not provided)
+
+    Returns:
+        Access token string
+    """
+    client_id = client_id or os.environ.get(f"{ENV_PREFIX}_CLIENT_ID") or DEFAULT_CLIENT_ID
+    client_secret = client_secret or os.environ.get(f"{ENV_PREFIX}_CLIENT_SECRET") or DEFAULT_CLIENT_SECRET
+    scope = scope or DEFAULT_OAUTH_SCOPE
+
+    with httpx.Client() as client:
+        payload: dict[str, str] = {
+            "grant_type": "client_credentials",
+            "client_id": client_id,
+            "client_secret": client_secret,
+        }
+        if scope:
+            payload["scope"] = scope
+
+        response = client.post(
+            f"{base_url.rstrip('/')}{DEFAULT_OAUTH_ENDPOINT}",
+            data=payload,  # OAuth uses form-encoded data, not JSON
+        )
+        response.raise_for_status()
+        return response.json()["access_token"]
+
+
+async def _get_oauth_token_async(
+    base_url: str,
+    client_id: str | None = None,
+    client_secret: str | None = None,
+    scope: str | None = None,
+) -> str:
+    """Get OAuth access token using client credentials flow (async)."""
+    client_id = client_id or os.environ.get(f"{ENV_PREFIX}_CLIENT_ID") or DEFAULT_CLIENT_ID
+    client_secret = client_secret or os.environ.get(f"{ENV_PREFIX}_CLIENT_SECRET") or DEFAULT_CLIENT_SECRET
+    scope = scope or DEFAULT_OAUTH_SCOPE
+
+    async with httpx.AsyncClient() as client:
+        payload: dict[str, str] = {
+            "grant_type": "client_credentials",
+            "client_id": client_id,
+            "client_secret": client_secret,
+        }
+        if scope:
+            payload["scope"] = scope
+
+        response = await client.post(
+            f"{base_url.rstrip('/')}{DEFAULT_OAUTH_ENDPOINT}",
+            data=payload,  # OAuth uses form-encoded data, not JSON
+        )
+        response.raise_for_status()
+        return response.json()["access_token"]
+{% endif %}
+
+
+{% if basic_config %}
+def _get_basic_auth_header(username: str | None = None, password: str | None = None) -> str:
+    """Get Basic auth header value."""
+    username = username or os.environ.get(f"{ENV_PREFIX}_USERNAME") or DEFAULT_USERNAME
+    password = password or os.environ.get(f"{ENV_PREFIX}_PASSWORD") or DEFAULT_PASSWORD
+    credentials = base64.b64encode(f"{username}:{password}".encode()).decode()
+    return f"Basic {credentials}"
+{% endif %}
+
+
+{% if session_config %}
+def _login_session(
+    base_url: str,
+    username: str | None = None,
+    password: str | None = None,
+) -> str:
+    """Login and get session token."""
+    username = username or os.environ.get(f"{ENV_PREFIX}_USERNAME") or DEFAULT_USERNAME
+    password = password or os.environ.get(f"{ENV_PREFIX}_PASSWORD") or DEFAULT_PASSWORD
+
+    with httpx.Client() as client:
+        response = client.post(
+            f"{base_url.rstrip('/')}{DEFAULT_LOGIN_ENDPOINT}",
+            json={"login_id": username, "password": password},
+        )
+        response.raise_for_status()
+        # Mattermost returns token in header
+        return response.headers.get("Token", "")
+
+
+async def _login_session_async(
+    base_url: str,
+    username: str | None = None,
+    password: str | None = None,
+) -> str:
+    """Login and get session token (async)."""
+    username = username or os.environ.get(f"{ENV_PREFIX}_USERNAME") or DEFAULT_USERNAME
+    password = password or os.environ.get(f"{ENV_PREFIX}_PASSWORD") or DEFAULT_PASSWORD
+
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            f"{base_url.rstrip('/')}{DEFAULT_LOGIN_ENDPOINT}",
+            json={"login_id": username, "password": password},
+        )
+        response.raise_for_status()
+        return response.headers.get("Token", "")
+{% endif %}
+
+
+class Client:
+    """Sync HTTP client for {{ api.title }}."""
+
+    def __init__(
+        self,
+        base_url: str,
+        timeout: float = 30.0,
+        headers: dict[str, str] | None = None,
+        max_retries: int = 3,
+        retry_on_status: tuple[int, ...] = (429, 500, 502, 503, 504),
+        on_request: Callable[[httpx.Request], None] | None = None,
+        on_response: Callable[[httpx.Response], None] | None = None,
+        **kwargs: Any,
+    ):
+        """Initialize the HTTP client.
+
+        Args:
+            base_url: Base URL for API requests
+            timeout: Request timeout in seconds
+            headers: Default headers to include in all requests
+            max_retries: Maximum number of retry attempts for failed requests
+            retry_on_status: HTTP status codes that trigger a retry
+            on_request: Hook called before each request
+            on_response: Hook called after each response
+            **kwargs: Additional arguments passed to httpx.Client
+        """
+        self._base_url = base_url.rstrip("/")
+        # Always include Accept header for JSON APIs
+        self._headers = {"Accept": "application/json", **(headers or {})}
+        self._max_retries = max_retries
+        self._retry_on_status = retry_on_status
+        self._closed = False
+
+        event_hooks: dict[str, list[Callable]] = {"request": [], "response": []}
+        if on_request:
+            event_hooks["request"].append(on_request)
+        if on_response:
+            event_hooks["response"].append(on_response)
+
+        self._client = httpx.Client(
+            base_url=self._base_url,
+            timeout=timeout,
+            headers=self._headers,
+            event_hooks=event_hooks if any(event_hooks.values()) else None,
+            **kwargs,
+        )
+
+    @property
+    def httpx(self) -> httpx.Client:
+        """Access the underlying httpx client."""
+        return self._client
+
+    @property
+    def max_retries(self) -> int:
+        """Maximum number of retry attempts."""
+        return self._max_retries
+
+    @property
+    def retry_on_status(self) -> tuple[int, ...]:
+        """HTTP status codes that trigger a retry."""
+        return self._retry_on_status
+
+    def close(self) -> None:
+        """Close the client."""
+        self._closed = True
+        self._client.close()
+
+    def __enter__(self) -> "Client":
+        return self
+
+    def __exit__(self, *args: Any) -> None:
+        self.close()
+
+    def __del__(self) -> None:
+        if not self._closed:
+            warnings.warn(
+                f"{self.__class__.__name__} was not closed. "
+                "Use 'with' statement or call 'client.close()'",
+                ResourceWarning,
+                stacklevel=2,
+            )
+
+    @classmethod
+    def from_env(cls, **kwargs: Any) -> "Client":
+        """Create client from environment variables.
+
+        Reads {ENV_PREFIX}_BASE_URL and auth credentials.
+
+        Args:
+            **kwargs: Additional arguments passed to Client.__init__
+
+        Returns:
+            Configured Client instance
+
+        Raises:
+            ValueError: If {ENV_PREFIX}_BASE_URL is not set
+        """
+        base_url, env_headers = _get_env_config()
+        if not base_url:
+            raise ValueError(f"{ENV_PREFIX}_BASE_URL environment variable is required")
+
+        # Merge env headers with any provided headers
+        headers = kwargs.pop("headers", None) or {}
+        headers = {**env_headers, **headers}
+
+        return cls(base_url=base_url, headers=headers, **kwargs)
+
+{% if oauth_config %}
+    @classmethod
+    def create(
+        cls,
+        base_url: str | None = None,
+        client_id: str | None = None,
+        client_secret: str | None = None,
+        **kwargs: Any,
+    ) -> "Client":
+        """Create an authenticated client using OAuth.
+
+        Args:
+            base_url: Base URL (uses {ENV_PREFIX}_BASE_URL if not provided)
+            client_id: OAuth client ID (uses default if not provided)
+            client_secret: OAuth client secret (uses default if not provided)
+            **kwargs: Additional arguments passed to Client.__init__
+
+        Returns:
+            Authenticated Client instance
+        """
+        base_url = base_url or os.environ.get(f"{ENV_PREFIX}_BASE_URL")
+        if not base_url:
+            raise ValueError(f"base_url required or set {ENV_PREFIX}_BASE_URL")
+
+        # Get OAuth token
+        token = _get_oauth_token(base_url, client_id, client_secret)
+
+        headers = kwargs.pop("headers", None) or {}
+        headers["Authorization"] = f"Bearer {token}"
+
+        return cls(base_url=base_url, headers=headers, **kwargs)
+{% elif basic_config %}
+    @classmethod
+    def create(
+        cls,
+        base_url: str | None = None,
+        username: str | None = None,
+        password: str | None = None,
+        **kwargs: Any,
+    ) -> "Client":
+        """Create an authenticated client using Basic auth.
+
+        Args:
+            base_url: Base URL (uses {ENV_PREFIX}_BASE_URL if not provided)
+            username: Username (uses default if not provided)
+            password: Password (uses default if not provided)
+            **kwargs: Additional arguments passed to Client.__init__
+
+        Returns:
+            Authenticated Client instance
+        """
+        base_url = base_url or os.environ.get(f"{ENV_PREFIX}_BASE_URL")
+        if not base_url:
+            raise ValueError(f"base_url required or set {ENV_PREFIX}_BASE_URL")
+
+        # Append API base path suffix if configured
+        if BASE_PATH:
+            base_url = base_url.rstrip("/") + BASE_PATH
+
+        headers = kwargs.pop("headers", None) or {}
+        headers["Authorization"] = _get_basic_auth_header(username, password)
+
+        return cls(base_url=base_url, headers=headers, **kwargs)
+{% elif session_config %}
+    @classmethod
+    def create(
+        cls,
+        base_url: str | None = None,
+        username: str | None = None,
+        password: str | None = None,
+        **kwargs: Any,
+    ) -> "Client":
+        """Create an authenticated client using session login.
+
+        Args:
+            base_url: Base URL (uses {ENV_PREFIX}_BASE_URL if not provided)
+            username: Username (uses default if not provided)
+            password: Password (uses default if not provided)
+            **kwargs: Additional arguments passed to Client.__init__
+
+        Returns:
+            Authenticated Client instance
+        """
+        base_url = base_url or os.environ.get(f"{ENV_PREFIX}_BASE_URL")
+        if not base_url:
+            raise ValueError(f"base_url required or set {ENV_PREFIX}_BASE_URL")
+
+        # Login and get session token
+        token = _login_session(base_url, username, password)
+
+        headers = kwargs.pop("headers", None) or {}
+        headers["Authorization"] = f"Bearer {token}"
+
+        return cls(base_url=base_url, headers=headers, **kwargs)
+{% else %}
+    @classmethod
+    def create(
+        cls,
+        base_url: str | None = None,
+        api_token: str | None = None,
+        **kwargs: Any,
+    ) -> "Client":
+        """Create an authenticated client.
+
+        Args:
+            base_url: Base URL (uses {ENV_PREFIX}_BASE_URL if not provided)
+            api_token: API token (uses default if not provided)
+            **kwargs: Additional arguments passed to Client.__init__
+
+        Returns:
+            Authenticated Client instance
+        """
+        base_url = base_url or os.environ.get(f"{ENV_PREFIX}_BASE_URL")
+        if not base_url:
+            raise ValueError(f"base_url required or set {ENV_PREFIX}_BASE_URL")
+
+        token = api_token or os.environ.get(f"{ENV_PREFIX}_API_TOKEN")
+{% if default_token %}
+        if not token:
+            token = DEFAULT_API_TOKEN
+{% endif %}
+
+        headers = kwargs.pop("headers", None) or {}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+
+        return cls(base_url=base_url, headers=headers, **kwargs)
+{% endif %}
+
+
+class AsyncClient:
+    """Async HTTP client for {{ api.title }}."""
+
+    def __init__(
+        self,
+        base_url: str,
+        timeout: float = 30.0,
+        headers: dict[str, str] | None = None,
+        max_retries: int = 3,
+        retry_on_status: tuple[int, ...] = (429, 500, 502, 503, 504),
+        on_request: Callable[[httpx.Request], None] | None = None,
+        on_response: Callable[[httpx.Response], None] | None = None,
+        **kwargs: Any,
+    ):
+        """Initialize the async HTTP client."""
+        self._base_url = base_url.rstrip("/")
+        # Always include Accept header for JSON APIs
+        self._headers = {"Accept": "application/json", **(headers or {})}
+        self._max_retries = max_retries
+        self._retry_on_status = retry_on_status
+        self._closed = False
+
+        event_hooks: dict[str, list[Callable]] = {"request": [], "response": []}
+        if on_request:
+            event_hooks["request"].append(on_request)
+        if on_response:
+            event_hooks["response"].append(on_response)
+
+        self._client = httpx.AsyncClient(
+            base_url=self._base_url,
+            timeout=timeout,
+            headers=self._headers,
+            event_hooks=event_hooks if any(event_hooks.values()) else None,
+            **kwargs,
+        )
+
+    @property
+    def httpx(self) -> httpx.AsyncClient:
+        """Access the underlying httpx client."""
+        return self._client
+
+    @property
+    def max_retries(self) -> int:
+        """Maximum number of retry attempts."""
+        return self._max_retries
+
+    @property
+    def retry_on_status(self) -> tuple[int, ...]:
+        """HTTP status codes that trigger a retry."""
+        return self._retry_on_status
+
+    async def close(self) -> None:
+        """Close the client."""
+        self._closed = True
+        await self._client.aclose()
+
+    async def __aenter__(self) -> "AsyncClient":
+        return self
+
+    async def __aexit__(self, *args: Any) -> None:
+        await self.close()
+
+    def __del__(self) -> None:
+        if not self._closed:
+            warnings.warn(
+                f"{self.__class__.__name__} was not closed. "
+                "Use 'async with' statement or call 'await client.close()'",
+                ResourceWarning,
+                stacklevel=2,
+            )
+
+    @classmethod
+    def from_env(cls, **kwargs: Any) -> "AsyncClient":
+        """Create client from environment variables."""
+        base_url, env_headers = _get_env_config()
+        if not base_url:
+            raise ValueError(f"{ENV_PREFIX}_BASE_URL environment variable is required")
+
+        headers = kwargs.pop("headers", None) or {}
+        headers = {**env_headers, **headers}
+
+        return cls(base_url=base_url, headers=headers, **kwargs)
+
+{% if oauth_config %}
+    @classmethod
+    async def create(
+        cls,
+        base_url: str | None = None,
+        client_id: str | None = None,
+        client_secret: str | None = None,
+        **kwargs: Any,
+    ) -> "AsyncClient":
+        """Create an authenticated client using OAuth."""
+        base_url = base_url or os.environ.get(f"{ENV_PREFIX}_BASE_URL")
+        if not base_url:
+            raise ValueError(f"base_url required or set {ENV_PREFIX}_BASE_URL")
+
+        token = await _get_oauth_token_async(base_url, client_id, client_secret)
+
+        headers = kwargs.pop("headers", None) or {}
+        headers["Authorization"] = f"Bearer {token}"
+
+        return cls(base_url=base_url, headers=headers, **kwargs)
+{% elif basic_config %}
+    @classmethod
+    async def create(
+        cls,
+        base_url: str | None = None,
+        username: str | None = None,
+        password: str | None = None,
+        **kwargs: Any,
+    ) -> "AsyncClient":
+        """Create an authenticated client using Basic auth."""
+        base_url = base_url or os.environ.get(f"{ENV_PREFIX}_BASE_URL")
+        if not base_url:
+            raise ValueError(f"base_url required or set {ENV_PREFIX}_BASE_URL")
+
+        # Append API base path suffix if configured
+        if BASE_PATH:
+            base_url = base_url.rstrip("/") + BASE_PATH
+
+        headers = kwargs.pop("headers", None) or {}
+        headers["Authorization"] = _get_basic_auth_header(username, password)
+
+        return cls(base_url=base_url, headers=headers, **kwargs)
+{% elif session_config %}
+    @classmethod
+    async def create(
+        cls,
+        base_url: str | None = None,
+        username: str | None = None,
+        password: str | None = None,
+        **kwargs: Any,
+    ) -> "AsyncClient":
+        """Create an authenticated client using session login."""
+        base_url = base_url or os.environ.get(f"{ENV_PREFIX}_BASE_URL")
+        if not base_url:
+            raise ValueError(f"base_url required or set {ENV_PREFIX}_BASE_URL")
+
+        token = await _login_session_async(base_url, username, password)
+
+        headers = kwargs.pop("headers", None) or {}
+        headers["Authorization"] = f"Bearer {token}"
+
+        return cls(base_url=base_url, headers=headers, **kwargs)
+{% else %}
+    @classmethod
+    async def create(
+        cls,
+        base_url: str | None = None,
+        api_token: str | None = None,
+        **kwargs: Any,
+    ) -> "AsyncClient":
+        """Create an authenticated client."""
+        base_url = base_url or os.environ.get(f"{ENV_PREFIX}_BASE_URL")
+        if not base_url:
+            raise ValueError(f"base_url required or set {ENV_PREFIX}_BASE_URL")
+
+        token = api_token or os.environ.get(f"{ENV_PREFIX}_API_TOKEN")
+{% if default_token %}
+        if not token:
+            token = DEFAULT_API_TOKEN
+{% endif %}
+
+        headers = kwargs.pop("headers", None) or {}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+
+        return cls(base_url=base_url, headers=headers, **kwargs)
+{% endif %}
