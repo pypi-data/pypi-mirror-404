@@ -1,0 +1,40 @@
+name: Python application
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Install uv and set the Python version
+      uses: astral-sh/setup-uv@v7
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install the project
+      run: uv sync --locked --all-extras --dev
+
+    - name: Lint with flake8
+      run: uv run flake8 EMpy tests examples scripts
+
+    - name: Lint with pyflakes
+      run: uv run pyflakes EMpy tests examples scripts
+
+    - name: Lint with mypy
+      run: uv run mypy EMpy tests examples scripts
+
+    - name: Run tests
+      run: uv run pytest
