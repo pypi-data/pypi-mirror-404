@@ -1,0 +1,2 @@
+DEFAULT_PTC_TEMPLATE: str
+DEFAULT_PTC_PACKAGES: tuple[str, ...]
