@@ -1,0 +1,152 @@
+[build-system]
+requires = ["hatchling>=1.5.0", "jupyterlab>=4.1,<5", "hatch-nodejs-version", "rpds-py==0.27.1"]
+build-backend = "hatchling.build"
+
+[project]
+name = "amazon-sagemaker-sql-editor"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.8"
+classifiers = [
+    "Framework :: Jupyter",
+    "Framework :: Jupyter :: JupyterLab",
+    "Framework :: Jupyter :: JupyterLab :: 4",
+    "Framework :: Jupyter :: JupyterLab :: Extensions",
+    "Framework :: Jupyter :: JupyterLab :: Extensions :: Prebuilt",
+    "License :: OSI Approved :: BSD License",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "jupyterlab-lsp==5.0.*",
+    "diskcache==5.6.*",
+    "jupyter_server",
+    "botocore>=1.31.64,<2",
+    "aiobotocore>=2.7.0,<3",
+    "boto3>=1.29.6,<2",
+    "amazon_sagemaker_sql_execution>=0.0.7,<1",
+    "sagemaker-jupyterlab-extension-common>=0.2.2,<1",
+    "rpds-py==0.27.1",
+]
+dynamic = ["version", "description", "authors", "urls", "keywords"]
+
+[project.optional-dependencies]
+all = [
+    "amazon-sagemaker-sql-editor[dev, test, flake8, pylint, pydocstyle, twine]"
+]
+dev = [
+    "black",
+    "build",
+    "hatch",
+    "twine"
+]
+test = [
+    "coverage",
+    "pytest==8.1.1",
+    "pytest-asyncio",
+    "pytest-cov",
+    "tox==4.11.4",
+    "parameterized",
+    "pytest-timeout",
+]
+flake8 = [
+    "flake8==4.0.1",
+    "flake8-future-import==0.4.6"
+]
+pylint = [
+    "pylint==2.6.2",
+    "astroid==2.4.2"
+]
+pydocstyle = [
+    "pydocstyle==6.1.1"
+]
+twine = [
+    "twine==3.8.0",
+    "packaging"
+]
+
+
+[tool.hatch.version]
+source = "nodejs"
+
+[tool.hatch.build.targets.sdist]
+core-metadata-version = "2.3"
+
+[tool.hatch.build.targets.wheel]
+core-metadata-version = "2.3"
+
+[tool.hatch.metadata.hooks.nodejs]
+fields = ["description", "authors", "urls"]
+
+[tool.hatch.build]
+artifacts = [
+    "amazon_sagemaker_sql_editor/labextension",
+    "amazon_sagemaker_sql_editor/sql-language-server",
+]
+include = [
+     "pyproject.toml",
+     "jupyter-config/**/*",
+     "package.json",
+     "install.json",
+     "amazon_sagemaker_sql_editor/**/*",
+     "style/**/*",
+     "LICENSE",
+     "NOTICE",
+ ]
+
+ exclude = [
+     "**/node_modules/**/*",
+     "*~",
+     "*.pyc",
+     "*.pyo",
+     ".git/**/*",
+     ".ipynb_checkpoints/**/*",
+     "**/tests/",
+     "**/__tests__/"
+ ]
+
+[tool.hatch.build.targets.wheel.shared-data]
+"amazon_sagemaker_sql_editor/labextension" = "share/jupyter/labextensions/@amzn/amazon_sagemaker_sql_editor"
+"install.json" = "share/jupyter/labextensions/@amzn/amazon_sagemaker_sql_editor/install.json"
+"jupyter-config/jupyter_server_config.d/amazon_sagemaker_sql_editor.json" = "etc/jupyter/jupyter_server_config.d/amazon_sagemaker_sql_editor.json"
+
+
+[tool.hatch.build.hooks.version]
+path = "amazon_sagemaker_sql_editor/_version.py"
+
+[tool.hatch.build.hooks.jupyter-builder]
+dependencies = ["hatch-jupyter-builder>=0.5"]
+build-function = "hatch_jupyter_builder.npm_builder"
+ensured-targets = [
+    "amazon_sagemaker_sql_editor/labextension/static/style.js",
+    "amazon_sagemaker_sql_editor/labextension/package.json",
+]
+skip-if-exists = ["amazon_sagemaker_sql_editor/labextension/static/style.js"]
+
+[tool.hatch.build.hooks.jupyter-builder.build-kwargs]
+build_cmd = "build:prod"
+npm = ["npm"]
+
+[tool.hatch.build.hooks.jupyter-builder.editable-build-kwargs]
+build_cmd = "install:extension"
+npm = ["npm"]
+source_dir = "src"
+build_dir = "amazon_sagemaker_sql_editor/labextension"
+
+[tool.jupyter-releaser.options]
+version_cmd = "hatch version"
+
+[tool.jupyter-releaser.hooks]
+before-build-npm = [
+    "python -m pip install 'jupyterlab>=4.0.0,<5'",
+    "npm",
+    "npm run build:prod"
+]
+before-build-python = ["npm run clean"]
+
+[tool.check-wheel-contents]
+ignore = ["W002"]
