@@ -1,0 +1,624 @@
+Metadata-Version: 2.1
+Name: multispecqr
+Version: 0.4.1
+Summary: Encode and decode multi-spectral / multi-layer QR codes (RGB, UV, NIR) with optional ML-based separation.
+License: MIT
+Keywords: qr,multispectral,barcode
+Author: Muntaser Syed
+Author-email: jemsbhai@gmail.com
+Requires-Python: >=3.9,<3.13
+Classifier: Development Status :: 4 - Beta
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: Implementation :: CPython
+Requires-Dist: numpy (>=1.20)
+Requires-Dist: opencv-python (>=4.0)
+Requires-Dist: pillow (>=9.0)
+Requires-Dist: pyzbar (>=0.1.9)
+Requires-Dist: qrcode[pil] (>=7.0)
+Requires-Dist: scikit-learn (>=1.0)
+Project-URL: Documentation, https://github.com/jemsbhai/multispecqr#readme
+Project-URL: Issues, https://github.com/jemsbhai/multispecqr/issues
+Project-URL: Source, https://github.com/jemsbhai/multispecqr
+Description-Content-Type: text/markdown
+
+# multispecqr
+
+[![PyPI - Version](https://img.shields.io/pypi/v/multispecqr.svg)](https://pypi.org/project/multispecqr)
+[![PyPI - Python Version](https://img.shields.io/pypi/pyversions/multispecqr.svg)](https://pypi.org/project/multispecqr)
+
+**Multi-spectral QR codes** — encode multiple independent data payloads in a single QR code image using color channels.
+
+## Features
+
+- **3-Layer RGB Mode**: Encode 3 independent payloads using Red, Green, and Blue channels
+- **Up to 9-Layer Palette Mode**: Encode up to 9 independent payloads using adaptive color palettes
+  - 1-6 layers: 64-color palette
+  - 7-8 layers: 256-color palette
+  - 9 layers: 512-color palette
+- **Robustness Features**: Adaptive thresholding, preprocessing, and color calibration for real-world images
+- **ML-Based Decoder**: Optional neural network-based decoder for improved robustness (requires PyTorch)
+- **Full round-trip support**: Encode and decode with high fidelity
+- **Simple API**: Easy-to-use Python functions for encoding and decoding
+- **CLI included**: Full-featured command-line interface for quick operations
+
+## Installation
+
+```console
+pip install multispecqr
+```
+
+## Quick Start
+
+### Python API
+
+#### RGB Mode (3 layers)
+
+Encode three separate pieces of data into a single QR code:
+
+```python
+from multispecqr import encode_rgb, decode_rgb
+
+# Encode three payloads
+img = encode_rgb("Hello Red", "Hello Green", "Hello Blue", version=2)
+img.save("rgb_qr.png")
+
+# Decode back
+decoded = decode_rgb(img)
+print(decoded)  # ['Hello Red', 'Hello Green', 'Hello Blue']
+```
+
+#### Palette Mode (up to 9 layers)
+
+Encode up to nine separate pieces of data:
+
+```python
+from multispecqr import encode_layers, decode_layers
+
+# Encode 6 payloads (uses 64-color palette)
+data = ["Layer 1", "Layer 2", "Layer 3", "Layer 4", "Layer 5", "Layer 6"]
+img = encode_layers(data, version=2)
+img.save("palette_qr.png")
+
+# Decode back
+decoded = decode_layers(img, num_layers=6)
+print(decoded)  # ['Layer 1', 'Layer 2', 'Layer 3', 'Layer 4', 'Layer 5', 'Layer 6']
+
+# Encode 8 payloads (automatically uses 256-color palette)
+data8 = ["A", "B", "C", "D", "E", "F", "G", "H"]
+img8 = encode_layers(data8, version=3)
+
+# Encode 9 payloads (automatically uses 512-color palette)
+data9 = ["1", "2", "3", "4", "5", "6", "7", "8", "9"]
+img9 = encode_layers(data9, version=4)
+decoded9 = decode_layers(img9, num_layers=9)
+```
+
+#### Robustness Features
+
+For decoding real-world images (photos of printed QR codes):
+
+```python
+from multispecqr import decode_rgb, decode_layers
+
+# Use adaptive thresholding for uneven lighting
+decoded = decode_rgb(img, threshold_method="otsu")
+
+# Use preprocessing to reduce noise
+decoded = decode_rgb(img, preprocess="denoise")
+
+# Combine multiple options
+decoded = decode_rgb(img, threshold_method="otsu", preprocess="blur")
+```
+
+#### Color Calibration
+
+For accurate color matching when decoding photographed QR codes:
+
+```python
+from multispecqr import (
+    generate_calibration_card,
+    compute_calibration,
+    decode_layers
+)
+
+# 1. Generate and print a calibration card
+card = generate_calibration_card()
+card.save("calibration_card.png")
+
+# 2. Photograph the printed card alongside your QR code
+# 3. Load both the reference and photographed card
+photographed_card = Image.open("photographed_card.jpg")
+
+# 4. Compute calibration
+calibration = compute_calibration(card, photographed_card)
+
+# 5. Use calibration when decoding
+decoded = decode_layers(qr_image, calibration=calibration)
+```
+
+#### ML-Based Decoder (Optional)
+
+For improved robustness with noisy or distorted images, use the neural network-based decoder.
+
+**Installation:**
+
+```bash
+# Basic installation (CPU-only PyTorch)
+pip install multispecqr[ml]
+```
+
+**GPU Acceleration (Recommended):**
+
+If you have an NVIDIA GPU, install CUDA-enabled PyTorch for significantly faster training (~10-50x speedup):
+
+```bash
+# Install multispecqr with ML dependencies
+pip install multispecqr[ml]
+
+# Replace CPU PyTorch with CUDA version
+pip uninstall torch torchvision -y
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+```
+
+> **Note:** The library automatically detects if you have an NVIDIA GPU but are using CPU-only PyTorch, and will show upgrade instructions.
+
+**Using Pre-trained Models (Recommended):**
+
+Pre-trained models are available on HuggingFace Hub for immediate use without training:
+
+```python
+from multispecqr.ml_decoder import RGBMLDecoder, PaletteMLDecoder
+
+# Load pre-trained RGB decoder (3 layers)
+decoder = RGBMLDecoder.from_pretrained("Jemsbhai/multispecqr-rgb")
+result = decoder.decode(img)  # Returns ['R data', 'G data', 'B data']
+
+# Load pre-trained palette decoders (6, 8, or 9 layers)
+decoder6 = PaletteMLDecoder.from_pretrained("Jemsbhai/multispecqr-palette6")
+decoder8 = PaletteMLDecoder.from_pretrained("Jemsbhai/multispecqr-palette8")
+decoder9 = PaletteMLDecoder.from_pretrained("Jemsbhai/multispecqr-palette9")
+
+result = decoder6.decode(img)  # Returns 6 strings
+```
+
+Available pre-trained models:
+- `Jemsbhai/multispecqr-rgb` - RGB mode (3 layers)
+- `Jemsbhai/multispecqr-palette6` - Palette mode (6 layers, 64-color)
+- `Jemsbhai/multispecqr-palette8` - Palette mode (8 layers, 256-color)
+- `Jemsbhai/multispecqr-palette9` - Palette mode (9 layers, 512-color)
+
+**Training Your Own Models:**
+
+You can also train models on your own data for custom use cases:
+
+```python
+from multispecqr.ml_decoder import RGBMLDecoder, PaletteMLDecoder
+
+# Train RGB decoder
+rgb_decoder = RGBMLDecoder()  # Auto-detects GPU
+for epoch in range(50):
+    loss = rgb_decoder.train_epoch(num_samples=200, version=2)
+    if (epoch + 1) % 10 == 0:
+        print(f"Epoch {epoch + 1}: loss = {loss:.4f}")
+
+# Train palette decoder (6, 8, or 9 layers)
+palette_decoder = PaletteMLDecoder(num_layers=6)
+for epoch in range(50):
+    loss = palette_decoder.train_epoch(num_samples=200, version=2)
+```
+
+**Saving and Loading Models:**
+
+```python
+# Save trained model locally
+decoder.save("my_decoder.pt")
+
+# Load from local file (auto-detects model type)
+decoder = RGBMLDecoder.from_local("my_decoder.pt")
+# Or equivalently:
+decoder = PaletteMLDecoder.from_local("my_decoder.pt")
+
+# Load from any HuggingFace repo (yours or others)
+decoder = RGBMLDecoder.from_pretrained("username/custom-multispecqr-model")
+
+# Push your model to HuggingFace Hub
+decoder.push_to_hub("username/my-multispecqr-model")
+```
+
+The ML decoders use lightweight CNNs to unmix color layers, providing better robustness for:
+- Images with compression artifacts (JPEG)
+- Photos with color distortion
+- Noisy or low-quality images
+
+> **Tip:** For best results, use the same QR version for training and inference. See `examples/07_ml_decoder_training.py` for a complete training and evaluation example.
+
+### Command Line Interface
+
+The CLI supports both RGB and palette modes with full control over QR code parameters.
+
+#### Basic Usage
+
+```bash
+# Show help
+python -m multispecqr --help
+python -m multispecqr encode --help
+python -m multispecqr decode --help
+```
+
+#### RGB Mode (default)
+
+```bash
+# Encode three payloads into an RGB QR code
+python -m multispecqr encode "Red data" "Green data" "Blue data" output.png
+
+# Decode an RGB QR code
+python -m multispecqr decode output.png
+```
+
+#### Palette Mode (up to 9 layers)
+
+```bash
+# Encode up to 6 payloads using palette mode (64-color palette)
+python -m multispecqr encode "L1" "L2" "L3" "L4" "L5" "L6" output.png --mode palette
+
+# Encode 8 payloads (automatically uses 256-color palette)
+python -m multispecqr encode "A" "B" "C" "D" "E" "F" "G" "H" output.png --mode palette
+
+# Decode a palette QR code (specify number of layers)
+python -m multispecqr decode output.png --mode palette --layers 6
+```
+
+#### Advanced Encoding Options
+
+```bash
+# Encode with higher QR version (more capacity) and error correction
+python -m multispecqr encode "R" "G" "B" output.png --version 4 --ec H
+
+# Scale up output image (10x larger for printing)
+python -m multispecqr encode "R" "G" "B" output.png --scale 10
+
+# Short form options
+python -m multispecqr encode "R" "G" "B" output.png -v 4 -e H -m rgb -s 10
+```
+
+#### Robustness Options for Decoding
+
+```bash
+# Decode with adaptive thresholding (for uneven lighting)
+python -m multispecqr decode image.png --threshold otsu
+
+# Decode with preprocessing (for noisy images)
+python -m multispecqr decode image.png --preprocess denoise
+
+# Combine options
+python -m multispecqr decode image.png -t adaptive_gaussian -p blur
+
+# Output results as JSON (for scripting)
+python -m multispecqr decode image.png --json
+```
+
+#### Calibration
+
+```bash
+# Generate a calibration card for color correction
+python -m multispecqr calibrate calibration.png
+
+# Generate with custom patch size
+python -m multispecqr calibrate calibration.png --patch-size 30
+```
+
+#### Batch Processing
+
+```bash
+# Decode multiple images at once
+python -m multispecqr batch-decode img1.png img2.png img3.png
+
+# Batch decode with JSON output
+python -m multispecqr batch-decode *.png --json
+
+# Batch decode palette mode images
+python -m multispecqr batch-decode *.png --mode palette --layers 6
+```
+
+#### CLI Options Reference
+
+**Encode command:**
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--mode` | `-m` | Encoding mode: `rgb` (3 layers) or `palette` (1-9 layers) | `rgb` |
+| `--version` | `-v` | QR code version (1-40). Higher = more capacity | `4` |
+| `--ec` | `-e` | Error correction: `L` (7%), `M` (15%), `Q` (25%), `H` (30%) | `M` |
+| `--scale` | `-s` | Scale factor for output image | `1` |
+
+**Decode command:**
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--mode` | `-m` | Decoding mode: `rgb` or `palette` | `rgb` |
+| `--layers` | `-l` | Number of layers to decode (palette mode, 1-9) | `6` |
+| `--threshold` | `-t` | Thresholding: `global`, `otsu`, `adaptive_gaussian`, `adaptive_mean` | `global` |
+| `--preprocess` | `-p` | Preprocessing: `none`, `blur`, `denoise` | `none` |
+| `--json` | `-j` | Output results as JSON | - |
+
+**Calibrate command:**
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--patch-size` | Size of color patches in pixels | `50` |
+| `--padding` | Padding between patches | `5` |
+
+**Batch-decode command:**
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--mode` | `-m` | Decoding mode | `rgb` |
+| `--layers` | `-l` | Number of layers (palette mode) | `6` |
+| `--threshold` | `-t` | Thresholding method (RGB mode only) | `global` |
+| `--preprocess` | `-p` | Preprocessing method | `none` |
+| `--json` | `-j` | Output results as JSON | - |
+
+## API Reference
+
+### Encoding Functions
+
+#### `encode_rgb(data_r, data_g, data_b, *, version=4, ec="M")`
+
+Encode three payloads into an RGB QR code using channel separation.
+
+- **data_r, data_g, data_b** (`str`): Payload strings for Red, Green, Blue channels
+- **version** (`int`): QR code version 1-40. Higher versions hold more data. Default: 4
+- **ec** (`str`): Error correction level - "L", "M", "Q", or "H". Default: "M"
+- **Returns**: `PIL.Image.Image` in RGB mode
+
+#### `encode_layers(data_list, *, version=4, ec="M")`
+
+Encode 1-9 payloads using adaptive color palettes.
+
+- **data_list** (`list[str]`): List of 1-9 payload strings
+- **version** (`int`): QR code version 1-40. Default: 4
+- **ec** (`str`): Error correction level. Default: "M"
+- **Returns**: `PIL.Image.Image` in RGB mode
+- **Raises**: `ValueError` if more than 9 payloads provided
+
+Automatically selects the appropriate palette:
+- 1-6 layers: 64-color palette (6-bit encoding)
+- 7-8 layers: 256-color palette (8-bit encoding)
+- 9 layers: 512-color palette (9-bit encoding)
+
+### Decoding Functions
+
+#### `decode_rgb(img, *, threshold_method="global", preprocess=None, calibration=None, method="threshold")`
+
+Decode an RGB QR code back into three payloads.
+
+- **img** (`PIL.Image.Image`): RGB image to decode
+- **threshold_method** (`str`): Thresholding algorithm:
+  - `"global"`: Simple threshold at 128 (default, fastest)
+  - `"otsu"`: Otsu's automatic threshold selection
+  - `"adaptive_gaussian"`: Adaptive threshold with Gaussian weights
+  - `"adaptive_mean"`: Adaptive threshold with mean of neighborhood
+- **preprocess** (`str | None`): Optional preprocessing:
+  - `None` or `"none"`: No preprocessing
+  - `"blur"`: Gaussian blur to reduce noise
+  - `"denoise"`: Non-local means denoising
+- **calibration** (`dict | None`): Calibration data from `compute_calibration()`
+- **method** (`str`): Decoding method:
+  - `"threshold"`: Traditional threshold-based decoding (default)
+  - `"ml"`: ML-based decoder using neural network (requires PyTorch)
+- **Returns**: `list[str]` of 3 strings (R, G, B channels). Empty string for failed layers.
+- **Raises**: `ValueError` if image is not RGB mode; `ImportError` if method="ml" but PyTorch not installed
+
+#### `decode_layers(img, num_layers=None, *, preprocess=None, calibration=None, method="threshold")`
+
+Decode a palette-encoded QR code.
+
+- **img** (`PIL.Image.Image`): RGB image to decode
+- **num_layers** (`int | None`): Number of layers to decode (1-9). Default: 6
+- **preprocess** (`str | None`): Optional preprocessing (same options as `decode_rgb`)
+- **calibration** (`dict | None`): Calibration data from `compute_calibration()`
+- **method** (`str`): Decoding method:
+  - `"threshold"`: Traditional threshold-based decoding (default)
+  - `"ml"`: ML-based decoder using neural network (requires PyTorch)
+- **Returns**: `list[str]` of decoded strings. Empty string for failed layers.
+- **Raises**: `ValueError` if image is not RGB mode or num_layers > 9; `ImportError` if method="ml" but PyTorch not installed
+
+Automatically selects the appropriate palette based on num_layers.
+
+### Calibration Functions
+
+#### `generate_calibration_card(patch_size=50, padding=5)`
+
+Generate a calibration card containing all 64 palette colors.
+
+- **patch_size** (`int`): Size of each color patch in pixels. Default: 50
+- **padding** (`int`): Padding between patches. Default: 5
+- **Returns**: `PIL.Image.Image` containing the calibration card
+
+#### `compute_calibration(reference, sample, *, patch_size=50, padding=5)`
+
+Compute color calibration from a reference and sample calibration card.
+
+- **reference** (`PIL.Image.Image`): Original calibration card (from `generate_calibration_card()`)
+- **sample** (`PIL.Image.Image`): Photographed calibration card
+- **Returns**: `dict` containing calibration data (matrix, offset, method)
+
+#### `apply_calibration(img, calibration)`
+
+Apply color calibration to an image.
+
+- **img** (`PIL.Image.Image`): Input image to calibrate
+- **calibration** (`dict`): Calibration data from `compute_calibration()`
+- **Returns**: `PIL.Image.Image` with corrected colors
+
+### Palette Functions
+
+#### `palette_6()`
+
+Get the 64-color palette (6-layer) mapping bit-vectors to RGB colors.
+
+- **Returns**: `dict[tuple[int, ...], tuple[int, int, int]]`
+
+#### `inverse_palette_6()`
+
+Get the inverse 6-layer palette mapping RGB colors to bit-vectors.
+
+- **Returns**: `dict[tuple[int, int, int], tuple[int, ...]]`
+
+#### `palette_8()`
+
+Get the 256-color palette (8-layer) mapping bit-vectors to RGB colors.
+
+- **Returns**: `dict[tuple[int, ...], tuple[int, int, int]]`
+
+#### `palette_9()`
+
+Get the 512-color palette (9-layer) mapping bit-vectors to RGB colors.
+
+- **Returns**: `dict[tuple[int, ...], tuple[int, int, int]]`
+
+## How It Works
+
+### RGB Mode
+
+Each payload is encoded as an independent monochrome QR code, then assigned to one color channel (R, G, or B). The decoder separates the channels using thresholding and decodes each independently.
+
+```
+Payload 1 → QR Layer → Red Channel   ─┐
+Payload 2 → QR Layer → Green Channel ─┼→ Combined RGB Image
+Payload 3 → QR Layer → Blue Channel  ─┘
+```
+
+### Multi-Layer Palette Mode
+
+Uses systematic color palettes to encode multiple binary layers in a single image. The library automatically selects the appropriate palette based on the number of layers.
+
+#### 6-Layer Mode (64 colors)
+
+For 1-6 layers, uses a 64-color palette with 2 bits per channel:
+- Bits 0-1 → Red level: {0, 85, 170, 255}
+- Bits 2-3 → Green level: {0, 85, 170, 255}
+- Bits 4-5 → Blue level: {0, 85, 170, 255}
+
+This creates 4³ = 64 unique colors with ~85 unit spacing between levels.
+
+#### 8-Layer Mode (256 colors)
+
+For 7-8 layers, uses a 256-color palette with 3-3-2 bit distribution:
+- Bits 0-2 → Red level: 8 levels (0-255)
+- Bits 3-5 → Green level: 8 levels (0-255)
+- Bits 6-7 → Blue level: 4 levels (0-255)
+
+This creates 8×8×4 = 256 unique colors with ~36 unit spacing on R/G channels.
+
+#### 9-Layer Mode (512 colors)
+
+For 9 layers, uses a 512-color palette with 3 bits per channel:
+- Bits 0-2 → Red level: 8 levels
+- Bits 3-5 → Green level: 8 levels
+- Bits 6-8 → Blue level: 8 levels
+
+This creates 8³ = 512 unique colors with ~36 unit spacing per channel.
+
+```
+N Payloads → N QR Layers → Pixel-wise bit-vectors → Adaptive palette → RGB Image
+```
+
+The decoder uses nearest-neighbor color matching to recover the bit-vectors, then reconstructs each layer.
+
+### Robustness Features
+
+For real-world usage (photographed QR codes), the library provides:
+
+1. **Adaptive Thresholding**: Handles uneven lighting conditions
+   - Otsu's method: Automatic threshold selection based on image histogram
+   - Adaptive Gaussian/Mean: Local thresholding for varying illumination
+
+2. **Preprocessing**: Reduces image noise
+   - Gaussian blur: Smooths out small noise artifacts
+   - Non-local means denoising: Advanced noise reduction
+
+3. **Color Calibration**: Corrects for camera/display color differences
+   - Generate a calibration card with all palette colors
+   - Photograph the card under the same conditions as your QR code
+   - Compute and apply color correction
+
+4. **ML-Based Decoder** (optional): Neural network-based color unmixing
+   - Lightweight CNN architecture for layer separation
+   - Trainable on synthetic data for improved robustness
+   - Handles compression artifacts and color distortion
+
+### ML Decoder Architecture
+
+The ML decoder uses separate models for RGB and palette modes, each with a lightweight encoder-decoder CNN:
+
+**RGBMLDecoder** (3 output channels):
+```
+Input RGB Image (H x W x 3)
+    ↓
+Encoder: Conv layers → 32 → 64 channels
+    ↓
+Decoder: Conv layers → 32 channels
+    ↓
+Output: 3 layer masks (H x W x 3) → R, G, B channels
+```
+
+**PaletteMLDecoder** (6 output channels):
+```
+Input RGB Image (H x W x 3)
+    ↓
+Encoder: Conv layers → 32 → 64 channels
+    ↓
+Decoder: Conv layers → 32 channels
+    ↓
+Output: 6 layer masks (H x W x 6) → 6-bit palette decoding
+```
+
+Each network learns to unmix the color channels back into independent binary layers:
+
+```python
+from multispecqr.ml_decoder import RGBMLDecoder, PaletteMLDecoder
+
+# Option 1: Load pre-trained from HuggingFace (recommended)
+rgb_decoder = RGBMLDecoder.from_pretrained("Jemsbhai/multispecqr-rgb")
+result = rgb_decoder.decode(img)
+
+# Option 2: Load from local file (auto-detects model type)
+rgb_decoder = RGBMLDecoder.from_local("my_model.pt")
+
+# Option 3: Load from any HuggingFace repo
+rgb_decoder = RGBMLDecoder.from_pretrained("username/custom-model")
+
+# Option 4: Train your own decoder
+rgb_decoder = RGBMLDecoder()
+for epoch in range(50):
+    loss = rgb_decoder.train_epoch(num_samples=200, version=2)
+result = rgb_decoder.decode(img)
+
+# Save trained models
+rgb_decoder.save('rgb_decoder.pt')
+```
+
+## Requirements
+
+**Core dependencies:**
+- Python 3.9+
+- opencv-python
+- qrcode[pil]
+- numpy
+- Pillow
+
+**Optional ML dependencies (for neural network decoder):**
+```bash
+pip install multispecqr[ml]
+```
+- torch (PyTorch)
+- torchvision
+- huggingface_hub (for loading pre-trained models)
+
+## License
+
+`multispecqr` is distributed under the terms of the [MIT](https://spdx.org/licenses/MIT.html) license.
+
