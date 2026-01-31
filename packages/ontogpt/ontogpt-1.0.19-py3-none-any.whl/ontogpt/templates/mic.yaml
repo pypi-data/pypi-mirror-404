@@ -1,0 +1,457 @@
+id: http://w3id.org/ontogpt/mic
+name: mic
+title: Micronutrient Information Extraction Template
+description: >-
+  A template for micronutrient information from text,
+  including its participation in biochemical pathways
+  and relationships to genes and diseases.
+  Intended for use with the Micronutrient Information
+  Center, a resource curated and managed by the Linus
+  Pauling Institute at Oregon State University.
+license: https://creativecommons.org/publicdomain/zero/1.0/
+prefixes:
+  rdf: http://www.w3.org/1999/02/22-rdf-syntax-ns#
+  foodon: http://purl.obolibrary.org/obo/foodon_
+  chebi: http://purl.obolibrary.org/obo/CHEBI_
+  GO: http://purl.obolibrary.org/obo/GO_
+  mic: http://w3id.org/ontogpt/mic
+  linkml: https://w3id.org/linkml/
+
+default_prefix: mic
+default_range: string
+
+imports:
+  - linkml:types
+  - core
+
+# TODO: attempt to remove or reduce the excessive redundancy
+
+classes:
+  Document:
+    tree_root: true
+    is_a: NamedEntity
+    description: >-
+      A document that contains information about
+      micronutrients, including vitamins and minerals.
+    attributes:
+      nutrient_to_feature_relationships:
+        range: NutrientToFeatureRelationship
+        multivalued: true
+        description: >-
+          A list of relationships between nutrients and
+          biological features.
+        annotations:
+          prompt: >-
+            A semicolon-separated list of relationships
+            between a single nutrient (including vitamins,
+            minerals, and micronutrients) and a single
+            feature, such as a disease, symptom, abnormality,
+            or other health status. This may include diseases like
+            Alzheimer's disease, systemic lupus erythematosus,
+            rheumatoid arthritis, sickle cell anemia, or Barth syndrome.
+            It may also include phenotypes such as an observable
+            physical or behavioral trait or symptom (e.g., fever,
+            headache, short attention span, petechiae,
+            telangiectasia). Do NOT include relationships concerning only 
+            biological processes (e.g., "Insulin signaling" or "lipid
+            metabolism"), developmental processes such as "limb development",
+            or health states such as "healthy teeth".
+            Provide the full text from the input text describing the relationship
+            without changes or summarization. Include all numbered inline
+            references contained in the sentences without changes.
+            Do not include newlines. If multiple sentences describe the
+            same relationship, include all of them.
+            If the text describes a one-to-many relationship, include
+            all of them separately. For example, "Vitamin A is associated with
+            Systemic Lupus Erythematosus and Rheumatoid Arthritis (5,6)"
+            should be "Vitamin A is associated with Systemic Lupus Erythematosus (5,6);
+            Vitamin A is associated with Rheumatoid Arthritis (5,6)".
+            Use the same description of the relationship as in the input text.
+            For example, if the input text states "Iron supplementation
+            was shown to successfully treat anemia (5,6)", the output should be
+            "Iron supplementation treats anemia (5,6)".
+            Do not assign a relationship type. Retain the language used in the
+            source text.
+          prompt.examples: >-
+            Evidence suggests that high-dose Vitamin A treatment may prevent Systemic Lupus Erythematosus (5,6). Further studies confirmed this finding (7); Studies have shown that Vitamin A is associated with bone cancer (8).
+      nutrient_to_biological_process_relationships:
+        range: NutrientToBiologicalProcessRelationship
+        multivalued: true
+        description: >-
+          A list of relationships between nutrients and
+          biological processes.
+        annotations:
+          prompt: >-
+            A semicolon-separated list of relationships
+            between a single nutrient (including vitamins,
+            minerals, and micronutrients) and a single
+            biological process, with a type of relationship
+            connecting them both. A biological process is an
+            activity or series of activities that occur in a
+            cell or organism, such as "nuclear axial expansion",
+            "intracellular transport", "ribosomal subunit export from nucleus",
+            "insulin signaling", or "DNA repair".
+            Biological processes do NOT include health states such as
+            "healthy teeth" or proteins such as "retinoic acid receptor".
+            Provide the full text from the input text describing the relationship
+            without changes or summarization. Include all numbered inline
+            references contained in the sentences without changes.
+            Do not include newlines. If multiple sentences describe the
+            same relationship, include all of them.
+            If the text describes a one-to-many relationship, include
+            all of them separately. For example, "Vitamin A is associated with
+            Insulin Signaling and DNA repair (5,6)" should be "Vitamin A is associated with
+            Insulin Signaling (5,6); Vitamin A is associated with DNA repair (5,6)".
+            Use the same description of the relationship as in the input text.
+            For example, if the input text states "Vitamin A is a participant in
+            Insulin Signaling (5,6)", the output should be
+            "Vitamin A participates in Insulin Signaling (5,6)".
+            Do not assign a relationship type. Retain the language used in the
+            source text.
+          prompt.examples: >-
+            There is a relationship between Vitamin A and Insulin Signaling (5). This relationship was confirmed in additional studies (6).
+      nutrient_to_health_status_relationships:
+        range: NutrientToHealthStatusRelationship
+        multivalued: true
+        description: >-
+          A list of relationships between nutrients and
+          health of a specific part or system of the human
+          body.
+        annotations:
+          prompt: >-
+            A semicolon-separated list of relationships
+            between a single nutrient (including vitamins,
+            minerals, and micronutrients) and a single
+            part or system of the body, with a type of relationship
+            connecting them both. Example parts or systems include
+            "teeth", "skin", "cardiovascular system", "digestive system",
+            or "liver". Transform names of processes
+            to their respective anatomy, e.g., "thyroid function" or
+            "thyroid health" should be changed to "thyroid"; "digestion"
+            should be changed to "digestive system".
+            Provide the full text from the input text describing the relationship
+            without changes or summarization. Include all numbered inline
+            references contained in the sentences without changes.
+            Do not include newlines. If multiple sentences describe the
+            same relationship, include all of them.
+            If the text describes a one-to-many relationship, include
+            all of them separately. For example, "Vitamin A is associated with
+            healthy teeth and healthy skin (5,6)" should be "Vitamin A is associated with
+            healthy teeth (5,6); Vitamin A is associated with healthy skin (5,6)".
+            Use the same description of the relationship as in the input text.
+            For example, if the input text states "Vitamin A levels are
+            necessary for healthy teeth (5,6)", the output should be
+            "Vitamin A participates in the health of teeth (5,6)".
+            Do not assign a relationship type. Retain the language used in the
+            source text.
+          prompt.examples: >-
+            There is a relationship between Vitamin A and Teeth (5). This relationship was confirmed in additional studies (6).
+      nutrient_to_source_relationships:
+        range: NutrientToSourceRelationship
+        multivalued: true
+        description: >-
+          A list of relationships between nutrients and
+          their sources in food or supplements.
+        annotations:
+          prompt: >-
+            A semicolon-separated list of relationships
+            between a single nutrient (including vitamins,
+            minerals, and micronutrients) and a single
+            food or supplement, with a type of relationship
+            connecting them both. Example foods include "butter",
+            "apple", "watermelon", "beef", or "breakfast cereal".
+            Provide the full text from the input text describing the relationship
+            without changes or summarization. Include all numbered inline
+            references contained in the sentences without changes.
+            Do not include newlines. If multiple sentences describe the
+            same relationship, include all of them.
+            If the text describes a one-to-many relationship, include
+            all of them separately. For example, "Vitamin A is associated with
+            butter and apple (5,6)" should be "Vitamin A is associated with
+            butter (5,6); Vitamin A is associated with apple (5,6)".
+            These relationships may require some processing, e.g.,
+            "Vitamin A is found in butter (5,6)" should be
+            "Vitamin A is a nutrient of butter (5,6)".
+          prompt.examples: >-
+            Butter is a source of Vitamin A (12). This relationship was confirmed in additional studies (13).
+      nutrient_to_nutrient_relationships:
+        range: NutrientToNutrientRelationship
+        multivalued: true
+        description: >-
+          A list of relationships between nutrients and
+          other nutrients.
+        annotations:
+          prompt: >-
+            A semicolon-separated list of relationships
+            between a single nutrient (including vitamins,
+            minerals, and micronutrients) and another single
+            nutrient, with a type of relationship connecting
+            them both. This does not include relationships
+            between nutrients and proteins (e.g., a nutrient
+            and its receptor protein).
+            Provide the full text from the input text describing the relationship
+            without changes or summarization. Include all numbered inline
+            references contained in the sentences without changes.
+            Do not include newlines. If multiple sentences describe the
+            same relationship, include all of them.
+            If the text describes a one-to-many relationship, include
+            all of them separately. For example, "Vitamin A is associated with
+            Vitamin D and Vitamin E (5,6)" should be "Vitamin A is associated with
+            Vitamin D (5,6); Vitamin A is associated with Vitamin E (5,6)".
+            Use the same description of the relationship as in the input text.
+            For example, if the input text states "Vitamin A participates in
+            physiological processes with Vitamin D (5,6)", the output should be
+            "Vitamin A physically interacts with Vitamin D (5,6)".
+          prompt.examples: >-
+            There is a relationship between Vitamin A and Vitamin D (5). This relationship was confirmed in additional studies (6).
+
+  Nutrient:
+    is_a: NamedEntity
+    description: >-
+      The name of a nutrient, including vitamins and
+      minerals.
+    id_prefixes:
+      - CHEBI
+      - FOODON
+    annotations:
+      annotators: sqlite:obo:chebi, sqlite:obo:foodon
+      prompt: >-
+        The name of a nutrient, including vitamins and
+        minerals.
+
+  Feature:
+    is_a: NamedEntity
+    description: >-
+      The name of a biological feature or health status,
+      such as a disease, symptom, or abnormality.
+    id_prefixes:
+      - MONDO
+      - HP
+      - EFO # For traits
+    annotations:
+      annotators: sqlite:obo:mondo, sqlite:obo:hp, sqlite:obo:efo
+      prompt: >-
+        The name of a biological feature. This may
+        include diseases, symptoms, abnormalities, or
+        other health statuses, as well as observable
+        properties of an organism, such as body weight.
+
+  BiologicalProcess:
+    is_a: NamedEntity
+    description: >-
+      The name of a biological process.
+    id_prefixes:
+      - GO
+    annotations:
+      annotators: sqlite:obo:go
+      prompt: >-
+        The name of a biological process.
+    slot_usage:
+      id:
+        values_from:
+          - GOBiologicalProcessType
+
+  Anatomy:
+    is_a: NamedEntity
+    description: >-
+      The name of an anatomical part or system.
+    id_prefixes:
+      - UBERON
+    annotations:
+      annotators: sqlite:obo:uberon
+      prompt: >-
+        The name of an anatomical part or system.
+
+  FoodOrSupplement:
+    is_a: NamedEntity
+    description: >-
+      The name of a food or supplement.
+    id_prefixes:
+      - FOODON
+    annotations:
+      annotators: sqlite:obo:foodon
+      prompt: >-
+        The name of a food or supplement.
+
+  ScientificClaim:
+    is_a: CompoundExpression
+    description: >-
+      A scientific claim made in the input text.
+    attributes:
+      negated:
+        range: string
+        description: >-
+          Whether the claim is negated in the text.
+          This value must be either "True" if
+          the claim is negated or "False" if it
+          is not. For example, "Vitamin A is not
+          associated with cancer" would be
+          "True" and "Vitamin A is associated
+          with cancer" would be "False".
+          Statements characterized as "clinically insignificant",
+          "not clinically significant", or "not statistically significant"
+          should also be considered negated.
+      context:
+        range: string
+        description: >-
+          The full text of this relationship.
+      references:
+        range: string
+        multivalued: true
+        description: >-
+          A semi-colon separated list of references
+          included inline in the input, identified by number
+          only. Multiple references may contain commas,
+          e.g., "(3, 4)" and should be treated as two
+          different values. If a range of references is
+          provided, include all, e.g.,
+          "(3-5)" should become 3;4;5.
+
+  Relationship:
+    is_a: NamedEntity
+    description: >-
+      The name of a type of relationship between two
+      entities.
+    id_prefixes:
+      - RO
+      - biolink
+    annotations:
+      annotators: sqlite:obo:ro, sqlite:obo:biolink
+      prompt: >-
+        The name of a type of relationship between two
+        entities.
+
+  NutrientToFeatureRelationship:
+    is_a: ScientificClaim
+    attributes:
+      nutrient:
+        range: Nutrient
+        description: >-
+          The name of the nutrient defined in the claim,
+          including vitamins and minerals.
+      relationship:
+        range: Relationship
+        description: >-
+          The name of a type of relationship between the
+          nutrient and the feature.
+          Choose from one of the following:
+          "positively correlated with", "negatively correlated with",
+          "treats", "studied to treat", "in clinical trials for",
+          "in preclinical trials for", "beneficial in models for",
+          "applied to treat".
+          If none of these apply, use "associated with".
+      feature:
+        range: Feature
+        description: >-
+          The name of the biological feature defined in the claim.
+          This may need to be processed to a single term, e.g., 
+          the phrase "proteolysis (degradation) of insulin and some downstream 
+          effectors" is too long, but "insulin degradation" is acceptable.
+    comments:
+      - a Chemical to Feature relationship
+
+  NutrientToBiologicalProcessRelationship:
+    is_a: ScientificClaim
+    attributes:
+      nutrient:
+        range: Nutrient
+        description: >-
+          The name of the nutrient defined in the claim,
+          including vitamins and minerals.
+      relationship:
+        range: Relationship
+        description: >-
+          The name of a type of relationship between the
+          nutrient and the biological process.
+          Choose from one of the following:
+          "interacts with", "physically interacts with",
+          "increases amount or activity of", "decreases amount or activity of",
+          "amount or activity increased by", "amount or activity decreased by",
+          "response affected by", "increases response to",
+          "decreases response to", "response increased by".
+          If none of these apply, use "associated with".
+      process:
+        range: BiologicalProcess
+        description: >-
+          The name of the biological process defined in the claim.
+
+  NutrientToNutrientRelationship:
+    is_a: ScientificClaim
+    attributes:
+      nutrient_subject:
+        range: Nutrient
+        description: >-
+          The name of a nutrient defined in the claim,
+          including vitamins and minerals.
+      relationship:
+        range: Relationship
+        description: >-
+          The name of a type of relationship between the
+          nutrient_subject and nutrient_object.
+          Choose from one of the following:
+          "interacts with", "physically interacts with",
+          "increases amount or activity of", "decreases amount or activity of",
+          "amount or activity increased by", "amount or activity decreased by",
+          "response affected by", "increases response to",
+          "decreases response to", "response increased by".
+          If none of these apply, use "associated with".
+      nutrient_object:
+        range: Nutrient
+        description: >-
+          The name of a nutrient defined in the claim,
+          including vitamins and minerals.
+    comments:
+      - a Chemical to Chemical relationship
+
+  NutrientToHealthStatusRelationship:
+    is_a: ScientificClaim
+    attributes:
+      nutrient:
+        range: Nutrient
+        description: >-
+          The name of the nutrient defined in the claim,
+          including vitamins and minerals.
+      relationship:
+        range: Relationship
+        description: >-
+          The name of a type of relationship between the
+          nutrient and the anatomical part or system.
+          Choose from one of the following:
+          "affects", "participates in".
+          If none of these apply, use "associated with".
+      anatomy:
+        range: Anatomy
+        description: >-
+          The name of the anatomical part or system
+          defined in the claim.
+
+  NutrientToSourceRelationship:
+    is_a: ScientificClaim
+    attributes:
+      nutrient:
+        range: Nutrient
+        description: >-
+          The name of the nutrient defined in the claim,
+          including vitamins and minerals.
+      relationship:
+        range: Relationship
+        description: >-
+          The name of a type of relationship between the
+          nutrient and the food or supplement.
+          Choose from one of the following:
+          "nutrient of", "is active ingredient of",
+          "food component of".
+          If none of these apply, use "associated with".
+      source:
+        range: FoodOrSupplement
+        description: >-
+          The name of the food or supplement defined in the
+          claim.
+
+enums:
+
+  GOBiologicalProcessType:
+    reachable_from:
+      source_ontology: obo:go
+      source_nodes:
+        - GO:0008150  # biological_process

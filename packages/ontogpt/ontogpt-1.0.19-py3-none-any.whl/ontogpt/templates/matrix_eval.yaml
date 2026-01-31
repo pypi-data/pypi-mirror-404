@@ -1,0 +1,527 @@
+id: http://w3id.org/ontogpt/matrix_eval
+name: matrix_eval
+title: MATRIX Data Source Evaluation Template
+description: >-
+  A template for extracting and evaluating information about data resources
+  for the MATRIX knowledge graph project. This template enables systematic
+  scoring of data sources across multiple dimensions including domain coverage,
+  source scope, utility for drug-disease modeling, and data quality/noise levels.
+  The evaluation framework supports evidence-based selection and prioritization
+  of knowledge graph data sources for drug repurposing applications.
+license: https://creativecommons.org/publicdomain/zero/1.0/
+keywords:
+  - knowledge graph
+  - data evaluation
+  - drug repurposing
+  - data quality
+  - resource assessment
+  - MATRIX
+prefixes:
+  rdf: http://www.w3.org/1999/02/22-rdf-syntax-ns#
+  matrix_eval: http://w3id.org/ontogpt/matrix_eval/
+  linkml: https://w3id.org/linkml/
+
+default_prefix: matrix_eval
+default_range: string
+
+imports:
+  - linkml:types
+  - core
+
+classes:
+  DataSourceEvaluation:
+    tree_root: true
+    description: >-
+      A comprehensive evaluation of a data source for inclusion in the
+      MATRIX knowledge graph. This includes metadata about the source,
+      detailed assessments across multiple scoring dimensions, and
+      final computed scores.
+    attributes:
+      source_name:
+        description: >-
+          The full name of the data source being evaluated, including
+          version number if applicable.
+        range: string
+        required: true
+        annotations:
+          prompt: >-
+            The complete name of the data source, database, or resource,
+            including any version information (e.g., "DrugBank v5.1.9",
+            "STRING v12.0").
+      source_type:
+        description: >-
+          The category or type of data source. This must be one of the 
+          following: database, literature corpus, ontology, experimental dataset.
+          If unclear, choose "database".
+        range: SourceType
+        annotations:
+          prompt.example: database, literature corpus, ontology, experimental dataset
+      url:
+        description: >-
+          The primary web location where the data source can be accessed
+          or information about it can be found.
+        range: string
+        annotations:
+          prompt: >-
+            The URL or web address where the data source is available or described.
+      publications:
+        description: >-
+          Semicolon-separated list of key publications describing or
+          citing this data source, including DOIs or PubMed IDs where available.
+        range: string
+        multivalued: true
+        annotations:
+          prompt.skip: "true"
+      description:
+        description: >-
+          A brief textual description of the data source, its purpose,
+          and its general content.
+        range: string
+        annotations:
+          prompt: >-
+            A concise summary of what the data source contains and what
+            it was designed for.
+      
+      # Domain Coverage attributes
+      entity_types:
+        description: >-
+          Semicolon-separated list of the types of biological or chemical
+          entities covered in the data source. Common types include genes,
+          proteins, drugs, diseases, pathways, phenotypes, targets, compounds.
+        range: EntityType
+        multivalued: true
+        required: false
+        annotations:
+          prompt: >-
+            List all major entity types present (e.g., genes, drugs, diseases,
+            proteins, pathways, phenotypes, compounds, targets) in a
+            semicolon-separated list.
+      relation_types:
+        description: >-
+          Semicolon-separated list of the types of relationships or edges
+          connecting entities in this source. Examples include drug-target,
+          gene-disease, protein-protein interaction, pathway membership,
+          drug-adverse effect.
+        range: RelationType
+        multivalued: true
+        required: false
+        annotations:
+          prompt: >-
+            List all major relationship types (e.g., drug-target, gene-disease,
+            drug-drug interaction, protein-protein interaction, indication)
+            in a semicolon-separated list.
+      descriptor_richness:
+        description: >-
+          Assessment of the quality and depth of annotations, metadata, and
+          descriptive attributes associated with entities and relations.
+          This includes confidence scores, evidence types, mechanistic details,
+          and contextual information.
+        range: string
+        required: false
+        annotations:
+          prompt: >-
+            Describe the richness of metadata: Are there confidence scores?
+            Evidence types? Mechanistic details? Effect directions? Clinical context?
+      descriptor_richness_category:
+        description: >-
+          Assessment of the quality and depth of annotations, metadata, and
+          descriptive attributes associated with entities and relations.
+          This includes confidence scores, evidence types, mechanistic details,
+          and contextual information.
+        range: DescriptorRichness
+        required: false
+        annotations:
+          prompt: >-
+            Provide one of the following categories for descriptor richness:
+            sparse, moderate, or rich. Do not include any other text for this field.
+      
+      # Source Scope attributes
+      disease_coverage:
+        description: >-
+          Description of the breadth of disease coverage, including number
+          of diseases, therapeutic areas represented, and whether coverage
+          is focused on specific conditions or broadly cross-disease.
+        range: string
+        required: false
+        annotations:
+          prompt: >-
+            Describe disease coverage: single disease, specific therapeutic area,
+            multiple diseases, or comprehensive cross-disease coverage. Include
+            approximate numbers if available.
+      organism_coverage:
+        description: >-
+          Description of which organisms or species are covered by the
+          data source (e.g., human-only, human and model organisms, multi-species).
+        range: string
+        required: false
+        annotations:
+          prompt: >-
+            Which organisms are covered? Human-only, specific model organisms,
+            or multi-species?
+      scale:
+        description: >-
+          The approximate scale of the data source in terms of number of
+          entities, edges/relationships, or records. Provide specific numbers
+          where possible.
+        range: string
+        required: false
+        annotations:
+          prompt: >-
+            Approximate scale: How many entities? How many edges/relationships?
+            Use terms like "<10k edges", "10k-100k edges", "100k-1M edges",
+            ">1M edges" if exact numbers aren't available.
+      modality_breadth:
+        description: >-
+          Description of the diversity of data modalities, experimental methods,
+          or evidence types represented (e.g., single assay type, multiple
+          experimental techniques, diverse evidence including clinical and
+          experimental).
+        range: string
+        required: false
+        annotations:
+          prompt: >-
+            What modalities or evidence types are included? Single modality
+            (e.g., only text mining), or multiple modalities (e.g., experimental,
+            clinical trials, literature, omics)?
+      
+      # Utility for D-D Modelling attributes
+      drug_disease_edge_types:
+        description: >-
+          Semicolon-separated list of specific drug-disease related edge
+          families present. Include Drug-Target (D-T), Target-Disease (T-D),
+          Drug-Disease (D-D), Drug-Adverse Effect (D-AE), and any other
+          relevant drug repurposing edge types.
+        range: DrugDiseaseEdgeType
+        multivalued: true
+        required: false
+        annotations:
+          prompt: >-
+            List specific edge types relevant to drug repurposing: Drug-Target,
+            Target-Disease, Drug-Disease, Drug-Adverse Effect, Drug-Pathway,
+            or others. If none are directly present, state "indirect only".
+      identifier_mapping_quality:
+        description: >-
+          Assessment of how well entity identifiers in this source align
+          with standard ontologies and identifiers used in MATRIX. Include
+          information about ID systems used and mapping challenges.
+        range: string
+        required: false
+        annotations:
+          prompt: >-
+            What identifier systems are used? Do they map cleanly to standard
+            ontologies (e.g., Ensembl, DrugBank, MONDO)? Are mappings readily
+            available or is significant ID reconciliation required?
+      direction_and_effect:
+        description: >-
+          Description of whether relationships include directionality
+          (e.g., drug inhibits target vs. drug affects target) and effect
+          information (e.g., activation, inhibition, increase, decrease).
+        range: string
+        required: false
+        annotations:
+          prompt: >-
+            Are relationships directional? Is effect information included
+            (e.g., inhibition, activation)? Or are relationships generic
+            and undirected?
+      clinical_context:
+        description: >-
+          Description of clinical context information available, such as
+          indication status, clinical trial phases, efficacy data, or
+          real-world evidence.
+        range: string
+        annotations:
+          prompt: >-
+            Is clinical context provided? E.g., FDA approval status, clinical
+            trial phases, efficacy outcomes, dosing information? Or is the
+            data purely mechanistic/preclinical?
+      
+      # Data Quality / Noise attributes
+      curation_level:
+        description: >-
+          Description of the level of human curation, expert review, or
+          quality control applied to the data.
+        range: string
+        required: false
+        annotations:
+          prompt: >-
+            Is the data manually curated by experts, automatically extracted,
+            or a mixture? What quality control processes are applied?
+      curation_level_category:
+        description: >-
+          Description of the level of human curation, expert review, or
+          quality control applied to the data.
+        range: CurationLevel
+        required: false
+        annotations:
+          prompt: >-
+            Provide one of the following categories for curation level:
+            manual, semi-automated, automated, or mixed. Do not include any
+            other text for this field.
+      precision_estimate:
+        description: >-
+          Estimated precision or accuracy of the data, if known. This may
+          be reported in publications or documentation, or can be qualitatively
+          assessed based on curation methods.
+        range: string
+        annotations:
+          prompt: >-
+            If available, what is the reported or estimated precision/accuracy?
+            Use terms like "<70%", "70-85%", "≥85%" or "high/medium/low" if
+            quantitative estimates aren't available.
+      noise_sources:
+        description: >-
+          Semicolon-separated list of potential sources of noise, errors,
+          or low-quality data in this resource. Examples include text mining
+          errors, ambiguous entity resolution, outdated information, generic
+          relationships, unscored edges.
+        range: string
+        multivalued: true
+        annotations:
+          prompt: >-
+            What are the main sources of noise or data quality issues?
+            E.g., text mining errors, ambiguous entities, lack of confidence
+            scores, generic relationships, outdated data.
+      filtering_needed:
+        description: >-
+          Description of what level of filtering, cleaning, or post-processing
+          would be required to use this data source effectively.
+        range: string
+        required: false
+        annotations:
+          prompt: >-
+            How much filtering or cleaning is needed? Minimal (ready to use),
+            moderate (some refinement needed), or heavy (extensive filtering
+            required)?
+      filtering_needed_category:
+        description: >-
+          Description of what level of filtering, cleaning, or post-processing
+          would be required to use this data source effectively.
+        range: FilteringLevel
+        required: false
+        annotations:
+          prompt: >-
+            Provide one of the following categories for filtering level:
+            minimal, moderate, or heavy. Do not include any other text for this field.
+
+      # Computed Scores
+      domain_coverage_score:
+        description: >-
+          Computed score for domain coverage based on entity types, relation
+          types, and descriptor richness. Score 1 (Low): Single entity type,
+          sparse/generic relations, few descriptors. Score 2 (Medium): At least
+          two entities, one consistent relation, usable descriptors. Score 3 (High):
+          Three+ entities, multiple relations, rich descriptors enabling multi-hop paths.
+          A resource concerning only a single entity type (e.g., only proteins or 
+          only drugs) should always be scored as 1.
+          This value must be either 1, 2, or 3 with no added punctuation or text.
+        range: DomainCoverageScore
+        required: true
+      source_scope_score:
+        description: >-
+          Computed score for source scope based on disease/organism coverage,
+          scale, and modality breadth. Score 1 (Low): Niche scope, small scale
+          (<10k edges), single modality/therapeutic area. Score 2 (Medium):
+          Multi-disease/organism, mid-scale (10k-100k+ edges), some modality
+          breadth. Score 3 (High): Broad, cross-disease, large-scale (100k-1M+ edges),
+          multiple relation subtypes and modalities.
+          This value must be either 1, 2, or 3 with no added punctuation or text.
+        range: SourceScopeScore
+        required: true
+      utility_score:
+        description: >-
+          Computed score for utility in drug-disease modeling based on direct
+          edge types, ID mapping quality, direction/effect information, and
+          clinical context. Score 1 (Low): Indirect context only; edges sparse,
+          weak, or poorly mapped; no clear D-T/T-D/D-D/AE. Score 2 (Medium):
+          At least one direct edge family; IDs align reasonably; some direction/effect
+          or clinical context present. Score 3 (High): Multiple strong edge families;
+          clear direction/effect with evidence; consistent clinical context and
+          clean mappings. This value must be either 1, 2, or 3 with no added
+          punctuation or text.
+        range: UtilityScore
+        required: true
+      noise_penalty:
+        description: >-
+          Computed noise penalty based on curation level, precision, and
+          filtering requirements. Deduct 0 (Low Noise): Well-curated, ≥85%
+          precision; mechanistic/functional edges; clean, actionable data with
+          no irrelevant edges. Deduct -1 (Moderate Noise): Substantial fraction
+          of edges generic/ambiguous; precision 70-85%; confidence scoring
+          present but data needs refinement. Deduct -2 (High Noise): Majority
+          of edges are text-mined/generic with <70% precision; many irrelevant
+          or unscored edges; heavy filtering needed.
+          This value must be either 0, -1, or -2 with no added punctuation or text.
+        range: NoisePenalty
+        required: true
+      final_score:
+        description: >-
+          The final computed score for this data source, calculated as
+          domain_coverage_score + source_scope_score + utility_score + noise_penalty.
+          This provides an overall assessment of source value for MATRIX.
+        range: integer
+        annotations:
+          prompt.skip: "true"
+      recommendation:
+        description: >-
+          Overall recommendation for this data source (e.g., "high priority",
+          "include with filtering", "deprioritize", "exclude"). This should
+          be based on the final score and qualitative considerations.
+        range: string
+
+  EntityType:
+    description: >-
+      A type of biological or chemical entity represented in a data source.
+    is_a: NamedEntity
+    annotations:
+      annotators: sqlite:obo:biolink
+
+  RelationType:
+    description: >-
+      A type of relationship or edge connecting entities in a data source.
+    is_a: NamedEntity
+    annotations:
+      annotators: sqlite:obo:biolink, sqlite:obo:ro
+
+  DrugDiseaseEdgeType:
+    description: >-
+      A specific type of relationship relevant to drug-disease modeling
+      and drug repurposing applications.
+    is_a: NamedEntity
+
+enums:
+  SourceType:
+    description: >-
+      Categories of data sources.
+    permissible_values:
+      database:
+        description: A structured database or knowledge base
+      literature corpus:
+        description: A collection of scientific publications or text documents
+      ontology:
+        description: A formal ontology or controlled vocabulary
+      experimental dataset:
+        description: A dataset from experimental studies
+      clinical resource:
+        description: A resource derived from clinical data or trials
+      computational prediction:
+        description: A resource based on computational predictions or modeling
+      integrated resource:
+        description: A resource integrating multiple data types or sources
+  
+  DescriptorRichness:
+    description: >-
+      Assessment levels for the richness of entity and relationship descriptors.
+    permissible_values:
+      sparse:
+        description: >-
+          Minimal metadata; few or no confidence scores, evidence types, or
+          mechanistic details; basic entity identifiers only.
+      moderate:
+        description: >-
+          Some metadata present; may include basic confidence scores or
+          evidence types; limited mechanistic or contextual information.
+      rich:
+        description: >-
+          Extensive metadata including confidence scores, evidence types,
+          mechanistic details, effect directions, and clinical context;
+          enables sophisticated querying and multi-hop reasoning.
+  
+  CurationLevel:
+    description: >-
+      Level of human curation and quality control applied to a data source.
+    permissible_values:
+      manual:
+        description: >-
+          Fully manually curated by domain experts with rigorous quality control.
+      semi-automated:
+        description: >-
+          Combination of automated extraction and manual review or validation.
+      automated:
+        description: >-
+          Primarily automated extraction or prediction with minimal manual review.
+      mixed:
+        description: >-
+          Variable curation levels across different portions of the resource.
+  
+  FilteringLevel:
+    description: >-
+      Level of filtering or post-processing required to use a data source.
+    permissible_values:
+      minimal:
+        description: >-
+          Ready to use with little or no filtering; high quality and consistency.
+      moderate:
+        description: >-
+          Some filtering or refinement needed; data requires modest post-processing.
+      heavy:
+        description: >-
+          Extensive filtering required; substantial post-processing needed to
+          extract high-quality subset.
+  
+  DomainCoverageScore:
+    description: >-
+      Score for domain coverage dimension assessing entity types, relation
+      types, and descriptor richness.
+    permissible_values:
+      1:
+        description: >-
+          Low: Single entity type, sparse/generic relations, few descriptors.
+      2:
+        description: >-
+          Medium: At least two entities, one consistent relation, usable descriptors.
+      3:
+        description: >-
+          High: Three+ entities, multiple relations, rich descriptors enabling
+          multi-hop paths.
+  
+  SourceScopeScore:
+    description: >-
+      Score for source scope dimension assessing disease/organism coverage,
+      scale, and modality breadth.
+    permissible_values:
+      1:
+        description: >-
+          Low: Niche scope, small scale (<10k edges), single modality/therapeutic area.
+      2:
+        description: >-
+          Medium: Multi-disease/organism, mid-scale (10k-100k+ edges), some
+          modality breadth.
+      3:
+        description: >-
+          High: Broad, cross-disease, large-scale (100k-1M+ edges), multiple
+          relation subtypes and modalities.
+  
+  UtilityScore:
+    description: >-
+      Score for utility in drug-disease modeling dimension assessing direct
+      edge types, ID mapping, direction/effect, and clinical context.
+    permissible_values:
+      1:
+        description: >-
+          Low: Indirect context only; edges sparse, weak, or poorly mapped;
+          no clear D-T/T-D/D-D/AE.
+      2:
+        description: >-
+          Medium: At least one direct edge family; IDs align reasonably; some
+          direction/effect or clinical context present.
+      3:
+        description: >-
+          High: Multiple strong edge families; clear direction/effect with
+          evidence; consistent clinical context and clean mappings.
+  
+  NoisePenalty:
+    description: >-
+      Penalty deduction for data quality and noise levels.
+    permissible_values:
+      0:
+        description: >-
+          Low Noise: Well-curated, ≥85% precision; mechanistic/functional edges;
+          clean, actionable data with no irrelevant edges.
+      -1:
+        description: >-
+          Moderate Noise: Substantial fraction of edges generic/ambiguous;
+          precision 70-85%; confidence scoring present but data needs refinement.
+      -2:
+        description: >-
+          High Noise: Majority of edges are text-mined/generic with <70% precision;
+          many irrelevant or unscored edges; heavy filtering needed.
