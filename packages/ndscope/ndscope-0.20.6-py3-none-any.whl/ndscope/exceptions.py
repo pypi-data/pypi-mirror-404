@@ -1,0 +1,2 @@
+class UnknownChannelError(Exception):
+    pass
