@@ -1,0 +1,152 @@
+[build-system]
+requires = ["setuptools>=64", "wheel", "packaging>=24.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "isagellm"
+version = "0.4.0.35"
+description = "sageLLM: Modular LLM inference engine with PD separation for domestic computing power"
+readme = "README.md"
+requires-python = "==3.11.*"
+authors = [{ name = "IntelliStream Team" }]
+license = { text = "Proprietary - IntelliStream" }
+keywords = [
+  "llm",
+  "inference",
+  "ascend",
+  "huawei",
+  "npu",
+  "cuda",
+  "domestic",
+  "pd-separation",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+  # Core packages (required) - 更新到 PyPI 最新版本
+  "isagellm-protocol>=0.4.0.0,<0.5.0",
+  "isagellm-backend>=0.4.0.4,<0.5.0",
+  "isagellm-core>=0.4.0.8,<0.5.0",
+  "isagellm-control-plane>=0.4.0.0,<0.5.0",
+  "isagellm-gateway>=0.4.0.0,<0.5.0",
+  "isagellm-kv-cache>=0.4.0.0,<0.5.0",
+  "isagellm-comm>=0.4.0.0,<0.5.0",
+  "isagellm-compression>=0.4.0.0,<0.5.0",
+  # CLI dependencies
+  "click>=8.0.0",
+  "rich>=13.0.0",
+  "pyyaml>=6.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=7.0.0",
+  "pytest-cov>=4.0.0",
+  "ruff>=0.8.0",
+  "mypy>=1.0.0",
+  "isage-pypi-publisher>=0.2.0",
+]
+
+[project.scripts]
+# Primary CLI entry point (like `ollama`)
+sage-llm = "sagellm.cli:main"
+# Alias for convenience
+sagellm = "sagellm.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/IntelliStream/sagellm"
+Documentation = "https://github.com/IntelliStream/sagellm#readme"
+Repository = "https://github.com/IntelliStream/sagellm"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+sagellm = ["py.typed"]
+"*" = ["*.pyc", "*.pyo", "__pycache__/*", "*.so", "*.pyd", "*.dylib"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = ["build", "dist", ".venv", "venv"]
+
+[tool.ruff.lint]
+# Follow SAGE project conventions
+select = [
+  "E",   # pycodestyle errors
+  "W",   # pycodestyle warnings
+  "F",   # pyflakes
+  "I",   # isort (import sorting)
+  "B",   # flake8-bugbear
+  "C4",  # flake8-comprehensions
+  "UP",  # pyupgrade
+  "C90", # mccabe complexity
+]
+
+ignore = [
+  "E501",  # line too long (handled by ruff formatter)
+  "B904",  # raise-without-from-inside-except
+  "C901",  # complex-structure
+  "E402",  # module-import-not-at-top-of-file
+  "B008",  # function-call-in-default-argument
+  "UP035", # deprecated-import (typing.List, etc.)
+  "UP007", # non-pep604-annotation
+]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+"tests/**/*" = ["PLR2004", "S101"]
+
+[tool.ruff.lint.isort]
+known-first-party = [
+  "sagellm",
+  "sagellm_core",
+  "sagellm_protocol",
+  "sagellm_backend",
+]
+
+[tool.mypy]
+python_version = "3.10"
+strict = false
+ignore_missing_imports = true
+show_error_codes = true
+warn_unused_ignores = true
+namespace_packages = true
+explicit_package_bases = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+asyncio_mode = "auto"
+markers = [
+  "gpu: marks tests as requiring GPU (deselect with '-m \"not gpu\"')",
+  "integration: marks tests as integration tests (full component chain)",
+  "architecture: marks tests as architecture conformance tests",
+  "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]
+
+[tool.coverage.run]
+source = ["src/sagellm"]
+omit = ["tests/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+  "pragma: no cover",
+  "if TYPE_CHECKING:",
+  "raise NotImplementedError",
+]
