@@ -1,0 +1,368 @@
+[build-system]
+requires = ["setuptools>=45", "wheel", "setuptools_scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "miesc"
+dynamic = ["version"]
+description = "Multi-layer Intelligent Evaluation for Smart Contracts - AI-enhanced MCP-compatible blockchain security framework"
+readme = "README.md"
+authors = [
+    {name = "Fernando Boiero", email = "fboiero@frvm.utn.edu.ar"}
+]
+license = "AGPL-3.0-only"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Topic :: Security",
+    "Topic :: Software Development :: Quality Assurance",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Operating System :: OS Independent",
+]
+keywords = [
+    "blockchain",
+    "ethereum",
+    "smart-contracts",
+    "security",
+    "static-analysis",
+    "formal-verification",
+    "vulnerability-detection",
+    "mcp",
+    "model-context-protocol"
+]
+requires-python = ">=3.12"
+# Core dependencies - minimal for CLI usage
+dependencies = [
+    "click>=8.1.0",
+    "pydantic>=2.0.0",
+    "pyyaml>=6.0.0",
+    "jinja2>=3.1.0",
+    "slither-analyzer>=0.10.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0.0",
+]
+# Note: mythril has conflicting dependencies with slither-analyzer
+# Install separately in isolated environment: pip install mythril
+# Or use Docker: docker run -it mythril/myth analyze <contract.sol>
+symbolic = [
+    "mythril>=0.24.0",
+]
+web3 = [
+    "web3>=6.0.0",
+]
+docs = [
+    "mkdocs>=1.5.0",
+    "mkdocs-material>=9.0.0",
+]
+metrics = [
+    "prometheus-client>=0.19.0",
+]
+cli = [
+    "rich>=13.0.0",
+]
+watch = [
+    "watchdog>=3.0.0",
+]
+# PDF report generation (requires system dependencies: pango, cairo)
+# macOS: brew install pango cairo
+# Ubuntu: apt-get install libpango-1.0-0 libcairo2
+pdf = [
+    "weasyprint>=60.0",
+    "markdown>=3.5.0",
+]
+llm = [
+    "openai>=1.0.0",
+    "anthropic>=0.18.0",
+    "httpx>=0.25.0",
+]
+# Web frameworks for API servers and web UI
+web = [
+    "fastapi>=0.104.0",
+    "uvicorn>=0.24.0",
+    "flask>=3.0.0",
+    "flask-socketio>=5.3.0",
+    "flask-cors>=4.0.0",
+    "streamlit>=1.28.0",
+    "plotly>=5.18.0",
+]
+# Django REST API (requires Python 3.10+)
+django = [
+    "django>=5.0.0",
+    "djangorestframework>=3.14.0",
+    "django-cors-headers>=4.3.0",
+]
+# Full installation with all features
+full = [
+    "rich>=13.0.0",
+    "prometheus-client>=0.19.0",
+    "openai>=1.0.0",
+    "anthropic>=0.18.0",
+    "httpx>=0.25.0",
+    "fastapi>=0.104.0",
+    "uvicorn>=0.24.0",
+    "flask>=3.0.0",
+    "flask-socketio>=5.3.0",
+    "flask-cors>=4.0.0",
+    "streamlit>=1.28.0",
+    "plotly>=5.18.0",
+    "weasyprint>=60.0",
+    "markdown>=3.5.0",
+    # Note: mythril and django excluded due to dependency conflicts
+    # Install separately: pip install mythril django djangorestframework
+]
+
+[project.urls]
+Homepage = "https://github.com/fboiero/MIESC"
+Documentation = "https://fboiero.github.io/MIESC"
+Repository = "https://github.com/fboiero/MIESC.git"
+"Bug Tracker" = "https://github.com/fboiero/MIESC/issues"
+
+[project.scripts]
+miesc = "miesc.cli.main:cli"
+
+[project.entry-points."miesc.detectors"]
+# Built-in detectors (for reference/documentation)
+# External packages can register their detectors here:
+# flash-loan = "my_package.detectors:FlashLoanDetector"
+# custom-check = "my_package.detectors:CustomDetector"
+unchecked-call = "src.detectors.example_detectors:UncheckedCallDetector"
+flash-loan = "src.detectors.example_detectors:FlashLoanDetector"
+mev-detector = "src.detectors.example_detectors:MEVDetector"
+access-control = "src.detectors.example_detectors:AccessControlDetector"
+
+[tool.setuptools.dynamic]
+version = {attr = "miesc.__version__"}
+
+[tool.setuptools]
+packages = [
+    "miesc",
+    "miesc.core",
+    "miesc.api",
+    "miesc.cli",
+    "miesc.adapters",
+    "miesc.agents",
+    "miesc.security",
+    "miesc.ml",
+    "miesc.mcp",
+    "miesc.llm",
+    "src",
+    "src.adapters",
+    "src.agents",
+    "src.agents.audit_readiness",
+    "src.core",
+    "src.detectors",
+    "src.llm",
+    "src.mcp",
+    "src.ml",
+    "src.ml.fine_tuning",
+    "src.security"
+]
+
+[tool.setuptools.package-data]
+miesc = ["py.typed"]
+
+[tool.black]
+line-length = 100
+target-version = ['py312']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.git
+  | \.venv
+  | venv
+  | build
+  | dist
+)/
+'''
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+    "C4", # flake8-comprehensions
+]
+ignore = [
+    "E501",  # line too long (handled by black)
+    "B008",  # do not perform function calls in argument defaults
+]
+
+[tool.ruff.lint.per-file-ignores]
+# F401: Module imported but unused - needed for conditional availability checks
+# E741: Ambiguous variable name - used in list comprehensions for clarity
+# F841: Local variable assigned but never used - for future use or debugging
+"miesc/api/rest.py" = ["F401", "E741", "F841"]
+"miesc/cli/main.py" = ["F401", "E741", "F841"]
+"tests/test_rest_api.py" = ["F401"]
+"tests/test_licensing.py" = ["F401", "E722", "B007", "F841"]
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = ["tests", "miesc/tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --cov=src --cov-report=term-missing"
+asyncio_mode = "auto"
+
+[tool.coverage.run]
+source = ["src"]
+omit = [
+    # Wrapper package (re-exports from src/)
+    "miesc/*",
+    # Legacy standalone tools (deprecated in v4.0+)
+    "src/*_tool.py",
+    "src/main.py",
+    "src/utils.py",
+    # Legacy CLI modules (replaced by miesc.cli)
+    "src/miesc_cli.py",
+    "src/miesc_core.py",
+    "src/miesc_ai_layer.py",
+    "src/miesc_mcp_adapter.py",
+    "src/miesc_mcp_rest.py",
+    "src/miesc_ml_cli.py",
+    "src/miesc_websocket_api.py",
+    "src/miesc_policy_agent.py",
+    "src/miesc_policy_mapper.py",
+    "src/miesc_risk_engine.py",
+    "src/miesc_security_checks.py",
+    # Legacy analysis modules
+    "src/orchestrator.py",
+    "src/project_analyzer.py",
+    "src/report_formatter.py",
+    "src/audit_generator.py",
+    "src/graph_visualizer.py",
+    # Internal test fixtures
+    "src/miesc_tests/*",
+    # Licensing module (separate product)
+    "src/licensing/*",
+    # Detectors with external dependencies
+    "src/detectors/smartbugs_detectors.py",
+    # Duplicate/backup files
+    "src/agents/symbolic_agent 2.py",
+    # Additional legacy/utility modules (v3.x)
+    "src/GPTLens_prompts.py",
+    "src/summarize_information.py",
+    "src/test_generator.py",
+    "src/text_generator.py",
+    # Experimental agents (not production)
+    "src/agents/crewai_coordinator.py",
+    "src/agents/slither_protocol_agent.py",
+    # Tool wrapper agents (require external tools: Mythril, Echidna, etc.)
+    "src/agents/dynamic_agent.py",
+    "src/agents/formal_agent.py",
+    "src/agents/symbolic_agent.py",
+    "src/agents/coordinator_agent.py",
+    "src/agents/static_agent.py",
+    "src/agents/gptscan_agent.py",
+    "src/agents/halmos_agent.py",
+    "src/agents/medusa_agent.py",
+    "src/agents/smtchecker_agent.py",
+    "src/agents/wake_agent.py",
+    # LLM-dependent agents (require Ollama/external models)
+    "src/agents/ollama_agent.py",
+    "src/agents/llm_smartaudit_agent.py",
+    # Analysis agents (complex orchestration dependencies)
+    "src/agents/policy_agent.py",
+    "src/agents/interpretation_agent.py",
+    "src/agents/recommendation_agent.py",
+    # Audit readiness module (specialized)
+    "src/agents/audit_readiness/*",
+    # LLM helpers (external dependency heavy)
+    "src/llm/*",
+    # Integration module (requires full stack)
+    "src/integration/*",
+    # Dependency analyzer (specialized)
+    "src/detectors/dependency_analyzer.py",
+    # Tool adapters (require external CLI tools)
+    "src/adapters/certora_adapter.py",
+    "src/adapters/echidna_adapter.py",
+    "src/adapters/foundry_adapter.py",
+    "src/adapters/halmos_adapter.py",
+    "src/adapters/manticore_adapter.py",
+    "src/adapters/medusa_adapter.py",
+    "src/adapters/mythril_adapter.py",
+    "src/adapters/oyente_adapter.py",
+    "src/adapters/slither_adapter.py",
+    "src/adapters/smtchecker_adapter.py",
+    "src/adapters/vertigo_adapter.py",
+    "src/adapters/wake_adapter.py",
+    "src/adapters/mev_detector_adapter.py",
+    "src/adapters/gas_analyzer_adapter.py",
+    # ML/LLM adapters (require external models)
+    "src/adapters/dagnn_adapter.py",
+    "src/adapters/dogefuzz_adapter.py",
+    "src/adapters/smartguard_adapter.py",
+    "src/adapters/smartllm_adapter.py",
+    "src/adapters/llmsmartaudit_adapter.py",
+    "src/adapters/gptscan_adapter.py",
+    "src/adapters/propertygpt_adapter.py",
+    "src/adapters/smartbugs_ml_adapter.py",
+    "src/adapters/smartbugs_detector_adapter.py",
+    "src/adapters/contract_clone_detector_adapter.py",
+    "src/adapters/defi_adapter.py",
+    "src/adapters/advanced_detector_adapter.py",
+    "src/adapters/threat_model_adapter.py",
+    "src/adapters/aderyn_adapter.py",
+    # Core modules with external dependencies
+    "src/core/ml_orchestrator.py",
+    "src/core/optimized_orchestrator.py",
+    "src/core/config_loader.py",
+    "src/core/agent_protocol.py",
+    "src/core/agent_registry.py",
+    "src/core/exporters.py",
+    "src/core/tool_protocol.py",
+    "src/core/rich_cli.py",
+    # MCP modules (require full stack)
+    "src/mcp/context_bus.py",
+    # ML modules with external dependencies
+    "src/ml/correlation_engine.py",
+    # Agent modules
+    "src/agents/base_agent.py",
+    "src/agents/ai_agent.py",
+    "src/agents/aderyn_agent.py",
+    "src/agents/smartllm_agent.py",
+    # Detector modules
+    "src/detectors/advanced_detectors.py",
+    "src/detectors/defi_detectors.py",
+    # Knowledge base
+    "src/knowledge_base/*",
+    # Dashboard (requires full UI stack)
+    "src/dashboard/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
+fail_under = 50
+show_missing = true
