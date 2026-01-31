@@ -1,0 +1,712 @@
+Metadata-Version: 2.4
+Name: identity-plan-kit
+Version: 0.3.6
+Summary: Modern FastAPI library for authentication, RBAC, subscription plans, and usage tracking
+Author-email: harut <harut.avetisyan2002@gmail.com>
+License: MIT
+Keywords: authentication,fastapi,oauth,plans,rbac,subscription
+Classifier: Development Status :: 3 - Alpha
+Classifier: Framework :: FastAPI
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Topic :: Internet :: WWW/HTTP :: Session
+Classifier: Topic :: Security
+Classifier: Typing :: Typed
+Requires-Python: >=3.11
+Requires-Dist: alembic>=1.14.0
+Requires-Dist: asyncpg>=0.30.0
+Requires-Dist: authlib>=1.4.0
+Requires-Dist: bcrypt<5.0.0,>=4.0.0
+Requires-Dist: fastapi>=0.115.0
+Requires-Dist: httpx>=0.28.0
+Requires-Dist: itsdangerous>=2.2.0
+Requires-Dist: orjson>=3.10.0
+Requires-Dist: passlib[bcrypt]>=1.7.4
+Requires-Dist: psycopg2-binary>=2.9.11
+Requires-Dist: pydantic-settings>=2.0.0
+Requires-Dist: pydantic[email]>=2.0.0
+Requires-Dist: python-jose[cryptography]>=3.3.0
+Requires-Dist: rich>=13.0.0
+Requires-Dist: slowapi>=0.1.9
+Requires-Dist: sqlalchemy[asyncio]>=2.0.0
+Requires-Dist: structlog>=24.0.0
+Requires-Dist: tenacity>=9.0.0
+Requires-Dist: typer>=0.12.0
+Requires-Dist: uuid-utils>=0.10.0
+Provides-Extra: admin
+Requires-Dist: sqladmin>=0.20.0; extra == 'admin'
+Provides-Extra: cli
+Requires-Dist: python-dotenv>=1.0.0; extra == 'cli'
+Provides-Extra: dev
+Requires-Dist: bump-my-version>=0.26.0; extra == 'dev'
+Requires-Dist: httpx>=0.28.0; extra == 'dev'
+Requires-Dist: mypy>=1.13.0; extra == 'dev'
+Requires-Dist: pre-commit>=4.0.0; extra == 'dev'
+Requires-Dist: pytest-asyncio>=0.24.0; extra == 'dev'
+Requires-Dist: pytest-cov>=6.0.0; extra == 'dev'
+Requires-Dist: pytest>=8.0.0; extra == 'dev'
+Requires-Dist: ruff>=0.8.0; extra == 'dev'
+Requires-Dist: testcontainers[postgres]>=4.0.0; extra == 'dev'
+Provides-Extra: loadtest
+Requires-Dist: faker>=28.0.0; extra == 'loadtest'
+Requires-Dist: locust>=2.29.0; extra == 'loadtest'
+Provides-Extra: metrics
+Requires-Dist: prometheus-client>=0.20.0; extra == 'metrics'
+Description-Content-Type: text/markdown
+
+# IdentityPlanKit
+
+Modern FastAPI library for authentication, RBAC, subscription plans, and usage tracking.
+
+## Features
+
+- **OAuth Authentication**: Google OAuth (extensible for other providers)
+- **Role-Based Access Control (RBAC)**: Fine-grained permissions system
+- **Subscription Plans**: Plan management with feature limits and quotas
+- **Usage Tracking**: Track feature usage against plan limits
+- **Production-Ready**: Health checks, graceful shutdown, connection retry
+- **Audit Logging**: Security event logging
+- **Account Lockout**: Brute-force protection
+- **CLI Tools**: Database migrations and management
+
+---
+
+## What IPK Provides vs What You Must Implement
+
+### Provided Out of the Box
+
+| Feature | Description |
+|---------|-------------|
+| **Google OAuth Authentication** | Complete OAuth 2.0 flow with CSRF protection |
+| **JWT Token Management** | Access/refresh token generation, validation, and rotation |
+| **Token Theft Detection** | Automatic account deactivation when revoked token is reused |
+| **Default Roles** | Pre-configured `admin` and `user` roles |
+| **Default Plans** | Pre-configured `free` and `pro` plans |
+| **Permission Infrastructure** | `check_permission()`, `require_permission()` methods |
+| **Atomic Quota Checking** | Race-condition safe quota consumption (TOCTOU protected) |
+| **Account Lockout** | Brute-force protection with configurable thresholds |
+| **Token Cleanup** | Automatic expired token removal |
+| **Health Checks** | Kubernetes-ready `/health/live` and `/health/ready` probes |
+| **Graceful Shutdown** | Request draining before shutdown |
+| **Database Migrations** | All tables created via `ipk db upgrade` |
+| **Prometheus Metrics** | Optional observability (requires `[metrics]` extra) |
+| **Audit Logging** | Security events logged automatically |
+| **Idempotent Token Refresh** | Duplicate refresh requests return same tokens (30s window) |
+| **Idempotent Quota Consumption** | When `idempotency_key` provided, prevents double-deduction |
+| **Rate Limiting** | Configurable per-endpoint rate limits |
+
+### You Must Implement
+
+| Responsibility | Why | Example |
+|----------------|-----|---------|
+| **Define Features** | IPK doesn't know what features your app has | `"api_calls"`, `"ai_generations"`, `"storage_gb"` |
+| **Assign Features to Plans** | Business decision about what's included | Free: 100 API calls, Pro: unlimited |
+| **Set Plan Limits** | Your pricing/quota decisions | `{"api_calls": 1000, "ai_generations": 50}` |
+| **Define Permission Codes** | App-specific access control | `"admin.users.delete"`, `"reports.export"` |
+| **Assign Permissions to Roles** | Which roles can do what | Admin gets `"admin.*"`, User gets `"feature.use"` |
+| **Payment Webhook Integration** | IPK doesn't handle payments | Call `plan_service.assign_plan()` from Stripe webhook |
+| **Webhook Deduplication** | Payment providers retry webhooks | Check `event_id` before processing (see below) |
+| **Quota Checks in Routes** | IPK doesn't auto-enforce quotas | Call `check_and_consume_quota()` in your endpoints |
+| **Authorization for Plan Ops** | IPK doesn't verify callers by default | Verify webhook signatures, check admin role |
+
+---
+
+## Critical Warnings
+
+### Production Deployments (Multi-Instance)
+
+> **Redis is REQUIRED for multi-instance deployments**
+
+Without Redis, each instance has its own:
+- OAuth state storage (login fails if callback hits different instance)
+- Rate limit counters (users bypass limits via different instances)
+- Permission cache (inconsistent permissions across instances)
+
+```bash
+# Set Redis URL for production
+IPK_REDIS_URL=redis://localhost:6379/0
+IPK_REQUIRE_REDIS=true  # Fail-fast if Redis unavailable
+```
+
+### Token Theft Protection
+
+When a refresh token is used **after being revoked**, IPK assumes token theft:
+1. ALL tokens for that user are revoked
+2. User account is **automatically deactivated**
+3. User must contact support to reactivate
+
+This is intentional security behavior, not a bug.
+
+### Webhook Idempotency (NOT Auto-Handled)
+
+**Plan management methods do NOT handle idempotency.** If your webhook provider retries requests (Stripe retries on timeout), duplicate calls will create issues.
+
+**You MUST implement deduplication:**
+
+```python
+@app.post("/webhooks/stripe")
+async def stripe_webhook(request: Request):
+    event = stripe.Webhook.construct_event(...)
+
+    # CRITICAL: Check if already processed
+    if await is_event_processed(event.id):
+        return {"status": "already_processed"}
+
+    if event.type == "checkout.session.completed":
+        await kit.plan_service.assign_plan(
+            user_id=UUID(event.data.object.client_reference_id),
+            plan_code="pro",
+        )
+
+    await mark_event_processed(event.id)
+    return {"status": "ok"}
+```
+
+### Authorization is Your Responsibility
+
+Plan management methods (`assign_plan`, `cancel_plan`, `update_plan_limits`, `reset_usage`) are **privileged operations**. IPK does NOT verify the caller is authorized.
+
+**You MUST verify authorization before calling:**
+
+```python
+# Option 1: Verify in your code before calling
+@app.post("/admin/users/{user_id}/plan")
+async def admin_assign_plan(user_id: UUID, current_user: User = Depends(CurrentUser(kit))):
+    # Verify caller is admin
+    await kit.rbac_service.require_permission(
+        current_user.id, current_user.role_id, "admin.plans.manage"
+    )
+    await kit.plan_service.assign_plan(user_id=user_id, plan_code="pro")
+
+# Option 2: Configure authorization callback
+async def check_authorization(operation: str, target_user_id: UUID, context: dict | None) -> bool:
+    if context and context.get("is_webhook"):
+        return True  # Verified webhooks are authorized
+    if context and context.get("is_admin"):
+        return True
+    return False
+
+kit = IdentityPlanKit(config, authorization_callback=check_authorization)
+```
+
+---
+
+## Integration Examples
+
+### Quota Tracking in Routes
+
+```python
+@app.post("/generate")
+async def generate(user: User = Depends(CurrentUser(kit))):
+    usage = await kit.plan_service.check_and_consume_quota(
+        user_id=user.id,
+        feature_code="ai_generations",
+        amount=1,
+        idempotency_key=request.headers.get("X-Idempotency-Key"),  # Safe retries
+    )
+
+    if not usage.has_access:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Quota exceeded: {usage.used}/{usage.limit}"
+        )
+
+    # Your feature logic here
+    return {"remaining": usage.remaining}
+```
+
+### Permission Enforcement
+
+```python
+@app.delete("/admin/users/{user_id}")
+async def delete_user(user_id: UUID, current_user: User = Depends(CurrentUser(kit))):
+    await kit.rbac_service.require_permission(
+        user_id=current_user.id,
+        role_id=current_user.role_id,
+        permission_code="admin.users.delete",
+    )
+    # Delete logic here
+```
+
+### Idempotency for Quota Consumption
+
+```python
+# Generate a unique key per logical operation
+idempotency_key = f"{user.id}:{request_id}:generate_image"
+
+# First request: checks quota, consumes 1, caches result
+# Retry request: returns cached result, no double-deduction
+result = await kit.plan_service.check_and_consume_quota(
+    user_id=user.id,
+    feature_code="ai_generation",
+    amount=1,
+    idempotency_key=idempotency_key,
+)
+```
+
+---
+
+## Installation
+
+```bash
+pip install identity-plan-kit
+```
+
+Or with uv:
+
+```bash
+uv pip install identity-plan-kit
+```
+
+## Quick Start
+
+### 1. Set Environment Variables
+
+Create a `.env` file:
+
+```bash
+IPK_DATABASE_URL=postgresql+asyncpg://user:password@localhost:5432/mydb
+IPK_SECRET_KEY=your-super-secret-key-at-least-32-characters-long
+IPK_GOOGLE_CLIENT_ID=your-google-client-id
+IPK_GOOGLE_CLIENT_SECRET=your-google-client-secret
+IPK_GOOGLE_REDIRECT_URI=http://localhost:8000/auth/google/callback
+IPK_ENVIRONMENT=development
+```
+
+### 2. Run Database Migrations
+
+The library includes a CLI tool for managing database migrations:
+
+```bash
+# Check current migration status
+ipk db current
+
+# Apply all migrations
+ipk db upgrade
+
+# Use a specific .env file
+ipk db upgrade --env-file .env.production
+
+# View migration history
+ipk db history
+
+# Show configuration
+ipk info
+```
+
+All CLI commands support the `--env-file` (or `-e`) option to load environment variables from a specific file. If not specified, the CLI will automatically load from `.env` if it exists in the current directory.
+
+#### CLI Commands Reference
+
+| Command | Description |
+|---------|-------------|
+| `ipk db upgrade [revision]` | Upgrade database to a later version (default: head) |
+| `ipk db downgrade [revision]` | Downgrade database to a previous version |
+| `ipk db current` | Show current database revision |
+| `ipk db history` | Show migration history |
+| `ipk db heads` | Show current available heads |
+| `ipk db stamp <revision>` | Mark database as being at a specific version (without running migrations) |
+| `ipk version` | Show IdentityPlanKit version |
+| `ipk info` | Show configuration and environment information |
+
+#### Migration Examples
+
+```bash
+# Upgrade to latest version
+ipk db upgrade
+
+# Upgrade to specific revision
+ipk db upgrade 001_initial
+
+# Upgrade by one revision
+ipk db upgrade +1
+
+# Downgrade by one revision
+ipk db downgrade -1
+
+# Downgrade to base (WARNING: deletes all data)
+ipk db downgrade base
+
+# Show SQL without executing
+ipk db upgrade --sql
+```
+
+### 3. Create Your FastAPI Application
+
+```python
+from fastapi import FastAPI, Depends
+from identity_plan_kit import (
+    IdentityPlanKit,
+    IdentityPlanKitConfig,
+    CurrentUser,
+)
+from identity_plan_kit.auth.domain.entities import User
+
+# Configure the library
+config = IdentityPlanKitConfig()
+
+# Create IdentityPlanKit instance
+kit = IdentityPlanKit(
+    config,
+    startup_timeout=30.0,
+    shutdown_drain_timeout=30.0,
+)
+
+# Create FastAPI app with lifespan
+app = FastAPI(lifespan=kit.lifespan)
+
+# Setup routes and middleware
+kit.setup(
+    app,
+    register_error_handlers=True,
+    include_health_routes=True,
+    include_request_id=True,
+)
+
+
+# Use authentication in your routes
+@app.get("/protected")
+async def protected_route(user: User = Depends(CurrentUser(kit))):
+    return {"message": f"Hello {user.email}"}
+
+
+# Check user permissions
+@app.get("/admin-only")
+async def admin_only(user: User = Depends(CurrentUser(kit))):
+    # Check if user has admin role
+    has_permission = await kit.rbac_service.check_user_permission(
+        user.id,
+        "admin.access"
+    )
+
+    if not has_permission:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    return {"message": "Admin access granted"}
+
+
+# Track feature usage
+@app.post("/generate")
+async def generate(user: User = Depends(CurrentUser(kit))):
+    # Check and track feature usage
+    usage = await kit.plan_service.check_and_track_usage(
+        user.id,
+        "api_calls",
+        increment=1,
+    )
+
+    if not usage.has_access:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Quota exceeded. Used {usage.usage}/{usage.limit}"
+        )
+
+    # Your feature logic here
+    return {"remaining": usage.limit - usage.usage}
+```
+
+### 4. Run Your Application
+
+```bash
+uvicorn main:app --reload
+```
+
+Your app will have these endpoints automatically:
+
+- `GET /auth/google` - Start Google OAuth flow
+- `GET /auth/google/callback` - OAuth callback
+- `POST /auth/refresh` - Refresh access token
+- `POST /auth/logout` - Logout
+- `GET /health` - Full health check
+- `GET /health/live` - Liveness probe
+- `GET /health/ready` - Readiness probe
+
+## Database Migrations
+
+### For Library Users
+
+When you install `identity-plan-kit`, the library includes pre-built migrations in the `alembic/` folder. You apply them using the CLI:
+
+```bash
+# Set your database URL
+export IPK_DATABASE_URL=postgresql+asyncpg://user:pass@localhost/db
+
+# Run migrations
+ipk db upgrade
+```
+
+The initial migration (`001_initial`) creates all necessary tables:
+- Authentication tables (users, providers, refresh_tokens)
+- RBAC tables (roles, permissions, role_permissions)
+- Plans tables (plans, features, limits, user_plans, usage)
+
+### Included Migrations
+
+The library ships with:
+
+1. **001_initial**: Creates all core tables with:
+   - Default roles: `admin`, `user`
+   - Default plans: `free`, `pro`
+   - All necessary indexes and constraints
+
+### Migration Workflow
+
+```bash
+# 1. Install the package
+pip install identity-plan-kit
+
+# 2. Set environment variables
+export IPK_DATABASE_URL=postgresql+asyncpg://user:pass@localhost/mydb
+
+# 3. Check current status
+ipk db current
+
+# 4. Apply migrations
+ipk db upgrade
+
+# 5. Verify
+ipk db history
+```
+
+### Troubleshooting
+
+**"IPK_DATABASE_URL environment variable not set"**
+```bash
+export IPK_DATABASE_URL=postgresql+asyncpg://user:pass@localhost/db
+```
+
+**"alembic.ini not found"**
+
+Make sure the package is properly installed:
+```bash
+pip install --force-reinstall identity-plan-kit
+```
+
+**"Database connection failed"**
+
+Check your database is running and credentials are correct:
+```bash
+# Test connection
+psql postgresql://user:pass@localhost/db -c "SELECT 1"
+```
+
+**Migration already applied**
+
+If you've manually created tables, you can mark the database as migrated:
+```bash
+ipk db stamp head
+```
+
+## Advanced Usage
+
+### Custom Cleanup Schedule
+
+```python
+# Create a cleanup scheduler for expired tokens
+scheduler = kit.create_cleanup_scheduler()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await kit.startup()
+    scheduler.start()  # Start background cleanup
+    yield
+    scheduler.stop()   # Stop cleanup
+    await kit.shutdown()
+
+app = FastAPI(lifespan=lifespan)
+```
+
+### Health Checks
+
+```python
+# Add custom health checks
+kit.health_checker.register_check(
+    "external_api",
+    my_api_health_check,
+    critical=False,
+)
+```
+
+### RBAC
+
+```python
+# Check user permission
+has_access = await kit.rbac_service.check_user_permission(
+    user_id=user.id,
+    permission_code="feature.access",
+)
+
+# Get user roles
+roles = await kit.rbac_service.get_user_roles(user.id)
+```
+
+### Plans and Usage
+
+```python
+# Get user's active plan
+plan = await kit.plan_service.get_user_active_plan(user.id)
+
+# Check feature limit
+usage_info = await kit.plan_service.check_and_track_usage(
+    user.id,
+    feature_code="api_calls",
+    increment=1,
+)
+
+if usage_info.has_access:
+    # User has quota remaining
+    print(f"Remaining: {usage_info.limit - usage_info.usage}")
+else:
+    # Quota exceeded
+    raise HTTPException(status_code=429, detail="Quota exceeded")
+```
+
+## Configuration
+
+All configuration is via environment variables or `IdentityPlanKitConfig`:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `IPK_DATABASE_URL` | PostgreSQL connection URL (async) | Required |
+| `IPK_SECRET_KEY` | Secret key for JWT signing | Required |
+| `IPK_GOOGLE_CLIENT_ID` | Google OAuth client ID | Required for OAuth |
+| `IPK_GOOGLE_CLIENT_SECRET` | Google OAuth secret | Required for OAuth |
+| `IPK_GOOGLE_REDIRECT_URI` | OAuth callback URL | Required for OAuth |
+| `IPK_ENVIRONMENT` | Environment (development/production) | `production` |
+| `IPK_REDIS_URL` | Redis URL for caching/sessions | Optional |
+| `IPK_ACCESS_TOKEN_EXPIRE_MINUTES` | Access token TTL | `15` |
+| `IPK_REFRESH_TOKEN_EXPIRE_DAYS` | Refresh token TTL | `30` |
+| `IPK_ENABLE_METRICS` | Enable Prometheus metrics endpoint | `false` |
+| `IPK_METRICS_PATH` | Path for metrics endpoint | `/metrics` |
+| `IPK_ENABLE_AUTO_CLEANUP` | Auto cleanup expired tokens | `true` |
+| `IPK_CLEANUP_INTERVAL_HOURS` | Cleanup interval in hours | `6.0` |
+| `IPK_DATABASE_STATEMENT_TIMEOUT_MS` | PostgreSQL statement timeout | `30000` |
+| `IPK_TOKEN_REFRESH_IDEMPOTENCY_TTL_SECONDS` | Token refresh idempotency window | `30` |
+| `IPK_QUOTA_IDEMPOTENCY_TTL_SECONDS` | Quota consumption idempotency window | `60` |
+| `IPK_REQUIRE_REDIS` | Fail if Redis unavailable | Auto (true in prod) |
+
+### Important Configuration Notes
+
+**Database Statement Timeout**: Long-running queries are killed after 30s by default. Adjust for migrations:
+
+```bash
+# For API servers (shorter timeout)
+IPK_DATABASE_STATEMENT_TIMEOUT_MS=10000  # 10 seconds
+
+# For migration scripts (longer timeout)
+IPK_DATABASE_STATEMENT_TIMEOUT_MS=300000  # 5 minutes
+```
+
+**Token Refresh Idempotency**: Duplicate refresh requests within 30s return the same tokens. This prevents "token revoked" errors when clients retry due to network issues.
+
+**Quota Idempotency**: When `idempotency_key` is provided to `check_and_consume_quota()`, duplicate requests within 60s return cached results without double-deducting.
+
+## Prometheus Metrics (Optional)
+
+IdentityPlanKit supports Prometheus metrics for production observability.
+
+### Installation
+
+```bash
+# Install with metrics support
+pip install identity-plan-kit[metrics]
+```
+
+### Configuration
+
+```bash
+# Enable metrics via environment variable
+IPK_ENABLE_METRICS=true
+IPK_METRICS_PATH=/metrics  # optional, defaults to /metrics
+```
+
+Or in code:
+
+```python
+config = IdentityPlanKitConfig(
+    enable_metrics=True,
+    metrics_path="/metrics",
+)
+```
+
+### Available Metrics
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `ipk_http_requests_total` | Counter | Total HTTP requests by method, endpoint, status |
+| `ipk_http_request_duration_seconds` | Histogram | Request latency (p50, p95, p99) |
+| `ipk_http_requests_in_progress` | Gauge | Currently processing requests |
+| `ipk_auth_attempts_total` | Counter | Auth attempts by provider and result |
+| `ipk_token_operations_total` | Counter | Token operations (refresh, revoke, cleanup) |
+| `ipk_tokens_cleaned_total` | Counter | Expired tokens cleaned up |
+| `ipk_circuit_breaker_state` | Gauge | Circuit breaker state (0=closed, 1=open, 2=half_open) |
+| `ipk_db_connections_active` | Gauge | Active database connections |
+| `ipk_quota_checks_total` | Counter | Quota checks by feature and result |
+| `ipk_rate_limit_hits_total` | Counter | Rate limit hits by endpoint |
+| `ipk_component_health_status` | Gauge | Component health (1=healthy, 0=unhealthy) |
+
+### Example Prometheus Scrape Config
+
+```yaml
+scrape_configs:
+  - job_name: 'identity-plan-kit'
+    static_configs:
+      - targets: ['localhost:8000']
+    metrics_path: /metrics
+```
+
+## Token Cleanup
+
+Expired tokens are automatically cleaned up in the background (enabled by default).
+
+```python
+# Disable auto cleanup
+config = IdentityPlanKitConfig(
+    enable_auto_cleanup=False,
+)
+
+# Or configure interval
+config = IdentityPlanKitConfig(
+    cleanup_interval_hours=12.0,  # Run every 12 hours
+)
+```
+
+Manual cleanup is also available:
+
+```python
+# Manual cleanup
+deleted = await kit.cleanup_expired_tokens()
+print(f"Cleaned up {deleted} expired tokens")
+```
+
+## Development
+
+```bash
+# Clone repository
+git clone https://github.com/yourusername/identity-plan-kit.git
+cd identity-plan-kit
+
+# Install with dev dependencies
+uv pip install -e ".[dev]"
+
+# Run tests
+pytest
+
+# Type checking
+mypy src
+
+# Linting
+ruff check src
+```
+
+## License
+
+MIT License - see LICENSE file for details.
+
+## Contributing
+
+Contributions welcome! Please open an issue or submit a PR.

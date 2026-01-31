@@ -1,0 +1,150 @@
+[project]
+name = "identity-plan-kit"
+version = "0.3.6"
+description = "Modern FastAPI library for authentication, RBAC, subscription plans, and usage tracking"
+readme = "README.md"
+authors = [
+    { name = "harut", email = "harut.avetisyan2002@gmail.com" }
+]
+requires-python = ">=3.11"
+license = { text = "MIT" }
+keywords = ["fastapi", "authentication", "rbac", "oauth", "subscription", "plans"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Framework :: FastAPI",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Internet :: WWW/HTTP :: Session",
+    "Topic :: Security",
+    "Typing :: Typed",
+]
+
+dependencies = [
+    "fastapi>=0.115.0",
+    "pydantic[email]>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    "sqlalchemy[asyncio]>=2.0.0",
+    "asyncpg>=0.30.0",
+    "alembic>=1.14.0",
+    "httpx>=0.28.0",
+    "authlib>=1.4.0",
+    "python-jose[cryptography]>=3.3.0",
+    "passlib[bcrypt]>=1.7.4",
+    "bcrypt>=4.0.0,<5.0.0",  # Pin bcrypt <5 for passlib compatibility
+    "uuid-utils>=0.10.0",
+    "structlog>=24.0.0",
+    "orjson>=3.10.0",
+    "slowapi>=0.1.9",
+    "tenacity>=9.0.0",
+    "typer>=0.12.0",
+    "rich>=13.0.0",
+    "psycopg2-binary>=2.9.11",
+    "itsdangerous>=2.2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=6.0.0",
+    "httpx>=0.28.0",
+    "ruff>=0.8.0",
+    "mypy>=1.13.0",
+    "pre-commit>=4.0.0",
+    "bump-my-version>=0.26.0",
+    "testcontainers[postgres]>=4.0.0",
+]
+loadtest = [
+    "locust>=2.29.0",
+    "faker>=28.0.0",
+]
+cli = [
+    "python-dotenv>=1.0.0",
+]
+metrics = [
+    "prometheus-client>=0.20.0",
+]
+admin = [
+    "sqladmin>=0.20.0",
+]
+
+[project.scripts]
+ipk = "identity_plan_kit.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/identity_plan_kit"]
+
+# Include alembic migrations and config in the package
+[tool.hatch.build.targets.wheel.force-include]
+"alembic" = "alembic"
+"alembic.ini" = "alembic.ini"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # pyflakes
+    "I",      # isort
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "UP",     # pyupgrade
+    "ARG",    # flake8-unused-arguments
+    "SIM",    # flake8-simplify
+    "S",      # bandit - security issues
+    "ASYNC",  # async best practices
+    "PT",     # pytest style
+    "RET",    # return statements
+    "TRY",    # exception handling
+    "PERF",   # performance anti-patterns
+    "RUF",    # Ruff-specific rules
+    "PL",     # Pylint
+    "PTH",    # use pathlib instead of os.path
+    "ANN",    # type annotations
+]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+    "B008",   # do not perform function calls in argument defaults (needed for Depends)
+    "S101",   # use of assert (ok in tests)
+    "TRY003", # avoid long messages in exception strings
+    "PLR0913", # too many arguments
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["identity_plan_kit"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_return_any = true
+warn_unused_ignores = true
+disallow_untyped_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+plugins = ["pydantic.mypy"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "-v --tb=short"
+
+[tool.bumpversion]
+current_version = "0.3.6"
+parse = "(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)"
+serialize = ["{major}.{minor}.{patch}"]
+tag = true
+tag_name = "v{new_version}"
+tag_message = "Bump version: {current_version} → {new_version}"
+commit = true
+message = "Bump version: {current_version} → {new_version}"

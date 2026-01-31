@@ -1,0 +1,75 @@
+# =============================================================================
+# Prometheus Configuration for IdentityPlanKit Monitoring
+# =============================================================================
+# Use with docker-compose.prod.yml --profile monitoring
+# =============================================================================
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+  # Attach these labels to any time series or alerts when communicating with
+  # external systems (federation, remote storage, Alertmanager).
+  external_labels:
+    monitor: 'identity-plan-kit'
+
+# Alertmanager configuration (optional)
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets:
+#           - alertmanager:9093
+
+# Rule files (optional)
+# rule_files:
+#   - "alerts/*.yml"
+
+scrape_configs:
+  # ---------------------------------------------------------------------------
+  # Prometheus self-monitoring
+  # ---------------------------------------------------------------------------
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # ---------------------------------------------------------------------------
+  # IdentityPlanKit Application
+  # ---------------------------------------------------------------------------
+  - job_name: 'identity-plan-kit'
+    # Metrics path
+    metrics_path: /metrics
+
+    # Static configuration for Docker Compose
+    static_configs:
+      - targets: ['app:8000']
+        labels:
+          service: 'identity-plan-kit'
+          environment: 'production'
+
+    # Relabeling (optional)
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        regex: '([^:]+):\d+'
+        replacement: '${1}'
+
+  # ---------------------------------------------------------------------------
+  # Redis (if using redis_exporter)
+  # ---------------------------------------------------------------------------
+  # - job_name: 'redis'
+  #   static_configs:
+  #     - targets: ['redis-exporter:9121']
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL (if using postgres_exporter)
+  # ---------------------------------------------------------------------------
+  # - job_name: 'postgres'
+  #   static_configs:
+  #     - targets: ['postgres-exporter:9187']
+
+  # ---------------------------------------------------------------------------
+  # Nginx (if using nginx-prometheus-exporter)
+  # ---------------------------------------------------------------------------
+  # - job_name: 'nginx'
+  #   static_configs:
+  #     - targets: ['nginx-exporter:9113']
