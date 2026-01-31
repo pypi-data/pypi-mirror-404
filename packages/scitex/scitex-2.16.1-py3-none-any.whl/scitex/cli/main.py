@@ -1,0 +1,360 @@
+#!/usr/bin/env python3
+"""SciTeX CLI Main Entry Point."""
+
+# Suppress httplib2/pyparsing deprecation warnings BEFORE any imports
+# These are from system packages using old pyparsing API
+import warnings
+
+# Filter pyparsing-related deprecation warnings from httplib2
+for msg in [
+    "setName",
+    "leaveWhitespace",
+    "setParseAction",
+    "addParseAction",
+    "delimitedList",
+]:
+    warnings.filterwarnings(
+        "ignore", message=f".*{msg}.*deprecated.*", category=DeprecationWarning
+    )
+
+import os
+import sys
+
+import click
+
+from . import (
+    audio,
+    browser,
+    capture,
+    cloud,
+    config,
+    convert,
+    dataset,
+    introspect,
+    mcp,
+    plt,
+    repro,
+    resource,
+    scholar,
+    security,
+    social,
+    stats,
+    template,
+    tex,
+    web,
+    writer,
+)
+
+
+@click.group(
+    context_settings={"help_option_names": ["-h", "--help"]},
+    invoke_without_command=True,
+)
+@click.version_option()
+@click.option("--help-recursive", is_flag=True, help="Show help for all commands")
+@click.pass_context
+def cli(ctx, help_recursive):
+    r"""
+    SciTeX - Integrated Scientific Research Platform.
+
+    \b
+    Examples:
+      scitex config list                    # Show configured paths
+      scitex cloud clone user/project       # Clone from cloud
+      scitex scholar bibtex papers.bib      # Manage papers
+      scitex audio speak "Hello"            # Text-to-speech
+      scitex mcp list-tools                 # List MCP tools
+      scitex mcp start                      # Start MCP server
+
+    \b
+    Enable tab-completion:
+      scitex completion          # Auto-install for your shell
+      scitex completion --show   # Show installation instructions
+    """
+    if help_recursive:
+        _print_help_recursive(ctx)
+        ctx.exit(0)
+    elif ctx.invoked_subcommand is None:
+        click.echo(ctx.get_help())
+
+
+# Add command groups
+cli.add_command(audio.audio)
+cli.add_command(browser.browser)
+cli.add_command(capture.capture)
+cli.add_command(cloud.cloud)
+cli.add_command(config.config)
+cli.add_command(convert.convert)
+cli.add_command(dataset.dataset)
+cli.add_command(introspect.introspect)
+cli.add_command(mcp.mcp)
+cli.add_command(plt.plt)
+cli.add_command(repro.repro)
+cli.add_command(resource.resource)
+cli.add_command(scholar.scholar)
+cli.add_command(security.security)
+cli.add_command(social.social)
+cli.add_command(stats.stats)
+cli.add_command(template.template)
+cli.add_command(tex.tex)
+cli.add_command(web.web)
+cli.add_command(writer.writer)
+
+
+def _get_all_command_paths(group, prefix=""):
+    """Recursively get all command paths from a Click group."""
+    paths = []
+    for name in sorted(group.list_commands(None) or []):
+        cmd = group.get_command(None, name)
+        if cmd is None:
+            continue
+        full_path = f"{prefix} {name}".strip() if prefix else name
+        paths.append((full_path, cmd))
+        if isinstance(cmd, click.MultiCommand):
+            paths.extend(_get_all_command_paths(cmd, full_path))
+    return paths
+
+
+def _print_help_recursive(ctx):
+    """Print help for all commands recursively."""
+    # Show main CLI help first
+    click.secho("━━━ scitex ━━━", fg="cyan", bold=True)
+    click.echo(cli.get_help(ctx))
+
+    # Show help for each command using Click's internal help generation
+    command_paths = _get_all_command_paths(cli)
+    for cmd_path, cmd in command_paths:
+        click.echo()
+        click.secho(f"━━━ scitex {cmd_path} ━━━", fg="cyan", bold=True)
+        # Create a new context for this command
+        with click.Context(cmd, info_name=cmd_path, parent=ctx) as sub_ctx:
+            click.echo(cmd.get_help(sub_ctx))
+
+
+def _detect_shell() -> str | None:
+    """Auto-detect current shell."""
+    shell_env = os.environ.get("SHELL", "")
+    if "bash" in shell_env:
+        return "bash"
+    elif "zsh" in shell_env:
+        return "zsh"
+    elif "fish" in shell_env:
+        return "fish"
+    return None
+
+
+def _get_rc_file(shell: str) -> str:
+    """Get shell config file path."""
+    if shell == "bash":
+        return os.path.expanduser("~/.bashrc")
+    elif shell == "zsh":
+        return os.path.expanduser("~/.zshrc")
+    elif shell == "fish":
+        return os.path.expanduser("~/.config/fish/config.fish")
+    return ""
+
+
+def _generate_completion_script(shell: str) -> str:
+    """Generate completion script for scitex CLI."""
+    import shutil
+
+    cli_path = shutil.which("scitex")
+    if not cli_path:
+        return ""
+
+    if shell == "bash":
+        return f'# scitex tab completion\neval "$(_SCITEX_COMPLETE=bash_source {cli_path})"'
+    elif shell == "zsh":
+        return (
+            f'# scitex tab completion\neval "$(_SCITEX_COMPLETE=zsh_source {cli_path})"'
+        )
+    elif shell == "fish":
+        return f"# scitex tab completion\neval (env _SCITEX_COMPLETE=fish_source {cli_path})"
+    return ""
+
+
+@cli.group(invoke_without_command=True)
+@click.pass_context
+def completion(ctx):
+    r"""
+    Shell completion for scitex CLI.
+
+    \b
+    Commands:
+      scitex completion install   # Install completion (default)
+      scitex completion status    # Check installation status
+      scitex completion bash      # Show bash completion script
+      scitex completion zsh       # Show zsh completion script
+
+    \b
+    Quick install:
+      scitex completion install
+    """
+    if ctx.invoked_subcommand is None:
+        # Default to install
+        ctx.invoke(completion_install)
+
+
+@completion.command("install")
+@click.option(
+    "--shell",
+    type=click.Choice(["bash", "zsh", "fish"], case_sensitive=False),
+    help="Shell type (auto-detected if not provided).",
+)
+def completion_install(shell):
+    r"""
+    Install shell completion for scitex CLI.
+
+    \b
+    Examples:
+      scitex completion install           # Auto-detect shell
+      scitex completion install --shell bash
+    """
+    if not shell:
+        shell = _detect_shell()
+        if not shell:
+            click.secho(
+                "Could not auto-detect shell. Please specify with --shell option.",
+                fg="red",
+                err=True,
+            )
+            sys.exit(1)
+
+    shell = shell.lower()
+    rc_file = _get_rc_file(shell)
+    completion_script = _generate_completion_script(shell)
+
+    if not completion_script:
+        click.secho("scitex CLI not found in PATH.", fg="red", err=True)
+        sys.exit(1)
+
+    # Check if already installed
+    if os.path.exists(rc_file):
+        with open(rc_file) as f:
+            content = f.read()
+            if "scitex tab completion" in content:
+                click.secho(f"Completion already installed in {rc_file}", fg="yellow")
+                click.echo(
+                    "\nTo reinstall, first remove the existing block, then run again."
+                )
+                click.echo("\nTo reload, run:")
+                click.secho(f"  source {rc_file}", fg="cyan")
+                sys.exit(0)
+
+    # Install
+    try:
+        os.makedirs(os.path.dirname(rc_file), exist_ok=True)
+        with open(rc_file, "a") as f:
+            f.write(f"\n{completion_script}\n")
+
+        click.secho(f"Installed scitex completion to {rc_file}", fg="green")
+        click.echo("\nTo activate, run:")
+        click.secho(f"  source {rc_file}", fg="cyan")
+
+    except Exception as e:
+        click.secho(f"ERROR: {e}", fg="red", err=True)
+        click.echo("\nManually add to your shell config:")
+        click.echo(completion_script)
+        sys.exit(1)
+
+
+@completion.command("status")
+def completion_status():
+    r"""
+    Check shell completion installation status.
+
+    \b
+    Shows:
+      - Current shell
+      - Config file path
+      - Installation status
+    """
+    import shutil
+
+    shell = _detect_shell() or "unknown"
+    rc_file = _get_rc_file(shell) if shell != "unknown" else "N/A"
+
+    click.secho("Shell Completion Status", fg="cyan", bold=True)
+    click.echo(f"  Shell: {shell}")
+    click.echo(f"  Config: {rc_file}")
+
+    # Check if installed
+    installed = False
+    if rc_file != "N/A" and os.path.exists(rc_file):
+        with open(rc_file) as f:
+            content = f.read()
+            if "scitex tab completion" in content:
+                installed = True
+
+    status = (
+        click.style("installed", fg="green")
+        if installed
+        else click.style("not installed", fg="yellow")
+    )
+    click.echo(f"  Status: {status}")
+
+    # Check if scitex is in PATH
+    cli_path = shutil.which("scitex")
+    path_status = (
+        click.style("OK", fg="green") if cli_path else click.style("missing", fg="red")
+    )
+    click.echo(f"  scitex in PATH: {path_status}")
+
+    if not installed:
+        click.echo("\nTo install completion:")
+        click.secho("  scitex completion install", fg="cyan")
+
+
+@completion.command("bash")
+def completion_bash():
+    """Show bash completion script."""
+    script = _generate_completion_script("bash")
+    if script:
+        click.echo(script)
+    else:
+        click.secho("scitex CLI not found in PATH.", fg="red", err=True)
+        sys.exit(1)
+
+
+@completion.command("zsh")
+def completion_zsh():
+    """Show zsh completion script."""
+    script = _generate_completion_script("zsh")
+    if script:
+        click.echo(script)
+    else:
+        click.secho("scitex CLI not found in PATH.", fg="red", err=True)
+        sys.exit(1)
+
+
+@completion.command("fish")
+def completion_fish():
+    """Show fish completion script."""
+    script = _generate_completion_script("fish")
+    if script:
+        click.echo(script)
+    else:
+        click.secho("scitex CLI not found in PATH.", fg="red", err=True)
+        sys.exit(1)
+
+
+@cli.command("list-python-apis")
+@click.option("-v", "--verbose", count=True, help="Verbosity: -v +doc, -vv full doc")
+@click.option("-d", "--max-depth", type=int, default=5, help="Max recursion depth")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+@click.pass_context
+def list_python_apis(ctx, verbose, max_depth, as_json):
+    """List all scitex Python APIs (alias for: scitex introspect api scitex)."""
+    from .introspect import api
+
+    ctx.invoke(
+        api,
+        dotted_path="scitex",
+        verbose=verbose,
+        max_depth=max_depth,
+        as_json=as_json,
+    )
+
+
+if __name__ == "__main__":
+    cli()
