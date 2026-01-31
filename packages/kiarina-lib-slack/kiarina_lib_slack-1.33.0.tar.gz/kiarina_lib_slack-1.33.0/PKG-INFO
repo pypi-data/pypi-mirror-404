@@ -1,0 +1,373 @@
+Metadata-Version: 2.4
+Name: kiarina-lib-slack
+Version: 1.33.0
+Summary: Slack API client library for kiarina namespace
+Project-URL: Homepage, https://github.com/kiarina/kiarina-python
+Project-URL: Repository, https://github.com/kiarina/kiarina-python
+Project-URL: Issues, https://github.com/kiarina/kiarina-python/issues
+Project-URL: Changelog, https://github.com/kiarina/kiarina-python/blob/main/packages/kiarina-lib-slack/CHANGELOG.md
+Project-URL: Documentation, https://github.com/kiarina/kiarina-python/tree/main/packages/kiarina-lib-slack#readme
+Author-email: kiarina <kiarinadawa@gmail.com>
+Maintainer-email: kiarina <kiarinadawa@gmail.com>
+License-Expression: MIT
+Keywords: api,bot,client,pydantic,settings,slack
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Classifier: Typing :: Typed
+Requires-Python: >=3.12
+Requires-Dist: pydantic-settings-manager>=2.3.0
+Requires-Dist: pydantic-settings>=2.10.1
+Description-Content-Type: text/markdown
+
+# kiarina-lib-slack
+
+A Python library for Slack API integration with configuration management using pydantic-settings-manager.
+
+## Features
+
+- **Configuration Management**: Use `pydantic-settings-manager` for flexible configuration
+- **Type Safety**: Full type hints and Pydantic validation
+- **Secure Credential Handling**: Secrets are protected using `SecretStr`
+- **Multiple Configurations**: Support for multiple named configurations (e.g., different workspaces/apps)
+- **Environment Variable Support**: Configure via environment variables with `KIARINA_LIB_SLACK_` prefix
+- **Comprehensive Settings**: Support for OAuth, bot tokens, app tokens, and installation store configuration
+
+## Installation
+
+```bash
+pip install kiarina-lib-slack
+```
+
+## Quick Start
+
+### Basic Usage
+
+```python
+from kiarina.lib.slack import SlackSettings, settings_manager
+
+# Configure Slack App
+settings_manager.user_config = {
+    "default": {
+        "app_id": "A01234567",
+        "client_id": "1234567890.1234567890",
+        "client_secret": "your-client-secret",
+        "signing_secret": "your-signing-secret",
+        "scopes": ["chat:write", "channels:read"],
+        "bot_token": "xoxb-your-bot-token"
+    }
+}
+
+# Get settings
+settings = settings_manager.settings
+print(f"App ID: {settings.app_id}")
+print(f"Scopes: {', '.join(settings.scopes)}")
+```
+
+### Using with Slack SDK
+
+```python
+from slack_sdk import WebClient
+from kiarina.lib.slack import settings_manager
+
+# Configure settings
+settings_manager.user_config = {
+    "default": {
+        "app_id": "A01234567",
+        "client_id": "1234567890.1234567890",
+        "client_secret": "your-client-secret",
+        "signing_secret": "your-signing-secret",
+        "bot_token": "xoxb-your-bot-token"
+    }
+}
+
+# Get settings and initialize Slack client
+settings = settings_manager.settings
+client = WebClient(token=settings.bot_token.get_secret_value())
+
+# Use the client
+response = client.chat_postMessage(
+    channel="#general",
+    text="Hello from kiarina-lib-slack!"
+)
+```
+
+### Environment Variable Configuration
+
+Configure Slack App using environment variables:
+
+```bash
+export KIARINA_LIB_SLACK_APP_ID="A01234567"
+export KIARINA_LIB_SLACK_CLIENT_ID="1234567890.1234567890"
+export KIARINA_LIB_SLACK_CLIENT_SECRET="your-client-secret"
+export KIARINA_LIB_SLACK_SIGNING_SECRET="your-signing-secret"
+export KIARINA_LIB_SLACK_BOT_TOKEN="xoxb-your-bot-token"
+export KIARINA_LIB_SLACK_SCOPES='["chat:write", "channels:read"]'
+```
+
+```python
+from kiarina.lib.slack import settings_manager
+
+# Settings are automatically loaded from environment variables
+settings = settings_manager.settings
+print(f"App ID: {settings.app_id}")
+```
+
+### Multiple Configurations
+
+Manage multiple Slack apps:
+
+```python
+from kiarina.lib.slack import settings_manager
+
+# Configure multiple apps
+settings_manager.user_config = {
+    "app_a": {
+        "app_id": "A01234567",
+        "client_id": "1234567890.1234567890",
+        "client_secret": "secret-a",
+        "signing_secret": "signing-a",
+        "team_id": "T01234567",
+        "bot_token": "xoxb-token-a"
+    },
+    "app_b": {
+        "app_id": "A98765432",
+        "client_id": "9876543210.9876543210",
+        "client_secret": "secret-b",
+        "signing_secret": "signing-b",
+        "team_id": "T98765432",
+        "bot_token": "xoxb-token-b"
+    }
+}
+
+# Switch between configurations
+settings_manager.active_key = "app_a"
+app_a_settings = settings_manager.settings
+print(f"App A Team: {app_a_settings.team_id}")
+
+settings_manager.active_key = "app_b"
+app_b_settings = settings_manager.settings
+print(f"App B Team: {app_b_settings.team_id}")
+```
+
+### Socket Mode with App Token
+
+Configure for Socket Mode applications:
+
+```python
+from kiarina.lib.slack import settings_manager
+
+settings_manager.user_config = {
+    "socket_mode": {
+        "app_id": "A01234567",
+        "client_id": "1234567890.1234567890",
+        "client_secret": "your-client-secret",
+        "signing_secret": "your-signing-secret",
+        "app_token": "xapp-your-app-token",  # Required for Socket Mode
+        "bot_token": "xoxb-your-bot-token"
+    }
+}
+
+settings = settings_manager.settings
+print(f"App Token configured: {settings.app_token is not None}")
+```
+
+## Configuration
+
+This library uses [pydantic-settings-manager](https://github.com/kiarina/pydantic-settings-manager) for flexible configuration management.
+
+### SlackSettings
+
+The `SlackSettings` class provides the following configuration fields:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `app_id` | `str` | Yes | Slack App ID |
+| `client_id` | `str` | Yes | Slack Client ID |
+| `client_secret` | `SecretStr` | Yes | Slack Client Secret (masked in logs) |
+| `signing_secret` | `SecretStr` | Yes | Slack Signing Secret (masked in logs) |
+| `scopes` | `list[str]` | No | OAuth Scopes for the Slack App |
+| `app_token` | `SecretStr \| None` | No | Slack App-Level Token (xapp-...) for Socket Mode |
+| `team_id` | `str \| None` | No | Slack Team ID |
+| `enterprise_id` | `str \| None` | No | Slack Enterprise ID |
+| `bot_token` | `SecretStr \| None` | No | Slack Bot User OAuth Token (xoxb-...) |
+
+### Environment Variables
+
+All settings can be configured via environment variables with the `KIARINA_LIB_SLACK_` prefix:
+
+```bash
+# Required fields
+export KIARINA_LIB_SLACK_APP_ID="A01234567"
+export KIARINA_LIB_SLACK_CLIENT_ID="1234567890.1234567890"
+export KIARINA_LIB_SLACK_CLIENT_SECRET="your-client-secret"
+export KIARINA_LIB_SLACK_SIGNING_SECRET="your-signing-secret"
+
+# Optional fields
+export KIARINA_LIB_SLACK_SCOPES='["chat:write", "channels:read"]'
+export KIARINA_LIB_SLACK_APP_TOKEN="xapp-your-app-token"
+export KIARINA_LIB_SLACK_TEAM_ID="T01234567"
+export KIARINA_LIB_SLACK_ENTERPRISE_ID="E01234567"
+export KIARINA_LIB_SLACK_BOT_TOKEN="xoxb-your-bot-token"
+```
+
+### Programmatic Configuration
+
+```python
+from pydantic import SecretStr
+from kiarina.lib.slack import SlackSettings, settings_manager
+
+# Direct settings object
+settings = SlackSettings(
+    app_id="A01234567",
+    client_id="1234567890.1234567890",
+    client_secret=SecretStr("your-client-secret"),
+    signing_secret=SecretStr("your-signing-secret"),
+    scopes=["chat:write", "channels:read"],
+    bot_token=SecretStr("xoxb-your-bot-token")
+)
+
+# Via settings manager
+settings_manager.user_config = {
+    "default": {
+        "app_id": "A01234567",
+        "client_id": "1234567890.1234567890",
+        "client_secret": "your-client-secret",  # Automatically converted to SecretStr
+        "signing_secret": "your-signing-secret",
+        "bot_token": "xoxb-your-bot-token"
+    }
+}
+```
+
+### Runtime Overrides
+
+```python
+from kiarina.lib.slack import settings_manager
+
+# Override specific settings at runtime
+settings_manager.cli_args = {
+    "team_id": "T99999999"
+}
+
+settings = settings_manager.settings
+print(f"Team ID: {settings.team_id}")  # Uses overridden value
+```
+
+## Security
+
+### Secret Protection
+
+Sensitive fields are stored using Pydantic's `SecretStr` type, which provides the following security benefits:
+
+- **Masked in logs**: Secrets are displayed as `**********` in string representations
+- **Prevents accidental exposure**: Secrets won't appear in debug output or error messages
+- **Explicit access required**: Must use `.get_secret_value()` to access the actual secret
+
+Protected fields:
+- `client_secret`
+- `signing_secret`
+- `app_token`
+- `bot_token`
+
+```python
+from kiarina.lib.slack import settings_manager
+
+settings = settings_manager.settings
+
+# Secrets are masked in string representation
+print(settings)  # client_secret=SecretStr('**********')
+
+# Explicit access to get the actual secret
+client_secret = settings.client_secret.get_secret_value()
+```
+
+## API Reference
+
+### SlackSettings
+
+```python
+class SlackSettings(BaseSettings):
+    app_id: str
+    client_id: str
+    client_secret: SecretStr
+    signing_secret: SecretStr
+    scopes: list[str] = Field(default_factory=list)
+    app_token: SecretStr | None = None
+    team_id: str | None = None
+    enterprise_id: str | None = None
+    bot_token: SecretStr | None = None
+```
+
+Pydantic settings model for Slack API configuration.
+
+**Required Fields:**
+- `app_id` (str): Slack App ID
+- `client_id` (str): Slack Client ID
+- `client_secret` (SecretStr): Slack Client Secret (protected)
+- `signing_secret` (SecretStr): Slack Signing Secret (protected)
+
+**Optional Fields:**
+- `scopes` (list[str]): OAuth Scopes for the Slack App
+- `app_token` (SecretStr | None): Slack App-Level Token for Socket Mode (protected)
+- `team_id` (str | None): Slack Team ID
+- `enterprise_id` (str | None): Slack Enterprise ID
+- `bot_token` (SecretStr | None): Slack Bot User OAuth Token (protected)
+
+### settings_manager
+
+```python
+settings_manager: SettingsManager[SlackSettings]
+```
+
+Global settings manager instance for Slack configuration with multi-configuration support.
+See: [pydantic-settings-manager](https://github.com/kiarina/pydantic-settings-manager)
+
+## Development
+
+### Prerequisites
+
+- Python 3.12+
+
+### Setup
+
+```bash
+# Clone the repository
+git clone https://github.com/kiarina/kiarina-python.git
+cd kiarina-python
+
+# Setup development environment
+mise run setup
+```
+
+### Running Tests
+
+```bash
+# Run format, lint, type checks and tests
+mise run package kiarina-lib-slack
+
+# Coverage report
+mise run package:test kiarina-lib-slack --coverage
+```
+
+## Dependencies
+
+- [pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) - Settings management
+- [pydantic-settings-manager](https://github.com/kiarina/pydantic-settings-manager) - Advanced settings management
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](../../LICENSE) file for details.
+
+## Contributing
+
+This is a personal project, but contributions are welcome! Please feel free to submit issues or pull requests.
+
+## Related Projects
+
+- [kiarina-python](https://github.com/kiarina/kiarina-python) - The main monorepo containing this package
+- [pydantic-settings-manager](https://github.com/kiarina/pydantic-settings-manager) - Configuration management library used by this package
+- [slack-sdk](https://github.com/slackapi/python-slack-sdk) - Official Slack SDK for Python
