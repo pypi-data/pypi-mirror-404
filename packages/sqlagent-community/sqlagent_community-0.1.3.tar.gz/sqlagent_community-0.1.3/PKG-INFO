@@ -1,0 +1,147 @@
+Metadata-Version: 2.4
+Name: sqlagent-community
+Version: 0.1.3
+Summary: Conversational Text-to-SQL agent that allows you to ask natural language questions over structured data (Excel → SQLite), using semantic search, automatic SQL generation, safe execution, and LLM-based result interpretation — all with conversation memory and SQL history.
+Author-email: Gabriel Cicotoste <gabriel.cicotoste@grupoge21.com>
+License: MIT License
+        
+        Copyright (c) 2026 Gabriel Cicotoste
+        
+        Permission is hereby granted, free of charge, to any person obtaining a copy
+        of this software and associated documentation files (the "Software"), to deal
+        in the Software without restriction, including without limitation the rights
+        to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+        copies of the Software, and to permit persons to whom the Software is
+        furnished to do so, subject to the following conditions:
+        
+        The above copyright notice and this permission notice shall be included in all
+        copies or substantial portions of the Software.
+        
+        THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+        IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+        FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+        AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+        LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+        OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+        SOFTWARE.
+        
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Dynamic: license-file
+
+# SQLAgent Community
+
+**SQLAgent Community** is a Python library for creating intelligent agents that can query SQLite databases using LLMs, generate SQL from natural language, and maintain conversation memory. Ideal for exploratory data analysis, conversational dashboards, or automating complex queries.
+
+---
+
+## Requirements
+
+- Python >= 3.10
+- SQLite
+- [Ollama](https://ollama.com/) installed and configured
+  - Ollama provides the LLM and embedding models used by SQLAgent
+- Pandas (for reading Excel files)
+- Rich (optional, for nice logs)
+
+## Installation
+
+You can install via pip (once published on PyPI):
+
+```bash
+pip install sqlagent-community
+```
+
+---
+
+## Configuration
+
+### Suggested file structure
+
+```
+dataset/
+├─ data.db                  # SQLite database
+├─ excels/                   # Excel files to build the DB
+vector_db/
+├─ schema_embeddings.pkl     # Schema embeddings
+context/
+├─ file.md                   # Additional context for the agent
+```
+
+### Initialize Builder and database
+
+```python
+from sqlagent_community.Builder import SQLBuilder
+
+builder = SQLBuilder(
+    excel_dir="dataset/excels",
+    db_file="dataset/data.db",
+    embed_file="vector_db/schema_embeddings.pkl",
+    embed_model="qwen3-embedding:0.6b",
+    verbose=True
+)
+
+builder.build()
+```
+
+### Set up Chat and Memory
+
+```python
+from sqlagent_community.memory.ChatManager import ChatManager
+from sqlagent_community.memory.ConversationSummaryBufferMemory import ConversationSummaryBufferMemory
+
+manager = ChatManager()
+chat_id = manager.create_chat()
+
+memory = ConversationSummaryBufferMemory(chat_id=chat_id)
+```
+
+### Initialize the Agent
+
+```python
+from sqlagent_community.Agent import SQLAgent
+
+agent = SQLAgent(
+    db_path="dataset/data.db",
+    embed_file="vector_db/schema_embeddings.pkl",
+    embedding_model="qwen3-embedding:0.6b",
+    llm_model="qwen2.5:7b",
+    text2sql="qwen2.5-coder:7b",
+    memory=memory,
+    context="./context/file.md",
+    verbose=True
+)
+```
+
+### Asking questions to the agent
+
+```python
+question = "What is the average altitude per municipality of the collections?"
+result = agent.run(question)
+
+print(result)
+```
+
+The agent converts the question into SQL, executes it on the database, and returns the result, while maintaining conversation history and context.
+
+---
+
+## Features
+
+* Automatic SQLite database construction from Excel files.
+* SQL generation via LLM from natural language.
+* Summarized conversational memory per chat.
+* Additional context from Markdown files.
+* Detailed logs for debugging.
+
+---
+
+## License
+
+MIT License – see the LICENSE file for details.
+
+---
