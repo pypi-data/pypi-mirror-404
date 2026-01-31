@@ -1,0 +1,281 @@
+# Emailr Python SDK
+
+Official Python SDK for the Emailr email API. Supports both synchronous and asynchronous operations.
+
+## Installation
+
+```bash
+pip install emailr
+```
+
+## Quick Start
+
+### Synchronous Usage
+
+```python
+from emailr import Emailr
+
+client = Emailr(api_key="your-api-key")
+
+# Send an email
+email = client.emails.send(
+    from_address="you@example.com",
+    to=["user@example.com"],
+    subject="Hello from Emailr!",
+    html="<p>Welcome to Emailr!</p>"
+)
+
+print(f"Email sent: {email.id}")
+```
+
+### Async Usage
+
+```python
+import asyncio
+from emailr import AsyncEmailr
+
+async def main():
+    client = AsyncEmailr(api_key="your-api-key")
+
+    # Send an email
+    email = await client.emails.send(
+        from_address="you@example.com",
+        to=["user@example.com"],
+        subject="Hello from Emailr!",
+        html="<p>Welcome to Emailr!</p>"
+    )
+
+    print(f"Email sent: {email.id}")
+
+asyncio.run(main())
+```
+
+## Features
+
+- **Sync and Async**: Full support for both synchronous and asynchronous operations
+- **Type Hints**: Complete type annotations for better IDE support
+- **Dataclasses**: All response types are Python dataclasses
+- **Error Handling**: Structured exceptions for API errors
+
+## Resources
+
+### Emails
+
+```python
+# Send an email
+email = client.emails.send(
+    from_address="you@example.com",
+    to=["user@example.com"],
+    subject="Hello!",
+    html="<p>Content</p>",
+    text="Content",  # Optional plain text
+    reply_to="reply@example.com",  # Optional
+    tags=["welcome", "onboarding"],  # Optional
+)
+
+# Get an email by ID
+email = client.emails.get("email_123")
+
+# List emails
+emails = client.emails.list(limit=10)
+```
+
+### Contacts
+
+```python
+# Create a contact
+contact = client.contacts.create(
+    email="user@example.com",
+    first_name="John",
+    last_name="Doe",
+    metadata={"plan": "pro"}
+)
+
+# Get a contact
+contact = client.contacts.get("contact_123")
+
+# Update a contact
+contact = client.contacts.update("contact_123", first_name="Jane")
+
+# List contacts
+contacts = client.contacts.list(limit=50)
+
+# Delete a contact
+client.contacts.delete("contact_123")
+```
+
+### Templates
+
+```python
+# Create a template
+template = client.templates.create(
+    name="Welcome Email",
+    subject="Welcome, {{name}}!",
+    html="<p>Hello {{name}}, welcome to our service!</p>"
+)
+
+# Get a template
+template = client.templates.get("template_123")
+
+# Update a template
+template = client.templates.update("template_123", subject="New Subject")
+
+# List templates
+templates = client.templates.list()
+
+# Delete a template
+client.templates.delete("template_123")
+```
+
+### Domains
+
+```python
+# Add a domain
+domain = client.domains.add(domain="example.com")
+
+# Get DNS records to configure
+print(domain.dns_records)
+
+# Verify domain
+result = client.domains.verify("domain_123")
+
+# Check DNS status
+dns_status = client.domains.check_dns("domain_123")
+
+# List domains
+domains = client.domains.list()
+
+# Delete a domain
+client.domains.delete("domain_123")
+```
+
+### Webhooks
+
+```python
+# Create a webhook
+webhook = client.webhooks.create(
+    url="https://example.com/webhook",
+    events=["email.delivered", "email.bounced", "email.complained"]
+)
+
+# Get a webhook
+webhook = client.webhooks.get("webhook_123")
+
+# Update a webhook
+webhook = client.webhooks.update("webhook_123", events=["email.delivered"])
+
+# List webhooks
+webhooks = client.webhooks.list()
+
+# Delete a webhook
+client.webhooks.delete("webhook_123")
+```
+
+### Broadcasts
+
+```python
+# Create a broadcast
+broadcast = client.broadcasts.create(
+    name="Newsletter",
+    subject="Weekly Update",
+    html="<p>This week's news...</p>",
+    segment_id="segment_123"
+)
+
+# Send a broadcast
+client.broadcasts.send("broadcast_123")
+
+# Schedule a broadcast
+client.broadcasts.schedule("broadcast_123", scheduled_at="2024-01-15T10:00:00Z")
+
+# Get broadcast stats
+stats = client.broadcasts.get_stats("broadcast_123")
+
+# List broadcasts
+broadcasts = client.broadcasts.list()
+```
+
+### Segments
+
+```python
+# Create a segment
+segment = client.segments.create(
+    name="Active Users",
+    conditions=[
+        {"field": "metadata.plan", "operator": "equals", "value": "pro"}
+    ]
+)
+
+# Get a segment
+segment = client.segments.get("segment_123")
+
+# Update a segment
+segment = client.segments.update("segment_123", name="Premium Users")
+
+# List segments
+segments = client.segments.list()
+
+# Delete a segment
+client.segments.delete("segment_123")
+```
+
+## Error Handling
+
+```python
+from emailr import Emailr
+from emailr.errors import EmailrError, ValidationError, AuthenticationError, NotFoundError
+
+client = Emailr(api_key="your-api-key")
+
+try:
+    email = client.emails.send(
+        from_address="you@example.com",
+        to=["user@example.com"],
+        subject="Hello!",
+        html="<p>Content</p>"
+    )
+except ValidationError as e:
+    print(f"Validation error: {e.message}")
+    print(f"Details: {e.errors}")
+except AuthenticationError as e:
+    print(f"Authentication failed: {e.message}")
+except NotFoundError as e:
+    print(f"Resource not found: {e.message}")
+except EmailrError as e:
+    print(f"API error: {e.message} (status: {e.status_code})")
+```
+
+## Configuration
+
+### Environment Variables
+
+```bash
+export EMAILR_API_KEY=your-api-key
+export EMAILR_BASE_URL=https://api.emailr.com  # Optional
+```
+
+```python
+import os
+from emailr import Emailr
+
+# Will use EMAILR_API_KEY from environment
+client = Emailr(api_key=os.environ.get("EMAILR_API_KEY"))
+```
+
+### Custom Base URL
+
+```python
+client = Emailr(
+    api_key="your-api-key",
+    base_url="https://api.custom-domain.com"
+)
+```
+
+## Requirements
+
+- Python 3.8+
+- httpx
+
+## License
+
+MIT
