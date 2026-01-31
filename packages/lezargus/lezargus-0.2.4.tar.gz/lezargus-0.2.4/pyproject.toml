@@ -1,0 +1,281 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "lezargus"
+dynamic = ["version"]
+description = "The accompanying data software package to the IRTF SPECTRE Spectrograph."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+keywords = []
+authors = [
+    { name = "Sparrow", email = "psmd.iberutaru@gmail.com" },
+]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+]
+dependencies = [
+    "colorama==0.4.6",
+    "numpy>=2.0.0",
+    "scipy>=1.14.1",
+    "astropy>=6.1.0",
+    "pyyaml>=6.0.0",
+    "matplotlib>=3.9.0",
+    "PySide6>=6.8.0",
+    "opencv-python-headless>=4.13.0",
+    # Secondary dependencies...
+    
+]
+
+[project.urls]
+Homepage = "http://irtfweb.ifa.hawaii.edu/~spectre/"
+Repository = "https://github.com/psmd-iberutaru/Lezargus/"
+Documentation = "https://psmd-iberutaru.github.io/Lezargus/"
+Issues = "https://github.com/psmd-iberutaru/Lezargus/issues"
+
+[project.scripts]
+lezargus = "lezargus.__main__:main"
+
+
+
+## ## ## ## ## ## ## ## ## ##
+# TOOL : [MAIN]
+## ## ## ## ## ## ## ## ## ##
+
+[tool.hatch.version]
+path = "src/lezargus/__version__.py"
+
+[tool.hatch.build]
+exclude = [
+    # For the source build, we cannot allow any legally protected files.
+    "auxiliary/base_secret/"
+]
+
+[tool.hatch.envs.default]
+dependencies = [
+    "pyinstaller",
+    "coverage[toml]>=7.3.4",
+    "pytest>=8.1.0",
+    "black[jupyter]>=24.4.0",
+    "pylint[spelling]>=4.0.1",
+    "pyright>=1.1.400",
+    "ruff>=0.7.0",
+    "sphinx>=7.2.6",
+    "sphinx-book-theme>=1.1.0",
+]
+[tool.hatch.envs.default.scripts]
+build = [
+    "hatch clean",
+    "hatch build"
+]
+
+test = "pytest tests"
+format = [
+    "black . --enable-unstable-feature=string_processing",
+    "black .",
+]
+cover = [
+    "coverage run -m pytest tests",
+    "- coverage combine",
+    "coverage report",
+    "coverage html",
+    "coverage erase",
+]
+check = [
+    "ruff check src",
+    "pylint src",
+    "pyright src",
+]
+checkfix = [
+    "format",
+    "ruff check src --fix",
+    "format",
+]
+docs = [
+    "sphinx-apidoc -f -e -P -o ./docs/source/code/ ./src/lezargus/",
+    "sphinx-build -a -b html ./docs/source/ ./docs/build/html/",
+    # To build the LaTeX file, uncomment the line below. We do not usually 
+    # build it all the time due to its low usage and cluttering of the Git 
+    # tree with large files.
+    #"sphinx-build -M latexpdf ./docs/source/ ./docs/build/latex/",
+]
+
+
+[[tool.hatch.envs.all.matrix]]
+python = ["3.10", "3.11", "3.12"]
+
+[tool.pytest.ini_options]
+pythonpath = [
+    ".", "src",
+]
+testpaths = [
+    "tests"
+]
+
+## ## ## ## ## ## ## ## ## ##
+# TOOL : BLACK
+## ## ## ## ## ## ## ## ## ##
+
+[tool.black]
+target-version = ["py311"]
+line-length = 80
+preview = true
+
+
+## ## ## ## ## ## ## ## ## ##
+# TOOL : RUFF
+## ## ## ## ## ## ## ## ## ##
+
+[tool.ruff]
+target-version = "py311"
+line-length = 80
+output-format = "concise"
+
+[tool.ruff.lint]
+select = [
+    "ALL",
+]
+ignore = [
+    # Allow non-abstract empty methods in abstract base classes.
+    "B027",
+    # Allow boolean positional values in function declarations and calls, 
+    # like `dict.get(... True)`. We ignore all of the rules regarding boolean 
+    # positional traps, because generally, it is a non-issue.
+    "FBT",
+    # Incompatabilies; these are objectively wrong.
+    "D203", "D213",
+    # Allow variable assignment for return. It is easier to find and follow the
+    # return path.
+    "RET504",
+    # Sometimes there are actual reasons for having a lot of arguments.
+    "PLR0913",
+    # Our file paths are better represented as base strings, we do not ever
+    # need to overcomplicate our paths with OOP. As such, suggestions to 
+    # use pathlib really is not needed.
+    "PTH",
+]
+unfixable = [
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["lezargus"]
+force-single-line = true
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[tool.ruff.lint.per-file-ignores]
+# Tests can use magic values, assertions, and relative imports
+"tests/**/*" = ["PLR2004", "S101", "TID252"]
+# The hint module can have unused imports because it is part of its job to 
+# provide hints.
+"src/lezargus/library/hint.py" = ["F401", "F403"]
+# The __init__ files often provide the imports to other files. 
+# So they are used, just not in that file. 
+"src/lezargus/**/__init__.py" = ["F401",]
+# The config file needs not aheare to the line length limit for clarity.
+"src/lezargus/config.py" = ["E501",]
+
+[tool.ruff.lint.mccabe]
+# Flag errors (`C901`) whenever the complexity level exceeds some value.
+# A lot of the functions here exceed the default McCabe complexity value of 10,
+# so we need to raise it. Excessive raising should be avoided.
+max-complexity = 15
+
+## ## ## ## ## ## ## ## ## ##
+# TOOL : PYLINT
+## ## ## ## ## ## ## ## ## ##
+
+[tool.pylint]
+clear-cache-post-run = true
+recursive = true
+init-hook = "import sys; sys.setrecursionlimit(10000)"
+good-names-rgxs = [
+    # Allow for 2-character names, following the usual snake case conventions.
+    "[_a-z][_a-z0-9]?$",
+]
+disable = [
+    "duplicate-code", 
+    "cyclic-import", 
+    "too-many-instance-attributes", 
+    "too-few-public-methods", 
+    "too-many-arguments",
+    "too-many-locals", 
+    "too-many-positional-arguments",  # Let Ruff handle arguments.
+    "too-many-lines", 
+    "ungrouped-imports",  # Let Ruff and isort handle imports.
+    "wrong-import-position",  # Let Ruff and isort handle imports.
+]
+extension-pkg-allow-list = [
+    "PySide6",
+]
+generated-members = [
+    # Configuration and parameters are generated on-the-fly. We need to inform 
+    # pylint that they are okay as it does not do introspection on the fly as 
+    # well.
+    "lezargus.data.*",
+    # Astropy Constants seem to also be generated.
+    "astropy.constants.*",
+    # OpenCV does not seem to be recognized.
+    "cv2.*",
+]
+
+## ## ## ## ## ## ## ## ## ##
+# TOOL : PYRIGHT
+## ## ## ## ## ## ## ## ## ##
+
+[tool.pyright]
+include = ["src"]
+exclude = [
+    "**/node_modules",
+    "**/__pycache__",
+]
+ignore = [
+    "src/gui/qtui",
+]
+defineConstant = { DEBUG = true }
+
+reportMissingImports = true
+reportMissingTypeStubs = false
+
+pythonVersion = "3.11"
+pythonPlatform = "All"
+
+executionEnvironments = [
+
+]
+typeCheckingMode = "basic"
+
+## ## ## ## ## ## ## ## ## ##
+# TOOL : COVERAGE
+## ## ## ## ## ## ## ## ## ##
+
+
+[tool.coverage.run]
+source_pkgs = ["lezargus", "tests"]
+branch = true
+parallel = true
+omit = [
+    "src/lezargus/__version__.py",
+]
+
+[tool.coverage.paths]
+lezargus = ["src/lezargus", "*/lezargus/src/lezargus"]
+tests = ["tests", "*/lezargus/tests"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "no cov",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
+
+[tool.coverage.html]
+title = "Lezargus Code Coverage Report"
+directory = "./docs/build/html/coverage/"
