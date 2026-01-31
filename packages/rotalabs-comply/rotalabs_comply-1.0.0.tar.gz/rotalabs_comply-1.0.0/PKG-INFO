@@ -1,0 +1,334 @@
+Metadata-Version: 2.4
+Name: rotalabs-comply
+Version: 1.0.0
+Summary: AI compliance and audit logging infrastructure with multi-framework support
+Project-URL: Homepage, https://rotalabs.ai
+Project-URL: Repository, https://github.com/rotalabs/rotalabs-comply
+Project-URL: Documentation, https://rotalabs.github.io/rotalabs-comply/
+Author-email: Subhadip Mitra <subhadip@rotalabs.ai>, Rotalabs Research <research@rotalabs.ai>
+License-Expression: AGPL-3.0-or-later
+License-File: LICENSE
+Keywords: ai,audit,compliance,eu-ai-act,gdpr,hipaa,logging,privacy,security,soc2
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: Intended Audience :: Science/Research
+Classifier: License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Scientific/Engineering :: Artificial Intelligence
+Classifier: Topic :: Security
+Classifier: Topic :: System :: Logging
+Requires-Python: >=3.9
+Requires-Dist: aiofiles>=23.0.0
+Requires-Dist: cryptography>=41.0.0
+Requires-Dist: pydantic>=2.0.0
+Provides-Extra: all
+Requires-Dist: boto3>=1.28.0; extra == 'all'
+Provides-Extra: dev
+Requires-Dist: mypy>=1.5.0; extra == 'dev'
+Requires-Dist: pytest-asyncio>=0.21.0; extra == 'dev'
+Requires-Dist: pytest-cov>=4.1.0; extra == 'dev'
+Requires-Dist: pytest>=7.4.0; extra == 'dev'
+Requires-Dist: ruff>=0.1.0; extra == 'dev'
+Provides-Extra: docs
+Requires-Dist: mkdocs-material>=9.4.0; extra == 'docs'
+Requires-Dist: mkdocs>=1.5.0; extra == 'docs'
+Requires-Dist: mkdocstrings[python]>=0.24.0; extra == 'docs'
+Provides-Extra: s3
+Requires-Dist: boto3>=1.28.0; extra == 's3'
+Description-Content-Type: text/markdown
+
+# rotalabs-comply
+
+[![PyPI version](https://img.shields.io/pypi/v/rotalabs-comply.svg)](https://pypi.org/project/rotalabs-comply/)
+[![Python versions](https://img.shields.io/pypi/pyversions/rotalabs-comply.svg)](https://pypi.org/project/rotalabs-comply/)
+[![License](https://img.shields.io/pypi/l/rotalabs-comply.svg)](https://github.com/rotalabs/rotalabs-comply/blob/main/LICENSE)
+[![Tests](https://github.com/rotalabs/rotalabs-comply/actions/workflows/tests.yml/badge.svg)](https://github.com/rotalabs/rotalabs-comply/actions/workflows/tests.yml)
+
+AI compliance and audit logging infrastructure with multi-framework support.
+
+## Features
+
+- **Audit Logging**: Encrypted, privacy-preserving audit trails for AI interactions
+- **7 Compliance Frameworks**: EU AI Act, SOC2, HIPAA, GDPR, NIST AI RMF, ISO 42001, MAS FEAT
+- **96 Compliance Rules**: Comprehensive coverage across all major AI regulations
+- **Report Generation**: Customizable compliance reports in Markdown, JSON, or HTML
+- **Privacy-First Design**: Hash-only mode or encrypted content storage
+- **Multiple Storage Backends**: File, S3, or in-memory storage
+- **Async-First**: Built for high-performance async applications
+
+## Installation
+
+```bash
+pip install rotalabs-comply
+```
+
+With S3 storage support:
+
+```bash
+pip install rotalabs-comply[s3]
+```
+
+## Quick Start
+
+### Audit Logging
+
+```python
+import asyncio
+from rotalabs_comply import AuditLogger, EncryptionManager, MemoryStorage
+
+async def main():
+    # Set up encrypted audit logging
+    encryption = EncryptionManager()
+    storage = MemoryStorage()
+    logger = AuditLogger(storage, encryption=encryption, store_content=True)
+
+    # Log an AI interaction
+    entry_id = await logger.log(
+        input="What is the capital of France?",
+        output="The capital of France is Paris.",
+        provider="openai",
+        model="gpt-4",
+        safety_passed=True,
+        latency_ms=245.5,
+    )
+
+    print(f"Logged entry: {entry_id}")
+
+    # Retrieve the entry
+    entry = await logger.get_entry(entry_id)
+    print(f"Provider: {entry.provider}, Model: {entry.model}")
+
+asyncio.run(main())
+```
+
+### Privacy Mode (Hash-Only)
+
+```python
+# Only store content hashes, not actual content
+logger = AuditLogger(
+    "/var/log/ai-audit",
+    store_content=False,  # Only store SHA-256 hashes
+    retention_days=365,
+)
+```
+
+### Compliance Checking
+
+```python
+from rotalabs_comply import EUAIActFramework, SOC2Framework, HIPAAFramework
+from rotalabs_comply.frameworks.base import AuditEntry, ComplianceProfile
+from datetime import datetime
+
+async def check_compliance():
+    # Create frameworks
+    eu_ai = EUAIActFramework()
+    soc2 = SOC2Framework()
+
+    # Create an audit entry to check
+    entry = AuditEntry(
+        entry_id="test-001",
+        timestamp=datetime.utcnow(),
+        event_type="inference",
+        actor="user@example.com",
+        action="Generated text response",
+        human_oversight=True,
+        user_notified=True,
+    )
+
+    # Create compliance profile
+    profile = ComplianceProfile(
+        profile_id="high-risk",
+        name="High Risk AI System",
+        risk_level="high",
+    )
+
+    # Check compliance
+    result = await eu_ai.check(entry, profile)
+    print(f"EU AI Act compliant: {result.is_compliant}")
+    print(f"Violations: {len(result.violations)}")
+
+    for violation in result.violations:
+        print(f"  - {violation.rule_id}: {violation.description}")
+
+asyncio.run(check_compliance())
+```
+
+### Report Generation
+
+```python
+from datetime import datetime, timedelta
+from rotalabs_comply import ReportGenerator, MemoryStorage
+from rotalabs_comply.core import ComplianceProfile, Framework
+
+async def generate_report():
+    storage = MemoryStorage()
+    generator = ReportGenerator(storage)
+
+    # Define compliance profile
+    profile = ComplianceProfile(
+        frameworks=[Framework.EU_AI_ACT, Framework.SOC2],
+        risk_level="high",
+    )
+
+    # Generate report for last 30 days
+    end = datetime.utcnow()
+    start = end - timedelta(days=30)
+
+    report = await generator.generate(
+        period_start=start,
+        period_end=end,
+        profile=profile,
+    )
+
+    # Export to markdown
+    markdown = generator.export_markdown(report)
+    print(markdown)
+
+asyncio.run(generate_report())
+```
+
+## Compliance Frameworks
+
+7 frameworks with 96 total compliance rules:
+
+| Framework | Description | Rules | Key Categories |
+|-----------|-------------|-------|----------------|
+| **EU AI Act** | European AI regulation | 8 | transparency, oversight, risk_management |
+| **SOC2 Type II** | AICPA Trust Service Criteria | 10 | security, availability, privacy |
+| **HIPAA** | US healthcare data protection | 8 | access_control, audit, privacy |
+| **GDPR** | EU data protection regulation | 14 | data_protection, consent, data_subject_rights |
+| **NIST AI RMF** | US AI Risk Management Framework | 15 | governance, context, measurement, risk_treatment |
+| **ISO 42001** | AI Management System standard | 23 | context, leadership, planning, operation |
+| **MAS FEAT** | Singapore financial AI governance | 18 | fairness, ethics, accountability, transparency |
+
+```python
+from rotalabs_comply import (
+    EUAIActFramework,
+    SOC2Framework,
+    HIPAAFramework,
+    GDPRFramework,
+    NISTAIRMFFramework,
+    ISO42001Framework,
+    MASFramework,
+)
+
+# Check against multiple frameworks
+frameworks = [
+    EUAIActFramework(),
+    GDPRFramework(),
+    MASFramework(),
+]
+
+for fw in frameworks:
+    result = await fw.check(entry, profile)
+    print(f"{fw.name}: {'PASS' if result.is_compliant else 'FAIL'}")
+```
+
+## Storage Backends
+
+### File Storage
+
+```python
+from rotalabs_comply import AuditLogger, FileStorage
+
+# JSONL files with automatic rotation
+storage = FileStorage("/var/log/ai-audit", rotation_size_mb=100)
+logger = AuditLogger(storage)
+```
+
+### S3 Storage
+
+```python
+from rotalabs_comply import AuditLogger, S3Storage
+
+# Requires: pip install rotalabs-comply[s3]
+storage = S3Storage(
+    bucket="my-audit-bucket",
+    prefix="ai-audit/",
+    region="us-east-1",
+)
+logger = AuditLogger(storage)
+```
+
+### Memory Storage (Testing)
+
+```python
+from rotalabs_comply import AuditLogger, MemoryStorage
+
+storage = MemoryStorage(max_entries=10000)
+logger = AuditLogger(storage)
+```
+
+## Encryption
+
+All audit content can be encrypted using Fernet symmetric encryption:
+
+```python
+from rotalabs_comply import EncryptionManager, generate_key
+
+# Auto-generate key
+encryption = EncryptionManager()
+key = encryption.get_key()  # Save this securely!
+
+# Or provide your own key
+key = generate_key()
+encryption = EncryptionManager(key=key)
+
+# Use with AuditLogger
+logger = AuditLogger(
+    storage,
+    encryption=encryption,
+    store_content=True,  # Store encrypted content
+)
+```
+
+## API Reference
+
+### Core Types
+
+- `RiskLevel` - Enum: LOW, MEDIUM, HIGH, CRITICAL
+- `Framework` - Enum: EU_AI_ACT, SOC2, HIPAA, GDPR, NIST_AI_RMF, ISO_42001, MAS
+- `AuditEntry` - Audit log entry data model
+- `ComplianceProfile` - Compliance configuration
+- `ComplianceViolation` - Detected violation
+- `ComplianceCheckResult` - Framework check result
+
+### Audit Module
+
+- `AuditLogger` - Main audit logging interface
+- `EncryptionManager` - Encryption utilities
+- `FileStorage` - JSONL file storage
+- `MemoryStorage` - In-memory storage
+- `S3Storage` - AWS S3 storage
+
+### Frameworks
+
+- `EUAIActFramework` - EU AI Act compliance (8 rules)
+- `SOC2Framework` - SOC2 Type II compliance (10 rules)
+- `HIPAAFramework` - HIPAA compliance (8 rules)
+- `GDPRFramework` - GDPR compliance (14 rules)
+- `NISTAIRMFFramework` - NIST AI RMF compliance (15 rules)
+- `ISO42001Framework` - ISO 42001 compliance (23 rules)
+- `MASFramework` - MAS FEAT compliance (18 rules)
+
+### Reports
+
+- `ReportGenerator` - Generate compliance reports
+- `ComplianceReport` - Report data model
+- `ReportSection` - Report section
+
+## Links
+
+- Documentation: https://rotalabs.github.io/rotalabs-comply/
+- PyPI: https://pypi.org/project/rotalabs-comply/
+- GitHub: https://github.com/rotalabs/rotalabs-comply
+- Website: https://rotalabs.ai
+- Contact: research@rotalabs.ai
+
+## License
+
+MIT License - see LICENSE file for details.
