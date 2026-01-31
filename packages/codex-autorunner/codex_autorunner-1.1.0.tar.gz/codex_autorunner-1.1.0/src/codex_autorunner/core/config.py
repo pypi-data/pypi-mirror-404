@@ -1,0 +1,2755 @@
+import dataclasses
+import ipaddress
+import json
+import logging
+import os
+import shlex
+from os import PathLike
+from pathlib import Path
+from typing import IO, Any, Dict, List, Mapping, Optional, Union, cast
+
+import yaml
+
+from ..housekeeping import HousekeepingConfig, parse_housekeeping_config
+from .path_utils import ConfigPathError, resolve_config_path
+
+logger = logging.getLogger("codex_autorunner.core.config")
+
+DOTENV_AVAILABLE = True
+try:
+    from dotenv import dotenv_values, load_dotenv
+except ModuleNotFoundError:  # pragma: no cover
+    DOTENV_AVAILABLE = False
+
+    def load_dotenv(
+        dotenv_path: Optional[Union[str, PathLike[str]]] = None,
+        stream: Optional[IO[str]] = None,
+        verbose: bool = False,
+        override: bool = False,
+        interpolate: bool = True,
+        encoding: Optional[str] = None,
+    ) -> bool:
+        return False
+
+    def dotenv_values(
+        dotenv_path: Optional[Union[str, PathLike[str]]] = None,
+        stream: Optional[IO[str]] = None,
+        verbose: bool = False,
+        interpolate: bool = True,
+        encoding: Optional[str] = None,
+    ) -> Dict[str, Optional[str]]:
+        return {}
+
+
+CONFIG_FILENAME = ".codex-autorunner/config.yml"
+ROOT_CONFIG_FILENAME = "codex-autorunner.yml"
+ROOT_OVERRIDE_FILENAME = "codex-autorunner.override.yml"
+REPO_OVERRIDE_FILENAME = ".codex-autorunner/repo.override.yml"
+CONFIG_VERSION = 2
+TWELVE_HOUR_SECONDS = 12 * 60 * 60
+
+DEFAULT_REPO_CONFIG: Dict[str, Any] = {
+    "version": CONFIG_VERSION,
+    "mode": "repo",
+    "docs": {
+        "active_context": ".codex-autorunner/workspace/active_context.md",
+        "decisions": ".codex-autorunner/workspace/decisions.md",
+        "spec": ".codex-autorunner/workspace/spec.md",
+    },
+    "review": {
+        "enabled": True,
+        "agent": "opencode",
+        "model": "zai-coding-plan/glm-4.7",
+        "subagent_agent": "subagent",
+        "subagent_model": "zai-coding-plan/glm-4.7-flashx",
+        "reasoning": None,
+        "max_wallclock_seconds": None,
+    },
+    "codex": {
+        "binary": "codex",
+        "args": ["--yolo", "exec", "--sandbox", "danger-full-access"],
+        "terminal_args": ["--yolo"],
+        "model": None,
+        "reasoning": None,
+        # Optional model tiers for different Codex invocations.
+        # If codex.models.large is unset/null, callers should avoid passing --model
+        # so Codex uses the user's default/global profile model.
+        "models": {
+            "small": "gpt-5.1-codex-mini",
+            "large": None,
+        },
+    },
+    # Agent binaries/commands live here so adding new agents is config-driven.
+    "agents": {
+        "codex": {
+            "binary": "codex",
+        },
+        "opencode": {
+            "binary": "opencode",
+            "subagent_models": {
+                "subagent": "zai-coding-plan/glm-4.7-flashx",
+            },
+        },
+    },
+    "prompt": {
+        "prev_run_max_chars": 6000,
+        "template": ".codex-autorunner/prompt.txt",
+    },
+    "ui": {
+        "editor": "vi",
+    },
+    "security": {
+        "redact_run_logs": True,
+    },
+    "runner": {
+        "sleep_seconds": 5,
+        "stop_after_runs": None,
+        "max_wallclock_seconds": None,
+        "no_progress_threshold": 3,
+        "review": {
+            "enabled": False,
+            "trigger": {
+                "on_todos_complete": True,
+                "on_no_progress_stop": True,
+                "on_max_runs_stop": True,
+                "on_stop_requested": False,
+                "on_error_exit": False,
+            },
+            "agent": None,
+            "model": None,
+            "reasoning": None,
+            "max_wallclock_seconds": None,
+            "context": {
+                "primary_docs": ["spec", "decisions"],
+                "include_docs": ["active_context"],
+                "include_last_run_artifacts": True,
+                "max_doc_chars": 20000,
+            },
+            "artifacts": {
+                "attach_to_last_run_index": True,
+                "write_to_review_runs_dir": True,
+            },
+        },
+    },
+    "autorunner": {
+        "reuse_session": False,
+    },
+    "ticket_flow": {
+        "approval_mode": "yolo",
+        # Keep ticket_flow deterministic by default; surfaces can tighten this.
+        "default_approval_decision": "accept",
+    },
+    "git": {
+        "auto_commit": False,
+        "commit_message_template": "[codex] run #{run_id}",
+    },
+    "github": {
+        "enabled": True,
+        "pr_draft_default": True,
+        "sync_commit_mode": "auto",  # none|auto|always
+        # Bounds the agentic sync step in GitHubService.sync_pr (seconds).
+        "sync_agent_timeout_seconds": 1800,
+    },
+    "update": {
+        "skip_checks": False,
+    },
+    "app_server": {
+        "command": ["codex", "app-server"],
+        "state_root": "~/.codex-autorunner/workspaces",
+        "auto_restart": True,
+        "max_handles": 20,
+        "idle_ttl_seconds": 3600,
+        "turn_timeout_seconds": 28800,
+        "turn_stall_timeout_seconds": 60,
+        "turn_stall_poll_interval_seconds": 2,
+        "turn_stall_recovery_min_interval_seconds": 10,
+        "request_timeout": None,
+        "client": {
+            "max_message_bytes": 50 * 1024 * 1024,
+            "oversize_preview_bytes": 4096,
+            "max_oversize_drain_bytes": 100 * 1024 * 1024,
+            "restart_backoff_initial_seconds": 0.5,
+            "restart_backoff_max_seconds": 30.0,
+            "restart_backoff_jitter_ratio": 0.1,
+        },
+        "prompts": {
+            # NOTE: These keys are legacy names kept for config compatibility.
+            # The workspace cutover uses tickets + workspace docs + unified file chat; only
+            # the "autorunner" prompt is currently used by the app-server prompt builder.
+            "doc_chat": {
+                "max_chars": 12000,
+                "message_max_chars": 2000,
+                "target_excerpt_max_chars": 4000,
+                "recent_summary_max_chars": 2000,
+            },
+            "spec_ingest": {
+                "max_chars": 12000,
+                "message_max_chars": 2000,
+                "spec_excerpt_max_chars": 5000,
+            },
+            "autorunner": {
+                "max_chars": 16000,
+                "message_max_chars": 2000,
+                "todo_excerpt_max_chars": 4000,
+                "prev_run_max_chars": 3000,
+            },
+        },
+    },
+    "opencode": {
+        "session_stall_timeout_seconds": 60,
+    },
+    "usage": {
+        "cache_scope": "global",
+        "global_cache_root": None,
+        "repo_cache_path": ".codex-autorunner/usage/usage_series_cache.json",
+    },
+    "server": {
+        "host": "127.0.0.1",
+        "port": 4173,
+        "base_path": "",
+        "access_log": False,
+        "auth_token_env": "",
+        "allowed_hosts": [],
+        "allowed_origins": [],
+    },
+    "notifications": {
+        "enabled": "auto",
+        "events": ["run_finished", "run_error", "tui_idle"],
+        "tui_idle_seconds": 60,
+        "timeout_seconds": 5.0,
+        "discord": {
+            "webhook_url_env": "CAR_DISCORD_WEBHOOK_URL",
+        },
+        "telegram": {
+            "bot_token_env": "CAR_TELEGRAM_BOT_TOKEN",
+            "chat_id_env": "CAR_TELEGRAM_CHAT_ID",
+        },
+    },
+    "telegram_bot": {
+        "enabled": False,
+        "mode": "polling",
+        "bot_token_env": "CAR_TELEGRAM_BOT_TOKEN",
+        "chat_id_env": "CAR_TELEGRAM_CHAT_ID",
+        "parse_mode": "HTML",
+        "debug": {
+            "prefix_context": False,
+        },
+        "allowed_chat_ids": [],
+        "allowed_user_ids": [],
+        "require_topics": False,
+        "defaults": {
+            "approval_mode": "yolo",
+            "approval_policy": "on-request",
+            "sandbox_policy": "dangerFullAccess",
+            "yolo_approval_policy": "never",
+            "yolo_sandbox_policy": "dangerFullAccess",
+        },
+        "concurrency": {
+            "max_parallel_turns": 5,
+            "per_topic_queue": True,
+        },
+        "media": {
+            "enabled": True,
+            "images": True,
+            "voice": True,
+            "files": True,
+            "max_image_bytes": 10_000_000,
+            "max_voice_bytes": 10_000_000,
+            "max_file_bytes": 10_000_000,
+            "image_prompt": (
+                "The user sent an image with no caption. Use it to continue the "
+                "conversation; if no clear task, describe the image and ask what "
+                "they want."
+            ),
+        },
+        "shell": {
+            "enabled": True,
+            "timeout_ms": 120000,
+            "max_output_chars": 3800,
+        },
+        "cache": {
+            "cleanup_interval_seconds": 300,
+            "coalesce_buffer_ttl_seconds": 60,
+            "media_batch_buffer_ttl_seconds": 60,
+            "model_pending_ttl_seconds": 1800,
+            "pending_approval_ttl_seconds": 600,
+            "pending_question_ttl_seconds": 600,
+            "reasoning_buffer_ttl_seconds": 900,
+            "selection_state_ttl_seconds": 1800,
+            "turn_preview_ttl_seconds": 900,
+            "progress_stream_ttl_seconds": 900,
+            "oversize_warning_ttl_seconds": 3600,
+            "update_id_persist_interval_seconds": 60,
+        },
+        "command_registration": {
+            "enabled": True,
+            "scopes": [
+                {"type": "default", "language_code": ""},
+                {"type": "all_group_chats", "language_code": ""},
+            ],
+        },
+        "opencode_command": None,
+        "state_file": ".codex-autorunner/telegram_state.sqlite3",
+        "app_server_command_env": "CAR_TELEGRAM_APP_SERVER_COMMAND",
+        "app_server_command": ["codex", "app-server"],
+        "app_server": {
+            "max_handles": 20,
+            "idle_ttl_seconds": 3600,
+            "turn_timeout_seconds": 28800,
+        },
+        "agent_timeouts": {
+            "codex": 28800,
+            "opencode": 28800,
+        },
+        "polling": {
+            "timeout_seconds": 30,
+            "allowed_updates": ["message", "edited_message", "callback_query"],
+        },
+    },
+    "terminal": {
+        "idle_timeout_seconds": TWELVE_HOUR_SECONDS,
+    },
+    "voice": {
+        "enabled": True,
+        "provider": "openai_whisper",
+        "latency_mode": "balanced",
+        "chunk_ms": 600,
+        "sample_rate": 16_000,
+        "warn_on_remote_api": True,
+        "push_to_talk": {
+            "max_ms": 15_000,
+            "silence_auto_stop_ms": 1_200,
+            "min_hold_ms": 150,
+        },
+        "providers": {
+            "openai_whisper": {
+                "api_key_env": "OPENAI_API_KEY",
+                "model": "whisper-1",
+                "base_url": None,
+                "temperature": 0,
+                "language": None,
+                "redact_request": True,
+            }
+        },
+    },
+    "log": {
+        "path": ".codex-autorunner/codex-autorunner.log",
+        "max_bytes": 10_000_000,
+        "backup_count": 3,
+    },
+    "server_log": {
+        "path": ".codex-autorunner/codex-server.log",
+        "max_bytes": 10_000_000,
+        "backup_count": 3,
+    },
+    "static_assets": {
+        "cache_root": ".codex-autorunner/static-cache",
+        "max_cache_entries": 5,
+        "max_cache_age_days": 30,
+    },
+    "housekeeping": {
+        "enabled": True,
+        "interval_seconds": 3600,
+        "min_file_age_seconds": 600,
+        "dry_run": False,
+        "rules": [
+            {
+                "name": "run_logs",
+                "kind": "directory",
+                "path": ".codex-autorunner/runs",
+                "glob": "run-*.log",
+                "recursive": False,
+                "max_files": 200,
+                "max_total_bytes": 500_000_000,
+                "max_age_days": 30,
+            },
+            {
+                "name": "terminal_image_uploads",
+                "kind": "directory",
+                "path": ".codex-autorunner/uploads/terminal-images",
+                "glob": "*",
+                "recursive": False,
+                "max_files": 500,
+                "max_total_bytes": 200_000_000,
+                "max_age_days": 14,
+            },
+            {
+                "name": "telegram_images",
+                "kind": "directory",
+                "path": ".codex-autorunner/uploads/telegram-images",
+                "glob": "*",
+                "recursive": False,
+                "max_files": 500,
+                "max_total_bytes": 200_000_000,
+                "max_age_days": 14,
+            },
+            {
+                "name": "telegram_voice",
+                "kind": "directory",
+                "path": ".codex-autorunner/uploads/telegram-voice",
+                "glob": "*",
+                "recursive": False,
+                "max_files": 500,
+                "max_total_bytes": 500_000_000,
+                "max_age_days": 14,
+            },
+            {
+                "name": "telegram_files",
+                "kind": "directory",
+                "path": ".codex-autorunner/uploads/telegram-files",
+                "glob": "*",
+                "recursive": True,
+                "max_files": 500,
+                "max_total_bytes": 500_000_000,
+                "max_age_days": 14,
+            },
+            {
+                "name": "github_context",
+                "kind": "directory",
+                "path": ".codex-autorunner/github_context",
+                "glob": "*",
+                "recursive": False,
+                "max_files": 200,
+                "max_total_bytes": 100_000_000,
+                "max_age_days": 30,
+            },
+            {
+                "name": "review_runs",
+                "kind": "directory",
+                "path": ".codex-autorunner/review/runs",
+                "glob": "*",
+                "recursive": True,
+                "max_files": 100,
+                "max_total_bytes": 500_000_000,
+                "max_age_days": 30,
+            },
+        ],
+    },
+}
+
+REPO_DEFAULT_KEYS = {
+    "docs",
+    "codex",
+    "prompt",
+    "ui",
+    "runner",
+    "autorunner",
+    "ticket_flow",
+    "git",
+    "github",
+    "update",
+    "notifications",
+    "voice",
+    "log",
+    "server_log",
+    "review",
+    "opencode",
+    "usage",
+}
+DEFAULT_REPO_DEFAULTS = {
+    key: json.loads(json.dumps(DEFAULT_REPO_CONFIG[key])) for key in REPO_DEFAULT_KEYS
+}
+REPO_SHARED_KEYS = {
+    "agents",
+    "server",
+    "app_server",
+    "opencode",
+    "telegram_bot",
+    "terminal",
+    "static_assets",
+    "housekeeping",
+    "update",
+    "usage",
+}
+
+DEFAULT_HUB_CONFIG: Dict[str, Any] = {
+    "version": CONFIG_VERSION,
+    "mode": "hub",
+    "repo_defaults": DEFAULT_REPO_DEFAULTS,
+    "agents": {
+        "codex": {
+            "binary": "codex",
+        },
+        "opencode": {
+            "binary": "opencode",
+            "subagent_models": {
+                "subagent": "zai-coding-plan/glm-4.7-flashx",
+            },
+        },
+    },
+    "terminal": {
+        "idle_timeout_seconds": TWELVE_HOUR_SECONDS,
+    },
+    "telegram_bot": {
+        "enabled": False,
+        "mode": "polling",
+        "bot_token_env": "CAR_TELEGRAM_BOT_TOKEN",
+        "chat_id_env": "CAR_TELEGRAM_CHAT_ID",
+        "parse_mode": "HTML",
+        "debug": {
+            "prefix_context": False,
+        },
+        "allowed_chat_ids": [],
+        "allowed_user_ids": [],
+        "require_topics": False,
+        "defaults": {
+            "approval_mode": "yolo",
+            "approval_policy": "on-request",
+            "sandbox_policy": "dangerFullAccess",
+            "yolo_approval_policy": "never",
+            "yolo_sandbox_policy": "dangerFullAccess",
+        },
+        "concurrency": {
+            "max_parallel_turns": 5,
+            "per_topic_queue": True,
+        },
+        "media": {
+            "enabled": True,
+            "images": True,
+            "voice": True,
+            "files": True,
+            "max_image_bytes": 10_000_000,
+            "max_voice_bytes": 10_000_000,
+            "max_file_bytes": 10_000_000,
+            "image_prompt": (
+                "The user sent an image with no caption. Use it to continue the "
+                "conversation; if no clear task, describe the image and ask what "
+                "they want."
+            ),
+        },
+        "shell": {
+            "enabled": False,
+            "timeout_ms": 120000,
+            "max_output_chars": 3800,
+        },
+        "cache": {
+            "cleanup_interval_seconds": 300,
+            "coalesce_buffer_ttl_seconds": 60,
+            "media_batch_buffer_ttl_seconds": 60,
+            "model_pending_ttl_seconds": 1800,
+            "pending_approval_ttl_seconds": 600,
+            "pending_question_ttl_seconds": 600,
+            "reasoning_buffer_ttl_seconds": 900,
+            "selection_state_ttl_seconds": 1800,
+            "turn_preview_ttl_seconds": 900,
+            "progress_stream_ttl_seconds": 900,
+            "oversize_warning_ttl_seconds": 3600,
+            "update_id_persist_interval_seconds": 60,
+        },
+        "command_registration": {
+            "enabled": True,
+            "scopes": [
+                {"type": "default", "language_code": ""},
+                {"type": "all_group_chats", "language_code": ""},
+            ],
+        },
+        "opencode_command": None,
+        "state_file": ".codex-autorunner/telegram_state.sqlite3",
+        "app_server_command_env": "CAR_TELEGRAM_APP_SERVER_COMMAND",
+        "app_server_command": ["codex", "app-server"],
+        "app_server": {
+            "max_handles": 20,
+            "idle_ttl_seconds": 3600,
+            "turn_timeout_seconds": 28800,
+        },
+        "polling": {
+            "timeout_seconds": 30,
+            "allowed_updates": ["message", "edited_message", "callback_query"],
+        },
+    },
+    "hub": {
+        "repos_root": ".",
+        # Hub-managed git worktrees live here (depth=1 scan). Each worktree is treated as a repo.
+        "worktrees_root": "worktrees",
+        "manifest": ".codex-autorunner/manifest.yml",
+        "discover_depth": 1,
+        "auto_init_missing": True,
+        "repo_server_inherit": True,
+        # Where to pull system updates from (defaults to main upstream)
+        "update_repo_url": "https://github.com/Git-on-my-level/codex-autorunner.git",
+        "update_repo_ref": "main",
+        "log": {
+            "path": ".codex-autorunner/codex-autorunner-hub.log",
+            "max_bytes": 10_000_000,
+            "backup_count": 3,
+        },
+    },
+    "update": {
+        "skip_checks": False,
+    },
+    "app_server": {
+        "command": ["codex", "app-server"],
+        "state_root": "~/.codex-autorunner/workspaces",
+        "auto_restart": True,
+        "max_handles": 20,
+        "idle_ttl_seconds": 3600,
+        "turn_timeout_seconds": 28800,
+        "turn_stall_timeout_seconds": 60,
+        "turn_stall_poll_interval_seconds": 2,
+        "turn_stall_recovery_min_interval_seconds": 10,
+        "request_timeout": None,
+        "client": {
+            "max_message_bytes": 50 * 1024 * 1024,
+            "oversize_preview_bytes": 4096,
+            "max_oversize_drain_bytes": 100 * 1024 * 1024,
+            "restart_backoff_initial_seconds": 0.5,
+            "restart_backoff_max_seconds": 30.0,
+            "restart_backoff_jitter_ratio": 0.1,
+        },
+        "prompts": {
+            "doc_chat": {
+                "max_chars": 12000,
+                "message_max_chars": 2000,
+                "target_excerpt_max_chars": 4000,
+                "recent_summary_max_chars": 2000,
+            },
+            "spec_ingest": {
+                "max_chars": 12000,
+                "message_max_chars": 2000,
+                "spec_excerpt_max_chars": 5000,
+            },
+            "autorunner": {
+                "max_chars": 16000,
+                "message_max_chars": 2000,
+                "todo_excerpt_max_chars": 4000,
+                "prev_run_max_chars": 3000,
+            },
+        },
+    },
+    "opencode": {
+        "session_stall_timeout_seconds": 60,
+    },
+    "usage": {
+        "cache_scope": "global",
+        "global_cache_root": None,
+        "repo_cache_path": ".codex-autorunner/usage/usage_series_cache.json",
+    },
+    "server": {
+        "host": "127.0.0.1",
+        "port": 4173,
+        "base_path": "",
+        "access_log": False,
+        "auth_token_env": "",
+        "allowed_hosts": [],
+        "allowed_origins": [],
+    },
+    # Hub already has hub.log, but we still support an explicit server_log for consistency.
+    "server_log": None,
+    "static_assets": {
+        "cache_root": ".codex-autorunner/static-cache",
+        "max_cache_entries": 5,
+        "max_cache_age_days": 30,
+    },
+    "housekeeping": {
+        "enabled": True,
+        "interval_seconds": 3600,
+        "min_file_age_seconds": 600,
+        "dry_run": False,
+        "rules": [
+            {
+                "name": "run_logs",
+                "kind": "directory",
+                "path": ".codex-autorunner/runs",
+                "glob": "run-*.log",
+                "recursive": False,
+                "max_files": 200,
+                "max_total_bytes": 500_000_000,
+                "max_age_days": 30,
+            },
+            {
+                "name": "terminal_image_uploads",
+                "kind": "directory",
+                "path": ".codex-autorunner/uploads/terminal-images",
+                "glob": "*",
+                "recursive": False,
+                "max_files": 500,
+                "max_total_bytes": 200_000_000,
+                "max_age_days": 14,
+            },
+            {
+                "name": "telegram_images",
+                "kind": "directory",
+                "path": ".codex-autorunner/uploads/telegram-images",
+                "glob": "*",
+                "recursive": False,
+                "max_files": 500,
+                "max_total_bytes": 200_000_000,
+                "max_age_days": 14,
+            },
+            {
+                "name": "telegram_voice",
+                "kind": "directory",
+                "path": ".codex-autorunner/uploads/telegram-voice",
+                "glob": "*",
+                "recursive": False,
+                "max_files": 500,
+                "max_total_bytes": 500_000_000,
+                "max_age_days": 14,
+            },
+            {
+                "name": "telegram_files",
+                "kind": "directory",
+                "path": ".codex-autorunner/uploads/telegram-files",
+                "glob": "*",
+                "recursive": True,
+                "max_files": 500,
+                "max_total_bytes": 500_000_000,
+                "max_age_days": 14,
+            },
+            {
+                "name": "github_context",
+                "kind": "directory",
+                "path": ".codex-autorunner/github_context",
+                "glob": "*",
+                "recursive": False,
+                "max_files": 200,
+                "max_total_bytes": 100_000_000,
+                "max_age_days": 30,
+            },
+            {
+                "name": "update_cache",
+                "kind": "directory",
+                "path": "~/.codex-autorunner/update_cache",
+                "glob": "*",
+                "recursive": True,
+                "max_files": 2000,
+                "max_total_bytes": 1_000_000_000,
+                "max_age_days": 30,
+            },
+            {
+                "name": "update_log",
+                "kind": "file",
+                "path": "~/.codex-autorunner/update-standalone.log",
+                "max_bytes": 5_000_000,
+            },
+        ],
+    },
+}
+
+
+class ConfigError(Exception):
+    """Raised when configuration is invalid."""
+
+
+__all__ = [
+    "ConfigError",
+    "ConfigPathError",
+]
+
+
+@dataclasses.dataclass
+class LogConfig:
+    path: Path
+    max_bytes: int
+    backup_count: int
+
+
+@dataclasses.dataclass
+class StaticAssetsConfig:
+    cache_root: Path
+    max_cache_entries: int
+    max_cache_age_days: Optional[int]
+
+
+@dataclasses.dataclass
+class AppServerDocChatPromptConfig:
+    max_chars: int
+    message_max_chars: int
+    target_excerpt_max_chars: int
+    recent_summary_max_chars: int
+
+
+@dataclasses.dataclass
+class AppServerSpecIngestPromptConfig:
+    max_chars: int
+    message_max_chars: int
+    spec_excerpt_max_chars: int
+
+
+@dataclasses.dataclass
+class AppServerAutorunnerPromptConfig:
+    max_chars: int
+    message_max_chars: int
+    todo_excerpt_max_chars: int
+    prev_run_max_chars: int
+
+
+@dataclasses.dataclass
+class AppServerPromptsConfig:
+    doc_chat: AppServerDocChatPromptConfig
+    spec_ingest: AppServerSpecIngestPromptConfig
+    autorunner: AppServerAutorunnerPromptConfig
+
+
+@dataclasses.dataclass
+class AppServerClientConfig:
+    max_message_bytes: int
+    oversize_preview_bytes: int
+    max_oversize_drain_bytes: int
+    restart_backoff_initial_seconds: float
+    restart_backoff_max_seconds: float
+    restart_backoff_jitter_ratio: float
+
+
+@dataclasses.dataclass
+class AppServerConfig:
+    command: List[str]
+    state_root: Path
+    auto_restart: Optional[bool]
+    max_handles: Optional[int]
+    idle_ttl_seconds: Optional[int]
+    turn_timeout_seconds: Optional[float]
+    turn_stall_timeout_seconds: Optional[float]
+    turn_stall_poll_interval_seconds: Optional[float]
+    turn_stall_recovery_min_interval_seconds: Optional[float]
+    request_timeout: Optional[float]
+    client: AppServerClientConfig
+    prompts: AppServerPromptsConfig
+
+
+@dataclasses.dataclass
+class OpenCodeConfig:
+    session_stall_timeout_seconds: Optional[float]
+
+
+@dataclasses.dataclass
+class UsageConfig:
+    cache_scope: str
+    global_cache_root: Path
+    repo_cache_path: Path
+
+
+@dataclasses.dataclass(frozen=True)
+class AgentConfig:
+    binary: str
+    serve_command: Optional[List[str]]
+    base_url: Optional[str]
+    subagent_models: Optional[Dict[str, str]]
+
+
+@dataclasses.dataclass
+class RepoConfig:
+    raw: Dict[str, Any]
+    root: Path
+    version: int
+    mode: str
+    security: Dict[str, Any]
+    docs: Dict[str, Path]
+    codex_binary: str
+    codex_args: List[str]
+    codex_terminal_args: List[str]
+    codex_model: Optional[str]
+    codex_reasoning: Optional[str]
+    agents: Dict[str, AgentConfig]
+    prompt_prev_run_max_chars: int
+    prompt_template: Optional[Path]
+    runner_sleep_seconds: int
+    runner_stop_after_runs: Optional[int]
+    runner_max_wallclock_seconds: Optional[int]
+    runner_no_progress_threshold: int
+    autorunner_reuse_session: bool
+    ticket_flow: Dict[str, Any]
+    git_auto_commit: bool
+    git_commit_message_template: str
+    update_skip_checks: bool
+    app_server: AppServerConfig
+    opencode: OpenCodeConfig
+    usage: UsageConfig
+    server_host: str
+    server_port: int
+    server_base_path: str
+    server_access_log: bool
+    server_auth_token_env: str
+    server_allowed_hosts: List[str]
+    server_allowed_origins: List[str]
+    notifications: Dict[str, Any]
+    terminal_idle_timeout_seconds: Optional[int]
+    log: LogConfig
+    server_log: LogConfig
+    voice: Dict[str, Any]
+    static_assets: StaticAssetsConfig
+    housekeeping: HousekeepingConfig
+
+    def doc_path(self, key: str) -> Path:
+        return self.root / self.docs[key]
+
+    def agent_binary(self, agent_id: str) -> str:
+        agent = self.agents.get(agent_id)
+        if agent and agent.binary:
+            return agent.binary
+        raise ConfigError(f"agents.{agent_id}.binary is required")
+
+    def agent_serve_command(self, agent_id: str) -> Optional[List[str]]:
+        agent = self.agents.get(agent_id)
+        if agent:
+            return list(agent.serve_command) if agent.serve_command else None
+        return None
+
+
+@dataclasses.dataclass
+class HubConfig:
+    raw: Dict[str, Any]
+    root: Path
+    version: int
+    mode: str
+    repo_defaults: Dict[str, Any]
+    agents: Dict[str, AgentConfig]
+    repos_root: Path
+    worktrees_root: Path
+    manifest_path: Path
+    discover_depth: int
+    auto_init_missing: bool
+    repo_server_inherit: bool
+    update_repo_url: str
+    update_repo_ref: str
+    update_skip_checks: bool
+    app_server: AppServerConfig
+    opencode: OpenCodeConfig
+    usage: UsageConfig
+    server_host: str
+    server_port: int
+    server_base_path: str
+    server_access_log: bool
+    server_auth_token_env: str
+    server_allowed_hosts: List[str]
+    server_allowed_origins: List[str]
+    log: LogConfig
+    server_log: LogConfig
+    static_assets: StaticAssetsConfig
+    housekeeping: HousekeepingConfig
+
+    def agent_binary(self, agent_id: str) -> str:
+        agent = self.agents.get(agent_id)
+        if agent and agent.binary:
+            return agent.binary
+        raise ConfigError(f"agents.{agent_id}.binary is required")
+
+    def agent_serve_command(self, agent_id: str) -> Optional[List[str]]:
+        agent = self.agents.get(agent_id)
+        if agent:
+            return list(agent.serve_command) if agent.serve_command else None
+        return None
+
+
+# Alias used by existing code paths that only support repo mode
+Config = RepoConfig
+
+
+def _merge_defaults(base: Dict[str, Any], overrides: Dict[str, Any]) -> Dict[str, Any]:
+    merged = cast(Dict[str, Any], json.loads(json.dumps(base)))
+    for key, value in overrides.items():
+        if isinstance(value, dict) and key in merged and isinstance(merged[key], dict):
+            merged[key] = _merge_defaults(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def _load_yaml_dict(path: Path) -> Dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as exc:
+        raise ConfigError(f"Invalid YAML in {path}: {exc}") from exc
+    except Exception as exc:
+        raise ConfigError(f"Failed to read config file {path}: {exc}") from exc
+    if not isinstance(data, dict):
+        raise ConfigError(f"Config file must be a mapping: {path}")
+    return data
+
+
+def _load_root_config(root: Path) -> Dict[str, Any]:
+    merged: Dict[str, Any] = {}
+    base_path = root / ROOT_CONFIG_FILENAME
+    base = _load_yaml_dict(base_path)
+    if base:
+        merged = _merge_defaults(merged, base)
+    override_path = root / ROOT_OVERRIDE_FILENAME
+    try:
+        override = _load_yaml_dict(override_path)
+    except ConfigError as exc:
+        raise ConfigError(
+            f"Invalid override config {override_path}; fix or delete it: {exc}"
+        ) from exc
+    if override:
+        merged = _merge_defaults(merged, override)
+    return merged
+
+
+def load_root_defaults(root: Path) -> Dict[str, Any]:
+    """Load hub defaults from the root config + override file."""
+    return _load_root_config(root)
+
+
+def resolve_hub_config_data(
+    root: Path, overrides: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    merged = _merge_defaults(DEFAULT_HUB_CONFIG, load_root_defaults(root))
+    if overrides:
+        merged = _merge_defaults(merged, overrides)
+    return merged
+
+
+def repo_shared_overrides_from_hub(hub_data: Dict[str, Any]) -> Dict[str, Any]:
+    return {key: hub_data[key] for key in REPO_SHARED_KEYS if key in hub_data}
+
+
+def _load_repo_override(repo_root: Path) -> Dict[str, Any]:
+    override_path = repo_root / REPO_OVERRIDE_FILENAME
+    data = _load_yaml_dict(override_path)
+    if not data:
+        return {}
+    if not isinstance(data, dict):
+        raise ConfigError(f"Repo override file must be a mapping: {override_path}")
+    if "mode" in data or "version" in data:
+        raise ConfigError(
+            f"{override_path} must not set mode or version; those are hub-managed."
+        )
+    return data
+
+
+def derive_repo_config_data(
+    hub_data: Dict[str, Any], repo_root: Path
+) -> Dict[str, Any]:
+    repo_defaults = hub_data.get("repo_defaults") or {}
+    if not isinstance(repo_defaults, dict):
+        raise ConfigError("hub.repo_defaults must be a mapping if provided")
+    merged = _merge_defaults(
+        DEFAULT_REPO_CONFIG, repo_shared_overrides_from_hub(hub_data)
+    )
+    if repo_defaults:
+        merged = _merge_defaults(merged, repo_defaults)
+    repo_overrides = _load_repo_override(repo_root)
+    if repo_overrides:
+        merged = _merge_defaults(merged, repo_overrides)
+    return merged
+
+
+def find_nearest_hub_config_path(start: Path) -> Optional[Path]:
+    start = start.resolve()
+    search_dir = start if start.is_dir() else start.parent
+    for current in [search_dir] + list(search_dir.parents):
+        candidate = current / CONFIG_FILENAME
+        if not candidate.exists():
+            continue
+        data = _load_yaml_dict(candidate)
+        if data.get("mode") in (None, "hub"):
+            return candidate
+    return None
+
+
+def _normalize_base_path(path: Optional[str]) -> str:
+    """Normalize base path to either '' or a single-leading-slash path without trailing slash."""
+    if not path:
+        return ""
+    normalized = str(path).strip()
+    if not normalized.startswith("/"):
+        normalized = "/" + normalized
+    normalized = normalized.rstrip("/")
+    return normalized or ""
+
+
+def _parse_command(raw: Any) -> List[str]:
+    if isinstance(raw, list):
+        return [str(item) for item in raw if item]
+    if isinstance(raw, str):
+        return [part for part in shlex.split(raw) if part]
+    return []
+
+
+def _parse_prompt_int(cfg: Dict[str, Any], defaults: Dict[str, Any], key: str) -> int:
+    raw = cfg.get(key)
+    if raw is None:
+        raw = defaults.get(key, 0)
+    return int(raw)
+
+
+def _parse_app_server_prompts_config(
+    cfg: Optional[Dict[str, Any]],
+    defaults: Optional[Dict[str, Any]],
+) -> AppServerPromptsConfig:
+    cfg = cfg if isinstance(cfg, dict) else {}
+    defaults = defaults if isinstance(defaults, dict) else {}
+    doc_chat_cfg = cfg.get("doc_chat")
+    doc_chat_defaults = defaults.get("doc_chat")
+    doc_chat_cfg = doc_chat_cfg if isinstance(doc_chat_cfg, dict) else {}
+    doc_chat_defaults = doc_chat_defaults if isinstance(doc_chat_defaults, dict) else {}
+    spec_ingest_cfg = cfg.get("spec_ingest")
+    spec_ingest_defaults = defaults.get("spec_ingest")
+    spec_ingest_cfg = spec_ingest_cfg if isinstance(spec_ingest_cfg, dict) else {}
+    spec_ingest_defaults = (
+        spec_ingest_defaults if isinstance(spec_ingest_defaults, dict) else {}
+    )
+    autorunner_cfg = cfg.get("autorunner")
+    autorunner_defaults = defaults.get("autorunner")
+    autorunner_cfg = autorunner_cfg if isinstance(autorunner_cfg, dict) else {}
+    autorunner_defaults = (
+        autorunner_defaults if isinstance(autorunner_defaults, dict) else {}
+    )
+    return AppServerPromptsConfig(
+        doc_chat=AppServerDocChatPromptConfig(
+            max_chars=_parse_prompt_int(doc_chat_cfg, doc_chat_defaults, "max_chars"),
+            message_max_chars=_parse_prompt_int(
+                doc_chat_cfg, doc_chat_defaults, "message_max_chars"
+            ),
+            target_excerpt_max_chars=_parse_prompt_int(
+                doc_chat_cfg, doc_chat_defaults, "target_excerpt_max_chars"
+            ),
+            recent_summary_max_chars=_parse_prompt_int(
+                doc_chat_cfg, doc_chat_defaults, "recent_summary_max_chars"
+            ),
+        ),
+        spec_ingest=AppServerSpecIngestPromptConfig(
+            max_chars=_parse_prompt_int(
+                spec_ingest_cfg, spec_ingest_defaults, "max_chars"
+            ),
+            message_max_chars=_parse_prompt_int(
+                spec_ingest_cfg, spec_ingest_defaults, "message_max_chars"
+            ),
+            spec_excerpt_max_chars=_parse_prompt_int(
+                spec_ingest_cfg, spec_ingest_defaults, "spec_excerpt_max_chars"
+            ),
+        ),
+        autorunner=AppServerAutorunnerPromptConfig(
+            max_chars=_parse_prompt_int(
+                autorunner_cfg, autorunner_defaults, "max_chars"
+            ),
+            message_max_chars=_parse_prompt_int(
+                autorunner_cfg, autorunner_defaults, "message_max_chars"
+            ),
+            todo_excerpt_max_chars=_parse_prompt_int(
+                autorunner_cfg, autorunner_defaults, "todo_excerpt_max_chars"
+            ),
+            prev_run_max_chars=_parse_prompt_int(
+                autorunner_cfg, autorunner_defaults, "prev_run_max_chars"
+            ),
+        ),
+    )
+
+
+def _parse_app_server_config(
+    cfg: Optional[Dict[str, Any]],
+    root: Path,
+    defaults: Dict[str, Any],
+) -> AppServerConfig:
+    cfg = cfg if isinstance(cfg, dict) else {}
+    command = _parse_command(cfg.get("command", defaults.get("command")))
+    state_root_raw = cfg.get("state_root", defaults.get("state_root"))
+    if state_root_raw is None:
+        raise ConfigError("app_server.state_root is required")
+    state_root = resolve_config_path(
+        state_root_raw,
+        root,
+        allow_home=True,
+        scope="app_server.state_root",
+    )
+    auto_restart_raw = cfg.get("auto_restart", defaults.get("auto_restart"))
+    if auto_restart_raw is None:
+        auto_restart = None
+    else:
+        auto_restart = bool(auto_restart_raw)
+    max_handles_raw = cfg.get("max_handles", defaults.get("max_handles"))
+    max_handles = int(max_handles_raw) if max_handles_raw is not None else None
+    if max_handles is not None and max_handles <= 0:
+        max_handles = None
+    idle_ttl_raw = cfg.get("idle_ttl_seconds", defaults.get("idle_ttl_seconds"))
+    idle_ttl_seconds = int(idle_ttl_raw) if idle_ttl_raw is not None else None
+    if idle_ttl_seconds is not None and idle_ttl_seconds <= 0:
+        idle_ttl_seconds = None
+    turn_timeout_raw = cfg.get(
+        "turn_timeout_seconds", defaults.get("turn_timeout_seconds")
+    )
+    turn_timeout_seconds = (
+        float(turn_timeout_raw) if turn_timeout_raw is not None else None
+    )
+    if turn_timeout_seconds is not None and turn_timeout_seconds <= 0:
+        turn_timeout_seconds = None
+    stall_timeout_raw = cfg.get(
+        "turn_stall_timeout_seconds", defaults.get("turn_stall_timeout_seconds")
+    )
+    turn_stall_timeout_seconds = (
+        float(stall_timeout_raw) if stall_timeout_raw is not None else None
+    )
+    if turn_stall_timeout_seconds is not None and turn_stall_timeout_seconds <= 0:
+        turn_stall_timeout_seconds = None
+    stall_poll_raw = cfg.get(
+        "turn_stall_poll_interval_seconds",
+        defaults.get("turn_stall_poll_interval_seconds"),
+    )
+    turn_stall_poll_interval_seconds = (
+        float(stall_poll_raw) if stall_poll_raw is not None else None
+    )
+    if (
+        turn_stall_poll_interval_seconds is not None
+        and turn_stall_poll_interval_seconds <= 0
+    ):
+        turn_stall_poll_interval_seconds = defaults.get(
+            "turn_stall_poll_interval_seconds"
+        )
+    stall_recovery_raw = cfg.get(
+        "turn_stall_recovery_min_interval_seconds",
+        defaults.get("turn_stall_recovery_min_interval_seconds"),
+    )
+    turn_stall_recovery_min_interval_seconds = (
+        float(stall_recovery_raw) if stall_recovery_raw is not None else None
+    )
+    if (
+        turn_stall_recovery_min_interval_seconds is not None
+        and turn_stall_recovery_min_interval_seconds < 0
+    ):
+        turn_stall_recovery_min_interval_seconds = defaults.get(
+            "turn_stall_recovery_min_interval_seconds"
+        )
+    request_timeout_raw = cfg.get("request_timeout", defaults.get("request_timeout"))
+    request_timeout = (
+        float(request_timeout_raw) if request_timeout_raw is not None else None
+    )
+    if request_timeout is not None and request_timeout <= 0:
+        request_timeout = None
+    client_defaults = defaults.get("client")
+    client_defaults = client_defaults if isinstance(client_defaults, dict) else {}
+    client_cfg_raw = cfg.get("client")
+    client_cfg = client_cfg_raw if isinstance(client_cfg_raw, dict) else {}
+
+    def _client_int(key: str) -> int:
+        value = client_cfg.get(key, client_defaults.get(key))
+        value = int(value) if value is not None else 0
+        if value <= 0:
+            value = int(client_defaults.get(key) or 0)
+        return value
+
+    def _client_float(key: str, *, allow_zero: bool = False) -> float:
+        value = client_cfg.get(key, client_defaults.get(key))
+        value = float(value) if value is not None else 0.0
+        if value < 0 or (not allow_zero and value <= 0):
+            value = float(client_defaults.get(key) or 0.0)
+        return value
+
+    prompt_defaults = defaults.get("prompts")
+    prompts = _parse_app_server_prompts_config(cfg.get("prompts"), prompt_defaults)
+    return AppServerConfig(
+        command=command,
+        state_root=state_root,
+        auto_restart=auto_restart,
+        max_handles=max_handles,
+        idle_ttl_seconds=idle_ttl_seconds,
+        turn_timeout_seconds=turn_timeout_seconds,
+        turn_stall_timeout_seconds=turn_stall_timeout_seconds,
+        turn_stall_poll_interval_seconds=turn_stall_poll_interval_seconds,
+        turn_stall_recovery_min_interval_seconds=turn_stall_recovery_min_interval_seconds,
+        request_timeout=request_timeout,
+        client=AppServerClientConfig(
+            max_message_bytes=_client_int("max_message_bytes"),
+            oversize_preview_bytes=_client_int("oversize_preview_bytes"),
+            max_oversize_drain_bytes=_client_int("max_oversize_drain_bytes"),
+            restart_backoff_initial_seconds=_client_float(
+                "restart_backoff_initial_seconds"
+            ),
+            restart_backoff_max_seconds=_client_float("restart_backoff_max_seconds"),
+            restart_backoff_jitter_ratio=_client_float(
+                "restart_backoff_jitter_ratio", allow_zero=True
+            ),
+        ),
+        prompts=prompts,
+    )
+
+
+def _parse_opencode_config(
+    cfg: Optional[Dict[str, Any]],
+    _root: Path,
+    defaults: Optional[Dict[str, Any]],
+) -> OpenCodeConfig:
+    cfg = cfg if isinstance(cfg, dict) else {}
+    defaults = defaults if isinstance(defaults, dict) else {}
+    stall_timeout_raw = cfg.get(
+        "session_stall_timeout_seconds",
+        defaults.get("session_stall_timeout_seconds"),
+    )
+    stall_timeout_seconds = (
+        float(stall_timeout_raw) if stall_timeout_raw is not None else None
+    )
+    if stall_timeout_seconds is not None and stall_timeout_seconds <= 0:
+        stall_timeout_seconds = None
+    return OpenCodeConfig(session_stall_timeout_seconds=stall_timeout_seconds)
+
+
+def _parse_usage_config(
+    cfg: Optional[Dict[str, Any]],
+    root: Path,
+    defaults: Optional[Dict[str, Any]],
+) -> UsageConfig:
+    cfg = cfg if isinstance(cfg, dict) else {}
+    defaults = defaults if isinstance(defaults, dict) else {}
+    cache_scope = str(cfg.get("cache_scope", defaults.get("cache_scope", "global")))
+    cache_scope = cache_scope.lower().strip() or "global"
+    global_cache_raw = cfg.get("global_cache_root", defaults.get("global_cache_root"))
+    if global_cache_raw is None:
+        global_cache_raw = os.environ.get("CODEX_HOME", "~/.codex")
+    global_cache_root = resolve_config_path(
+        global_cache_raw,
+        root,
+        allow_absolute=True,
+        allow_home=True,
+        scope="usage.global_cache_root",
+    )
+    repo_cache_raw = cfg.get("repo_cache_path", defaults.get("repo_cache_path"))
+    if repo_cache_raw is None:
+        repo_cache_raw = ".codex-autorunner/usage/usage_series_cache.json"
+    repo_cache_path = resolve_config_path(
+        repo_cache_raw,
+        root,
+        scope="usage.repo_cache_path",
+    )
+    return UsageConfig(
+        cache_scope=cache_scope,
+        global_cache_root=global_cache_root,
+        repo_cache_path=repo_cache_path,
+    )
+
+
+def _parse_agents_config(
+    cfg: Optional[Dict[str, Any]], defaults: Dict[str, Any]
+) -> Dict[str, AgentConfig]:
+    raw_agents = cfg.get("agents") if cfg else None
+    if not isinstance(raw_agents, dict):
+        raw_agents = defaults.get("agents", {})
+    agents: Dict[str, AgentConfig] = {}
+    for agent_id, agent_cfg in raw_agents.items():
+        if not isinstance(agent_cfg, dict):
+            continue
+        binary = agent_cfg.get("binary")
+        if not isinstance(binary, str) or not binary.strip():
+            continue
+        serve_command = None
+        if "serve_command" in agent_cfg:
+            serve_command = _parse_command(agent_cfg.get("serve_command"))
+        base_url = agent_cfg.get("base_url")
+        subagent_models = agent_cfg.get("subagent_models")
+        if not isinstance(subagent_models, dict):
+            subagent_models = None
+        agents[str(agent_id)] = AgentConfig(
+            binary=binary,
+            serve_command=serve_command,
+            base_url=base_url,
+            subagent_models=subagent_models,
+        )
+    return agents
+
+
+def _parse_static_assets_config(
+    cfg: Optional[Dict[str, Any]],
+    root: Path,
+    defaults: Dict[str, Any],
+) -> StaticAssetsConfig:
+    if not isinstance(cfg, dict):
+        cfg = defaults
+    cache_root_raw = cfg.get("cache_root", defaults.get("cache_root"))
+    if cache_root_raw is None:
+        raise ConfigError("static_assets.cache_root is required")
+    cache_root = resolve_config_path(
+        cache_root_raw,
+        root,
+        allow_home=True,
+        scope="static_assets.cache_root",
+    )
+    max_cache_entries = int(
+        cfg.get("max_cache_entries", defaults.get("max_cache_entries", 0))
+    )
+    max_cache_age_days_raw = cfg.get(
+        "max_cache_age_days", defaults.get("max_cache_age_days")
+    )
+    max_cache_age_days = (
+        int(max_cache_age_days_raw) if max_cache_age_days_raw is not None else None
+    )
+    return StaticAssetsConfig(
+        cache_root=cache_root,
+        max_cache_entries=max_cache_entries,
+        max_cache_age_days=max_cache_age_days,
+    )
+
+
+def load_dotenv_for_root(root: Path) -> None:
+    """
+    Best-effort load of environment variables for the provided repo root.
+
+    We intentionally load from deterministic locations rather than relying on
+    process CWD (which differs for installed entrypoints, launchd, etc.).
+    """
+    try:
+        root = root.resolve()
+        candidates = [
+            root / ".env",
+            root / ".codex-autorunner" / ".env",
+        ]
+
+        for candidate in candidates:
+            if candidate.exists():
+                # Prefer repo-local .env over inherited process env to avoid stale keys
+                # (common when running via launchd/daemon or with a global shell export).
+                load_dotenv(dotenv_path=candidate, override=True)
+    except OSError as exc:
+        logger.debug("Failed to load .env file: %s", exc)
+
+
+def _parse_dotenv_fallback(path: Path) -> Dict[str, str]:
+    env: Dict[str, str] = {}
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            if stripped.startswith("export "):
+                stripped = stripped[len("export ") :].strip()
+            if "=" not in stripped:
+                continue
+            key, value = stripped.split("=", 1)
+            key = key.strip()
+            if not key:
+                continue
+            value = value.strip()
+            if value and value[0] in {"'", '"'} and value[-1] == value[0]:
+                value = value[1:-1]
+            env[key] = value
+    except OSError:
+        return {}
+    return env
+
+
+def resolve_env_for_root(
+    root: Path, base_env: Optional[Mapping[str, str]] = None
+) -> Dict[str, str]:
+    """
+    Return a merged env mapping for a repo root without mutating process env.
+
+    Precedence mirrors load_dotenv_for_root: root/.env then root/.codex-autorunner/.env.
+    """
+    env = dict(base_env) if base_env is not None else dict(os.environ)
+    candidates = [
+        root / ".env",
+        root / ".codex-autorunner" / ".env",
+    ]
+    for candidate in candidates:
+        if not candidate.exists():
+            continue
+        if DOTENV_AVAILABLE:
+            values = dotenv_values(candidate)
+            if isinstance(values, dict):
+                for key, value in values.items():
+                    if key and value is not None:
+                        env[str(key)] = str(value)
+                continue
+        env.update(_parse_dotenv_fallback(candidate))
+    return env
+
+
+VOICE_ENV_OVERRIDES = (
+    "CODEX_AUTORUNNER_VOICE_ENABLED",
+    "CODEX_AUTORUNNER_VOICE_PROVIDER",
+    "CODEX_AUTORUNNER_VOICE_LATENCY",
+    "CODEX_AUTORUNNER_VOICE_CHUNK_MS",
+    "CODEX_AUTORUNNER_VOICE_SAMPLE_RATE",
+    "CODEX_AUTORUNNER_VOICE_WARN_REMOTE",
+    "CODEX_AUTORUNNER_VOICE_MAX_MS",
+    "CODEX_AUTORUNNER_VOICE_SILENCE_MS",
+    "CODEX_AUTORUNNER_VOICE_MIN_HOLD_MS",
+)
+
+TELEGRAM_ENV_OVERRIDES = (
+    "CAR_OPENCODE_COMMAND",
+    "CAR_TELEGRAM_APP_SERVER_COMMAND",
+)
+
+
+def collect_env_overrides(
+    *,
+    env: Optional[Mapping[str, str]] = None,
+    include_telegram: bool = False,
+) -> list[str]:
+    source = env if env is not None else os.environ
+    overrides: list[str] = []
+
+    def _has_value(key: str) -> bool:
+        value = source.get(key)
+        if value is None:
+            return False
+        return str(value).strip() != ""
+
+    if source.get("CODEX_AUTORUNNER_SKIP_UPDATE_CHECKS") == "1":
+        overrides.append("CODEX_AUTORUNNER_SKIP_UPDATE_CHECKS")
+    if _has_value("CODEX_DISABLE_APP_SERVER_AUTORESTART_FOR_TESTS"):
+        overrides.append("CODEX_DISABLE_APP_SERVER_AUTORESTART_FOR_TESTS")
+    if _has_value("CAR_GLOBAL_STATE_ROOT"):
+        overrides.append("CAR_GLOBAL_STATE_ROOT")
+    for key in VOICE_ENV_OVERRIDES:
+        if _has_value(key):
+            overrides.append(key)
+    if include_telegram:
+        for key in TELEGRAM_ENV_OVERRIDES:
+            if _has_value(key):
+                overrides.append(key)
+    return overrides
+
+
+def load_hub_config_data(config_path: Path) -> Dict[str, Any]:
+    """Load, merge, and return a raw hub config dict for the given config path."""
+    load_dotenv_for_root(config_path.parent.parent.resolve())
+    data = _load_yaml_dict(config_path)
+    mode = data.get("mode")
+    if mode not in (None, "hub"):
+        raise ConfigError(f"Invalid mode '{mode}'; expected 'hub'")
+    root = config_path.parent.parent.resolve()
+    return resolve_hub_config_data(root, data)
+
+
+def _resolve_hub_config_path(start: Path) -> Path:
+    config_path = find_nearest_hub_config_path(start)
+    if not config_path:
+        # Auto-initialize hub config if missing in the current directory or parents.
+        # If we are in a git repo, we'll initialize a hub there.
+        try:
+            from .utils import find_repo_root
+
+            target_root = find_repo_root(start)
+        except Exception:
+            target_root = start
+
+        from ..bootstrap import seed_hub_files
+
+        seed_hub_files(target_root)
+        config_path = find_nearest_hub_config_path(target_root)
+
+    if not config_path:
+        raise ConfigError(
+            f"Missing hub config file; expected to find {CONFIG_FILENAME} in {start} or parents (use --hub to specify)"
+        )
+    return config_path
+
+
+def load_hub_config(start: Path) -> HubConfig:
+    """Load the nearest hub config walking upward from the provided path."""
+    config_path = _resolve_hub_config_path(start)
+    merged = load_hub_config_data(config_path)
+    _validate_hub_config(merged, root=config_path.parent.parent.resolve())
+    return _build_hub_config(config_path, merged)
+
+
+def _resolve_hub_path_for_repo(repo_root: Path, hub_path: Optional[Path]) -> Path:
+    if hub_path:
+        candidate = hub_path
+        if candidate.is_dir():
+            candidate = candidate / CONFIG_FILENAME
+        if not candidate.exists():
+            raise ConfigError(f"Hub config not found at {candidate}")
+        data = _load_yaml_dict(candidate)
+        mode = data.get("mode")
+        if mode not in (None, "hub"):
+            raise ConfigError(f"Invalid hub config mode '{mode}'; expected 'hub'")
+        return candidate
+    return _resolve_hub_config_path(repo_root)
+
+
+def derive_repo_config(
+    hub: HubConfig, repo_root: Path, *, load_env: bool = True
+) -> RepoConfig:
+    if load_env:
+        load_dotenv_for_root(repo_root)
+    merged = derive_repo_config_data(hub.raw, repo_root)
+    merged["mode"] = "repo"
+    merged["version"] = CONFIG_VERSION
+    _validate_repo_config(merged, root=repo_root)
+    return _build_repo_config(repo_root / CONFIG_FILENAME, merged)
+
+
+def _resolve_repo_root(start: Path) -> Path:
+    search_dir = start.resolve() if start.is_dir() else start.resolve().parent
+    for current in [search_dir] + list(search_dir.parents):
+        if (current / ".codex-autorunner" / "state.sqlite3").exists():
+            return current
+        if (current / ".git").exists():
+            return current
+    return search_dir
+
+
+def load_repo_config(start: Path, hub_path: Optional[Path] = None) -> RepoConfig:
+    """Load a repo config by deriving it from the nearest hub config."""
+    repo_root = _resolve_repo_root(start)
+    hub_config_path = _resolve_hub_path_for_repo(repo_root, hub_path)
+    hub_config = load_hub_config_data(hub_config_path)
+    _validate_hub_config(hub_config, root=hub_config_path.parent.parent.resolve())
+    hub = _build_hub_config(hub_config_path, hub_config)
+    return derive_repo_config(hub, repo_root)
+
+
+def _build_repo_config(config_path: Path, cfg: Dict[str, Any]) -> RepoConfig:
+    root = config_path.parent.parent.resolve()
+    docs = {
+        "active_context": Path(cfg["docs"]["active_context"]),
+        "decisions": Path(cfg["docs"]["decisions"]),
+        "spec": Path(cfg["docs"]["spec"]),
+    }
+    voice_cfg = cfg.get("voice") if isinstance(cfg.get("voice"), dict) else {}
+    voice_cfg = cast(Dict[str, Any], voice_cfg)
+    template_val = cfg["prompt"].get("template")
+    template = root / template_val if template_val else None
+    term_args = cfg["codex"].get("terminal_args") or []
+    terminal_cfg = cfg.get("terminal") if isinstance(cfg.get("terminal"), dict) else {}
+    terminal_cfg = cast(Dict[str, Any], terminal_cfg)
+    idle_timeout_value = terminal_cfg.get("idle_timeout_seconds")
+    idle_timeout_seconds: Optional[int]
+    if idle_timeout_value is None:
+        idle_timeout_seconds = None
+    else:
+        idle_timeout_seconds = int(idle_timeout_value)
+        if idle_timeout_seconds <= 0:
+            idle_timeout_seconds = None
+    notifications_cfg = (
+        cfg.get("notifications") if isinstance(cfg.get("notifications"), dict) else {}
+    )
+    notifications_cfg = cast(Dict[str, Any], notifications_cfg)
+    security_cfg = cfg.get("security") if isinstance(cfg.get("security"), dict) else {}
+    security_cfg = cast(Dict[str, Any], security_cfg)
+    log_cfg = cfg.get("log", {})
+    log_cfg = cast(Dict[str, Any], log_cfg if isinstance(log_cfg, dict) else {})
+    server_log_cfg = cfg.get("server_log", {}) or {}
+    server_log_cfg = cast(
+        Dict[str, Any], server_log_cfg if isinstance(server_log_cfg, dict) else {}
+    )
+    update_cfg = cfg.get("update")
+    update_cfg = cast(
+        Dict[str, Any], update_cfg if isinstance(update_cfg, dict) else {}
+    )
+    update_skip_checks = bool(update_cfg.get("skip_checks", False))
+    autorunner_cfg = cfg.get("autorunner")
+    autorunner_cfg = cast(
+        Dict[str, Any], autorunner_cfg if isinstance(autorunner_cfg, dict) else {}
+    )
+    reuse_session_value = autorunner_cfg.get("reuse_session")
+    autorunner_reuse_session = (
+        bool(reuse_session_value) if reuse_session_value is not None else False
+    )
+    return RepoConfig(
+        raw=cfg,
+        root=root,
+        version=int(cfg["version"]),
+        mode="repo",
+        docs=docs,
+        codex_binary=cfg["codex"]["binary"],
+        codex_args=list(cfg["codex"].get("args", [])),
+        codex_terminal_args=list(term_args) if isinstance(term_args, list) else [],
+        codex_model=cfg["codex"].get("model"),
+        codex_reasoning=cfg["codex"].get("reasoning"),
+        agents=_parse_agents_config(cfg, DEFAULT_REPO_CONFIG),
+        prompt_prev_run_max_chars=int(cfg["prompt"]["prev_run_max_chars"]),
+        prompt_template=template,
+        runner_sleep_seconds=int(cfg["runner"]["sleep_seconds"]),
+        runner_stop_after_runs=cfg["runner"].get("stop_after_runs"),
+        runner_max_wallclock_seconds=cfg["runner"].get("max_wallclock_seconds"),
+        runner_no_progress_threshold=int(cfg["runner"].get("no_progress_threshold", 3)),
+        autorunner_reuse_session=autorunner_reuse_session,
+        git_auto_commit=bool(cfg["git"].get("auto_commit", False)),
+        git_commit_message_template=str(cfg["git"].get("commit_message_template")),
+        update_skip_checks=update_skip_checks,
+        ticket_flow=cast(Dict[str, Any], cfg.get("ticket_flow") or {}),
+        app_server=_parse_app_server_config(
+            cfg.get("app_server"),
+            root,
+            DEFAULT_REPO_CONFIG["app_server"],
+        ),
+        opencode=_parse_opencode_config(
+            cfg.get("opencode"), root, DEFAULT_REPO_CONFIG.get("opencode")
+        ),
+        usage=_parse_usage_config(
+            cfg.get("usage"), root, DEFAULT_REPO_CONFIG.get("usage")
+        ),
+        security=security_cfg,
+        server_host=str(cfg["server"].get("host")),
+        server_port=int(cfg["server"].get("port")),
+        server_base_path=_normalize_base_path(cfg["server"].get("base_path", "")),
+        server_access_log=bool(cfg["server"].get("access_log", False)),
+        server_auth_token_env=str(cfg["server"].get("auth_token_env", "")),
+        server_allowed_hosts=list(cfg["server"].get("allowed_hosts") or []),
+        server_allowed_origins=list(cfg["server"].get("allowed_origins") or []),
+        notifications=notifications_cfg,
+        terminal_idle_timeout_seconds=idle_timeout_seconds,
+        log=LogConfig(
+            path=root / log_cfg.get("path", DEFAULT_REPO_CONFIG["log"]["path"]),
+            max_bytes=int(
+                log_cfg.get("max_bytes", DEFAULT_REPO_CONFIG["log"]["max_bytes"])
+            ),
+            backup_count=int(
+                log_cfg.get("backup_count", DEFAULT_REPO_CONFIG["log"]["backup_count"])
+            ),
+        ),
+        server_log=LogConfig(
+            path=root
+            / server_log_cfg.get("path", DEFAULT_REPO_CONFIG["server_log"]["path"]),
+            max_bytes=int(
+                server_log_cfg.get(
+                    "max_bytes", DEFAULT_REPO_CONFIG["server_log"]["max_bytes"]
+                )
+            ),
+            backup_count=int(
+                server_log_cfg.get(
+                    "backup_count",
+                    DEFAULT_REPO_CONFIG["server_log"]["backup_count"],
+                )
+            ),
+        ),
+        voice=voice_cfg,
+        static_assets=_parse_static_assets_config(
+            cfg.get("static_assets"), root, DEFAULT_REPO_CONFIG["static_assets"]
+        ),
+        housekeeping=parse_housekeeping_config(cfg.get("housekeeping")),
+    )
+
+
+def _build_hub_config(config_path: Path, cfg: Dict[str, Any]) -> HubConfig:
+    root = config_path.parent.parent.resolve()
+    hub_cfg = cfg["hub"]
+    log_cfg = hub_cfg["log"]
+    server_log_cfg = cfg.get("server_log")
+    # Default to hub log if server_log is not configured.
+    if not isinstance(server_log_cfg, dict):
+        server_log_cfg = {
+            "path": log_cfg["path"],
+            "max_bytes": log_cfg["max_bytes"],
+            "backup_count": log_cfg["backup_count"],
+        }
+
+    log_path_str = log_cfg["path"]
+    try:
+        log_path = resolve_config_path(log_path_str, root, scope="log.path")
+    except ConfigPathError as exc:
+        raise ConfigError(str(exc)) from exc
+
+    server_log_path_str = str(server_log_cfg.get("path", log_cfg["path"]))
+    try:
+        server_log_path = resolve_config_path(
+            server_log_path_str,
+            root,
+            scope="server_log.path",
+        )
+    except ConfigPathError as exc:
+        raise ConfigError(str(exc)) from exc
+
+    update_cfg = cfg.get("update")
+    update_cfg = cast(
+        Dict[str, Any], update_cfg if isinstance(update_cfg, dict) else {}
+    )
+    update_skip_checks = bool(update_cfg.get("skip_checks", False))
+
+    return HubConfig(
+        raw=cfg,
+        root=root,
+        version=int(cfg["version"]),
+        mode="hub",
+        repo_defaults=cast(Dict[str, Any], cfg.get("repo_defaults") or {}),
+        agents=_parse_agents_config(cfg, DEFAULT_HUB_CONFIG),
+        repos_root=(root / hub_cfg["repos_root"]).resolve(),
+        worktrees_root=(root / hub_cfg["worktrees_root"]).resolve(),
+        manifest_path=root / hub_cfg["manifest"],
+        discover_depth=int(hub_cfg["discover_depth"]),
+        auto_init_missing=bool(hub_cfg["auto_init_missing"]),
+        repo_server_inherit=bool(hub_cfg.get("repo_server_inherit", True)),
+        update_repo_url=str(hub_cfg.get("update_repo_url", "")),
+        update_repo_ref=str(hub_cfg.get("update_repo_ref", "main")),
+        update_skip_checks=update_skip_checks,
+        app_server=_parse_app_server_config(
+            cfg.get("app_server"),
+            root,
+            DEFAULT_HUB_CONFIG["app_server"],
+        ),
+        opencode=_parse_opencode_config(
+            cfg.get("opencode"), root, DEFAULT_HUB_CONFIG.get("opencode")
+        ),
+        usage=_parse_usage_config(
+            cfg.get("usage"), root, DEFAULT_HUB_CONFIG.get("usage")
+        ),
+        server_host=str(cfg["server"]["host"]),
+        server_port=int(cfg["server"]["port"]),
+        server_base_path=_normalize_base_path(cfg["server"].get("base_path", "")),
+        server_access_log=bool(cfg["server"].get("access_log", False)),
+        server_auth_token_env=str(cfg["server"].get("auth_token_env", "")),
+        server_allowed_hosts=list(cfg["server"].get("allowed_hosts") or []),
+        server_allowed_origins=list(cfg["server"].get("allowed_origins") or []),
+        log=LogConfig(
+            path=log_path,
+            max_bytes=int(log_cfg["max_bytes"]),
+            backup_count=int(log_cfg["backup_count"]),
+        ),
+        server_log=LogConfig(
+            path=server_log_path,
+            max_bytes=int(server_log_cfg.get("max_bytes", log_cfg["max_bytes"])),
+            backup_count=int(
+                server_log_cfg.get("backup_count", log_cfg["backup_count"])
+            ),
+        ),
+        static_assets=_parse_static_assets_config(
+            cfg.get("static_assets"), root, DEFAULT_HUB_CONFIG["static_assets"]
+        ),
+        housekeeping=parse_housekeeping_config(cfg.get("housekeeping")),
+    )
+
+
+def _validate_version(cfg: Dict[str, Any]) -> None:
+    if cfg.get("version") != CONFIG_VERSION:
+        raise ConfigError(f"Unsupported config version; expected {CONFIG_VERSION}")
+
+
+def _is_loopback_host(host: str) -> bool:
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def _validate_server_security(server: Dict[str, Any]) -> None:
+    allowed_hosts = server.get("allowed_hosts")
+    if allowed_hosts is not None and not isinstance(allowed_hosts, list):
+        raise ConfigError("server.allowed_hosts must be a list of strings if provided")
+    if isinstance(allowed_hosts, list):
+        for entry in allowed_hosts:
+            if not isinstance(entry, str):
+                raise ConfigError("server.allowed_hosts must be a list of strings")
+
+    allowed_origins = server.get("allowed_origins")
+    if allowed_origins is not None and not isinstance(allowed_origins, list):
+        raise ConfigError(
+            "server.allowed_origins must be a list of strings if provided"
+        )
+    if isinstance(allowed_origins, list):
+        for entry in allowed_origins:
+            if not isinstance(entry, str):
+                raise ConfigError("server.allowed_origins must be a list of strings")
+
+    host = str(server.get("host", ""))
+    if not _is_loopback_host(host) and not allowed_hosts:
+        raise ConfigError(
+            "server.allowed_hosts must be set when binding to a non-loopback host"
+        )
+
+
+def _validate_app_server_config(cfg: Dict[str, Any]) -> None:
+    app_server_cfg = cfg.get("app_server")
+    if app_server_cfg is None:
+        return
+    if not isinstance(app_server_cfg, dict):
+        raise ConfigError("app_server section must be a mapping if provided")
+    command = app_server_cfg.get("command")
+    if command is not None and not isinstance(command, (list, str)):
+        raise ConfigError("app_server.command must be a list or string if provided")
+    if "state_root" in app_server_cfg and not isinstance(
+        app_server_cfg.get("state_root", ""), str
+    ):
+        raise ConfigError("app_server.state_root must be a string path")
+    if (
+        "auto_restart" in app_server_cfg
+        and app_server_cfg.get("auto_restart") is not None
+    ):
+        if not isinstance(app_server_cfg.get("auto_restart"), bool):
+            raise ConfigError("app_server.auto_restart must be boolean or null")
+    for key in ("max_handles", "idle_ttl_seconds"):
+        if key in app_server_cfg and app_server_cfg.get(key) is not None:
+            if not isinstance(app_server_cfg.get(key), int):
+                raise ConfigError(f"app_server.{key} must be an integer or null")
+    if (
+        "turn_timeout_seconds" in app_server_cfg
+        and app_server_cfg.get("turn_timeout_seconds") is not None
+    ):
+        if not isinstance(app_server_cfg.get("turn_timeout_seconds"), (int, float)):
+            raise ConfigError(
+                "app_server.turn_timeout_seconds must be a number or null"
+            )
+    if (
+        "request_timeout" in app_server_cfg
+        and app_server_cfg.get("request_timeout") is not None
+    ):
+        if not isinstance(app_server_cfg.get("request_timeout"), (int, float)):
+            raise ConfigError("app_server.request_timeout must be a number or null")
+    for key in (
+        "turn_stall_timeout_seconds",
+        "turn_stall_poll_interval_seconds",
+        "turn_stall_recovery_min_interval_seconds",
+    ):
+        if key in app_server_cfg and app_server_cfg.get(key) is not None:
+            if not isinstance(app_server_cfg.get(key), (int, float)):
+                raise ConfigError(f"app_server.{key} must be a number or null")
+    client_cfg = app_server_cfg.get("client")
+    if client_cfg is not None:
+        if not isinstance(client_cfg, dict):
+            raise ConfigError("app_server.client must be a mapping if provided")
+        for key in (
+            "max_message_bytes",
+            "oversize_preview_bytes",
+            "max_oversize_drain_bytes",
+        ):
+            if key in client_cfg:
+                value = client_cfg.get(key)
+                if not isinstance(value, int):
+                    raise ConfigError(f"app_server.client.{key} must be an integer")
+                if value <= 0:
+                    raise ConfigError(f"app_server.client.{key} must be > 0")
+        for key in (
+            "restart_backoff_initial_seconds",
+            "restart_backoff_max_seconds",
+            "restart_backoff_jitter_ratio",
+        ):
+            if key in client_cfg:
+                value = client_cfg.get(key)
+                if not isinstance(value, (int, float)):
+                    raise ConfigError(
+                        f"app_server.client.{key} must be a number if provided"
+                    )
+                if key == "restart_backoff_jitter_ratio":
+                    if value < 0:
+                        raise ConfigError(
+                            "app_server.client.restart_backoff_jitter_ratio must be >= 0"
+                        )
+                elif value <= 0:
+                    raise ConfigError(f"app_server.client.{key} must be > 0")
+    prompts = app_server_cfg.get("prompts")
+    if prompts is not None:
+        if not isinstance(prompts, dict):
+            raise ConfigError("app_server.prompts must be a mapping if provided")
+        expected = {
+            "doc_chat": {
+                "max_chars": 1,
+                "message_max_chars": 1,
+                "target_excerpt_max_chars": 0,
+                "recent_summary_max_chars": 0,
+            },
+            "spec_ingest": {
+                "max_chars": 1,
+                "message_max_chars": 1,
+                "spec_excerpt_max_chars": 0,
+            },
+            "autorunner": {
+                "max_chars": 1,
+                "message_max_chars": 1,
+                "todo_excerpt_max_chars": 0,
+                "prev_run_max_chars": 0,
+            },
+        }
+        for section, keys in expected.items():
+            section_cfg = prompts.get(section)
+            if section_cfg is None:
+                continue
+            if not isinstance(section_cfg, dict):
+                raise ConfigError(f"app_server.prompts.{section} must be a mapping")
+            for key, min_value in keys.items():
+                if key not in section_cfg:
+                    continue
+                value = section_cfg.get(key)
+                if value is None or not isinstance(value, int):
+                    raise ConfigError(
+                        f"app_server.prompts.{section}.{key} must be an integer"
+                    )
+                if value < min_value:
+                    raise ConfigError(
+                        f"app_server.prompts.{section}.{key} must be >= {min_value}"
+                    )
+
+
+def _validate_opencode_config(cfg: Dict[str, Any]) -> None:
+    opencode_cfg = cfg.get("opencode")
+    if opencode_cfg is None:
+        return
+    if not isinstance(opencode_cfg, dict):
+        raise ConfigError("opencode section must be a mapping if provided")
+    if (
+        "session_stall_timeout_seconds" in opencode_cfg
+        and opencode_cfg.get("session_stall_timeout_seconds") is not None
+    ):
+        if not isinstance(
+            opencode_cfg.get("session_stall_timeout_seconds"), (int, float)
+        ):
+            raise ConfigError(
+                "opencode.session_stall_timeout_seconds must be a number or null"
+            )
+
+
+def _validate_update_config(cfg: Dict[str, Any]) -> None:
+    update_cfg = cfg.get("update")
+    if update_cfg is None:
+        return
+    if not isinstance(update_cfg, dict):
+        raise ConfigError("update section must be a mapping if provided")
+    if "skip_checks" in update_cfg and update_cfg.get("skip_checks") is not None:
+        if not isinstance(update_cfg.get("skip_checks"), bool):
+            raise ConfigError("update.skip_checks must be boolean or null")
+
+
+def _validate_usage_config(cfg: Dict[str, Any], *, root: Path) -> None:
+    usage_cfg = cfg.get("usage")
+    if usage_cfg is None:
+        return
+    if not isinstance(usage_cfg, dict):
+        raise ConfigError("usage section must be a mapping if provided")
+    cache_scope = usage_cfg.get("cache_scope")
+    if cache_scope is not None and not isinstance(cache_scope, str):
+        raise ConfigError("usage.cache_scope must be a string if provided")
+    if isinstance(cache_scope, str):
+        scope_val = cache_scope.strip().lower()
+        if scope_val and scope_val not in {"global", "repo"}:
+            raise ConfigError("usage.cache_scope must be 'global' or 'repo'")
+    global_cache_root = usage_cfg.get("global_cache_root")
+    if global_cache_root is not None:
+        if not isinstance(global_cache_root, str):
+            raise ConfigError("usage.global_cache_root must be a string or null")
+        try:
+            resolve_config_path(
+                global_cache_root,
+                root,
+                allow_absolute=True,
+                allow_home=True,
+                scope="usage.global_cache_root",
+            )
+        except ConfigPathError as exc:
+            raise ConfigError(str(exc)) from exc
+    repo_cache_path = usage_cfg.get("repo_cache_path")
+    if repo_cache_path is not None:
+        if not isinstance(repo_cache_path, str):
+            raise ConfigError("usage.repo_cache_path must be a string or null")
+        try:
+            resolve_config_path(
+                repo_cache_path,
+                root,
+                scope="usage.repo_cache_path",
+            )
+        except ConfigPathError as exc:
+            raise ConfigError(str(exc)) from exc
+
+
+def _validate_agents_config(cfg: Dict[str, Any]) -> None:
+    agents_cfg = cfg.get("agents")
+    if agents_cfg is None:
+        return
+    if not isinstance(agents_cfg, dict):
+        raise ConfigError("agents section must be a mapping if provided")
+    for agent_id, agent_cfg in agents_cfg.items():
+        if not isinstance(agent_cfg, dict):
+            raise ConfigError(f"agents.{agent_id} must be a mapping")
+        binary = agent_cfg.get("binary")
+        if not isinstance(binary, str) or not binary.strip():
+            raise ConfigError(f"agents.{agent_id}.binary is required")
+        if "serve_command" in agent_cfg and not isinstance(
+            agent_cfg.get("serve_command"), (list, str)
+        ):
+            raise ConfigError(f"agents.{agent_id}.serve_command must be a list or str")
+
+
+def _validate_repo_config(cfg: Dict[str, Any], *, root: Path) -> None:
+    _validate_version(cfg)
+    if cfg.get("mode") != "repo":
+        raise ConfigError("Repo config must set mode: repo")
+    docs = cfg.get("docs")
+    if not isinstance(docs, dict):
+        raise ConfigError("docs must be a mapping")
+    for key, value in docs.items():
+        if not isinstance(value, str) or not value:
+            raise ConfigError(f"docs.{key} must be a non-empty string path")
+        try:
+            resolve_config_path(
+                value,
+                root,
+                scope=f"docs.{key}",
+            )
+        except ConfigPathError as exc:
+            raise ConfigError(str(exc)) from exc
+    for key in ("active_context", "decisions", "spec"):
+        if not isinstance(docs.get(key), str) or not docs[key]:
+            raise ConfigError(f"docs.{key} must be a non-empty string path")
+    _validate_agents_config(cfg)
+    codex = cfg.get("codex")
+    if not isinstance(codex, dict):
+        raise ConfigError("codex section must be a mapping")
+    if not codex.get("binary"):
+        raise ConfigError("codex.binary is required")
+    if not isinstance(codex.get("args", []), list):
+        raise ConfigError("codex.args must be a list")
+    if "terminal_args" in codex and not isinstance(
+        codex.get("terminal_args", []), list
+    ):
+        raise ConfigError("codex.terminal_args must be a list if provided")
+    if (
+        "model" in codex
+        and codex.get("model") is not None
+        and not isinstance(codex.get("model"), str)
+    ):
+        raise ConfigError("codex.model must be a string or null if provided")
+    if (
+        "reasoning" in codex
+        and codex.get("reasoning") is not None
+        and not isinstance(codex.get("reasoning"), str)
+    ):
+        raise ConfigError("codex.reasoning must be a string or null if provided")
+    if "models" in codex:
+        models = codex.get("models")
+        if models is not None and not isinstance(models, dict):
+            raise ConfigError("codex.models must be a mapping or null if provided")
+        if isinstance(models, dict):
+            for key in ("small", "large"):
+                if (
+                    key in models
+                    and models.get(key) is not None
+                    and not isinstance(models.get(key), str)
+                ):
+                    raise ConfigError(f"codex.models.{key} must be a string or null")
+    prompt = cfg.get("prompt")
+    if not isinstance(prompt, dict):
+        raise ConfigError("prompt section must be a mapping")
+    if not isinstance(prompt.get("prev_run_max_chars", 0), int):
+        raise ConfigError("prompt.prev_run_max_chars must be an integer")
+    runner = cfg.get("runner")
+    if not isinstance(runner, dict):
+        raise ConfigError("runner section must be a mapping")
+    if not isinstance(runner.get("sleep_seconds", 0), int):
+        raise ConfigError("runner.sleep_seconds must be an integer")
+    for k in ("stop_after_runs", "max_wallclock_seconds"):
+        val = runner.get(k)
+        if val is not None and not isinstance(val, int):
+            raise ConfigError(f"runner.{k} must be an integer or null")
+    autorunner_cfg = cfg.get("autorunner")
+    if autorunner_cfg is not None and not isinstance(autorunner_cfg, dict):
+        raise ConfigError("autorunner section must be a mapping if provided")
+    if isinstance(autorunner_cfg, dict):
+        reuse_session = autorunner_cfg.get("reuse_session")
+        if reuse_session is not None and not isinstance(reuse_session, bool):
+            raise ConfigError("autorunner.reuse_session must be boolean or null")
+    ticket_flow_cfg = cfg.get("ticket_flow")
+    if ticket_flow_cfg is not None and not isinstance(ticket_flow_cfg, dict):
+        raise ConfigError("ticket_flow section must be a mapping if provided")
+    if isinstance(ticket_flow_cfg, dict):
+        if "approval_mode" in ticket_flow_cfg and not isinstance(
+            ticket_flow_cfg.get("approval_mode"), str
+        ):
+            raise ConfigError("ticket_flow.approval_mode must be a string")
+        if "default_approval_decision" in ticket_flow_cfg and not isinstance(
+            ticket_flow_cfg.get("default_approval_decision"), str
+        ):
+            raise ConfigError("ticket_flow.default_approval_decision must be a string")
+    ui_cfg = cfg.get("ui")
+    if ui_cfg is not None and not isinstance(ui_cfg, dict):
+        raise ConfigError("ui section must be a mapping if provided")
+    if isinstance(ui_cfg, dict):
+        if "editor" in ui_cfg and not isinstance(ui_cfg.get("editor"), str):
+            raise ConfigError("ui.editor must be a string if provided")
+    git = cfg.get("git")
+    if not isinstance(git, dict):
+        raise ConfigError("git section must be a mapping")
+    if not isinstance(git.get("auto_commit", False), bool):
+        raise ConfigError("git.auto_commit must be boolean")
+    github = cfg.get("github", {})
+    if github is not None and not isinstance(github, dict):
+        raise ConfigError("github section must be a mapping if provided")
+    if isinstance(github, dict):
+        if "enabled" in github and not isinstance(github.get("enabled"), bool):
+            raise ConfigError("github.enabled must be boolean")
+        if "pr_draft_default" in github and not isinstance(
+            github.get("pr_draft_default"), bool
+        ):
+            raise ConfigError("github.pr_draft_default must be boolean")
+        if "sync_commit_mode" in github and not isinstance(
+            github.get("sync_commit_mode"), str
+        ):
+            raise ConfigError("github.sync_commit_mode must be a string")
+        if "sync_agent_timeout_seconds" in github and not isinstance(
+            github.get("sync_agent_timeout_seconds"), int
+        ):
+            raise ConfigError("github.sync_agent_timeout_seconds must be an integer")
+
+    server = cfg.get("server")
+    if not isinstance(server, dict):
+        raise ConfigError("server section must be a mapping")
+    if not isinstance(server.get("host", ""), str):
+        raise ConfigError("server.host must be a string")
+    if not isinstance(server.get("port", 0), int):
+        raise ConfigError("server.port must be an integer")
+    if "base_path" in server and not isinstance(server.get("base_path", ""), str):
+        raise ConfigError("server.base_path must be a string if provided")
+    if "access_log" in server and not isinstance(server.get("access_log", False), bool):
+        raise ConfigError("server.access_log must be boolean if provided")
+    if "auth_token_env" in server and not isinstance(
+        server.get("auth_token_env", ""), str
+    ):
+        raise ConfigError("server.auth_token_env must be a string if provided")
+    _validate_server_security(server)
+    _validate_app_server_config(cfg)
+    _validate_opencode_config(cfg)
+    _validate_update_config(cfg)
+    _validate_usage_config(cfg, root=root)
+    notifications_cfg = cfg.get("notifications")
+    if notifications_cfg is not None:
+        if not isinstance(notifications_cfg, dict):
+            raise ConfigError("notifications section must be a mapping if provided")
+        if "enabled" in notifications_cfg:
+            enabled_val = notifications_cfg.get("enabled")
+            if not (
+                isinstance(enabled_val, bool)
+                or enabled_val is None
+                or (isinstance(enabled_val, str) and enabled_val.lower() == "auto")
+            ):
+                raise ConfigError(
+                    "notifications.enabled must be boolean, null, or 'auto'"
+                )
+        events = notifications_cfg.get("events")
+        if events is not None and not isinstance(events, list):
+            raise ConfigError("notifications.events must be a list if provided")
+        if isinstance(events, list):
+            for entry in events:
+                if not isinstance(entry, str):
+                    raise ConfigError("notifications.events must be a list of strings")
+        tui_idle_seconds = notifications_cfg.get("tui_idle_seconds")
+        if tui_idle_seconds is not None:
+            if not isinstance(tui_idle_seconds, (int, float)):
+                raise ConfigError(
+                    "notifications.tui_idle_seconds must be a number if provided"
+                )
+            if tui_idle_seconds < 0:
+                raise ConfigError(
+                    "notifications.tui_idle_seconds must be >= 0 if provided"
+                )
+        timeout_seconds = notifications_cfg.get("timeout_seconds")
+        if timeout_seconds is not None:
+            if not isinstance(timeout_seconds, (int, float)):
+                raise ConfigError(
+                    "notifications.timeout_seconds must be a number if provided"
+                )
+            if timeout_seconds <= 0:
+                raise ConfigError(
+                    "notifications.timeout_seconds must be > 0 if provided"
+                )
+        discord_cfg = notifications_cfg.get("discord")
+        if discord_cfg is not None and not isinstance(discord_cfg, dict):
+            raise ConfigError("notifications.discord must be a mapping if provided")
+        if isinstance(discord_cfg, dict):
+            if "enabled" in discord_cfg and not isinstance(
+                discord_cfg.get("enabled"), bool
+            ):
+                raise ConfigError("notifications.discord.enabled must be boolean")
+            if "webhook_url_env" in discord_cfg and not isinstance(
+                discord_cfg.get("webhook_url_env"), str
+            ):
+                raise ConfigError(
+                    "notifications.discord.webhook_url_env must be a string"
+                )
+        telegram_cfg = notifications_cfg.get("telegram")
+        if telegram_cfg is not None and not isinstance(telegram_cfg, dict):
+            raise ConfigError("notifications.telegram must be a mapping if provided")
+        if isinstance(telegram_cfg, dict):
+            if "enabled" in telegram_cfg and not isinstance(
+                telegram_cfg.get("enabled"), bool
+            ):
+                raise ConfigError("notifications.telegram.enabled must be boolean")
+            if "bot_token_env" in telegram_cfg and not isinstance(
+                telegram_cfg.get("bot_token_env"), str
+            ):
+                raise ConfigError(
+                    "notifications.telegram.bot_token_env must be a string"
+                )
+            if "chat_id_env" in telegram_cfg and not isinstance(
+                telegram_cfg.get("chat_id_env"), str
+            ):
+                raise ConfigError("notifications.telegram.chat_id_env must be a string")
+            if "thread_id_env" in telegram_cfg and not isinstance(
+                telegram_cfg.get("thread_id_env"), str
+            ):
+                raise ConfigError(
+                    "notifications.telegram.thread_id_env must be a string"
+                )
+            if "thread_id" in telegram_cfg:
+                thread_id = telegram_cfg.get("thread_id")
+                if thread_id is not None and not isinstance(thread_id, int):
+                    raise ConfigError(
+                        "notifications.telegram.thread_id must be an integer or null"
+                    )
+            if "thread_id_map" in telegram_cfg:
+                thread_id_map = telegram_cfg.get("thread_id_map")
+                if not isinstance(thread_id_map, dict):
+                    raise ConfigError(
+                        "notifications.telegram.thread_id_map must be a mapping"
+                    )
+                for key, value in thread_id_map.items():
+                    if not isinstance(key, str) or not isinstance(value, int):
+                        raise ConfigError(
+                            "notifications.telegram.thread_id_map must map strings to integers"
+                        )
+    terminal_cfg = cfg.get("terminal")
+    if terminal_cfg is not None:
+        if not isinstance(terminal_cfg, dict):
+            raise ConfigError("terminal section must be a mapping if provided")
+        idle_timeout_seconds = terminal_cfg.get("idle_timeout_seconds")
+        if idle_timeout_seconds is not None and not isinstance(
+            idle_timeout_seconds, int
+        ):
+            raise ConfigError(
+                "terminal.idle_timeout_seconds must be an integer or null"
+            )
+        if isinstance(idle_timeout_seconds, int) and idle_timeout_seconds < 0:
+            raise ConfigError("terminal.idle_timeout_seconds must be >= 0")
+    log_cfg = cfg.get("log")
+    if not isinstance(log_cfg, dict):
+        raise ConfigError("log section must be a mapping")
+    if "path" in log_cfg:
+        if not isinstance(log_cfg["path"], str):
+            raise ConfigError("log.path must be a string path")
+        try:
+            resolve_config_path(log_cfg["path"], root, scope="log.path")
+        except ConfigPathError as exc:
+            raise ConfigError(str(exc)) from exc
+    for key in ("max_bytes", "backup_count"):
+        if not isinstance(log_cfg.get(key, 0), int):
+            raise ConfigError(f"log.{key} must be an integer")
+    server_log_cfg = cfg.get("server_log", {})
+    if server_log_cfg is not None and not isinstance(server_log_cfg, dict):
+        raise ConfigError("server_log section must be a mapping or null")
+    if isinstance(server_log_cfg, dict):
+        if "path" in server_log_cfg:
+            if not isinstance(server_log_cfg["path"], str):
+                raise ConfigError("server_log.path must be a string path")
+            try:
+                resolve_config_path(
+                    server_log_cfg["path"], root, scope="server_log.path"
+                )
+            except ConfigPathError as exc:
+                raise ConfigError(str(exc)) from exc
+        for key in ("max_bytes", "backup_count"):
+            if key in server_log_cfg and not isinstance(server_log_cfg.get(key), int):
+                raise ConfigError(f"server_log.{key} must be an integer")
+    voice_cfg = cfg.get("voice", {})
+    if voice_cfg is not None and not isinstance(voice_cfg, dict):
+        raise ConfigError("voice section must be a mapping if provided")
+    _validate_static_assets_config(cfg, scope="repo")
+    _validate_housekeeping_config(cfg)
+    _validate_telegram_bot_config(cfg)
+
+
+def _validate_hub_config(cfg: Dict[str, Any], *, root: Path) -> None:
+    _validate_version(cfg)
+    if cfg.get("mode") != "hub":
+        raise ConfigError("Hub config must set mode: hub")
+    if "repo" in cfg:
+        raise ConfigError("repo section is no longer supported; use repo_defaults")
+    _validate_agents_config(cfg)
+    _validate_opencode_config(cfg)
+    _validate_update_config(cfg)
+    _validate_usage_config(cfg, root=root)
+    repo_defaults = cfg.get("repo_defaults")
+    if repo_defaults is not None:
+        if not isinstance(repo_defaults, dict):
+            raise ConfigError("repo_defaults must be a mapping if provided")
+        if "mode" in repo_defaults or "version" in repo_defaults:
+            raise ConfigError("repo_defaults must not set mode or version")
+    hub_cfg = cfg.get("hub")
+    if not isinstance(hub_cfg, dict):
+        raise ConfigError("hub section must be a mapping")
+    if not isinstance(hub_cfg.get("repos_root", ""), str):
+        raise ConfigError("hub.repos_root must be a string path")
+    if not isinstance(hub_cfg.get("worktrees_root", ""), str):
+        raise ConfigError("hub.worktrees_root must be a string path")
+    if not isinstance(hub_cfg.get("manifest", ""), str):
+        raise ConfigError("hub.manifest must be a string path")
+    if hub_cfg.get("discover_depth") not in (None, 1):
+        raise ConfigError("hub.discover_depth is fixed to 1 for now")
+    if not isinstance(hub_cfg.get("auto_init_missing", True), bool):
+        raise ConfigError("hub.auto_init_missing must be boolean")
+    if "repo_server_inherit" in hub_cfg and not isinstance(
+        hub_cfg.get("repo_server_inherit"), bool
+    ):
+        raise ConfigError("hub.repo_server_inherit must be boolean")
+    if "update_repo_url" in hub_cfg and not isinstance(
+        hub_cfg.get("update_repo_url"), str
+    ):
+        raise ConfigError("hub.update_repo_url must be a string")
+    if "update_repo_ref" in hub_cfg and not isinstance(
+        hub_cfg.get("update_repo_ref"), str
+    ):
+        raise ConfigError("hub.update_repo_ref must be a string")
+    log_cfg = hub_cfg.get("log")
+    if not isinstance(log_cfg, dict):
+        raise ConfigError("hub.log section must be a mapping")
+    for key in ("path",):
+        if not isinstance(log_cfg.get(key, ""), str):
+            raise ConfigError(f"hub.log.{key} must be a string path")
+    for key in ("max_bytes", "backup_count"):
+        if not isinstance(log_cfg.get(key, 0), int):
+            raise ConfigError(f"hub.log.{key} must be an integer")
+    server = cfg.get("server")
+    if not isinstance(server, dict):
+        raise ConfigError("server section must be a mapping")
+    if not isinstance(server.get("host", ""), str):
+        raise ConfigError("server.host must be a string")
+    if not isinstance(server.get("port", 0), int):
+        raise ConfigError("server.port must be an integer")
+    if "base_path" in server and not isinstance(server.get("base_path", ""), str):
+        raise ConfigError("server.base_path must be a string if provided")
+    if "access_log" in server and not isinstance(server.get("access_log", False), bool):
+        raise ConfigError("server.access_log must be boolean if provided")
+    if "auth_token_env" in server and not isinstance(
+        server.get("auth_token_env", ""), str
+    ):
+        raise ConfigError("server.auth_token_env must be a string if provided")
+    _validate_server_security(server)
+    _validate_app_server_config(cfg)
+    server_log_cfg = cfg.get("server_log")
+    if server_log_cfg is not None and not isinstance(server_log_cfg, dict):
+        raise ConfigError("server_log section must be a mapping or null")
+    if isinstance(server_log_cfg, dict):
+        if "path" in server_log_cfg and not isinstance(
+            server_log_cfg.get("path", ""), str
+        ):
+            raise ConfigError("server_log.path must be a string path")
+        for key in ("max_bytes", "backup_count"):
+            if key in server_log_cfg and not isinstance(server_log_cfg.get(key), int):
+                raise ConfigError(f"server_log.{key} must be an integer")
+    _validate_static_assets_config(cfg, scope="hub")
+    _validate_housekeeping_config(cfg)
+    _validate_telegram_bot_config(cfg)
+
+
+def _validate_housekeeping_config(cfg: Dict[str, Any]) -> None:
+    housekeeping_cfg = cfg.get("housekeeping")
+    if housekeeping_cfg is None:
+        return
+    if not isinstance(housekeeping_cfg, dict):
+        raise ConfigError("housekeeping section must be a mapping if provided")
+    if "enabled" in housekeeping_cfg and not isinstance(
+        housekeeping_cfg.get("enabled"), bool
+    ):
+        raise ConfigError("housekeeping.enabled must be boolean")
+    if "interval_seconds" in housekeeping_cfg and not isinstance(
+        housekeeping_cfg.get("interval_seconds"), int
+    ):
+        raise ConfigError("housekeeping.interval_seconds must be an integer")
+    interval_seconds = housekeeping_cfg.get("interval_seconds")
+    if isinstance(interval_seconds, int) and interval_seconds <= 0:
+        raise ConfigError("housekeeping.interval_seconds must be greater than 0")
+    if "min_file_age_seconds" in housekeeping_cfg and not isinstance(
+        housekeeping_cfg.get("min_file_age_seconds"), int
+    ):
+        raise ConfigError("housekeeping.min_file_age_seconds must be an integer")
+    min_file_age_seconds = housekeeping_cfg.get("min_file_age_seconds")
+    if isinstance(min_file_age_seconds, int) and min_file_age_seconds < 0:
+        raise ConfigError("housekeeping.min_file_age_seconds must be >= 0")
+    if "dry_run" in housekeeping_cfg and not isinstance(
+        housekeeping_cfg.get("dry_run"), bool
+    ):
+        raise ConfigError("housekeeping.dry_run must be boolean")
+    rules = housekeeping_cfg.get("rules")
+    if rules is not None and not isinstance(rules, list):
+        raise ConfigError("housekeeping.rules must be a list if provided")
+    if isinstance(rules, list):
+        for idx, rule in enumerate(rules):
+            if not isinstance(rule, dict):
+                raise ConfigError(
+                    f"housekeeping.rules[{idx}] must be a mapping if provided"
+                )
+            if "name" in rule and not isinstance(rule.get("name"), str):
+                raise ConfigError(
+                    f"housekeeping.rules[{idx}].name must be a string if provided"
+                )
+            if "kind" in rule:
+                kind = rule.get("kind")
+                if not isinstance(kind, str):
+                    raise ConfigError(
+                        f"housekeeping.rules[{idx}].kind must be a string"
+                    )
+                if kind not in ("directory", "file"):
+                    raise ConfigError(
+                        f"housekeeping.rules[{idx}].kind must be 'directory' or 'file'"
+                    )
+            if "path" in rule and not isinstance(rule.get("path"), str):
+                raise ConfigError(f"housekeeping.rules[{idx}].path must be a string")
+            if "path" in rule:
+                path_value = rule.get("path")
+                if not isinstance(path_value, str) or not path_value:
+                    raise ConfigError(
+                        f"housekeeping.rules[{idx}].path must be a non-empty string path"
+                    )
+                path = Path(path_value)
+                if path.is_absolute():
+                    raise ConfigError(
+                        f"housekeeping.rules[{idx}].path must be relative or start with '~'"
+                    )
+                if ".." in path.parts:
+                    raise ConfigError(
+                        f"housekeeping.rules[{idx}].path must not contain '..' segments"
+                    )
+            if "glob" in rule and not isinstance(rule.get("glob"), str):
+                raise ConfigError(
+                    f"housekeeping.rules[{idx}].glob must be a string if provided"
+                )
+            if "recursive" in rule and not isinstance(rule.get("recursive"), bool):
+                raise ConfigError(
+                    f"housekeeping.rules[{idx}].recursive must be boolean if provided"
+                )
+            for key in (
+                "max_files",
+                "max_total_bytes",
+                "max_age_days",
+                "max_bytes",
+                "max_lines",
+            ):
+                if key in rule and not isinstance(rule.get(key), int):
+                    raise ConfigError(
+                        f"housekeeping.rules[{idx}].{key} must be an integer if provided"
+                    )
+                value = rule.get(key)
+                if isinstance(value, int) and value < 0:
+                    raise ConfigError(f"housekeeping.rules[{idx}].{key} must be >= 0")
+
+
+def _validate_static_assets_config(cfg: Dict[str, Any], scope: str) -> None:
+    static_cfg = cfg.get("static_assets")
+    if static_cfg is None:
+        return
+    if not isinstance(static_cfg, dict):
+        raise ConfigError(f"{scope}.static_assets must be a mapping if provided")
+    cache_root = static_cfg.get("cache_root")
+    if cache_root is not None and not isinstance(cache_root, str):
+        raise ConfigError(f"{scope}.static_assets.cache_root must be a string")
+    max_entries = static_cfg.get("max_cache_entries")
+    if max_entries is not None and not isinstance(max_entries, int):
+        raise ConfigError(f"{scope}.static_assets.max_cache_entries must be an integer")
+    if isinstance(max_entries, int) and max_entries < 0:
+        raise ConfigError(f"{scope}.static_assets.max_cache_entries must be >= 0")
+    max_age_days = static_cfg.get("max_cache_age_days")
+    if max_age_days is not None and not isinstance(max_age_days, int):
+        raise ConfigError(
+            f"{scope}.static_assets.max_cache_age_days must be an integer or null"
+        )
+    if isinstance(max_age_days, int) and max_age_days < 0:
+        raise ConfigError(f"{scope}.static_assets.max_cache_age_days must be >= 0")
+
+
+def _validate_telegram_bot_config(cfg: Dict[str, Any]) -> None:
+    telegram_cfg = cfg.get("telegram_bot")
+    if telegram_cfg is None:
+        return
+    if not isinstance(telegram_cfg, dict):
+        raise ConfigError("telegram_bot section must be a mapping if provided")
+    if "enabled" in telegram_cfg and not isinstance(telegram_cfg.get("enabled"), bool):
+        raise ConfigError("telegram_bot.enabled must be boolean")
+    if "mode" in telegram_cfg and not isinstance(telegram_cfg.get("mode"), str):
+        raise ConfigError("telegram_bot.mode must be a string")
+    if "parse_mode" in telegram_cfg:
+        parse_mode = telegram_cfg.get("parse_mode")
+        if parse_mode is not None and not isinstance(parse_mode, str):
+            raise ConfigError("telegram_bot.parse_mode must be a string or null")
+        if isinstance(parse_mode, str):
+            normalized = parse_mode.strip().lower()
+            if normalized and normalized not in ("html", "markdown", "markdownv2"):
+                raise ConfigError(
+                    "telegram_bot.parse_mode must be HTML, Markdown, MarkdownV2, or null"
+                )
+    debug_cfg = telegram_cfg.get("debug")
+    if debug_cfg is not None and not isinstance(debug_cfg, dict):
+        raise ConfigError("telegram_bot.debug must be a mapping if provided")
+    if isinstance(debug_cfg, dict):
+        if "prefix_context" in debug_cfg and not isinstance(
+            debug_cfg.get("prefix_context"), bool
+        ):
+            raise ConfigError("telegram_bot.debug.prefix_context must be boolean")
+    for key in ("bot_token_env", "chat_id_env", "app_server_command_env"):
+        if key in telegram_cfg and not isinstance(telegram_cfg.get(key), str):
+            raise ConfigError(f"telegram_bot.{key} must be a string")
+    for key in ("allowed_chat_ids", "allowed_user_ids"):
+        if key in telegram_cfg and not isinstance(telegram_cfg.get(key), list):
+            raise ConfigError(f"telegram_bot.{key} must be a list")
+    if "require_topics" in telegram_cfg and not isinstance(
+        telegram_cfg.get("require_topics"), bool
+    ):
+        raise ConfigError("telegram_bot.require_topics must be boolean")
+    defaults_cfg = telegram_cfg.get("defaults")
+    if defaults_cfg is not None and not isinstance(defaults_cfg, dict):
+        raise ConfigError("telegram_bot.defaults must be a mapping if provided")
+    if isinstance(defaults_cfg, dict):
+        if "approval_mode" in defaults_cfg and not isinstance(
+            defaults_cfg.get("approval_mode"), str
+        ):
+            raise ConfigError("telegram_bot.defaults.approval_mode must be a string")
+        for key in (
+            "approval_policy",
+            "sandbox_policy",
+            "yolo_approval_policy",
+            "yolo_sandbox_policy",
+        ):
+            if (
+                key in defaults_cfg
+                and defaults_cfg.get(key) is not None
+                and not isinstance(defaults_cfg.get(key), str)
+            ):
+                raise ConfigError(
+                    f"telegram_bot.defaults.{key} must be a string or null"
+                )
+    concurrency_cfg = telegram_cfg.get("concurrency")
+    if concurrency_cfg is not None and not isinstance(concurrency_cfg, dict):
+        raise ConfigError("telegram_bot.concurrency must be a mapping if provided")
+    if isinstance(concurrency_cfg, dict):
+        if "max_parallel_turns" in concurrency_cfg and not isinstance(
+            concurrency_cfg.get("max_parallel_turns"), int
+        ):
+            raise ConfigError(
+                "telegram_bot.concurrency.max_parallel_turns must be an integer"
+            )
+        if "per_topic_queue" in concurrency_cfg and not isinstance(
+            concurrency_cfg.get("per_topic_queue"), bool
+        ):
+            raise ConfigError(
+                "telegram_bot.concurrency.per_topic_queue must be boolean"
+            )
+    media_cfg = telegram_cfg.get("media")
+    if media_cfg is not None and not isinstance(media_cfg, dict):
+        raise ConfigError("telegram_bot.media must be a mapping if provided")
+    if isinstance(media_cfg, dict):
+        if "enabled" in media_cfg and not isinstance(media_cfg.get("enabled"), bool):
+            raise ConfigError("telegram_bot.media.enabled must be boolean")
+        if "images" in media_cfg and not isinstance(media_cfg.get("images"), bool):
+            raise ConfigError("telegram_bot.media.images must be boolean")
+        if "voice" in media_cfg and not isinstance(media_cfg.get("voice"), bool):
+            raise ConfigError("telegram_bot.media.voice must be boolean")
+        if "files" in media_cfg and not isinstance(media_cfg.get("files"), bool):
+            raise ConfigError("telegram_bot.media.files must be boolean")
+        for key in ("max_image_bytes", "max_voice_bytes", "max_file_bytes"):
+            value = media_cfg.get(key)
+            if value is not None and not isinstance(value, int):
+                raise ConfigError(f"telegram_bot.media.{key} must be an integer")
+            if isinstance(value, int) and value <= 0:
+                raise ConfigError(f"telegram_bot.media.{key} must be greater than 0")
+        if "image_prompt" in media_cfg and not isinstance(
+            media_cfg.get("image_prompt"), str
+        ):
+            raise ConfigError("telegram_bot.media.image_prompt must be a string")
+    shell_cfg = telegram_cfg.get("shell")
+    if shell_cfg is not None and not isinstance(shell_cfg, dict):
+        raise ConfigError("telegram_bot.shell must be a mapping if provided")
+    if isinstance(shell_cfg, dict):
+        if "enabled" in shell_cfg and not isinstance(shell_cfg.get("enabled"), bool):
+            raise ConfigError("telegram_bot.shell.enabled must be boolean")
+        for key in ("timeout_ms", "max_output_chars"):
+            value = shell_cfg.get(key)
+            if value is not None and not isinstance(value, int):
+                raise ConfigError(f"telegram_bot.shell.{key} must be an integer")
+            if isinstance(value, int) and value <= 0:
+                raise ConfigError(f"telegram_bot.shell.{key} must be greater than 0")
+    cache_cfg = telegram_cfg.get("cache")
+    if cache_cfg is not None and not isinstance(cache_cfg, dict):
+        raise ConfigError("telegram_bot.cache must be a mapping if provided")
+    if isinstance(cache_cfg, dict):
+        for key in (
+            "cleanup_interval_seconds",
+            "coalesce_buffer_ttl_seconds",
+            "media_batch_buffer_ttl_seconds",
+            "model_pending_ttl_seconds",
+            "pending_approval_ttl_seconds",
+            "pending_question_ttl_seconds",
+            "reasoning_buffer_ttl_seconds",
+            "selection_state_ttl_seconds",
+            "turn_preview_ttl_seconds",
+            "progress_stream_ttl_seconds",
+            "oversize_warning_ttl_seconds",
+            "update_id_persist_interval_seconds",
+        ):
+            value = cache_cfg.get(key)
+            if value is not None and not isinstance(value, (int, float)):
+                raise ConfigError(f"telegram_bot.cache.{key} must be a number")
+            if isinstance(value, (int, float)) and value <= 0:
+                raise ConfigError(f"telegram_bot.cache.{key} must be > 0")
+    command_reg_cfg = telegram_cfg.get("command_registration")
+    if command_reg_cfg is not None and not isinstance(command_reg_cfg, dict):
+        raise ConfigError("telegram_bot.command_registration must be a mapping")
+    if isinstance(command_reg_cfg, dict):
+        if "enabled" in command_reg_cfg and not isinstance(
+            command_reg_cfg.get("enabled"), bool
+        ):
+            raise ConfigError(
+                "telegram_bot.command_registration.enabled must be boolean"
+            )
+        if "scopes" in command_reg_cfg:
+            scopes = command_reg_cfg.get("scopes")
+            if not isinstance(scopes, list):
+                raise ConfigError(
+                    "telegram_bot.command_registration.scopes must be a list"
+                )
+            for scope in scopes:
+                if isinstance(scope, str):
+                    continue
+                if not isinstance(scope, dict):
+                    raise ConfigError(
+                        "telegram_bot.command_registration.scopes must contain strings or mappings"
+                    )
+                scope_payload = scope.get("scope")
+                if scope_payload is not None and not isinstance(scope_payload, dict):
+                    raise ConfigError(
+                        "telegram_bot.command_registration.scopes.scope must be a mapping"
+                    )
+                if "type" in scope and not isinstance(scope.get("type"), str):
+                    raise ConfigError(
+                        "telegram_bot.command_registration.scopes.type must be a string"
+                    )
+                language_code = scope.get("language_code")
+                if language_code is not None and not isinstance(language_code, str):
+                    raise ConfigError(
+                        "telegram_bot.command_registration.scopes.language_code must be a string or null"
+                    )
+    if "trigger_mode" in telegram_cfg and not isinstance(
+        telegram_cfg.get("trigger_mode"), str
+    ):
+        raise ConfigError("telegram_bot.trigger_mode must be a string")
+    if "state_file" in telegram_cfg and not isinstance(
+        telegram_cfg.get("state_file"), str
+    ):
+        raise ConfigError("telegram_bot.state_file must be a string path")
+    if (
+        "opencode_command" in telegram_cfg
+        and not isinstance(telegram_cfg.get("opencode_command"), (list, str))
+        and telegram_cfg.get("opencode_command") is not None
+    ):
+        raise ConfigError("telegram_bot.opencode_command must be a list or string")
+    if "app_server_command" in telegram_cfg and not isinstance(
+        telegram_cfg.get("app_server_command"), (list, str)
+    ):
+        raise ConfigError("telegram_bot.app_server_command must be a list or string")
+    app_server_cfg = telegram_cfg.get("app_server")
+    if app_server_cfg is not None and not isinstance(app_server_cfg, dict):
+        raise ConfigError("telegram_bot.app_server must be a mapping if provided")
+    if isinstance(app_server_cfg, dict):
+        if (
+            "turn_timeout_seconds" in app_server_cfg
+            and app_server_cfg.get("turn_timeout_seconds") is not None
+            and not isinstance(app_server_cfg.get("turn_timeout_seconds"), (int, float))
+        ):
+            raise ConfigError(
+                "telegram_bot.app_server.turn_timeout_seconds must be a number or null"
+            )
+    agent_timeouts_cfg = telegram_cfg.get("agent_timeouts")
+    if agent_timeouts_cfg is not None and not isinstance(agent_timeouts_cfg, dict):
+        raise ConfigError("telegram_bot.agent_timeouts must be a mapping if provided")
+    if isinstance(agent_timeouts_cfg, dict):
+        for _key, value in agent_timeouts_cfg.items():
+            if value is None:
+                continue
+            if not isinstance(value, (int, float)):
+                raise ConfigError(
+                    "telegram_bot.agent_timeouts values must be numbers or null"
+                )
+    polling_cfg = telegram_cfg.get("polling")
+    if polling_cfg is not None and not isinstance(polling_cfg, dict):
+        raise ConfigError("telegram_bot.polling must be a mapping if provided")
+    if isinstance(polling_cfg, dict):
+        if "timeout_seconds" in polling_cfg and not isinstance(
+            polling_cfg.get("timeout_seconds"), int
+        ):
+            raise ConfigError("telegram_bot.polling.timeout_seconds must be an integer")
+        timeout_seconds = polling_cfg.get("timeout_seconds")
+        if isinstance(timeout_seconds, int) and timeout_seconds <= 0:
+            raise ConfigError(
+                "telegram_bot.polling.timeout_seconds must be greater than 0"
+            )
+        if "allowed_updates" in polling_cfg and not isinstance(
+            polling_cfg.get("allowed_updates"), list
+        ):
+            raise ConfigError("telegram_bot.polling.allowed_updates must be a list")
