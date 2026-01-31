@@ -1,0 +1,135 @@
+# SQL Glider Configuration File
+#
+# Place this file as 'sqlglider.toml' in your project directory.
+# CLI arguments will override these settings.
+#
+# Copy this file: cp sqlglider.toml.example sqlglider.toml
+
+[sqlglider]
+
+# SQL dialect for parsing queries
+# Options: spark, postgres, snowflake, bigquery, mysql, tsql, oracle, presto, trino, redshift, etc.
+# Default: "spark"
+# dialect = "postgres"
+
+# Analysis level
+# Options: "column", "table"
+# Default: "column"
+# level = "column"
+
+# Output format
+# Options: "text", "json", "csv"
+# Default: "text"
+# output_format = "json"
+
+# Templater for SQL preprocessing
+# Options: "jinja", "none", or custom registered templaters
+# Default: None (no templating)
+# templater = "jinja"
+
+# ============================================================================
+# Templating Configuration
+# ============================================================================
+
+# The [sqlglider.templating] section configures template variable sources.
+# Variables can come from: CLI args, vars file, config file, or environment.
+# Priority order (highest to lowest): CLI > vars file > config > environment
+
+# [sqlglider.templating]
+# Default variables file (JSON or YAML)
+# variables_file = "vars.json"
+
+# Inline variables (lower priority than file)
+# [sqlglider.templating.variables]
+# schema = "analytics"
+# environment = "production"
+
+# ============================================================================
+# Catalog Configuration (for `tables pull` command)
+# ============================================================================
+
+# Catalog provider for pulling DDL from remote catalogs
+# Options: "databricks", or custom registered catalogs
+# Required for `sqlglider tables pull` command
+# catalog_type = "databricks"
+
+# Output folder for DDL files
+# If not set, DDL is printed to stdout
+# ddl_folder = "./ddl"
+
+# Databricks-specific configuration
+# The Databricks SDK supports unified authentication with multiple methods:
+#
+# 1. Databricks CLI profile (recommended):
+#    - Configure your profile in ~/.databrickscfg using `databricks configure`
+#    - Set profile name below, or use DEFAULT profile automatically
+#
+# 2. OAuth M2M (machine-to-machine):
+#    - Set environment variables:
+#      export DATABRICKS_HOST=https://your-workspace.cloud.databricks.com
+#      export DATABRICKS_CLIENT_ID=your-client-id
+#      export DATABRICKS_CLIENT_SECRET=your-client-secret
+#
+# 3. Personal Access Token (legacy):
+#    - Set DATABRICKS_HOST and DATABRICKS_TOKEN environment variables
+#    - Or configure host/token below (not recommended for security)
+#
+# 4. Cloud provider authentication:
+#    - Azure: Uses Azure CLI authentication automatically
+#    - GCP: Uses Google Cloud authentication automatically
+#
+# [sqlglider.catalog.databricks]
+# warehouse_id = "abc123..."  # Required - SQL warehouse for executing queries
+# profile = "my-profile"      # Optional - Databricks CLI profile name
+
+# ============================================================================
+# Example Configurations
+# ============================================================================
+
+# Example 1: PostgreSQL project with JSON output
+# [sqlglider]
+# dialect = "postgres"
+# output_format = "json"
+
+# Example 2: Snowflake project with table-level lineage
+# [sqlglider]
+# dialect = "snowflake"
+# level = "table"
+
+# Example 3: BigQuery project with CSV output
+# [sqlglider]
+# dialect = "bigquery"
+# output_format = "csv"
+
+# Example 4: Jinja templating with default variables
+# [sqlglider]
+# dialect = "spark"
+# templater = "jinja"
+# [sqlglider.templating]
+# variables_file = "vars.json"
+# [sqlglider.templating.variables]
+# schema = "default_schema"
+# environment = "dev"
+
+# ============================================================================
+# Usage
+# ============================================================================
+#
+# With config file:
+#   uv run sqlglider lineage query.sql
+#   (uses dialect and output_format from config)
+#
+# Override config with CLI args:
+#   uv run sqlglider lineage query.sql --dialect snowflake --output-format text
+#   (CLI args take precedence over config)
+#
+# Without config file:
+#   (Uses defaults: spark dialect, column level, text format)
+#
+# Templating:
+#   uv run sqlglider template query.sql --var schema=analytics --var table=users
+#   uv run sqlglider lineage query.sql --templater jinja --var schema=prod
+#
+# Catalog (pull DDL from remote):
+#   uv run sqlglider tables pull query.sql --catalog-type databricks
+#   uv run sqlglider tables pull query.sql --catalog-type databricks --ddl-folder ./ddl/

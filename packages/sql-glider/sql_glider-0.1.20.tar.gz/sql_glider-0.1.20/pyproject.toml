@@ -1,0 +1,137 @@
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sql-glider"
+dynamic = ["version"]
+description = "SQL Utility Toolkit for better understanding, use, and governance of your queries in a native environment."
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.11"
+authors = [
+    { name = "Ryan Whitcomb", email = "ryankwhitcomb@gmail.com" }
+]
+keywords = ["sql", "lineage", "data-lineage", "sqlglot", "data-governance"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: SQL",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Database",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
+dependencies = [
+    "sqlglot[rs]>=25.0.0",
+    "typer>=0.9.0",
+    "rich>=13.0.0",
+    "pydantic>=2.0.0",
+    "rustworkx>=0.15.0",
+    "jinja2>=3.0.0",
+]
+
+[project.optional-dependencies]
+databricks = ["databricks-sdk>=0.20.0"]
+
+[project.urls]
+Homepage = "https://github.com/rycowhi/sql-glider/"
+Repository = "https://github.com/rycowhi/sql-glider/"
+Documentation = "https://github.com/rycowhi/sql-glider/"
+Issues = "https://github.com/rycowhi/sql-glider/issues"
+
+[project.scripts]
+sqlglider = "sqlglider.cli:app"
+
+[project.entry-points."sqlglider.templaters"]
+jinja = "sqlglider.templating.jinja:JinjaTemplater"
+none = "sqlglider.templating.base:NoOpTemplater"
+
+[project.entry-points."sqlglider.catalogs"]
+databricks = "sqlglider.catalog.databricks:DatabricksCatalog"
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/sqlglider/_version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sqlglider"]
+
+[tool.uv]
+package = true
+
+[dependency-groups]
+dev = [
+    "basedpyright>=1.36.0",
+    "databricks-sdk>=0.20.0", # For testing catalog integration
+    "pytest>=9.0.1",
+    "pytest-cov>=7.0.0",
+    "pytest-mock>=3.15.1",
+    "ruff>=0.14.8",
+    "sqlfluff[rs]>=4.0.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-v",
+    "--strict-markers",
+    "--strict-config",
+    "--showlocals",
+]
+
+[tool.coverage.run]
+source = ["sqlglider"]
+branch = true
+omit = [
+    "*/tests/*",
+    "*/__pycache__/*",
+    "*/.venv/*",
+]
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+skip_covered = false
+fail_under = 80.0
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "@abstractmethod",
+]
+
+[[tool.uv.index]]
+name = "pypi"
+url = "https://pypi.org/simple/"
+publish-url = "https://upload.pypi.org/legacy/"
+
+# Publishing configuration for uv
+[[tool.uv.index]]
+name = "testpypi"
+url = "https://test.pypi.org/simple/"
+publish-url = "https://test.pypi.org/legacy/"
+default = true
+
+[tool.basedpyright]
+pythonVersion = "3.11"
+typeCheckingMode = "standard"
+
+[tool.ruff.lint]
+extend-select = ["I"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["sqlglider"]
+
+[tool.sqlfluff.rules.capitalisation.keywords]
+capitalisation_policy = "upper"
