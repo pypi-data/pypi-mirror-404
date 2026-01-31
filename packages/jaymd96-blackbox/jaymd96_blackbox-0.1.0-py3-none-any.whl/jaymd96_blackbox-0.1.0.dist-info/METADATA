@@ -1,0 +1,292 @@
+Metadata-Version: 2.4
+Name: jaymd96-blackbox
+Version: 0.1.0
+Summary: LLM-friendly Python debugger with structured, readable output
+Project-URL: Homepage, https://github.com/jaymd96/blackbox
+Project-URL: Repository, https://github.com/jaymd96/blackbox
+Author-email: James <james@example.com>
+License-Expression: MIT
+Keywords: crash-handler,debugging,developer-tools,execution-trace,llm,observability,traceback
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Topic :: Software Development :: Debuggers
+Classifier: Topic :: Software Development :: Testing
+Requires-Python: >=3.10
+Provides-Extra: dev
+Requires-Dist: psutil>=5.9; extra == 'dev'
+Requires-Dist: pytest-cov>=4.0; extra == 'dev'
+Requires-Dist: pytest>=7.0; extra == 'dev'
+Requires-Dist: wrapt>=1.15; extra == 'dev'
+Provides-Extra: full
+Requires-Dist: psutil>=5.9; extra == 'full'
+Requires-Dist: wrapt>=1.15; extra == 'full'
+Description-Content-Type: text/markdown
+
+# Blackbox
+
+LLM-friendly Python debugger with structured, readable output and comprehensive instrumentation.
+
+When Python code crashes, blackbox provides clean, well-organized output that's easy for LLMs (and humans) to understand and act on. It captures not just the crash, but the full context: I/O operations, resource usage, memory allocations, and more.
+
+## Installation
+
+```bash
+pip install jaymd96-blackbox
+```
+
+For full instrumentation features, install optional dependencies:
+
+```bash
+pip install jaymd96-blackbox[full]
+# Or individually:
+pip install psutil wrapt  # for resource monitoring and HTTP tracking
+```
+
+## Usage
+
+```bash
+# Run with crash handling and full instrumentation (default)
+python -m blackbox script.py
+
+# Run with execution tracing
+python -m blackbox --trace script.py
+
+# Focus on specific package (hide stdlib/frameworks)
+python -m blackbox --focus mypackage script.py
+
+# Set timeout for hang detection
+python -m blackbox --timeout 30 script.py
+
+# Disable instrumentation (just crash handling)
+python -m blackbox --no-instrumentation script.py
+```
+
+## What You Get
+
+### On Crash - Full Context
+
+```
+══════════════════════════════════════════════════════════════════════
+CRASH: KeyError
+══════════════════════════════════════════════════════════════════════
+
+Message: 'missing_key'
+Location: mypackage/api.py:67 in process_data()
+
+──────────────────────────────────────────────────────────────────────
+CALL CHAIN
+──────────────────────────────────────────────────────────────────────
+
+    <module> → main → process_data
+
+    [django: 12 frames hidden]
+    [stdlib: 8 frames hidden]
+
+──────────────────────────────────────────────────────────────────────
+FRAME 1: mypackage/api.py:67  ← CRASH HERE
+──────────────────────────────────────────────────────────────────────
+
+Function: process_data(data)
+
+   65│
+   66│     # Access a key that doesn't exist
+>> 67│     result = data['missing_key']
+   68│     return result
+
+Arguments:
+    data         = {'status': 'ok', 'items': [1, 2, 3]}
+
+Locals:
+    large_list   = list([10000 items])
+
+──────────────────────────────────────────────────────────────────────
+I/O TRAIL (recent activity)
+──────────────────────────────────────────────────────────────────────
+
+  [HTTP]
+    • GET https://api.example.com/data → 200 (45.2ms)
+    • POST https://api.example.com/submit → 201 (123.5ms)
+
+  [DB]
+    • SELECT: SELECT * FROM users WHERE id = ? (2.3ms)
+      query_type=SELECT, table=USERS
+
+  [FILE]
+    • open(config/settings.yaml, mode=r)
+    • open(data/cache.json, mode=w)
+
+  [CONFIG]
+    • ENV[API_KEY] = <REDACTED>
+    • ENV[DEBUG] → not set
+
+──────────────────────────────────────────────────────────────────────
+RESOURCE STATE (at crash)
+──────────────────────────────────────────────────────────────────────
+
+  Memory:
+    RSS:     62.5 MB
+    VMS:     415.2 GB
+    Percent: 0.4%
+
+  CPU: 12.3%
+
+  Threads: 4
+
+  Open Files (3):
+    • /path/to/data.db
+    • /path/to/log.txt
+    • /tmp/cache.json
+
+  Network Connections (1):
+    • 127.0.0.1:5432 → 10.0.0.1:5432 (ESTABLISHED)
+
+──────────────────────────────────────────────────────────────────────
+TOP MEMORY ALLOCATIONS
+──────────────────────────────────────────────────────────────────────
+
+    391.6 KB  mypackage/api.py:64  (9872 allocs)
+     28.8 KB  lib/python3.13/linecache.py:146  (358 allocs)
+     10.0 KB  <frozen runpy>:259  (130 allocs)
+
+──────────────────────────────────────────────────────────────────────
+SLOW OPERATIONS
+──────────────────────────────────────────────────────────────────────
+
+       123.5ms  POST https://api.example.com/submit [http] ⚠ SLOW
+
+──────────────────────────────────────────────────────────────────────
+ANALYSIS
+──────────────────────────────────────────────────────────────────────
+
+Problem: Key 'missing_key' not found in 'data'
+Available keys: ['status', 'items']
+
+══════════════════════════════════════════════════════════════════════
+```
+
+### With Execution Tracing
+
+```
+══════════════════════════════════════════════════════════════════════
+EXECUTION TRACE
+══════════════════════════════════════════════════════════════════════
+
+├─→ process(items=[1, 2, 3])
+│   ├─→ validate(items=[1, 2, 3])
+│   │     returned True
+│   ├─→ transform(items=[1, 2, 3])
+│   │     returned [2, 4, 6]
+│   └─ returned [2, 4, 6]
+
+──────────────────────────────────────────────────────────────────────
+SUMMARY
+──────────────────────────────────────────────────────────────────────
+
+Duration    : 0.003s
+Calls       : 3
+Max depth   : 2
+
+══════════════════════════════════════════════════════════════════════
+```
+
+## Instrumentation Features
+
+Blackbox captures comprehensive runtime information:
+
+| Feature | What it captures | Requires |
+|---------|-----------------|----------|
+| **I/O Breadcrumbs** | File opens, socket connections, subprocess calls | stdlib |
+| **HTTP Tracking** | requests/httpx/urllib3 calls with timing | wrapt |
+| **Database Queries** | SQLAlchemy events, sqlite3 queries | stdlib/sqlalchemy |
+| **Environment Access** | os.getenv() calls, with sensitive value masking | stdlib |
+| **Resource Monitoring** | Memory, CPU, open files, network connections | psutil |
+| **Memory Allocations** | Top allocations by file/line | stdlib (tracemalloc) |
+| **Timing Metrics** | Slow operation detection | stdlib |
+
+## Options
+
+| Option | Description |
+|--------|-------------|
+| `--trace` | Enable execution tracing |
+| `--focus PACKAGE` | Only show frames from this package |
+| `--collapse PACKAGE` | Collapse frames from this package |
+| `--show-stdlib` | Show standard library frames |
+| `--max-depth N` | Maximum frames to show |
+| `--context N` | Lines of code context (default: 2) |
+| `--timeout SECONDS` | Interrupt after N seconds |
+| `--no-instrumentation` | Disable all instrumentation |
+| `--slow-threshold MS` | Threshold for slow operations (default: 100ms) |
+| `-o FILE` | Write output to file |
+
+## Programmatic Usage
+
+```python
+from blackbox import install_crash_handler
+from blackbox.instruments import install_all_hooks
+
+# Install instrumentation first
+install_all_hooks()
+
+# Install as global exception handler
+install_crash_handler(focus=['mypackage'])
+
+# Now any uncaught exception will produce rich output
+```
+
+### Custom Breadcrumbs
+
+```python
+from blackbox.collector import get_collector, BreadcrumbType
+
+collector = get_collector()
+
+# Add custom breadcrumb
+collector.add_breadcrumb(
+    type=BreadcrumbType.CUSTOM,
+    category="business_logic",
+    message="Processing order #12345",
+    data={"order_id": 12345, "items": 3},
+)
+```
+
+### Manual Timing
+
+```python
+from blackbox.instruments.timing import timed, timed_block
+
+# Decorator
+@timed("critical_operation")
+def my_function():
+    pass
+
+# Context manager
+with timed_block("data_processing"):
+    process_data()
+```
+
+## Why Blackbox?
+
+Standard Python tracebacks are noisy and hard to parse:
+- Mixed with framework internals
+- Missing local variable values
+- No context about what happened before the crash
+- No analysis or hints
+- Difficult for LLMs to process
+
+Blackbox provides:
+- **Clean visual hierarchy** - Clear sections and separators
+- **Noise filtering** - Collapse stdlib and frameworks
+- **Local variables** - See what values caused the crash
+- **Code context** - Surrounding lines for context
+- **I/O trail** - What happened leading up to the crash
+- **Resource state** - Memory, CPU, files, connections at crash time
+- **Memory analysis** - Where allocations are happening
+- **Analysis hints** - Automatic problem identification
+- **Structured format** - Easy for LLMs to parse and reason about
