@@ -1,0 +1,276 @@
+# eyeball
+
+Code introspection CLI for LLM-assisted development with structured JSON output.
+
+**eyeball** gives LLMs "eyes" to see into your code - exploring modules, verifying API usage, running quick probes, and analyzing dependencies.
+
+## Installation
+
+```bash
+# Install as a dev dependency
+pip install jaymd96-eyeball
+
+# Or with optional dependencies for full functionality
+pip install "jaymd96-eyeball[dev,toml]"
+```
+
+## Quick Start
+
+```bash
+# Discover all public items in a module
+eyeball discover mypackage.models
+
+# Inspect a class or function
+eyeball inspect mypackage.models:User
+
+# Run a function with arguments
+eyeball run mypackage.utils:process_data --kwargs '{"input": "test"}'
+
+# Execute arbitrary code
+eyeball exec 'from mypackage import VERSION; print(VERSION)'
+
+# Run tests with structured output
+eyeball test mypackage.models
+
+# Quick verification probe
+eyeball probe "assert 1 + 1 == 2"
+
+# Analyze dependencies of a function/class
+eyeball deps mypackage.models:User
+
+# Find all callers of a target
+eyeball callers mypackage.models:User
+
+# Get API documentation for third-party libraries
+eyeball api requests:get
+```
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `discover` | List all public classes and functions in a module |
+| `inspect` | Get detailed information about a module, class, or function |
+| `run` | Execute a function or instantiate a class |
+| `exec` | Execute arbitrary Python code |
+| `test` | Run pytest with structured JSON output |
+| `source` | Show source code of a target |
+| `reload` | Hot-reload a module after changes |
+| `list-tests` | List all test files in the project |
+| `probe` | Run quick verification probes (lightweight testing) |
+| `fixtures` | List available fixtures for probes |
+| `deps` | Analyze dependencies of a function/class using AST |
+| `callers` | Find all references to a target (reverse dependencies) |
+| `module-deps` | Analyze all imports in a module |
+| `api` | Get comprehensive API docs (works on third-party libs) |
+| `search-api` | Search for items in a module by name |
+| `help-json` | Output help as JSON for LLM consumption |
+
+## Configuration
+
+Configure eyeball via `pyproject.toml`:
+
+```toml
+[tool.eyeball]
+package_name = "mypackage"           # Auto-detected from project.name
+tests_dir = "tests"                  # Test directory (default: "tests")
+fixtures_module = "mypackage.fixtures"  # Custom fixtures module
+```
+
+Or use a standalone `eyeball.toml` file with the same options.
+
+## Custom Fixtures
+
+Create custom fixtures for your probes:
+
+```python
+# mypackage/fixtures.py
+from eyeball.harness import Fixtures
+
+@Fixtures.register("database")
+def database_fixture():
+    """In-memory database for testing."""
+    from mypackage.db import create_test_db
+    db = create_test_db()
+    return {
+        "db": db,
+        "create_user": db.create_user,
+        "get_user": db.get_user,
+    }
+
+@Fixtures.register("sample_data")
+def sample_data_fixture():
+    """Sample test data."""
+    return {
+        "users": [{"id": 1, "name": "Alice"}, {"id": 2, "name": "Bob"}],
+        "products": [{"id": 1, "name": "Widget", "price": 9.99}],
+    }
+```
+
+Then configure:
+
+```toml
+[tool.eyeball]
+fixtures_module = "mypackage.fixtures"
+```
+
+Use in probes:
+
+```bash
+eyeball probe --fixture database "assert db.get_user(1) is not None"
+eyeball probe --fixture sample_data "assert len(users) == 2"
+```
+
+## JSON Output
+
+All commands output JSON for easy parsing by LLMs and scripts:
+
+```bash
+# Pretty-print with -p flag
+eyeball -p inspect mypackage.models:User
+```
+
+```json
+{
+  "status": "success",
+  "target": "mypackage.models:User",
+  "type": "class",
+  "class_name": "User",
+  "attributes": [
+    {"name": "id", "type": "int", "required": true},
+    {"name": "name", "type": "str", "required": true},
+    {"name": "email", "type": "str", "required": false}
+  ],
+  "methods": [...]
+}
+```
+
+## API Introspection
+
+Explore third-party libraries to verify correct usage:
+
+```bash
+# Search for functions in a library
+eyeball -p search-api requests get
+```
+
+```json
+{
+  "status": "success",
+  "module": "requests",
+  "query": "get",
+  "results": [
+    {"name": "get", "type": "function", "signature": "(url, params=None, **kwargs)", "summary": "Sends a GET request."}
+  ]
+}
+```
+
+```bash
+# Get full API documentation
+eyeball -p api requests:get
+```
+
+```json
+{
+  "status": "success",
+  "target": "requests:get",
+  "type": "function",
+  "name": "get",
+  "signature": "(url, params=None, **kwargs)",
+  "parameters": [
+    {"name": "url", "required": true, "kind": "POSITIONAL_OR_KEYWORD", "description": "URL for the new Request object."},
+    {"name": "params", "required": false, "default": "None", "description": "Dictionary or bytes to send in the query string."},
+    {"name": "kwargs", "required": false, "kind": "VAR_KEYWORD", "description": "Optional arguments that request takes."}
+  ],
+  "return_type": "Response",
+  "summary": "Sends a GET request.",
+  "source_available": true,
+  "source_preview": "def get(url, params=None, **kwargs):\n    ..."
+}
+```
+
+Works on any importable Python code - your project, stdlib, or third-party packages.
+
+## Dependency Analysis
+
+Analyze what a function or class depends on:
+
+```bash
+eyeball -p deps mypackage.models:User
+```
+
+```json
+{
+  "status": "success",
+  "target": "mypackage.models:User",
+  "target_type": "class",
+  "imports": [
+    {"module": "dataclasses", "name": "dataclass"},
+    {"module": "typing", "name": "Optional"}
+  ],
+  "calls": [
+    {"name": "field", "is_method": false, "args_count": 0, "kwargs_count": 1}
+  ],
+  "instantiations": [
+    {"name": "UUID", "is_method": false}
+  ],
+  "summary": {
+    "imports": 2,
+    "calls": 3,
+    "instantiations": 1
+  }
+}
+```
+
+Find all code that uses a target:
+
+```bash
+eyeball -p callers mypackage.models:User
+```
+
+```json
+{
+  "status": "success",
+  "target": "mypackage.models:User",
+  "callers": [
+    {
+      "file": "mypackage/services/user_service.py",
+      "references": [
+        {"type": "import_from", "line": 3, "text": "from mypackage.models import User"},
+        {"type": "name", "line": 15, "context": "load"}
+      ]
+    }
+  ],
+  "total_files": 5,
+  "total_references": 12
+}
+```
+
+Analyze module-level imports:
+
+```bash
+eyeball -p module-deps mypackage.models
+```
+
+## Use with LLMs
+
+eyeball is designed for LLM-assisted development workflows:
+
+1. **Exploration**: LLMs can use `discover` and `inspect` to understand your codebase
+2. **Verification**: Quick `probe` commands let LLMs verify their understanding
+3. **Testing**: Structured test output helps LLMs understand test failures
+4. **Hot-reloading**: `reload` enables rapid iteration without restarts
+5. **Dependency Analysis**: `deps` and `callers` help understand code relationships
+6. **API Introspection**: `api` and `search-api` let LLMs verify correct library usage
+
+## Built-in Fixtures
+
+| Fixture | Description | Provides |
+|---------|-------------|----------|
+| `mocks` | Mocking utilities | `Mock`, `MagicMock`, `patch` |
+| `async_helpers` | Async testing | `asyncio`, `run_async` |
+| `temp_files` | Temporary files | `temp_dir`, `temp_file`, `Path` |
+
+## License
+
+MIT
