@@ -1,0 +1,131 @@
+from __future__ import annotations
+
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Any, TypeVar
+
+from attrs import define as _attrs_define
+from attrs import field as _attrs_field
+
+from ..types import UNSET, Unset
+
+if TYPE_CHECKING:
+    from ..models.object_storage_consumption_limit_model import ObjectStorageConsumptionLimitModel
+    from ..models.object_storage_immutability_model import ObjectStorageImmutabilityModel
+
+
+T = TypeVar("T", bound="S3CompatibleStorageBucketModel")
+
+
+@_attrs_define
+class S3CompatibleStorageBucketModel:
+    """Bucket where backup data is stored.
+
+    Attributes:
+        bucket_name (str): Bucket name.
+        folder_name (str): Name of the folder to which the object storage repository is mapped.
+        enable_auto_provision (bool | Unset): If `true`, automatic bucket creation is enabled.
+        workloads_per_bucket_limit (int | Unset): Maximum number of workloads per bucket.
+        storage_consumption_limit (ObjectStorageConsumptionLimitModel | Unset): Soft consumption limit for the storage.
+            The limit can be exceeded temporarily.
+        immutability (ObjectStorageImmutabilityModel | Unset): Object storage immutability.
+    """
+
+    bucket_name: str
+    folder_name: str
+    enable_auto_provision: bool | Unset = UNSET
+    workloads_per_bucket_limit: int | Unset = UNSET
+    storage_consumption_limit: ObjectStorageConsumptionLimitModel | Unset = UNSET
+    immutability: ObjectStorageImmutabilityModel | Unset = UNSET
+    additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        bucket_name = self.bucket_name
+
+        folder_name = self.folder_name
+
+        enable_auto_provision = self.enable_auto_provision
+
+        workloads_per_bucket_limit = self.workloads_per_bucket_limit
+
+        storage_consumption_limit: dict[str, Any] | Unset = UNSET
+        if not isinstance(self.storage_consumption_limit, Unset):
+            storage_consumption_limit = self.storage_consumption_limit.to_dict()
+
+        immutability: dict[str, Any] | Unset = UNSET
+        if not isinstance(self.immutability, Unset):
+            immutability = self.immutability.to_dict()
+
+        field_dict: dict[str, Any] = {}
+        field_dict.update(self.additional_properties)
+        field_dict.update(
+            {
+                "bucketName": bucket_name,
+                "folderName": folder_name,
+            }
+        )
+        if enable_auto_provision is not UNSET:
+            field_dict["enableAutoProvision"] = enable_auto_provision
+        if workloads_per_bucket_limit is not UNSET:
+            field_dict["workloadsPerBucketLimit"] = workloads_per_bucket_limit
+        if storage_consumption_limit is not UNSET:
+            field_dict["storageConsumptionLimit"] = storage_consumption_limit
+        if immutability is not UNSET:
+            field_dict["immutability"] = immutability
+
+        return field_dict
+
+    @classmethod
+    def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+        from ..models.object_storage_consumption_limit_model import ObjectStorageConsumptionLimitModel
+        from ..models.object_storage_immutability_model import ObjectStorageImmutabilityModel
+
+        d = dict(src_dict)
+        bucket_name = d.pop("bucketName")
+
+        folder_name = d.pop("folderName")
+
+        enable_auto_provision = d.pop("enableAutoProvision", UNSET)
+
+        workloads_per_bucket_limit = d.pop("workloadsPerBucketLimit", UNSET)
+
+        _storage_consumption_limit = d.pop("storageConsumptionLimit", UNSET)
+        storage_consumption_limit: ObjectStorageConsumptionLimitModel | Unset
+        if isinstance(_storage_consumption_limit, Unset):
+            storage_consumption_limit = UNSET
+        else:
+            storage_consumption_limit = ObjectStorageConsumptionLimitModel.from_dict(_storage_consumption_limit)
+
+        _immutability = d.pop("immutability", UNSET)
+        immutability: ObjectStorageImmutabilityModel | Unset
+        if isinstance(_immutability, Unset):
+            immutability = UNSET
+        else:
+            immutability = ObjectStorageImmutabilityModel.from_dict(_immutability)
+
+        s3_compatible_storage_bucket_model = cls(
+            bucket_name=bucket_name,
+            folder_name=folder_name,
+            enable_auto_provision=enable_auto_provision,
+            workloads_per_bucket_limit=workloads_per_bucket_limit,
+            storage_consumption_limit=storage_consumption_limit,
+            immutability=immutability,
+        )
+
+        s3_compatible_storage_bucket_model.additional_properties = d
+        return s3_compatible_storage_bucket_model
+
+    @property
+    def additional_keys(self) -> list[str]:
+        return list(self.additional_properties.keys())
+
+    def __getitem__(self, key: str) -> Any:
+        return self.additional_properties[key]
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        self.additional_properties[key] = value
+
+    def __delitem__(self, key: str) -> None:
+        del self.additional_properties[key]
+
+    def __contains__(self, key: str) -> bool:
+        return key in self.additional_properties
