@@ -1,0 +1,156 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "superserve"
+
+version = "0.1.1"
+description = "Run agentic workloads on Ray"
+license = { file = "LICENSE" }
+readme = "README.md"
+requires-python = ">=3.12"
+keywords = ["ray", "agents", "ai", "llm", "distributed", "pydantic-ai", "langchain", "parallel tool call"]
+dependencies = [
+    "langchain>=1.0.0",
+    "langchain-openai>=1.0.0",
+    "langgraph>=0.6.10",
+    "openai>=1.0.0",
+    "python-dotenv>=1.0.0",
+    "fastapi>=0.100.0",
+    "click>=8.0.0",
+    "pydantic-ai-slim[openai]>=1.42.0",
+    "anyio>=4.0",  # Required for pydantic-ai type parameterization
+    "posthog>=3.0.0",
+    # Ray is required but not pinned - allows Anyscale to provide its own version
+    "ray[serve]",
+]
+
+[project.urls]
+Homepage = "https://superserve.ai"
+Repository = "https://github.com/superserve-ai/agentic-ray"
+
+[project.scripts]
+superserve = "superserve.cli:main"
+
+[project.optional-dependencies]
+sandbox = [
+    "docker>=7.0.0",
+    "requests>=2.31.0",
+]
+
+[dependency-groups]
+dev = [
+    "black>=25.9.0",
+    "mypy>=1.18.2",
+    "pre-commit>=4.3.0",
+    "pytest>=8.4.2",
+    "ruff>=0.14.0",
+    "docker>=7.0.0",  # Needed for sandbox tests
+]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"superserve.cli" = ["templates/**/*"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+]
+ignore = [
+    "E501",  # line too long (handled by black)
+    "B008",  # do not perform function calls in argument defaults
+    "C901",  # too complex
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]  # unused imports in __init__.py
+"examples/analyzer/token_efficient_agent/agent.py" = ["E402"]  # imports after sys.path modification
+
+[tool.black]
+line-length = 88
+target-version = ["py312"]
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+exclude = ["examples/"]
+
+[[tool.mypy.overrides]]
+module = [
+    "langchain.*",
+    "langchain_openai.*",
+    "langchain_core.*",
+    "langgraph.*",
+    "docker.*",
+    "requests.*",
+    "ray.*",
+]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+# Disable attr-defined errors for Ray's @ray.remote decorator
+# which dynamically adds .remote() method
+disable_error_code = ["attr-defined"]
+warn_unused_ignores = false
+
+[[tool.mypy.overrides]]
+module = "superserve.examples.*"
+# Disable attr-defined errors for Ray's @ray.remote decorator
+# which dynamically adds .remote() method
+disable_error_code = ["attr-defined"]
+warn_unused_ignores = false
+
+[[tool.mypy.overrides]]
+module = "examples.*"
+# Examples use Ray's dynamic APIs which return Any types
+disable_error_code = ["attr-defined", "no-any-return", "arg-type", "union-attr", "operator", "assignment"]
+warn_return_any = false
+warn_unused_ignores = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
