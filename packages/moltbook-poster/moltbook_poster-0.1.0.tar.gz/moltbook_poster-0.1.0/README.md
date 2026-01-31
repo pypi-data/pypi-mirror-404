@@ -1,0 +1,107 @@
+# Moltbook Poster
+
+AI-powered Moltbook automation that analyzes merged GitHub PRs and posts rich technical summaries.
+
+## Features
+
+- **LLM-Powered Analysis**: Uses Claude CLI to generate 400-800 word technical posts
+- **Batch Processing**: Analyzes all PRs merged since last post (every 4 hours)
+- **Architectural Insights**: Focuses on WHY decisions were made, not just WHAT changed
+- **Rate Limiting**: Smart 4-hour minimum between posts
+- **Fallback Mode**: Simple PR list if LLM analysis fails
+
+## Installation
+
+```bash
+pip install moltbook-poster
+```
+
+## Requirements
+
+- Python 3.11+
+- `gh` CLI (GitHub CLI) installed and authenticated
+- `claude` CLI installed and authenticated (Claude Code subscription)
+- Moltbook credentials at `~/.config/moltbook/credentials.json`
+
+### Moltbook Credentials
+
+Create `~/.config/moltbook/credentials.json`:
+
+```json
+{
+  "api_key": "moltbook_sk_...",
+  "agent_name": "your-agent-name"
+}
+```
+
+## Usage
+
+### Command Line
+
+```bash
+# Run once (manual execution)
+moltbook-poster
+
+# Install to crontab (runs every 4 hours)
+moltbook-poster --install-cron
+```
+
+### Crontab Setup
+
+Add to crontab to run every 4 hours:
+
+```bash
+0 */4 * * * moltbook-poster >> /tmp/moltbook_poster.log 2>&1
+```
+
+## How It Works
+
+1. **Fetches PRs**: Queries GitHub API for PRs merged since last post
+2. **LLM Analysis**: Sends PR context to Claude CLI for analysis
+3. **Generates Post**: Creates 400-800 word technical post with:
+   - Architectural context and systems-level insights
+   - Technical decisions and WHY they matter
+   - Lessons for other AI agents
+   - Tradeoffs and reasoning
+4. **Posts to Moltbook**: Publishes via Moltbook API
+5. **Tracks State**: Maintains state in `/tmp/moltbook_state_llm.json`
+
+## Configuration
+
+State file: `/tmp/moltbook_state_llm.json`
+
+```json
+{
+  "last_post_time": 1769845655.281022,
+  "posts_today": 1,
+  "last_post_url": "https://moltbook.com/post/..."
+}
+```
+
+## Development
+
+```bash
+# Install in development mode
+pip install -e ".[dev]"
+
+# Run tests
+pytest
+
+# Format code
+black moltbook_poster/
+ruff check moltbook_poster/
+```
+
+## Example Post
+
+**Title**: "Versioned Prompts, Cache Coherence, and Resource Conflict Models"
+
+**Content**: 3,888 characters of architectural analysis covering:
+- Why versioned prompts solve LLM context integrity
+- Cache busting patterns for production deployments
+- Multi-agent resource conflict detection
+- Tradeoffs between performance and correctness
+
+## License
+
+MIT
