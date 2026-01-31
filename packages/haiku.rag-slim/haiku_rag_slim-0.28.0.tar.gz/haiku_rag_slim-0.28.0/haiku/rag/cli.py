@@ -1,0 +1,673 @@
+import asyncio
+import json
+import sys
+import warnings
+from datetime import datetime
+from importlib.metadata import version
+from pathlib import Path
+from typing import Any
+
+import typer
+from dotenv import find_dotenv, load_dotenv
+
+# Load environment variables from .env file for API keys and service URLs.
+# Env loading needs to be before config import; usecwd=True searches from cwd, not this .py file's location
+load_dotenv(find_dotenv(usecwd=True))
+
+from haiku.rag.app import HaikuRAGApp  # noqa: E402
+from haiku.rag.config import (  # noqa: E402
+    AppConfig,
+    find_config_file,
+    get_config,
+    load_yaml_config,
+    set_config,
+)
+from haiku.rag.logging import configure_cli_logging  # noqa: E402
+from haiku.rag.store.exceptions import MigrationRequiredError  # noqa: E402
+from haiku.rag.utils import is_up_to_date  # noqa: E402
+
+_cli = typer.Typer(
+    context_settings={"help_option_names": ["-h", "--help"]}, no_args_is_help=True
+)
+
+
+def cli():
+    try:
+        _cli()
+    except MigrationRequiredError as e:
+        typer.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+
+# Module-level flags set by callback
+_read_only: bool = False
+_before: datetime | None = None
+
+
+def create_app(db: Path | None = None) -> HaikuRAGApp:
+    """Create HaikuRAGApp with loaded config and resolved database path.
+
+    Args:
+        db: Optional database path. If None, uses path from config.
+
+    Returns:
+        HaikuRAGApp instance with proper config and db path.
+    """
+    config = get_config()
+    db_path = db if db else config.storage.data_dir / "haiku.rag.lancedb"
+    return HaikuRAGApp(
+        db_path=db_path, config=config, read_only=_read_only, before=_before
+    )
+
+
+async def check_version():
+    """Check if haiku.rag is up to date and show warning if not."""
+    up_to_date, current_version, latest_version = await is_up_to_date()
+    if not up_to_date:
+        typer.echo(
+            f"Warning: haiku.rag is outdated. Current: {current_version}, Latest: {latest_version}",
+        )
+        typer.echo("Please update.")
+
+
+def version_callback(value: bool):
+    if value:
+        v = version("haiku.rag-slim")
+        typer.echo(f"haiku.rag version {v}")
+        raise typer.Exit()
+
+
+@_cli.callback()
+def main(
+    _version: bool = typer.Option(
+        False,
+        "-v",
+        "--version",
+        callback=version_callback,
+        help="Show version and exit",
+    ),
+    config: Path | None = typer.Option(
+        None,
+        "--config",
+        help="Path to YAML configuration file",
+    ),
+    read_only: bool = typer.Option(
+        False,
+        "--read-only",
+        help="Open database in read-only mode",
+    ),
+    before: str | None = typer.Option(
+        None,
+        "--before",
+        help="Query database as it existed before this datetime (implies --read-only). "
+        "Accepts ISO 8601 format (e.g., 2025-01-15T14:30:00) or date (e.g., 2025-01-15)",
+    ),
+):
+    """haiku.rag CLI - Vector database RAG system"""
+    global _read_only, _before
+    _read_only = read_only
+
+    # Parse and store before datetime
+    if before is not None:
+        from haiku.rag.utils import parse_datetime, to_utc
+
+        try:
+            _before = to_utc(parse_datetime(before))
+        except ValueError as e:
+            typer.echo(f"Error: {e}")
+            raise typer.Exit(1)
+    else:
+        _before = None
+    # Load config from --config, local folder, or default directory
+    config_path = find_config_file(cli_path=config)
+    if config_path:
+        yaml_data = load_yaml_config(config_path)
+        loaded_config = AppConfig.model_validate(yaml_data)
+        set_config(loaded_config)
+
+    # Configure logging for CLI context
+    configure_cli_logging()
+
+    # Configure logfire (only sends data if token is present)
+    try:
+        import logfire
+
+        is_production = get_config().environment != "development"
+        logfire.configure(
+            send_to_logfire="if-token-present",
+            console=False if is_production else None,
+        )
+        logfire.instrument_pydantic_ai()
+    except Exception:
+        pass
+
+    if get_config().environment != "development":
+        # Suppress warnings in production
+        warnings.filterwarnings("ignore")
+
+    # Run version check before any command
+    try:
+        asyncio.run(check_version())
+    except Exception:
+        # Do not block CLI on version check issues
+        pass
+
+
+@_cli.command("list", help="List all stored documents")
+def list_documents(
+    db: Path | None = typer.Option(
+        None,
+        "--db",
+        help="Path to the LanceDB database file",
+    ),
+    filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help="SQL WHERE clause to filter documents (e.g., \"uri LIKE '%arxiv%'\")",
+    ),
+):
+    app = create_app(db)
+    asyncio.run(app.list_documents(filter=filter))
+
+
+def _parse_meta_options(meta: list[str] | None) -> dict[str, Any]:
+    """Parse repeated --meta KEY=VALUE options into a dictionary.
+
+    Raises a Typer error if any entry is malformed.
+    """
+    result: dict[str, Any] = {}
+    if not meta:
+        return result
+    for item in meta:
+        if "=" not in item:
+            raise typer.BadParameter("--meta must be in KEY=VALUE format")
+        key, value = item.split("=", 1)
+        if not key:
+            raise typer.BadParameter("--meta key cannot be empty")
+        # Best-effort JSON coercion: numbers, booleans, null, arrays/objects
+        try:
+            parsed = json.loads(value)
+            result[key] = parsed
+        except Exception:
+            # Leave as string if not valid JSON literal
+            result[key] = value
+    return result
+
+
+@_cli.command("add", help="Add a document from text input")
+def add_document_text(
+    text: str = typer.Argument(
+        help="The text content of the document to add",
+    ),
+    meta: list[str] | None = typer.Option(
+        None,
+        "--meta",
+        help="Metadata entries as KEY=VALUE (repeatable)",
+        metavar="KEY=VALUE",
+    ),
+    db: Path | None = typer.Option(
+        None,
+        "--db",
+        help="Path to the LanceDB database file",
+    ),
+):
+    app = create_app(db)
+    metadata = _parse_meta_options(meta)
+    asyncio.run(app.add_document_from_text(text=text, metadata=metadata or None))
+
+
+@_cli.command("add-src", help="Add a document from a file path, directory, or URL")
+def add_document_src(
+    source: str = typer.Argument(
+        help="The file path, directory, or URL of the document(s) to add",
+    ),
+    title: str | None = typer.Option(
+        None,
+        "--title",
+        help="Optional human-readable title to store with the document",
+    ),
+    meta: list[str] | None = typer.Option(
+        None,
+        "--meta",
+        help="Metadata entries as KEY=VALUE (repeatable)",
+        metavar="KEY=VALUE",
+    ),
+    db: Path | None = typer.Option(
+        None,
+        "--db",
+        help="Path to the LanceDB database file",
+    ),
+):
+    app = create_app(db)
+    metadata = _parse_meta_options(meta)
+    asyncio.run(
+        app.add_document_from_source(
+            source=source, title=title, metadata=metadata or None
+        )
+    )
+
+
+@_cli.command("get", help="Get and display a document by its ID")
+def get_document(
+    doc_id: str = typer.Argument(
+        help="The ID of the document to get",
+    ),
+    db: Path | None = typer.Option(
+        None,
+        "--db",
+        help="Path to the LanceDB database file",
+    ),
+):
+    app = create_app(db)
+    asyncio.run(app.get_document(doc_id=doc_id))
+
+
+@_cli.command("delete", help="Delete a document by its ID")
+def delete_document(
+    doc_id: str = typer.Argument(
+        help="The ID of the document to delete",
+    ),
+    db: Path | None = typer.Option(
+        None,
+        "--db",
+        help="Path to the LanceDB database file",
+    ),
+):
+    app = create_app(db)
+    asyncio.run(app.delete_document(doc_id=doc_id))
+
+
+# Add alias `rm` for delete
+_cli.command("rm", help="Alias for delete: remove a document by its ID")(
+    delete_document
+)
+
+
+@_cli.command("search", help="Search for documents by a query")
+def search(
+    query: str = typer.Argument(
+        help="The search query to use",
+    ),
+    limit: int | None = typer.Option(
+        None,
+        "--limit",
+        "-l",
+        help="Maximum number of results to return (default: config search.default_limit)",
+    ),
+    filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help="SQL WHERE clause to filter documents (e.g., \"uri LIKE '%arxiv%'\")",
+    ),
+    db: Path | None = typer.Option(
+        None,
+        "--db",
+        help="Path to the LanceDB database file",
+    ),
+):
+    app = create_app(db)
+    asyncio.run(app.search(query=query, limit=limit, filter=filter))
+
+
+@_cli.command("visualize", help="Show visual grounding for a chunk")
+def visualize(
+    chunk_id: str = typer.Argument(
+        help="The ID of the chunk to visualize",
+    ),
+    db: Path | None = typer.Option(
+        None,
+        "--db",
+        help="Path to the LanceDB database file",
+    ),
+):
+    app = create_app(db)
+    asyncio.run(app.visualize_chunk(chunk_id=chunk_id))
+
+
+@_cli.command("ask", help="Ask a question using the QA agent")
+def ask(
+    question: str = typer.Argument(
+        help="The question to ask",
+    ),
+    db: Path | None = typer.Option(
+        None,
+        "--db",
+        help="Path to the LanceDB database file",
+    ),
+    cite: bool = typer.Option(
+        False,
+        "--cite",
+        help="Include citations in the response",
+    ),
+    deep: bool = typer.Option(
+        False,
+        "--deep",
+        help="Use deep multi-agent QA for complex questions",
+    ),
+    filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help="SQL WHERE clause to filter documents (e.g., \"uri LIKE '%arxiv%'\")",
+    ),
+):
+    app = create_app(db)
+    asyncio.run(
+        app.ask(
+            question=question,
+            cite=cite,
+            deep=deep,
+            filter=filter,
+        )
+    )
+
+
+@_cli.command("research", help="Run multi-agent research and output a concise report")
+def research(
+    question: str = typer.Argument(..., help="The research question to investigate"),
+    db: Path | None = typer.Option(
+        None,
+        "--db",
+        help="Path to the LanceDB database file",
+    ),
+    filter: str | None = typer.Option(
+        None,
+        "--filter",
+        "-f",
+        help="SQL WHERE clause to filter documents (e.g., \"uri LIKE '%arxiv%'\")",
+    ),
+):
+    app = create_app(db)
+    asyncio.run(app.research(question=question, filter=filter))
+
+
+@_cli.command("settings", help="Display current configuration settings")
+def settings():
+    config = get_config()
+    app = HaikuRAGApp(db_path=Path(), config=config)
+    app.show_settings()
+
+
+@_cli.command("init-config", help="Generate a YAML configuration file")
+def init_config(
+    output: Path = typer.Argument(
+        Path("haiku.rag.yaml"),
+        help="Output path for the config file",
+    ),
+):
+    """Generate a YAML configuration file with defaults."""
+    import yaml
+
+    from haiku.rag.config.loader import generate_default_config
+
+    if output.exists():
+        typer.echo(
+            f"Error: {output} already exists. Remove it first or choose a different path."
+        )
+        raise typer.Exit(1)
+
+    config_data = generate_default_config()
+
+    # Write YAML with comments
+    with open(output, "w") as f:
+        f.write("# haiku.rag configuration file\n")
+        f.write(
+            "# See https://ggozad.github.io/haiku.rag/configuration/ for details\n\n"
+        )
+        yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
+
+    typer.echo(f"Configuration file created: {output}")
+    typer.echo("Edit the file to customize your settings.")
+
+
+@_cli.command(
+    "rebuild",
+    help="Rebuild the database by deleting all chunks and re-indexing all documents",
+)
+def rebuild(
+    db: Path | None = typer.Option(
+        None,
+        "--db",
+        help="Path to the LanceDB database file",
+    ),
+    embed_only: bool = typer.Option(
+        False,
+        "--embed-only",
+        help="Only regenerate embeddings, keep existing chunks",
+    ),
+    rechunk: bool = typer.Option(
+        False,
+        "--rechunk",
+        help="Re-chunk from existing content without accessing source files",
+    ),
+):
+    from haiku.rag.client import RebuildMode
+
+    if embed_only and rechunk:
+        typer.echo("Error: --embed-only and --rechunk are mutually exclusive")
+        raise typer.Exit(1)
+
+    if embed_only:
+        mode = RebuildMode.EMBED_ONLY
+    elif rechunk:
+        mode = RebuildMode.RECHUNK
+    else:
+        mode = RebuildMode.FULL
+
+    app = create_app(db)
+    asyncio.run(app.rebuild(mode=mode))
+
+
+@_cli.command("vacuum", help="Optimize and clean up all tables to reduce disk usage")
+def vacuum(
+    db: Path | None = typer.Option(
+        None,
+        "--db",
+        help="Path to the LanceDB database file",
+    ),
+):
+    app = create_app(db)
+    asyncio.run(app.vacuum())
+
+
+@_cli.command("migrate", help="Run pending database migrations")
+def migrate(
+    db: Path | None = typer.Option(
+        None,
+        "--db",
+        help="Path to the LanceDB database file",
+    ),
+):
+    app = create_app(db)
+    try:
+        applied = app.migrate()
+        if applied:
+            typer.echo(f"Applied {len(applied)} migration(s):")
+            for desc in applied:
+                typer.echo(f"  - {desc}")
+            typer.echo("Migration completed successfully.")
+        else:
+            typer.echo("No migrations pending. Database is up to date.")
+    except Exception as e:
+        typer.echo(f"Migration failed: {e}")
+        raise typer.Exit(1)
+
+
+@_cli.command(
+    "create-index", help="Create vector index for efficient similarity search"
+)
+def create_index(
+    db: Path | None = typer.Option(
+        None,
+        "--db",
+        help="Path to the LanceDB database file",
+    ),
+):
+    app = create_app(db)
+    asyncio.run(app.create_index())
+
+
+@_cli.command("init", help="Initialize a new database")
+def init_db(
+    db: Path | None = typer.Option(
+        None,
+        "--db",
+        help="Path to the LanceDB database file",
+    ),
+):
+    app = create_app(db)
+    asyncio.run(app.init())
+
+
+@_cli.command("info", help="Show database info")
+def info(
+    db: Path | None = typer.Option(
+        None,
+        "--db",
+        help="Path to the LanceDB database file",
+    ),
+):
+    app = create_app(db)
+    asyncio.run(app.info())
+
+
+@_cli.command("history", help="Show version history for database tables")
+def history(
+    db: Path | None = typer.Option(
+        None,
+        "--db",
+        help="Path to the LanceDB database file",
+    ),
+    table: str | None = typer.Option(
+        None,
+        "--table",
+        "-t",
+        help="Specific table to show history for (documents, chunks, settings)",
+    ),
+    limit: int | None = typer.Option(
+        None,
+        "--limit",
+        "-l",
+        help="Maximum number of versions to show per table",
+    ),
+):
+    app = create_app(db)
+    asyncio.run(app.history(table=table, limit=limit))
+
+
+@_cli.command("download-models", help="Download Docling and Ollama models per config")
+def download_models_cmd():
+    app = HaikuRAGApp(db_path=Path(), config=get_config())
+    try:
+        asyncio.run(app.download_models())
+    except Exception as e:
+        typer.echo(f"Error downloading models: {e}")
+        raise typer.Exit(1)
+
+
+@_cli.command("inspect", help="Launch interactive TUI to inspect database contents")
+def inspect(
+    db: Path | None = typer.Option(
+        None,
+        "--db",
+        help="Path to the LanceDB database file",
+    ),
+):
+    """Launch the inspector TUI for browsing documents and chunks."""
+    try:
+        from haiku.rag.inspector import run_inspector
+    except ImportError as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1) from e
+
+    db_path = db if db else get_config().storage.data_dir / "haiku.rag.lancedb"
+    run_inspector(db_path, read_only=_read_only, before=_before)
+
+
+@_cli.command("chat", help="Launch interactive chat TUI for conversational RAG")
+def chat(
+    db: Path | None = typer.Option(
+        None,
+        "--db",
+        help="Path to the LanceDB database file",
+    ),
+    initial_context: str | None = typer.Option(
+        None,
+        "--initial-context",
+        help="Initial background context to provide to the conversation",
+    ),
+):
+    """Launch the chat TUI for conversational RAG."""
+    from haiku.rag.chat import run_chat
+
+    db_path = db if db else get_config().storage.data_dir / "haiku.rag.lancedb"
+
+    run_chat(
+        db_path,
+        read_only=_read_only,
+        before=_before,
+        initial_context=initial_context,
+    )
+
+
+@_cli.command(
+    "serve",
+    help="Start haiku.rag server. Use --monitor and/or --mcp to enable services.",
+)
+def serve(
+    db: Path | None = typer.Option(
+        None,
+        "--db",
+        help="Path to the LanceDB database file",
+    ),
+    monitor: bool = typer.Option(
+        False,
+        "--monitor",
+        help="Enable file monitoring",
+    ),
+    mcp: bool = typer.Option(
+        False,
+        "--mcp",
+        help="Enable MCP server",
+    ),
+    stdio: bool = typer.Option(
+        False,
+        "--stdio",
+        help="Run MCP server on stdio Transport (requires --mcp)",
+    ),
+    mcp_port: int = typer.Option(
+        8001,
+        "--mcp-port",
+        help="Port to bind MCP server to (ignored with --stdio)",
+    ),
+) -> None:
+    """Start the server with selected services."""
+    # Require at least one service flag
+    if not (monitor or mcp):
+        typer.echo(
+            "Error: At least one service flag (--monitor or --mcp) must be specified"
+        )
+        raise typer.Exit(1)
+
+    if stdio and not mcp:
+        typer.echo("Error: --stdio requires --mcp")
+        raise typer.Exit(1)
+
+    app = create_app(db)
+
+    transport = "stdio" if stdio else None
+
+    asyncio.run(
+        app.serve(
+            enable_monitor=monitor,
+            enable_mcp=mcp,
+            mcp_transport=transport,
+            mcp_port=mcp_port,
+        )
+    )
+
+
+if __name__ == "__main__":
+    cli()
