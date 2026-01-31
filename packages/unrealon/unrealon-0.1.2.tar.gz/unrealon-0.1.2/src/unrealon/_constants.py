@@ -1,0 +1,27 @@
+"""SDK constants and defaults."""
+
+# Environment variable names
+ENV_API_KEY = "UNREALON_API_KEY"
+ENV_PARSER_NAME = "UNREALON_PARSER_NAME"
+ENV_API_URL = "UNREALON_API_URL"
+
+# Default URLs
+DEFAULT_API_URL = "https://api.unrealon.com"
+DEFAULT_API_URL_LOCAL = "http://127.0.0.1:8000"
+
+# Default timeouts (seconds)
+DEFAULT_TIMEOUT = 30.0
+DEFAULT_CONNECT_TIMEOUT = 10.0
+DEFAULT_HEARTBEAT_TIMEOUT = 10.0
+
+# Default intervals (seconds)
+DEFAULT_HEARTBEAT_INTERVAL = 30
+DEFAULT_COMMAND_POLL_INTERVAL = 10
+DEFAULT_LOG_FLUSH_INTERVAL = 5.0
+
+# Default batch sizes
+DEFAULT_LOG_BATCH_SIZE = 50
+DEFAULT_MAX_RETRIES = 3
+
+# API paths
+API_PARSERS_BASE = "/api/parsers"
