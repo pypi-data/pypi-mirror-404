@@ -1,0 +1,411 @@
+"""Deployment module for deploying APKG files to Pixell Agent Cloud."""
+
+import os
+import time
+import json
+import zipfile
+from pathlib import Path
+from typing import Optional, Dict, Any
+import requests  # type: ignore
+import yaml
+from urllib.parse import urljoin
+
+
+class DeploymentError(Exception):
+    """Base exception for deployment errors."""
+
+    pass
+
+
+class AuthenticationError(DeploymentError):
+    """Authentication failed."""
+
+    pass
+
+
+class InsufficientCreditsError(DeploymentError):
+    """Not enough credits for deployment."""
+
+    pass
+
+
+class ValidationError(DeploymentError):
+    """Package validation failed."""
+
+    pass
+
+
+def extract_environment_from_apkg(apkg_file: Path) -> Dict[str, str]:
+    """Extract environment variables from APKG file's manifest.
+
+    Args:
+        apkg_file: Path to the APKG file
+
+    Returns:
+        Dictionary of environment variables from manifest, empty dict if not found
+    """
+    try:
+        with zipfile.ZipFile(apkg_file, "r") as zf:
+            # Try to read from .pixell/package.json (contains manifest)
+            try:
+                package_json = json.loads(zf.read(".pixell/package.json"))
+                manifest = package_json.get("manifest", {})
+                return manifest.get("environment", {})
+            except KeyError:
+                # Fall back to reading agent.yaml directly
+                try:
+                    agent_yaml = yaml.safe_load(zf.read("agent.yaml"))
+                    return agent_yaml.get("environment", {})
+                except KeyError:
+                    return {}
+    except Exception:
+        return {}
+
+
+def extract_version_from_apkg(apkg_file: Path) -> Optional[str]:
+    """Extract version from APKG file.
+
+    Args:
+        apkg_file: Path to the APKG file
+
+    Returns:
+        Version string if found, None otherwise
+    """
+    try:
+        with zipfile.ZipFile(apkg_file, "r") as zf:
+            # Try to read from .pixell/package.json first (most reliable)
+            try:
+                with zf.open(".pixell/package.json") as f:
+                    package_data = json.load(f)
+                    version = package_data.get("manifest", {}).get("metadata", {}).get("version")
+                    return str(version) if version is not None else None
+            except KeyError:
+                pass
+
+            # Fallback to agent.yaml
+            try:
+                with zf.open("agent.yaml") as f:
+                    manifest_data = yaml.safe_load(f)
+                    version = manifest_data.get("metadata", {}).get("version")
+                    return str(version) if version is not None else None
+            except KeyError:
+                pass
+
+    except Exception:
+        # If anything fails, return None
+        pass
+
+    return None
+
+
+class DeploymentClient:
+    """Client for deploying APKG files to Pixell Agent Cloud."""
+
+    # Environment configurations
+    ENVIRONMENTS = {
+        "local": {"base_url": "http://localhost:3000", "name": "Local Development"},
+        "prod": {"base_url": "https://cloud.pixell.global", "name": "Production"},
+    }
+
+    def __init__(self, environment: str = "prod", api_key: Optional[str] = None):
+        """Initialize deployment client.
+
+        Args:
+            environment: Deployment environment ('local' or 'prod')
+            api_key: Optional API key for authentication
+        """
+        if environment not in self.ENVIRONMENTS:
+            raise ValueError(
+                f"Invalid environment: {environment}. Must be one of: {list(self.ENVIRONMENTS.keys())}"
+            )
+
+        self.environment = environment
+        self.base_url = self.ENVIRONMENTS[environment]["base_url"]
+        self.api_key = api_key or os.environ.get("PIXELL_API_KEY")
+
+        # Session for connection pooling
+        self.session = requests.Session()
+        if self.api_key:
+            self.session.headers["Authorization"] = f"Bearer {self.api_key}"
+
+    def deploy(
+        self,
+        app_id: str,
+        apkg_file: Path,
+        version: Optional[str] = None,
+        release_notes: Optional[str] = None,
+        signature_file: Optional[Path] = None,
+        force_overwrite: bool = False,
+        runtime_env: Optional[Dict[str, str]] = None,
+    ) -> Dict[str, Any]:
+        """Deploy an APKG file to an agent app.
+
+        Args:
+            app_id: The agent app ID
+            apkg_file: Path to the APKG file
+            version: Version string (optional, will extract from package if not provided)
+            release_notes: Release notes for this deployment
+            signature_file: Path to signature file for signed packages
+            force_overwrite: Force overwrite existing version if it exists
+            runtime_env: Runtime environment variables to inject (overrides manifest environment)
+
+        Returns:
+            Deployment response with status and tracking information
+
+        Raises:
+            DeploymentError: If deployment fails
+            AuthenticationError: If authentication fails
+            InsufficientCreditsError: If not enough credits
+            ValidationError: If package validation fails
+        """
+        if not apkg_file.exists():
+            raise FileNotFoundError(f"APKG file not found: {apkg_file}")
+
+        # Extract version from APKG if not provided
+        if not version:
+            version = extract_version_from_apkg(apkg_file)
+            if not version:
+                raise ValidationError(
+                    "Version not provided and could not be extracted from APKG file"
+                )
+
+        # Extract environment variables from manifest and merge with runtime overrides
+        env_vars = extract_environment_from_apkg(apkg_file)
+        if runtime_env:
+            env_vars.update(runtime_env)
+
+        # Prepare the deployment request
+        url = urljoin(self.base_url, f"/api/agent-apps/{app_id}/packages/deploy")
+
+        # Prepare files for multipart upload
+        files = [("file", ("agent.apkg", open(apkg_file, "rb"), "application/octet-stream"))]
+
+        # Prepare form data - using list of tuples to ensure proper ordering
+        data = [("version", version)]  # Version is now always required
+
+        if release_notes:
+            data.append(("release_notes", release_notes))
+
+        if force_overwrite:
+            # Send as form field with string value 'true'
+            data.append(("force_overwrite", "true"))
+
+        # Add environment variables as JSON if present
+        if env_vars:
+            data.append(("environment", json.dumps(env_vars)))
+
+        if signature_file and signature_file.exists():
+            files.append(
+                (
+                    "signature",
+                    ("agent.apkg.sig", open(signature_file, "rb"), "application/octet-stream"),
+                )
+            )
+
+        try:
+            # Send deployment request
+            response = self.session.post(url, files=files, data=data, timeout=60)
+
+            # Handle different response codes
+            if response.status_code == 202:  # Accepted
+                return response.json()  # type: ignore  # type: ignore
+            elif response.status_code == 400:  # Bad Request
+                error_data = response.json()
+                raise ValidationError(
+                    f"Package validation failed: {error_data.get('details', error_data.get('error'))}"
+                )
+            elif response.status_code == 401:  # Unauthorized
+                raise AuthenticationError(
+                    "Invalid API key or session. Please check your credentials."
+                )
+            elif response.status_code == 402:  # Payment Required
+                error_data = response.json()
+                raise InsufficientCreditsError(
+                    f"Insufficient credits. Required: {error_data.get('required')}, "
+                    f"Available: {error_data.get('available')}"
+                )
+            elif response.status_code == 409:  # Conflict
+                error_data = response.json()
+                if force_overwrite:
+                    # If force was specified but we still got 409, there's an issue
+                    raise ValidationError(
+                        f"Version {version} conflict occurred even with force overwrite enabled. "
+                        f"API response: {error_data.get('error', 'Unknown error')}"
+                    )
+                else:
+                    raise ValidationError(
+                        f"Version {version} already exists. Use --force to overwrite existing version."
+                    )
+            else:
+                response.raise_for_status()
+                return response.json()  # type: ignore  # type: ignore
+
+        except requests.exceptions.RequestException as e:
+            raise DeploymentError(f"Deployment request failed: {str(e)}")
+        finally:
+            # Clean up file handles
+            for field_name, file_info in files:
+                if isinstance(file_info, tuple) and len(file_info) > 1:
+                    file_obj = file_info[1]
+                    if hasattr(file_obj, "close"):
+                        file_obj.close()
+
+    def get_deployment_status(self, deployment_id: str) -> Dict[str, Any]:
+        """Get the status of a deployment.
+
+        Args:
+            deployment_id: The deployment ID to check
+
+        Returns:
+            Deployment status information
+        """
+        url = urljoin(self.base_url, f"/api/deployments/{deployment_id}")
+
+        try:
+            response = self.session.get(url, timeout=30)
+            response.raise_for_status()
+            return response.json()  # type: ignore
+        except requests.exceptions.RequestException as e:
+            raise DeploymentError(f"Failed to get deployment status: {str(e)}")
+
+    def wait_for_deployment(self, deployment_id: str, timeout: int = 300) -> Dict[str, Any]:
+        """Wait for a deployment to complete.
+
+        Args:
+            deployment_id: The deployment ID to wait for
+            timeout: Maximum time to wait in seconds
+
+        Returns:
+            Final deployment status
+
+        Raises:
+            DeploymentError: If deployment fails or times out
+        """
+        start_time = time.time()
+
+        while time.time() - start_time < timeout:
+            status = self.get_deployment_status(deployment_id)
+            deployment_status = status["deployment"]["status"]
+
+            if deployment_status == "completed":
+                return status
+            elif deployment_status == "failed":
+                raise DeploymentError(
+                    f"Deployment failed: {status.get('deployment', {}).get('error', 'Unknown error')}"
+                )
+
+            # Wait before checking again
+            time.sleep(5)
+
+        raise DeploymentError(f"Deployment timed out after {timeout} seconds")
+
+    def get_queue_stats(self) -> Dict[str, Any]:
+        """Get deployment queue statistics.
+
+        Returns:
+            Queue statistics and health information
+        """
+        url = urljoin(self.base_url, "/api/deployments/queue/stats")
+
+        try:
+            response = self.session.get(url, timeout=30)
+            response.raise_for_status()
+            return response.json()  # type: ignore
+        except requests.exceptions.RequestException as e:
+            raise DeploymentError(f"Failed to get queue stats: {str(e)}")
+
+
+def get_config() -> Dict[str, Any]:
+    """Get configuration from environment variables and config files.
+
+    Configuration is loaded in the following order of precedence:
+    1. Environment variables
+    2. Project-level config file (.pixell/config.json)
+    3. User-level config file (~/.pixell/config.json)
+
+    Returns:
+        Configuration dictionary with api_key, app_id, and environment settings
+    """
+    config = {}
+
+    # Check environment variables first
+    if os.environ.get("PIXELL_API_KEY"):
+        config["api_key"] = os.environ.get("PIXELL_API_KEY")
+    if os.environ.get("PIXELL_APP_ID"):
+        config["app_id"] = os.environ.get("PIXELL_APP_ID")
+    if os.environ.get("PIXELL_ENVIRONMENT"):
+        config["environment"] = os.environ.get("PIXELL_ENVIRONMENT")
+
+    # Check project-level config file
+    project_config_file = Path(".pixell") / "config.json"
+    if project_config_file.exists():
+        try:
+            import json
+
+            with open(project_config_file) as f:
+                project_config = json.load(f)
+                # Project config takes precedence over environment variables
+                config.update(project_config)
+        except Exception:
+            pass
+
+    # Check user-level config file
+    user_config_file = Path.home() / ".pixell" / "config.json"
+    if user_config_file.exists():
+        try:
+            import json
+
+            with open(user_config_file) as f:
+                user_config = json.load(f)
+                # User config is used as fallback for missing values
+                for key, value in user_config.items():
+                    if key not in config:
+                        config[key] = value
+        except Exception:
+            pass
+
+    return config
+
+
+def get_api_key() -> Optional[str]:
+    """Get API key from environment or config file.
+
+    Returns:
+        API key if found, None otherwise
+    """
+    config = get_config()
+    return config.get("api_key")
+
+
+def get_app_id(environment: str = "prod") -> Optional[str]:
+    """Get app ID for the specified environment.
+
+    Args:
+        environment: Environment name (prod, staging, local, etc.)
+
+    Returns:
+        App ID if found, None otherwise
+    """
+    config = get_config()
+
+    # Check for environment-specific app_id
+    if "environments" in config and environment in config["environments"]:
+        env_config = config["environments"][environment]
+        if "app_id" in env_config:
+            return str(env_config["app_id"])
+
+    # Check for global app_id
+    if "app_id" in config:
+        return str(config["app_id"])
+
+    return None
+
+
+def get_default_environment() -> str:
+    """Get the default environment from config.
+
+    Returns:
+        Default environment name, defaults to 'prod'
+    """
+    config = get_config()
+    return str(config.get("default_environment", "prod"))
