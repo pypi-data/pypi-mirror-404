@@ -1,0 +1,181 @@
+Metadata-Version: 2.4
+Name: kiri_ocr
+Version: 0.2.12
+Summary: A lightweight OCR library for Khmer and English documents
+Author-email: Tmob <mrrtmob@gmail.com>
+License: Apache-2.0
+Project-URL: Homepage, https://github.com/mrrtmob/kiri-ocr
+Project-URL: Repository, https://github.com/mrrtmob/kiri-ocr
+Project-URL: Issues, https://github.com/mrrtmob/kiri-ocr/issues
+Project-URL: Documentation, https://github.com/mrrtmob/kiri-ocr/wiki
+Keywords: ocr,khmer,english,deep-learning,pytorch,computer-vision
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: Apache Software License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.6
+Classifier: Programming Language :: Python :: 3.7
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Operating System :: OS Independent
+Classifier: Topic :: Scientific/Engineering :: Artificial Intelligence
+Classifier: Topic :: Text Processing :: Linguistic
+Requires-Python: >=3.6
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: torch>=2.0.0
+Requires-Dist: torchvision>=0.15.0
+Requires-Dist: numpy>=1.24.0
+Requires-Dist: opencv-python>=4.7.0
+Requires-Dist: Pillow>=9.0.0
+Requires-Dist: tqdm>=4.65.0
+Requires-Dist: matplotlib>=3.7.0
+Requires-Dist: datasets>=2.14.0
+Requires-Dist: huggingface_hub>=0.16.0
+Requires-Dist: PyYAML
+Requires-Dist: safetensors>=0.4.0
+Requires-Dist: onnxruntime-gpu>=1.15.0
+Requires-Dist: pyclipper>=1.3.0
+Requires-Dist: shapely>=2.0.0
+Dynamic: license-file
+
+# Kiri OCR 📄
+
+[![PyPI version](https://badge.fury.io/py/kiri-ocr.svg)](https://badge.fury.io/py/kiri-ocr)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Python Versions](https://img.shields.io/pypi/pyversions/kiri-ocr.svg)](https://pypi.org/project/kiri-ocr/)
+[![Downloads](https://static.pepy.tech/badge/kiri-ocr)](https://pepy.tech/project/kiri-ocr)
+[![Hugging Face Model](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Model-yellow)](https://huggingface.co/mrrtmob/kiri-ocr)
+[![Hugging Face Spaces](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Spaces-blue)](https://huggingface.co/spaces/mrrtmob/kiri-ocr)
+
+**Kiri OCR** is a lightweight OCR library for **English and Khmer** documents. It provides document-level text detection, recognition, and rendering capabilities.
+
+[**🚀 Try the Live Demo**](https://huggingface.co/spaces/mrrtmob/kiri-ocr) | [**📚 Full Documentation**](https://github.com/mrrtmob/kiri-ocr/wiki)
+
+![Kiri OCR](https://raw.githubusercontent.com/mrrtmob/kiri-ocr/main/assets/image.png)
+
+## ✨ Key Features
+
+- **High Accuracy**: Transformer model with hybrid CTC + attention decoder
+- **Bi-lingual**: Native support for English and Khmer (and mixed text)
+- **Document Processing**: Automatic text line and word detection
+- **Streaming**: Real-time character-by-character output (like LLM streaming)
+- **Easy to Use**: Simple Python API and CLI
+
+## 📦 Installation
+
+```bash
+pip install kiri-ocr
+```
+
+## 💻 Quick Start
+
+### CLI Tool
+
+```bash
+kiri-ocr document.jpg
+```
+
+### Python API
+
+```python
+from kiri_ocr import OCR
+
+# Initialize (auto-downloads from Hugging Face)
+ocr = OCR()
+
+# Extract text from document
+text, results = ocr.extract_text('document.jpg')
+print(text)
+
+# Get detailed box-by-box results
+for line in results:
+    print(f"{line['text']} (confidence: {line['confidence']:.1%})")
+```
+
+### Decoding Methods
+
+Choose the decoding method based on your speed/quality tradeoff:
+
+```python
+# Fast (CTC) - Fastest, good for batch processing
+ocr = OCR(decode_method="fast")
+
+# Accurate (Decoder) - Balanced speed and quality (default)
+ocr = OCR(decode_method="accurate")
+
+# Beam Search - Best quality, slowest
+ocr = OCR(decode_method="beam")
+```
+
+### Streaming Recognition
+
+Get character-by-character output like LLM streaming:
+
+```python
+from kiri_ocr import OCR
+
+ocr = OCR(decode_method="accurate")
+
+# Stream characters as they're decoded
+for chunk in ocr.extract_text_stream_chars('document.jpg'):
+    print(chunk['token'], end='', flush=True)
+    if chunk['document_finished']:
+        print()  # Done!
+```
+
+## 📚 Documentation
+
+Full documentation is available on the [**Wiki**](https://github.com/mrrtmob/kiri-ocr/wiki):
+
+- [Installation](https://github.com/mrrtmob/kiri-ocr/wiki/Installation)
+- [Quick Start Guide](https://github.com/mrrtmob/kiri-ocr/wiki/Quick-Start)
+- [Python API Reference](https://github.com/mrrtmob/kiri-ocr/wiki/Python-API)
+- [CLI Reference](https://github.com/mrrtmob/kiri-ocr/wiki/CLI-Reference)
+- [Training Guide](https://github.com/mrrtmob/kiri-ocr/wiki/Training-Guide)
+- [Detector API](https://github.com/mrrtmob/kiri-ocr/wiki/Detector-API)
+- [Architecture](https://github.com/mrrtmob/kiri-ocr/wiki/Architecture)
+
+## 📊 Benchmark
+
+Results on synthetic test images (10 popular fonts):
+
+![Benchmark Graph](https://raw.githubusercontent.com/mrrtmob/kiri-ocr/main/benchmark/benchmark_graph.png)
+
+## 📁 Project Structure
+
+```
+kiri_ocr/
+├── core.py               # OCR class
+├── model.py              # Transformer model
+├── training.py           # Training code
+├── cli.py                # Command-line interface
+└── detector/             # Text detection
+    ├── db/               # DB detector
+    └── craft/            # CRAFT detector
+```
+
+## ☕ Support
+
+If you find this project useful:
+
+- ⭐ Star this repository
+- [Buy Me a Coffee](https://buymeacoffee.com/tmob)
+- [ABA Payway](https://link.payway.com.kh/ABAPAYfd4073965)
+
+## ⚖️ License
+
+[Apache License 2.0](https://github.com/mrrtmob/kiri-ocr/blob/main/LICENSE)
+
+## 📚 Citation
+
+```bibtex
+@software{kiri_ocr,
+  author = {mrrtmob},
+  title = {Kiri OCR: Lightweight Khmer and English OCR},
+  year = {2026},
+  url = {https://github.com/mrrtmob/kiri-ocr}
+}
+```
