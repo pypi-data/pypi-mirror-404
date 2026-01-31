@@ -1,0 +1,73 @@
+"""Agent summary CLI command."""
+
+import asyncio
+from pathlib import Path
+from typing import Optional
+
+import typer
+from rich.console import Console
+
+from devloop.core.context_store import context_store
+from devloop.core.summary_generator import SummaryGenerator
+from devloop.core.summary_formatter import SummaryFormatter
+
+app = typer.Typer(help="View summaries of dev-agent findings")
+console = Console()
+
+
+@app.command("agent")
+def agent_summary(
+    scope: str = typer.Argument(
+        "recent", help="Summary scope: recent|today|session|all"
+    ),
+    agent: Optional[str] = typer.Option(None, "--agent", help="Filter by agent name"),
+    severity: Optional[str] = typer.Option(
+        None, "--severity", help="Filter by severity"
+    ),
+    category: Optional[str] = typer.Option(
+        None, "--category", help="Filter by category"
+    ),
+):
+    """Generate intelligent summary of dev-agent findings."""
+    filters = {}
+    if agent:
+        filters["agent"] = str(agent)
+    if severity:
+        filters["severity"] = str(severity)
+    if category:
+        filters["category"] = str(category)
+
+    generator = SummaryGenerator(context_store)
+
+    # Try to find devloop directory for operational health
+    # Check: cwd, parent, and context_store's base path
+    devloop_dir = None
+    search_paths = [
+        Path.cwd() / ".devloop",
+        Path.cwd().parent / ".devloop",
+    ]
+
+    # Also check if context_store has a devloop directory hint
+    if hasattr(context_store, "base_path"):
+        search_paths.append(Path(context_store.base_path).parent / ".devloop")
+
+    for path_candidate in search_paths:
+        if path_candidate.exists():
+            devloop_dir = path_candidate
+            break
+
+    try:
+        report = asyncio.run(generator.generate_summary(scope, filters))
+
+        # If we couldn't find devloop_dir, try to infer from context store paths
+        if not devloop_dir:
+            # Check if context directory exists and infer .devloop from it
+            context_dir = Path.cwd() / ".devloop" / "context"
+            if context_dir.exists():
+                devloop_dir = context_dir.parent
+
+        markdown_output = SummaryFormatter.format_markdown(report, devloop_dir)
+        console.print(markdown_output)
+    except Exception as e:
+        console.print(f"[red]Error generating summary: {e}[/red]")
+        raise typer.Exit(1)
