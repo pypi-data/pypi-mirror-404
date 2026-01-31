@@ -1,0 +1,55 @@
+name: Auto Release Tag
+permissions:
+  id-token: write
+  contents: write
+  attestations: write
+on:
+  pull_request:
+    types: [ closed ]
+  workflow_dispatch:
+
+
+jobs:
+  tag-and-release:
+    if: ((github.event.pull_request.merged == true && contains(github.event.pull_request.labels.*.name, 'pre-release')) || github.event_name == 'workflow_dispatch') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      new_tag: ${{ steps.version.outputs.new_tag }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Determine Next Version
+        id: version
+        run: python scripts/auto_tag.py
+
+      - name: Create Tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          TAG=${{ steps.version.outputs.new_tag }}
+
+          # Check if tag exists
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists. Skipping creation."
+          else
+            echo "Creating tag $TAG"
+            git tag $TAG
+            git push origin $TAG
+          fi
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.new_tag }}
+          generate_release_notes: true
+          prerelease: true
