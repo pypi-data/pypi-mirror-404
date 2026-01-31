@@ -1,0 +1,470 @@
+# AUTOSAR PDF to Text
+
+A Python package to extract AUTOSAR model hierarchies from PDF specification documents and convert them to markdown format.
+
+## Features
+
+- **PDF Extraction**: Extract AUTOSAR packages, classes, enumerations, and primitive types from PDF specification documents
+- **Two-Phase Parsing**: Read phase extracts all text from PDF, parse phase processes complete buffer for multi-page definitions
+- **Hierarchical Parsing**: Parse complex hierarchical class structures with inheritance relationships
+- **Source Location Tracking**: Track PDF file and page number for each type definition and base class reference
+- **Markdown Output**: Generate well-formatted markdown output with proper indentation
+- **Class Details**: Support for abstract classes, attributes, ATP markers, and source information
+- **Class Hierarchy**: Generate separate class inheritance hierarchy files showing root classes and their subclasses
+- **Individual Class Files**: Create separate markdown files for each class with detailed information
+- **Model Validation**: Built-in duplicate prevention and validation at the model level
+- **Subclasses Validation**: Validate subclass relationships against actual inheritance hierarchy
+- **Comprehensive Coverage**: 97%+ test coverage with robust error handling
+
+## Installation
+
+```bash
+pip install autosar-pdf2txt
+```
+
+Or install from source:
+
+```bash
+git clone https://github.com/melodypapa/autosar-pdf.git
+cd autosar-pdf
+pip install -e .
+```
+
+## Requirements
+
+- Python 3.7+
+- pdfplumber
+
+## Usage
+
+### Command Line Interface
+
+The `autosar-extract` command provides a simple interface for extracting AUTOSAR models from PDF files.
+
+```bash
+# Extract from single PDF and print to stdout
+autosar-extract path/to/file.pdf
+
+# Extract from multiple PDFs
+autosar-extract path/to/file1.pdf path/to/file2.pdf path/to/file3.pdf
+
+# Extract from directory (processes all PDFs in directory)
+autosar-extract path/to/directory
+
+# Extract from multiple directories and files
+autosar-extract path/to/dir1 path/to/file.pdf path/to/dir2
+
+# Extract and save to file
+autosar-extract path/to/file.pdf -o output.md
+
+# Generate class inheritance hierarchy in separate file
+autosar-extract path/to/file.pdf -o output.md --include-class-hierarchy
+# Creates: output.md (package hierarchy) and output-hierarchy.md (class inheritance)
+
+# Create individual markdown files for each class
+autosar-extract path/to/file.pdf -o output.md --include-class-details
+# Creates: output.md and output/classes/<ClassName>.md files
+
+# Enable verbose mode for detailed debug information
+autosar-extract path/to/file.pdf -v
+
+# Combine all options
+autosar-extract examples/pdf/ -o data/autosar_models.md --include-class-hierarchy --include-class-details
+
+# Write logs to a file with timestamps
+autosar-extract examples/pdf/ -o output.md --log-file extraction.log
+
+# Combine log file with verbose mode for detailed logging
+autosar-extract examples/pdf/ -o output.md --log-file extraction.log -v
+```
+
+#### CLI Options
+
+- `pdf_files`: Path(s) to PDF file(s) or director(y/ies) containing PDFs to parse
+- `-o OUTPUT, --output OUTPUT`: Output file path (default: stdout)
+- `--include-class-details`: Create separate markdown files for each class (requires `-o`)
+- `--include-class-hierarchy`: Generate class inheritance hierarchy in a separate file (requires `-o`)
+- `--log-file LOG_FILE`: Write log messages to a file with timestamps (default: console only)
+- `-v, --verbose`: Enable verbose output mode for detailed debug information
+
+### Python API
+
+You can also use the package programmatically in your Python code:
+
+```python
+from autosar_pdf2txt import PdfParser, MarkdownWriter
+
+# Parse single PDF file
+parser = PdfParser()
+packages = parser.parse_pdf("path/to/file.pdf")
+
+# Parse multiple PDF files
+parser = PdfParser()
+all_packages = []
+for pdf_path in ["path/to/file1.pdf", "path/to/file2.pdf"]:
+    packages = parser.parse_pdf(pdf_path)
+    all_packages.extend(packages)
+
+# Write package hierarchy to markdown
+writer = MarkdownWriter()
+markdown = writer.write_packages(all_packages)
+print(markdown)
+
+# Generate class inheritance hierarchy
+from autosar_pdf2txt import AutosarClass
+
+# Collect all classes from packages
+all_classes = []
+for pkg in all_packages:
+    classes_from_pkg = writer._collect_classes_from_package(pkg)
+    all_classes.extend(classes_from_pkg)
+
+# Get root classes (classes with no parent/inheritance)
+root_classes = [cls for cls in all_classes if not cls.bases]
+
+# Write class hierarchy
+hierarchy = writer.write_class_hierarchy(root_classes, all_classes)
+print(hierarchy)
+```
+
+## Data Models
+
+The package provides comprehensive data models for representing AUTOSAR structures:
+
+### AutosarPackage
+Represents a hierarchical package containing classes and subpackages.
+
+```python
+from autosar_pdf2txt import AutosarPackage, AutosarClass
+
+pkg = AutosarPackage(name="AUTOSAR")
+pkg.add_class(AutosarClass(name="MyClass", package="M2::AUTOSAR", is_abstract=False))
+```
+
+### AutosarClass
+Represents an AUTOSAR class with attributes, inheritance, and optional ATP markers.
+
+```python
+from autosar_pdf2txt import AutosarClass, AutosarAttribute, ATPType
+
+cls = AutosarClass(
+    name="SwComponentPrototype",
+    package="M2::AUTOSAR::Components",
+    is_abstract=False,
+    atp_type=ATPType.ATP_MIXED_STRING,
+    attributes=[
+        AutosarAttribute(
+            name="shortName",
+            type="String",
+            mult="1",
+            kind=AttributeKind.ATTRIBUTE
+        )
+    ]
+)
+```
+
+### AutosarEnumeration
+Represents an AUTOSAR enumeration type with literals.
+
+```python
+from autosar_pdf2txt import AutosarEnumeration, AutosarEnumLiteral
+
+enum = AutosarEnumeration(
+    name="Category",
+    package="M2::AUTOSAR"
+)
+enum.enumeration_literals = [
+    AutosarEnumLiteral(name="VALUE1", index=0, description="First value"),
+    AutosarEnumLiteral(name="VALUE2", index=1, description="Second value"),
+]
+```
+
+### AutosarDoc
+Represents a complete AUTOSAR document with packages and root classes.
+
+```python
+from autosar_pdf2txt import AutosarDoc
+
+doc = AutosarDoc(packages=[pkg1, pkg2], root_classes=[root_cls1, root_cls2])
+
+# Query packages and classes
+pkg = doc.get_package("AUTOSAR")
+cls = doc.get_root_class("SwComponentPrototype")
+```
+
+## Examples
+
+The repository includes sample AUTOSAR specification PDFs in the `examples/pdf/` directory:
+
+- `AUTOSAR_CP_TPS_BSWModuleDescriptionTemplate.pdf`
+- `AUTOSAR_CP_TPS_DiagnosticExtractTemplate.pdf`
+- `AUTOSAR_CP_TPS_ECUConfiguration.pdf`
+- `AUTOSAR_CP_TPS_ECUResourceTemplate.pdf`
+- `AUTOSAR_CP_TPS_SoftwareComponentTemplate.pdf`
+- `AUTOSAR_CP_TPS_SystemTemplate.pdf`
+- `AUTOSAR_CP_TPS_TimingExtensions.pdf`
+
+### Example: Basic Extraction
+
+```bash
+# Extract a single AUTOSAR template
+autosar-extract examples/pdf/AUTOSAR_CP_TPS_ECUConfiguration.pdf
+
+# Extract all AUTOSAR templates from the examples directory
+autosar-extract examples/pdf/
+
+# Save output to a markdown file
+autosar-extract examples/pdf/ -o autosar_templates.md
+
+# Extract specific templates
+autosar-extract \
+  examples/pdf/AUTOSAR_CP_TPS_SystemTemplate.pdf \
+  examples/pdf/AUTOSAR_CP_TPS_SoftwareComponentTemplate.pdf \
+  -o system_and_component.md
+
+# Extract with verbose output to see processing details
+autosar-extract examples/pdf/AUTOSAR_CP_TPS_ECUConfiguration.pdf -v
+```
+
+### Example: Generate Class Hierarchy
+
+Create a separate file showing the class inheritance hierarchy:
+
+```bash
+# Extract Software Component Template with class hierarchy
+autosar-extract examples/pdf/AUTOSAR_CP_TPS_SoftwareComponentTemplate.pdf -o autosar_model.md --include-class-hierarchy 
+
+# This creates two files:
+# - software_components.md (package hierarchy)
+# - software_components-hierarchy.md (class inheritance tree)
+```
+
+The class hierarchy file shows:
+```markdown
+## Class Hierarchy
+
+* SwComponentPrototype
+  * RequiredSwComponentPrototype
+* SwcInternalBehavior
+  * RunnableEntity
+    * ClientServerOperation
+  * TriggerEntity
+```
+
+### Example: Generate Individual Class Files
+
+Generate separate markdown files for each AUTOSAR class:
+
+```bash
+# Extract and create individual class files
+autosar-extract examples/pdf/AUTOSAR_CP_TPS_ECUConfiguration.pdf \
+  --include-class-details \
+  -o data/autosar_models.md
+
+# This creates:
+# - data/autosar_models.md (consolidated output)
+# - data/autosar_models/classes/<PackageName>/<ClassName>.md (individual files)
+```
+
+### Example: Combined Output
+
+Generate all outputs in a single run:
+
+```bash
+autosar-extract examples/pdf/ \
+  -o autosar_complete.md \
+  --include-class-hierarchy \
+  --include-class-details \
+  -v
+```
+
+Output:
+```
+Parsing: examples/pdf/AUTOSAR_CP_TPS_SoftwareComponentTemplate.pdf
+Found 15 packages
+Collected 234 classes from 15 packages
+Generated class hierarchy for 45 root classes
+Writing to: autosar_complete.md
+Class hierarchy written to: autosar_complete-hierarchy.md
+Writing class files to: autosar_complete/classes/
+```
+
+## Output Format
+
+### Package Hierarchy Output
+
+The package hierarchy uses asterisk-based markdown formatting with indentation:
+
+```markdown
+* AUTOSAR
+  * DataTypes
+    * String
+  * Components
+    * SwComponentPrototype (abstract)
+    * RequiredSwComponentPrototype
+```
+
+- Packages: indented 2 spaces per level
+- Classes: indented 1 level deeper than their parent package
+- Abstract classes marked with `(abstract)` suffix
+
+### Class Hierarchy Output
+
+The class hierarchy shows inheritance relationships from root classes:
+
+```markdown
+## Class Hierarchy
+
+* RootClass1 (abstract)
+  * ChildClass1
+    * GrandchildClass
+  * ChildClass2
+* RootClass2
+  * ChildClass3
+```
+
+- Root classes (no parent) at top level
+- Child classes indented 2 spaces per inheritance level
+- Circular references detected and marked with "(cycle detected)"
+
+### Individual Class Files
+
+Each class file contains detailed information:
+
+```markdown
+# Package: AUTOSAR::Components
+
+## Class: SwComponentPrototype
+
+**Abstract**: No
+**Package**: M2::AUTOSAR::Components
+**Parent**: None
+**ATP Type**: None
+
+### Attributes
+
+| Name | Type | Mult. | Kind | Note |
+|------|------|-------|------|------|
+| shortName | String | 1 | attribute | |
+| category | Category | 0..1 | attribute | |
+```
+
+## Development
+
+### Running Tests
+
+```bash
+# Run all tests
+pytest tests/
+
+# Run with coverage
+pytest tests/ --cov=autosar_pdf2txt --cov-report=term-missing
+
+# Run specific test file
+pytest tests/models/test_autosar_models.py -v
+```
+
+### Code Quality
+
+```bash
+# Linting
+ruff check src/ tests/
+
+# Type checking
+mypy src/autosar_pdf2txt/
+
+# Run full quality checks
+pytest tests/ && ruff check src/ tests/ && mypy src/autosar_pdf2txt/
+```
+
+### Test Coverage
+
+The project maintains 97%+ test coverage with comprehensive test suites for all modules:
+
+- **Models**: 100% coverage (attributes, containers, enums, types)
+- **Parser**: 90% coverage (PDF parsing, pattern recognition, hierarchy building, subclasses validation)
+- **Writer**: 100% coverage (markdown generation, class hierarchy, file output)
+- **CLI**: 82% coverage (acceptable per requirements - error handling paths)
+
+## License
+
+MIT License - see LICENSE file for details
+
+## Contributing
+
+Contributions are welcome! Please ensure:
+
+1. All tests pass: `pytest tests/`
+2. Code coverage remains ≥95%
+3. Linting passes: `ruff check src/ tests/`
+4. Type checking passes: `mypy src/autosar_pdf2txt/`
+
+## Project Links
+
+- **GitHub Repository**: https://github.com/melodypapa/autosar-pdf
+- **Issue Tracker**: https://github.com/melodypapa/autosar-pdf/issues
+- **Documentation**: See `docs/` directory for detailed requirements and development guidelines
+
+## Changelog
+
+### Version 0.19.0
+- Added page number tracking in two-phase parsing (SWR_PARSER_00030) for accurate source location
+- Enhanced multi-page class definition parsing with improved state management
+- Added integration tests for multi-page class parsing scenarios
+- Improved page boundary marker handling with `<<<PAGE:N>>>` format
+- Specialized parsers now receive accurate page numbers from parse phase
+- Fixed page number assignment for types defined beyond page 1
+- Enhanced integration test documentation with multi-page parsing test cases
+
+### Version 0.18.0
+- Enhanced M2 package prefix preservation as root metamodel package
+- Improved source location tracking with AUTOSAR standard and release extraction
+- Added markdown table format for source information output (SWR_WRITER_00008)
+- Refactored duplicate type handling to log warnings instead of raising errors
+- Renamed AutosarSource to AutosarDocumentSource for clarity
+- Enhanced source information display in individual class files
+- Updated requirements documentation with source location details
+- Added 7 new AUTOSAR FO (Foundation) template PDFs to examples
+
+### Version 0.17.0
+- Enhanced integration tests for multi-page class definition parsing
+- Improved state management for multi-page definitions
+- Added test documentation for multi-page parsing scenarios
+- Fixed issues with class definitions spanning multiple pages
+- Improved error messages for parsing failures
+
+### Version 0.16.0
+- Added CLI log file support (`--log-file`) for persistent logging with timestamps
+- Implemented subclasses validation (SWR_PARSER_00029) to detect inheritance contradictions
+- Added comprehensive TDD enforcement documentation to prevent future violations
+- Enhanced test documentation with 15 new test cases for log file feature
+- Enhanced test documentation with 10 new test cases for subclasses validation
+- Improved test coverage from 96% to 97%
+- Updated AGENTS.md with mandatory TDD section
+- Updated development guidelines with TDD enforcement and common mistakes
+
+### Version 0.15.0
+- Implemented two-phase PDF parsing approach (read phase + parse phase)
+- Added specialized parsers for classes, enumerations, and primitives
+- Added ancestry-based parent resolution for complex inheritance hierarchies
+- Added source location tracking for PDF file and page number
+- Added subclasses attribute to track explicitly documented subclass relationships
+- Refactored requirements documentation into separate module files
+- Enhanced TDD rules with test type selection strategy
+- Fixed multi-line class list parsing and multi-page class definition handling
+
+### Version 0.9.0
+- Added class hierarchy generation feature (`--include-class-hierarchy`)
+- Added separate output file for class hierarchy
+- Enhanced `/sync-docs` command with coverage validation
+- Improved test coverage from 90% to 96%
+- Added AutosarDoc model for document-level operations
+- Added enumeration and enum literal support
+- Enhanced logging for class hierarchy generation
+- Fixed model validation and duplicate prevention
+
+### Version 0.8.0
+- Initial release with basic PDF extraction and markdown output
+- Support for packages, classes, and attributes
+- ATP marker support
+- Individual class file generation
