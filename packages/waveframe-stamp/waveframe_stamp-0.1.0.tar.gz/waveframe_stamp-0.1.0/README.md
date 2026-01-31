@@ -1,0 +1,265 @@
+---
+title: "Stamp"
+filetype: "documentation"
+type: "specification"
+domain: "methodology"
+version: "0.1.0"
+doi: "TBD-0.1.0"
+status: "Active"
+created: "2026-01-16"
+updated: "2026-01-30"
+
+author:
+  name: "Shawn C. Wright"
+  email: "swright@waveframelabs.org"
+  orcid: "https://orcid.org/0009-0006-6043-9295"
+
+maintainer:
+  name: "Waveframe Labs"
+  url: "https://waveframelabs.org"
+
+license: "Apache-2.0"
+
+copyright:
+  holder: "Waveframe Labs"
+  year: "2026"
+
+ai_assisted: "partial"
+ai_assistance_details: "AI-assisted drafting and structural refinement under direct human authorship, review, and final approval."
+
+dependencies: []
+
+anchors: []
+---
+
+<p align="center">
+  <img src="/figures/STAMP_BANNER.png" alt="Waveframe Stamp Banner" width="650">
+</p> 
+
+# Stamp
+
+<p align="center">
+  <a href="https://waveframelabs.org">
+    <img src="https://img.shields.io/badge/WAVEFRAME%20LABS-Institutional%20Repository-FF6A00?style=flat" />
+  </a>
+  <img src="https://img.shields.io/badge/version-0.1.0-blue?style=flat" />
+  <a href="https://orcid.org/0009-0006-6043-9295">
+    <img src="https://img.shields.io/badge/ORCID-0009--0006--6043--9295-A6CE39?logo=orcid&logoColor=white&style=flat" />
+  </a>
+  <a href="LICENSE">
+    <img src="https://img.shields.io/badge/license-Apache--2.0-lightgrey?style=flat" />
+  </a>
+</p>
+
+**Stamp** is a deterministic metadata validation and remediation tool for governed research artifacts.
+
+It validates artifact metadata against a formal schema, emits **structured diagnostics**, proposes **safe mechanical fixes**, and produces **human-action remediation summaries** when automation ends.
+
+Stamp is designed to be:
+
+* schema-agnostic
+* policy-neutral
+* reproducible
+* machine- and human-readable
+
+It is a **front door** to governed research workflows — not an enforcement engine.
+
+Stamp does not embed or assume any specific governance policy. All schemas are supplied explicitly at runtime.
+
+---
+
+## Getting Started
+
+If you’re new to Stamp and want to understand **how to install it, run it, and interpret its output**, start here:
+
+**[Getting Started with Waveframe-Stamp](GETTING_STARTED.md)**
+
+This guide walks through installation, common workflows, and understanding the JSON output. It is written for users with **no prior knowledge** of Waveframe Labs or ARI.
+
+### Installation
+
+**Standard Install (Recommended)**
+```bash
+pip install waveframe-stamp
+```
+
+**Local Development**
+
+```bash
+git clone [https://github.com/Waveframe-Labs/Waveframe-Stamp.git](https://github.com/Waveframe-Labs/Waveframe-Stamp.git)
+cd Waveframe-Stamp
+pip install -e .
+```
+
+### Quick Usage
+
+Stamp commands emit **explicit JSON** to stdout for deterministic tooling and automation.
+
+**Validate a single artifact:**
+
+```bash
+stamp validate run artifact.md --schema ari-metadata.schema.v3.0.2.json
+```
+
+**Validate an entire repository (or directory):**
+
+```bash
+stamp validate repo . --schema ari-metadata.schema.v3.0.2.json
+```
+
+*Note: Only artifacts that explicitly declare metadata are governed and validated. Execution traces generated via `--trace-out` are immutable and excluded from validation.*
+
+---
+
+## Shell Compatibility
+
+Stamp is shell-agnostic. All CLI commands emit explicit JSON and do not rely on shell-specific behavior.
+
+* **Linux / macOS:** Pipe output to tools like `jq` if desired.
+* **Windows (PowerShell):** Use `ConvertFrom-Json | ConvertTo-Json -Depth 10`.
+* **CI systems:** Consume raw JSON directly.
+
+No external shell tooling is required to run Stamp itself.
+
+---
+
+## What Stamp Is (and Is Not)
+
+### Stamp **is**
+
+* A metadata extractor
+* A schema validator
+* A diagnostic normalizer (Canonical Diagnostic Objects / CDOs)
+* A safe auto-fix engine (conservative by design)
+* A human-action explainer (remediation summaries)
+
+### Stamp **is not**
+
+* A policy engine
+* A governance authority
+* A content validator
+* An opinionated formatter
+* An enforcement mechanism (that’s CRI-CORE)
+
+Stamp explains **what is wrong**, **what can be fixed automatically**, and **what requires human judgment** — nothing more, nothing less.
+
+---
+
+## High-Level Architecture
+
+```
+Artifact
+  ↓
+[ Extraction ]
+  ↓
+[ Schema Resolution ]
+  ↓
+[ Validation ]
+  ↓
+[ Diagnostics (CDOs) ]
+  ↓
+┌───────────────┬───────────────────┐
+│ Auto Fix      │ Human Remediation │
+│ (safe only)   │ Summary           │
+└───────────────┴───────────────────┘
+```
+
+Each layer is deterministic and independently testable.
+
+---
+
+## Design Principles
+
+* **Determinism over convenience**
+* **Traceability over magic**
+* **No self-approval**
+* **Separation of validation, fixing, and judgment**
+* **Format-agnostic governance**
+
+Stamp should always be boring, predictable, and explainable.
+
+---
+
+## Status
+
+> Architecture stable
+> Core contracts frozen
+> UX and packaging hardening in progress
+
+---  
+
+## Governance Semantics
+
+Stamp distinguishes between **discovered artifacts** and **governed artifacts**.
+
+An artifact is considered *governed* if and only if it explicitly declares a metadata block
+(YAML frontmatter or HTML-comment metadata).
+
+During repository validation:
+
+- files without metadata are discovered
+- but are intentionally ignored
+- and are not treated as failures
+
+This is a deliberate governance boundary.
+
+Stamp never guesses intent and never infers governance.
+
+---
+
+## Execution Traces
+
+Stamp can emit an immutable execution trace artifact using:
+
+```bash
+--trace-out traces/stamp-validation-trace.json
+```  
+Trace artifacts record:
+
+- tool identity and version
+- command executed
+- schema used
+- timestamps
+- per-artifact validation results
+
+Execution traces are:
+
+- machine-validated
+- immutable audit records
+- intentionally excluded from metadata governance
+
+They exist to support auditability and downstream enforcement tooling.
+
+---  
+
+## License
+
+Stamp is released under the **Apache License, Version 2.0.**  
+
+See the LICENSE file for the full text.
+
+---
+
+## Citation
+
+If you use Stamp in academic work, tooling research, or technical documentation, please cite it as follows.
+
+BibTeX
+```  
+@software{stamp_2026,
+  title        = {Stamp: A Schema-Agnostic Structural Diagnostics Engine},
+  author       = {Wright, Shawn C.},
+  orcid        = {0009-0006-6043-9295},
+  year         = {2026},
+  version      = {0.1.0},
+  publisher    = {Waveframe Labs},
+  url          = {https://github.com/Waveframe-Labs/Waveframe-Stamp},
+  doi          = {TBD}
+}  
+```  
+
+---  
+
+<div align="center">
+<sub>© 2026 Waveframe Labs</sub>
+</div>
