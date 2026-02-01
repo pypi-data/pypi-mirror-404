@@ -1,0 +1,118 @@
+# GitLab CI/CD Pipeline for PASS
+# Runs style checks and tests on Python 3.13 and 3.14
+
+stages:
+  - lint
+  - test
+  - docs
+  - publish
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+
+cache:
+  paths:
+    - .cache/pip/
+
+# Style and linting checks
+lint:
+  stage: lint
+  image: python:3.13
+  before_script:
+    - pip install pre-commit
+  script:
+    - pre-commit run --all-files
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# Test job template
+.test_template:
+  stage: test
+  before_script:
+    - pip install -e .
+    - pip install pytest pytest-cov
+  script:
+    - pytest -v --cov=PASS --cov-report=term-missing
+  coverage: '/TOTAL.*\s+(\d+%)/'
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+test:python3.13:
+  extends: .test_template
+  image: python:3.13
+
+test:python3.14:
+  extends: .test_template
+  image: python:3.14-rc
+
+# Build documentation
+docs:
+  stage: docs
+  image: python:3.13
+  before_script:
+    - pip install -e .
+    - pip install -r docs/requirements.txt
+  script:
+    - cd docs && make html
+  artifacts:
+    paths:
+      - docs/_build/html
+    expire_in: 1 week
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# Deploy docs to GitLab Pages (only on default branch)
+pages:
+  stage: docs
+  image: python:3.13
+  before_script:
+    - pip install -e .
+    - pip install -r docs/requirements.txt
+  script:
+    - cd docs && make html
+    - mv _build/html ../public
+  artifacts:
+    paths:
+      - public
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# # Build and upload to TestPyPI (manual trigger on pre-release tags)
+# # Requires TEST_PYPI_TOKEN variable set in GitLab CI/CD settings
+# publish:testpypi:
+#   stage: publish
+#   image: python:3.13
+#   before_script:
+#     - pip install build twine
+#   script:
+#     - python -m build
+#     - twine upload --repository testpypi dist/* -u __token__ -p $TEST_PYPI_TOKEN
+#   artifacts:
+#     paths:
+#       - dist/
+#     expire_in: 1 week
+#   rules:
+#     - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+-(alpha|beta|rc)\d*$/
+#       when: manual
+
+# Build and upload to PyPI (manual trigger on release tags)
+# Requires PYPI_TOKEN variable set in GitLab CI/CD settings
+publish:pypi:
+  stage: publish
+  image: python:3.13
+  before_script:
+    - pip install build twine
+  script:
+    - python -m build
+    - twine upload --repository testpypi dist/* -u __token__ -p $TEST_PYPI_TOKEN
+    - twine upload dist/* -u __token__ -p $PYPI_TOKEN
+  artifacts:
+    paths:
+      - dist/
+    expire_in: 1 week
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/
+      when: manual
