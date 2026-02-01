@@ -1,0 +1,15 @@
+export_codenames = [
+    "edc_export.display_export_admin_action",
+    "edc_export.add_datarequest",
+    "edc_export.add_datarequesthistory",
+    "edc_export.change_datarequest",
+    "edc_export.change_datarequesthistory",
+    "edc_export.delete_datarequest",
+    "edc_export.delete_datarequesthistory",
+    "edc_export.view_datarequest",
+    "edc_export.view_datarequesthistory",
+    "edc_export.view_historicaldatarequest",
+    "edc_export.export_subjectschedulehistory",
+    "edc_export.export_visitschedule",
+    "edc_export.view_export_dashboard",
+]
