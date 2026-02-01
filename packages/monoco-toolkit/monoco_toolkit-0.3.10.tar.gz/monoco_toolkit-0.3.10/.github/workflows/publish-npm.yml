@@ -1,0 +1,54 @@
+name: Publish to NPM
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  publish-kanban:
+    name: Publish Kanban to NPM
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: |
+          cd Kanban
+          npm install
+
+      - name: Build All Workspaces
+        run: |
+          cd Kanban
+          npm run build --workspaces
+
+      - name: Prepare Package
+        run: |
+          mkdir -p Kanban/packages/monoco-kanban/dist
+          cp -r Kanban/apps/webui/out/* Kanban/packages/monoco-kanban/dist/
+          # Sync version from tag
+          VERSION=${GITHUB_REF#refs/tags/v}
+          cd Kanban/packages/monoco-kanban
+          npm version $VERSION --allow-same-version --no-git-tag-version
+
+      - name: Publish to NPM
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          cd Kanban/packages/monoco-kanban
+          PACKAGE_NAME="@monoco-io/kanban"
+          VERSION=${GITHUB_REF#refs/tags/v}
+
+          # Check if version exists
+          if npm view "$PACKAGE_NAME@$VERSION" version > /dev/null 2>&1; then
+            echo "Version $VERSION of $PACKAGE_NAME already exists on NPM. Skipping publish."
+          else
+            echo "Publishing version $VERSION..."
+            npm publish --access public
+          fi

@@ -1,0 +1,221 @@
+{
+  "name": "monoco-vscode",
+  "displayName": "Monoco",
+  "description": "Native Kanban & Agent Management for Monoco. Manage tasks, visualize workflows, and orchestrate AI agents directly in VS Code.",
+  "version": "0.3.10",
+  "publisher": "indenscale",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/IndenScale/Monoco.git",
+    "directory": "Toolkit/extensions/vscode"
+  },
+  "homepage": "https://github.com/IndenScale/Monoco/tree/main/Toolkit/extensions/vscode",
+  "bugs": {
+    "url": "https://github.com/IndenScale/Monoco/issues"
+  },
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Visualization",
+    "Other"
+  ],
+  "keywords": [
+    "monoco",
+    "kanban",
+    "project management",
+    "issue tracking",
+    "agent",
+    "ai",
+    "workflow",
+    "productivity",
+    "visualization",
+    "todo",
+    "markdown",
+    "lsp"
+  ],
+  "icon": "media/icon.png",
+  "activationEvents": [
+    "onLanguage:markdown",
+    "workspaceContains:.monoco/project.yaml",
+    "workspaceContains:Issues"
+  ],
+  "main": "./client/out/client/src/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "monoco.helloWorld",
+        "title": "Monoco: Hello World"
+      },
+      {
+        "command": "monoco.openBoard",
+        "title": "Monoco: Open Kanban Board",
+        "icon": "$(layout-sidebar-left)"
+      },
+      {
+        "command": "monoco.createIssue",
+        "title": "New Issue",
+        "icon": "$(plus)"
+      },
+      {
+        "command": "monoco.openSettings",
+        "title": "Settings",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "monoco.refreshEntry",
+        "title": "Refresh",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "monoco.bootstrap",
+        "title": "Monoco: Install/Update Toolkit"
+      },
+      {
+        "command": "monoco.selectProject",
+        "title": "Select Project",
+        "icon": "$(folder)"
+      },
+      {
+        "command": "monoco.searchIssues",
+        "title": "Search Issues",
+        "icon": "$(search)"
+      },
+      {
+        "command": "monoco.refreshTreeView",
+        "title": "Refresh Issues",
+        "icon": "$(refresh)"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "monoco-explorer",
+          "title": "Monoco",
+          "icon": "./media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "monoco-explorer": [
+        {
+          "id": "monoco.issueTreeView",
+          "name": "Issues",
+          "icon": "$(list-unordered)",
+          "when": "config.monoco.useNativeTree != false"
+        },
+        {
+          "type": "webview",
+          "id": "monoco.issueFilterView",
+          "name": "Filters",
+          "icon": "$(filter)",
+          "when": "config.monoco.useNativeTree != false"
+        },
+        {
+          "type": "webview",
+          "id": "monoco.kanbanView",
+          "name": "Project Board (Legacy)",
+          "icon": "$(layout-kanban)",
+          "when": "config.monoco.useNativeTree == false"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "monoco.createIssue",
+          "when": "view == monoco.kanbanView || view == monoco.issueTreeView",
+          "group": "navigation@1"
+        },
+        {
+          "command": "monoco.openSettings",
+          "when": "view == monoco.kanbanView || view == monoco.issueTreeView",
+          "group": "navigation@2"
+        },
+        {
+          "command": "monoco.refreshEntry",
+          "when": "view == monoco.kanbanView || view == monoco.issueTreeView",
+          "group": "navigation@3"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Monoco",
+      "properties": {
+        "monoco.executablePath": {
+          "type": "string",
+          "description": "Path to the Monoco CLI executable.",
+          "scope": "machine-overridable",
+          "default": "monoco"
+        },
+        "monoco.webUrl": {
+          "type": "string",
+          "description": "URL of the Monoco Web UI (Cockpit).",
+          "default": "http://127.0.0.1:8642"
+        },
+        "monoco.debug": {
+          "type": "boolean",
+          "description": "Enable debug logging.",
+          "default": false
+        },
+        "monoco.useNativeTree": {
+          "type": "boolean",
+          "description": "Use native TreeView instead of Webview for issue list (recommended for better drag & drop support).",
+          "default": true
+        }
+      }
+    },
+    "languages": [
+      {
+        "id": "monoco-issue",
+        "extensions": [
+          ".md"
+        ],
+        "filenamePatterns": [
+          "issues/*.md",
+          "**/Issues/**/*.md"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "monoco-issue",
+        "scopeName": "source.monoco-issue",
+        "path": "./syntaxes/monoco-issue.tmLanguage.json"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -b shared/tsconfig.json && tsc -b client/tsconfig.json && tsc -b server/tsconfig.json && node client/scripts/resolve-aliases.js && node client/scripts/build-webview.js && npm run copy-assets && npm run copy-server-assets",
+    "copy-assets": "node scripts/copy-assets.js",
+    "copy-server-assets": "node scripts/copy-server-assets.js",
+    "watch": "tsc -b client/tsconfig.json -w",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint client/src --ext ts",
+    "format": "prettier --write .",
+    "test": "node ./client/out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.6",
+    "@types/node": "20.x",
+    "@types/sinon": "^10.0.0",
+    "@types/vscode": "^1.90.0",
+    "@typescript-eslint/eslint-plugin": "^7.14.1",
+    "@typescript-eslint/parser": "^7.14.1",
+    "@vscode/test-electron": "^2.4.0",
+    "@vscode/vsce": "^2.22.0",
+    "eslint": "^8.57.0",
+    "glob": "^10.3.10",
+    "mocha": "^10.4.0",
+    "ovsx": "^0.8.3",
+    "prettier": "^3.4.2",
+    "sinon": "^17.0.0",
+    "typescript": "^5.4.5"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.0"
+  }
+}
