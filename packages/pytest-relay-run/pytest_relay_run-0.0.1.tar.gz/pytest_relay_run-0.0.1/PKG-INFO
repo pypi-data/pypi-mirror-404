@@ -1,0 +1,68 @@
+Metadata-Version: 2.4
+Name: pytest-relay-run
+Version: 0.0.1
+Summary: A pytest wrapper using for pytest-relay with pytest-relay-ws to control pytest executions.
+Project-URL: Homepage, https://github.com/lmapii/pytest_relay/packages/pytest_relay_run
+Author-email: Martin Lampacher <lmapii@gmail.com>
+Maintainer-email: Martin Lampacher <lmapii@gmail.com>
+License-Expression: GPL-3.0-or-later
+License-File: COPYING
+Classifier: Development Status :: 4 - Beta
+Classifier: Framework :: Pytest
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python
+Classifier: Programming Language :: Python :: 3 :: Only
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: Implementation :: CPython
+Classifier: Programming Language :: Python :: Implementation :: PyPy
+Classifier: Topic :: Software Development :: Testing
+Requires-Python: >=3.10
+Requires-Dist: fastapi<0.117.0,>=0.116.1
+Requires-Dist: pytest-relay
+Requires-Dist: pytest-relay-ws
+Requires-Dist: pytest>=6.2.0
+Requires-Dist: uvicorn<0.36.0,>=0.35.0
+Requires-Dist: websocket-client<2.0.0,>=1.8.0
+Requires-Dist: websockets<16.0.0,>=15.0.1
+Description-Content-Type: text/markdown
+
+
+# Job messages
+
+All published messages follow this model:
+
+```json
+{
+  "type": "job",
+  "payload": {
+    "id": "<job-id>",
+    "state": "<job-state>",
+    "returncode": "<int|null>",
+    "text": "<process-output-as-str|null>"
+  }
+}
+```
+
+Each job transitions through a series of well-defined states, represented by the (`JobState`)[pytest_relay_run/src/pytest_relay_run/api/model.py]:
+
+| Value           | Meaning                                                                       |
+| --------------- | ----------------------------------------------------------------------------- |
+| `"created"`     | The job was instantiated but has not yet started running pytest.              |
+| `"collected"`   | Test collection was performed (using `--collect-only`), and no execution ran. |
+| `"in-progress"` | The job’s pytest process is currently executing tests.                        |
+| `"terminating"` | A termination signal (SIGINT) was sent, graceful shutdown is in progress.     |
+| `"done"`        | The pytest process has completed (successfully or with errors).               |
+
+The following transitions trigger a `JobState` message:
+
+- **created** upon job creation (if not `collect_only`).
+- **collected** as result for jobs with `--collect-only`.
+- **in-progress** when a job subprocess starts executing.
+- **done** after a job subprocess completes and output is captured.
+- **terminating** when `stop()` is called and SIGINT is sent.
+
+The states `collected` and `done` are final states, i.e., the job is complete.
