@@ -1,0 +1,249 @@
+Metadata-Version: 2.4
+Name: quantumdrive
+Version: 1.3.81
+Summary: QuantumDrive platform and SDK
+Author: Chris Steel
+Author-email: chris.steel@alphsix.com
+License: LicenseRef-AlphSix-Proprietary
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.11,<3.14
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: agentfoundry
+Requires-Dist: flask>=3.0.0
+Requires-Dist: gunicorn>=21.0.0
+Requires-Dist: toml
+Requires-Dist: msal>=1.24.0
+Requires-Dist: python-dotenv>=1.0.0
+Requires-Dist: awscli>=1.44.14
+Requires-Dist: boto3
+Requires-Dist: botocore>=1.42.24
+Requires-Dist: sqlalchemy>=2.0.0
+Requires-Dist: posthog>=3.0.0
+Requires-Dist: docutils
+Requires-Dist: markdown-it-py
+Requires-Dist: mdurl
+Requires-Dist: packaging
+Requires-Dist: urllib3
+Dynamic: author
+Dynamic: author-email
+Dynamic: classifier
+Dynamic: description
+Dynamic: description-content-type
+Dynamic: license
+Dynamic: license-file
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary
+
+# QuantumDrive
+
+AI-powered assistant and data management platform built on AgentForge.
+
+## Overview
+
+QuantumDrive is an AlphaSix IP product that provides:
+- **Q Assistant**: Conversational AI with memory and tool access
+- **Microsoft 365 Integration**: SSO and Graph API access
+- **Vector Storage**: Semantic search with ChromaDB
+- **AgentForge Integration**: Leverages Syntheticore's AgentForge library
+
+## Quick Start
+
+### Standalone Usage
+
+1. **Install dependencies**:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. **Create configuration** (choose one):
+   
+   **Option A: Project root (for development)**:
+   ```bash
+   cp resources/default_quantumdrive.toml quantumdrive.toml
+   ```
+   
+   **Option B: User config directory (for production)**:
+   ```bash
+   mkdir -p ~/.config/quantumdrive
+   cp resources/default_quantumdrive.toml ~/.config/quantumdrive/quantumdrive.toml
+   ```
+
+3. **Set environment variables**:
+   ```bash
+   export AF_OPENAI_API_KEY="sk-..."
+   export QD_MS_TENANT_ID="..."
+   export QD_MS_CLIENT_ID="..."
+   export QD_MS_CLIENT_SECRET="..."
+   ```
+
+4. **Run example**:
+   ```bash
+   python examples/standalone_usage.py
+   ```
+
+### Library Usage (from Quantify)
+
+```python
+from quantumdrive.core.utils.qd_config import QDConfig
+from quantumdrive.core.ai.q_assistant import QAssistant
+
+# Load config from host application
+config = QDConfig.from_dict(secrets_dict)
+
+# Initialize assistant
+assistant = QAssistant(config=config)
+
+# Ask questions
+response = assistant.answer_question(
+    "What is Python?",
+    user_id="user123",
+    thread_id="thread456",
+    org_id="org789"
+)
+```
+
+## Configuration
+
+QuantumDrive uses a flexible configuration system supporting:
+- **TOML files**: For non-sensitive defaults
+- **Environment variables**: For secrets and overrides
+- **Dependency injection**: For library usage
+
+See [Configuration Guide](docs/Configuration_Guide.md) for complete documentation.
+
+### Required Configuration
+
+**QuantumDrive (QD_* prefix)**:
+- `QD_MS_TENANT_ID` - Microsoft Entra ID tenant
+- `QD_MS_CLIENT_ID` - Application client ID
+- `QD_MS_CLIENT_SECRET` - Application secret
+- `QD_MS_REDIRECT_URI` - OAuth callback URL
+
+**AgentForge (AF_* prefix)**:
+- `AF_OPENAI_API_KEY` - OpenAI API key
+- `AF_LLM_PROVIDER` - LLM provider (openai, ollama, xai)
+- `AF_OPENAI_MODEL` - Model name (gpt-5.1, gpt-5.1-codex, etc.)
+
+## Architecture
+
+```
+┌─────────────────────────────────────────┐
+│         Quantify (AlphaSix IP)          │
+│  - Web application                      │
+│  - Secrets management                   │
+│  - User interface                       │
+└──────────────┬──────────────────────────┘
+               │ config dict
+               ↓
+┌─────────────────────────────────────────┐
+│      QuantumDrive (AlphaSix IP)         │
+│  - Q Assistant                          │
+│  - Microsoft 365 integration            │
+│  - Vector storage                       │
+│  - Configuration bridge                 │
+└──────────────┬──────────────────────────┘
+               │ AF_* config
+               ↓
+┌─────────────────────────────────────────┐
+│     AgentForge (Syntheticore IP)        │
+│  - LLM orchestration                    │
+│  - Tool registry                        │
+│  - Memory management                    │
+│  - Vector stores                        │
+└─────────────────────────────────────────┘
+```
+
+## Components
+
+### Q Assistant (`core/ai/q_assistant.py`)
+
+Conversational AI assistant with:
+- Multi-turn conversations with memory
+- Tool access (search, calculations, APIs)
+- Identity-scoped memory (user, thread, org)
+- Crew-based multi-agent workflows
+
+### Microsoft 365 Provider (`core/auth/microsoft_365_provider.py`)
+
+OAuth2 authentication and Graph API access:
+- SSO with Microsoft Entra ID
+- Token caching and refresh
+- User profile retrieval
+- Graph API requests
+
+### Configuration (`core/utils/qd_config.py`)
+
+Flexible configuration management:
+- TOML file loading
+- Environment variable overrides
+- Dependency injection support
+- AgentForge config extraction
+
+## Development
+
+### Project Structure
+
+```
+quantumdrive/
+├── core/
+│   ├── ai/              # Q Assistant and agent configuration
+│   ├── auth/            # Microsoft 365 authentication
+│   ├── aws/             # AWS Secrets Manager integration
+│   ├── ingest/          # Document processing
+│   ├── user/            # User profiles
+│   └── utils/           # Configuration and utilities
+├── docs/                # Documentation
+├── examples/            # Usage examples
+├── resources/           # Default configuration files
+├── tests/               # Test suite
+└── webapp/              # Flask web application
+```
+
+### Running Tests
+
+```bash
+pytest tests/
+```
+
+### Code Style
+
+```bash
+# Format code
+black core/ tests/
+
+# Lint
+flake8 core/ tests/
+
+# Type check
+mypy core/
+```
+
+## Documentation
+
+- [Configuration Guide](docs/Configuration_Guide.md) - Complete configuration reference
+- [AgentForge Configuration](../agentforge/docs/Configuration_Guide.md) - AgentForge settings
+- [Resources README](resources/README.md) - Configuration file documentation
+
+## Security
+
+**Never commit secrets to version control!**
+
+- Use environment variables for API keys and credentials
+- Use secrets managers (AWS Secrets Manager, Azure Key Vault) in production
+- Add `.env` files to `.gitignore`
+- Rotate exposed credentials immediately
+
+See [Configuration Guide](docs/Configuration_Guide.md#security-best-practices) for details.
+
+## License
+
+Proprietary - AlphaSix IP
+
+## Support
+
+For issues or questions, contact the AlphaSix development team.
