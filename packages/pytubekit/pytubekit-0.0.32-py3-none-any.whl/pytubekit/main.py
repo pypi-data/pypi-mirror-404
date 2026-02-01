@@ -1,0 +1,322 @@
+"""
+main entry point to the program
+"""
+import logging
+import os
+import pathlib
+import string
+import time
+
+import pylogconf.core
+# import pyvardump
+from pygooglehelper import register_functions, ConfigRequest
+from pytconf import register_main, config_arg_parse_and_launch, register_endpoint
+
+from pytubekit.configs import ConfigPlaylist, ConfigPagination, ConfigCleanup, ConfigPlaylists, ConfigVideo, \
+    ConfigPrint, ConfigDump, ConfigSubtract, ConfigDelete, ConfigDiff
+from pytubekit.constants import SCOPES, DELETED_TITLE, PRIVATE_TITLE
+from pytubekit.static import DESCRIPTION, APP_NAME, VERSION_STR
+from pytubekit.util import create_playlists_request, get_youtube, create_playlist_request, get_all_items, \
+    delete_playlist_item_by_id, get_playlist_ids_from_names, get_all_items_from_playlist_ids, \
+    get_video_info, pretty_print, get_youtube_channels, get_youtube_playlists, get_my_playlists_ids, \
+    get_playlist_item_ids_from_names, read_video_ids_from_files, get_video_ids_from_playlist_names
+from pytubekit.youtube import youtube_dl_download_urls
+
+
+@register_endpoint(
+    description="Show me my channel id",
+    configs=[],
+)
+def get_channel_id() -> None:
+    youtube = get_youtube()
+    channels_obj = get_youtube_channels(youtube)
+    request = channels_obj.list(
+        part="id",
+        mine=True
+    )
+    response = request.execute()
+    print(response["items"][0]["id"])
+
+
+@register_endpoint(
+    description="Show me my channel id",
+    configs=[],
+)
+def get_watch_later_playlist_id() -> None:
+    youtube = get_youtube()
+    channels_obj = get_youtube_channels(youtube)
+    request = channels_obj.list(
+        part="id",
+        mine=True
+    )
+    response = request.execute()
+    channel_id = response["items"][0]["id"]
+    playlist_id = channel_id[0] + "L" + channel_id[2:]
+    print(playlist_id)
+
+
+@register_endpoint(
+    description="Show all playlists in your youtube account",
+    configs=[ConfigPagination],
+)
+def playlists() -> None:
+    youtube = get_youtube()
+    r = create_playlists_request(youtube)
+    items = r.get_all_items()
+    for item in items:
+        if ConfigPrint.full:
+            pretty_print(item)
+        else:
+            f_title = item["snippet"]["title"]
+            print(f"{f_title}")
+
+
+@register_endpoint(
+    description="List all entries in a playlist",
+    configs=[ConfigPagination, ConfigPlaylist, ConfigPrint],
+)
+def playlist() -> None:
+    youtube = get_youtube()
+    items = get_all_items(youtube)
+    for item in items:
+        if ConfigPrint.full:
+            pretty_print(item)
+        else:
+            f_video_id = item["snippet"]["resourceId"]["videoId"]
+            print(f"{f_video_id}")
+
+
+@register_endpoint(
+    description="Dump all playlists",
+    configs=[ConfigPagination, ConfigPrint, ConfigDump],
+)
+def dump() -> None:
+    sub_dict = {
+        "date": int(time.time()),
+        "home": os.path.expanduser("~"),
+    }
+    dump_folder = string.Template(ConfigDump.dump_folder).substitute(sub_dict)
+    pathlib.Path(dump_folder).mkdir(parents=True, exist_ok=True)
+
+    youtube = get_youtube()
+    r = create_playlists_request(youtube)
+    items = r.get_all_items()
+    id_to_title = {}
+    for item in items:
+        f_id = item["id"]
+        f_title = item["snippet"]["title"]
+        id_to_title[f_id] = f_title
+    print("got lists data")
+    for f_id, f_title in id_to_title.items():
+        filename = os.path.join(dump_folder, f_title)
+        print(f"dumping [{f_title}] to [{filename}]")
+        with open(filename, "w") as f:
+            r = create_playlist_request(youtube, playlist_id=f_id)
+            items = r.get_all_items()
+            for item in items:
+                f_video_id = item["snippet"]["resourceId"]["videoId"]
+                if ConfigPrint.full:
+                    pretty_print(item, fp=f)
+                else:
+                    print(f"{f_video_id}", file=f)
+
+
+@register_endpoint(
+    description="Clean up a set of playlists (dedup, remove deleted, remove privatized)",
+    configs=[ConfigPagination, ConfigPlaylists, ConfigCleanup, ConfigDelete],
+)
+def cleanup() -> None:
+    logger = logging.getLogger()
+    logger.info(f"cleaning up [{ConfigPlaylists.names}]...")
+    youtube = get_youtube()
+    playlist_ids = get_playlist_ids_from_names(youtube, ConfigPlaylists.names)
+    items = get_all_items_from_playlist_ids(youtube, playlist_ids)
+    seen = set()
+    wanted_to_delete = 0
+    deleted = 0
+    saw = 0
+    found_duplicates = 0
+    found_deleted = 0
+    found_private = 0
+    for item in items:
+        to_delete = False
+        saw += 1
+        if ConfigCleanup.dedup:
+            f_video_id = item["snippet"]["resourceId"]["videoId"]
+            if f_video_id in seen:
+                found_duplicates += 1
+                to_delete = True
+            else:
+                seen.add(f_video_id)
+        if ConfigCleanup.deleted:
+            f_title = item["snippet"]["title"]
+            if f_title == DELETED_TITLE:
+                found_deleted += 1
+                to_delete = True
+        if ConfigCleanup.privatized:
+            f_title = item["snippet"]["title"]
+            if f_title == PRIVATE_TITLE:
+                found_private += 1
+                to_delete = True
+        if to_delete:
+            wanted_to_delete += 1
+            if ConfigDelete.do_delete:
+                f_id = item["id"]
+                delete_playlist_item_by_id(youtube, f_id)
+                deleted += 1
+    logger.info(f"saw {saw} items")
+    logger.info(f"found_duplicates {found_duplicates} items")
+    logger.info(f"found_deleted {found_deleted} items")
+    logger.info(f"found_private {found_private} items")
+    logger.info(f"wanted_to_delete {wanted_to_delete} items")
+    logger.info(f"deleted {deleted} items")
+
+
+@register_endpoint(
+    description="Remove unavialable or privatized from all playlists",
+    configs=[ConfigPagination, ConfigPlaylists, ConfigCleanup, ConfigDelete],
+)
+def remove_unavailable_from_all_playlists() -> None:
+    logger = logging.getLogger()
+    youtube = get_youtube()
+    playlists_ids = get_my_playlists_ids(youtube)
+    logger.info(f"working on playlist ids[{playlists_ids}]...")
+    items = get_all_items_from_playlist_ids(youtube, playlists_ids)
+    wanted_to_delete = 0
+    deleted = 0
+    saw = 0
+    found_deleted = 0
+    found_private = 0
+    for item in items:
+        to_delete = False
+        saw += 1
+        if ConfigCleanup.deleted:
+            f_title = item["snippet"]["title"]
+            if f_title == DELETED_TITLE:
+                found_deleted += 1
+                to_delete = True
+        if ConfigCleanup.privatized:
+            f_title = item["snippet"]["title"]
+            if f_title == PRIVATE_TITLE:
+                found_private += 1
+                to_delete = True
+        if to_delete:
+            wanted_to_delete += 1
+            if ConfigDelete.do_delete:
+                f_id = item["id"]
+                delete_playlist_item_by_id(youtube, f_id)
+                deleted += 1
+    logger.info(f"saw {saw} items")
+    logger.info(f"found_deleted {found_deleted} items")
+    logger.info(f"found_private {found_private} items")
+    logger.info(f"wanted_to_delete {wanted_to_delete} items")
+    logger.info(f"deleted {deleted} items")
+
+
+@register_endpoint(
+    description="Subtracts a list of playlists from a list of playlists",
+    configs=[ConfigPagination, ConfigSubtract, ConfigDelete],
+)
+def subtract() -> None:
+    logger = logging.getLogger()
+    youtube = get_youtube()
+    logger.info(f"subtracting [{ConfigSubtract.subtract_what}] from [{ConfigSubtract.subtract_from}]...")
+    what_ids = get_playlist_item_ids_from_names(youtube, ConfigSubtract.subtract_what)
+    from_ids = get_playlist_item_ids_from_names(youtube, ConfigSubtract.subtract_from)
+    f_ids = from_ids.intersection(what_ids)
+    deleted = 0
+    wanted_to_delete = 0
+    for f_id in f_ids:
+        wanted_to_delete += 1
+        if ConfigDelete.do_delete:
+            delete_playlist_item_by_id(youtube, f_id)
+            deleted += 1
+    logger.info(f"wanted_to_delete {wanted_to_delete} items")
+    logger.info(f"deleted {deleted} items")
+
+
+@register_endpoint(
+    description="Find unseen/seen videos by diffing playlists against local files",
+    configs=[ConfigPagination, ConfigDiff],
+)
+def diff() -> None:
+    logger = logging.getLogger()
+    youtube = get_youtube()
+    playlist_video_ids = get_video_ids_from_playlist_names(youtube, ConfigDiff.source_playlists)
+    file_video_ids = read_video_ids_from_files(ConfigDiff.seen_files)
+    if ConfigDiff.reverse:
+        result_ids = sorted(playlist_video_ids & file_video_ids)
+    else:
+        result_ids = sorted(playlist_video_ids - file_video_ids)
+    logger.info(f"found {len(result_ids)} videos")
+    with open(ConfigDiff.output_file, "w") as f:
+        for video_id in result_ids:
+            print(video_id, file=f)
+    logger.info(f"wrote {len(result_ids)} video IDs to [{ConfigDiff.output_file}]")
+
+
+@register_endpoint(
+    description="Get info about a video",
+    configs=[ConfigVideo],
+)
+def video_info() -> None:
+    youtube = get_youtube()
+    info = get_video_info(youtube, ConfigVideo.id)
+    pretty_print(info)
+
+
+@register_endpoint(
+    description="Collect you tube video ids from files",
+)
+def collect_ids() -> None:
+    for filename in os.listdir():
+        _, extension = os.path.splitext(filename)
+        print(extension)
+
+
+@register_endpoint(
+    description="List channels",
+)
+def channels() -> None:
+    youtube = get_youtube()
+    channels_obj = get_youtube_channels(youtube)
+    request = channels_obj.list(
+        part="snippet,contentDetails,statistics",
+        mine=True
+    )
+    response = request.execute()
+    pretty_print(response)
+    for item in response["items"]:
+        f_channel_id = item["id"]
+        playlists_obj = get_youtube_playlists(youtube)
+        request = playlists_obj.list(
+            part="snippet,contentDetails",
+            channelId=f_channel_id,
+            maxResults=25
+        )
+        res = request.execute()
+        pretty_print(res)
+
+
+@register_endpoint(
+    description="Download Watch Later playlist",
+)
+def watch_later() -> None:
+    youtube_dl_download_urls(["https://www.youtube.com/playlist?list=WL"])
+
+
+@register_main(
+    main_description=DESCRIPTION,
+    app_name=APP_NAME,
+    version=VERSION_STR,
+)
+def main():
+    pylogconf.core.setup()
+    ConfigRequest.scopes = SCOPES
+    ConfigRequest.location = os.path.dirname(os.path.realpath(__file__))
+    register_functions()
+    config_arg_parse_and_launch()
+
+
+if __name__ == "__main__":
+    main()
