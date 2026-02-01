@@ -1,0 +1,160 @@
+Metadata-Version: 2.4
+Name: varicon-observability
+Version: 1.0.3
+Summary: Unified observability package for Varicon services - logs, traces, and metrics
+Author-email: samir Thapa <samir.thapa@varicon.com.au>
+License: MIT
+Keywords: observability,logging,tracing,metrics,opentelemetry,signoz
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Classifier: Topic :: System :: Logging
+Classifier: Topic :: System :: Monitoring
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: opentelemetry-api<2.0.0,>=1.24.0
+Requires-Dist: opentelemetry-sdk<2.0.0,>=1.24.0
+Requires-Dist: opentelemetry-exporter-otlp<2.0.0,>=1.24.0
+Requires-Dist: opentelemetry-semantic-conventions<0.61b0,>=0.45b0
+Provides-Extra: django
+Requires-Dist: django>=3.2; extra == "django"
+Requires-Dist: opentelemetry-instrumentation-django<0.61b0,>=0.45b0; extra == "django"
+Requires-Dist: opentelemetry-instrumentation-psycopg2<0.61b0,>=0.45b0; extra == "django"
+Requires-Dist: opentelemetry-instrumentation-asgi<0.61b0,>=0.45b0; extra == "django"
+Provides-Extra: fastapi
+Requires-Dist: fastapi>=0.100.0; extra == "fastapi"
+Requires-Dist: opentelemetry-instrumentation-fastapi<0.61b0,>=0.45b0; extra == "fastapi"
+Requires-Dist: opentelemetry-instrumentation-httpx<0.61b0,>=0.45b0; extra == "fastapi"
+Provides-Extra: celery
+Requires-Dist: celery>=5.0.0; extra == "celery"
+Requires-Dist: opentelemetry-instrumentation-celery<0.61b0,>=0.45b0; extra == "celery"
+Provides-Extra: full
+Requires-Dist: django>=3.2; extra == "full"
+Requires-Dist: fastapi>=0.100.0; extra == "full"
+Requires-Dist: celery>=5.0.0; extra == "full"
+Requires-Dist: opentelemetry-instrumentation-django<0.61b0,>=0.45b0; extra == "full"
+Requires-Dist: opentelemetry-instrumentation-fastapi<0.61b0,>=0.45b0; extra == "full"
+Requires-Dist: opentelemetry-instrumentation-celery<0.61b0,>=0.45b0; extra == "full"
+Requires-Dist: opentelemetry-instrumentation-psycopg2<0.61b0,>=0.45b0; extra == "full"
+Requires-Dist: opentelemetry-instrumentation-httpx<0.61b0,>=0.45b0; extra == "full"
+Requires-Dist: opentelemetry-instrumentation-redis<0.61b0,>=0.45b0; extra == "full"
+Requires-Dist: opentelemetry-instrumentation-requests<0.61b0,>=0.45b0; extra == "full"
+Requires-Dist: opentelemetry-instrumentation-asgi<0.61b0,>=0.45b0; extra == "full"
+Dynamic: license-file
+
+# Varicon Observability
+
+Unified observability package for logs, traces, and metrics across all Varicon services.
+
+## Features
+
+- **Universal Log Capture**: Captures all logs regardless of how they're created
+- **Distributed Tracing**: Automatic trace correlation across services
+- **Metrics**: System telemetry and performance metrics
+- **Zero Code Changes**: Works with existing logging code
+- **Framework Support**: Auto-detects and instruments Django, FastAPI, Celery
+
+## Installation
+
+### From Local Source (Development)
+
+```bash
+cd varicon_observability
+pip install -e .
+
+# Or with optional dependencies
+pip install -e ".[full]"
+```
+
+### From Git Repository
+
+```bash
+pip install git+https://github.com/your-org/varicon-observability.git
+
+# With optional dependencies
+pip install "git+https://github.com/your-org/varicon-observability.git#egg=varicon-observability[full]"
+```
+
+### Build and Install from Source
+
+```bash
+cd varicon_observability
+python -m build
+pip install dist/varicon_observability-*.whl
+```
+
+### Installation Options
+
+- **Basic**: `pip install varicon-observability`
+- **Django**: `pip install varicon-observability[django]`
+- **FastAPI**: `pip install varicon-observability[fastapi]`
+- **Celery**: `pip install varicon-observability[celery]`
+- **Full**: `pip install varicon-observability[full]`
+
+## Quick Start
+
+### Django (varicon)
+
+```python
+# varicon/varicon/asgi.py or settings.py
+from varicon_observability import setup_observability
+
+setup_observability(service_name="varicon-django")
+```
+
+### FastAPI (integrations_service)
+
+```python
+# integrations_service/main.py
+from varicon_observability import setup_observability
+
+setup_observability(service_name="integration-service")
+```
+
+## Configuration
+
+Set environment variables:
+
+```bash
+OTEL_ENABLED=true
+OTEL_SERVICE_NAME=my-service
+OTEL_EXPORTER_OTLP_ENDPOINT=http://signoz-otel-collector:4318
+OTEL_EXPORTER_OTLP_PROTOCOL=grpc  # or http
+OTEL_EXPORTER_OTLP_HEADERS=signoz-ingestion-key=your-key
+```
+
+## What Gets Captured
+
+- All Python logging (`logging.getLogger()`, `IntegrationLogger()`, etc.)
+- Framework logs (Django, FastAPI, Uvicorn, Celery)
+- HTTP requests (requests, httpx)
+- Database queries (PostgreSQL via psycopg2)
+- Redis operations
+- Custom traces and metrics
+
+**Note**: SQLAlchemy logs are disabled by default (set `ENABLE_SQLALCHEMY_LOGS=true` to enable)
+
+## Architecture
+
+```
+Application Code
+    ↓
+Python Logging (any pattern)
+    ↓
+Root Logger Handler
+    ↓
+OpenTelemetry LoggingHandler
+    ↓
+OTLP Exporter
+    ↓
+SigNoz
+```
+
+All logs automatically include trace context for correlation.
