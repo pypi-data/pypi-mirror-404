@@ -1,0 +1,509 @@
+Metadata-Version: 2.4
+Name: toms-fast
+Version: 0.3.13
+Summary: 基于 FastAPI 的异步基础工具库，提供 Redis、SQLAlchemy、Celery、日志管理等企业级基础设施的统一封装，简化异步 API 与服务端应用开发（import 包名：tomskit）
+Author-email: AllinOneAI Team <ai@aioai.cc>
+Requires-Python: >=3.11
+Requires-Dist: alembic>=1.13.0
+Requires-Dist: celery>=5.5.2
+Requires-Dist: fastapi>=0.115.12
+Requires-Dist: orjson>=3.9.0
+Requires-Dist: pydantic-settings>=2.9.1
+Requires-Dist: redis>=6.0.0
+Requires-Dist: sqlalchemy>=2.0.40
+Description-Content-Type: text/markdown
+
+# toms-fast
+
+**toms-fast** 是一个基于 **FastAPI** 的异步基础工具库（Async Infrastructure Toolkit），  
+用于简化和规范企业级异步 API 与服务端应用的开发。
+
+> **PyPI 名称**：`toms-fast`  
+> **Python import 包名**：`tomskit`  
+> **Python 版本要求**：`>=3.11`
+
+该项目沉淀了在实际生产环境中反复验证的工程实践，  
+将 **Redis、SQLAlchemy、Celery、FastAPI** 等常用组件进行统一封装，
+帮助开发者专注于业务逻辑，而不是基础设施细节。
+
+---
+
+## ✨ 特性（Features）
+
+- ⚡ **完全异步**：基于 FastAPI / ASGI 的异步架构，支持高并发场景
+- 🧠 **模块化设计**：清晰的模块边界，适合中大型项目
+- 🧩 **开箱即用**：内置常用基础能力，无需重复造轮子
+- 🔒 **生产就绪**：经过生产环境验证，稳定可靠
+- 📦 **类型安全**：完整的类型注解支持，提升开发体验
+- 🛠️ **配置管理**：基于 Pydantic Settings 的统一配置管理
+- 📚 **完整文档**：每个模块都有详细的 README 和使用示例
+
+### 内置能力
+
+- **Redis**：异步/同步客户端，支持单机、Sentinel、Cluster 模式
+- **SQLAlchemy**：异步数据库集成，支持连接池管理和分页查询
+- **Celery**：异步任务队列封装，支持在任务中运行异步函数
+- **Logger**：结构化日志配置，支持追踪 ID 和多类型日志分离
+- **Server**：FastAPI 扩展，提供资源管理、异常处理、中间件等
+- **Utils**：数据序列化工具，支持异步数据源
+- **Task**：异步任务管理器，支持批量任务执行
+- **Tools**：Worker 管理工具，支持 Gunicorn/Uvicorn 监控
+
+---
+
+## 📦 安装（Installation）
+
+> **💡 推荐使用虚拟环境**：为了避免依赖冲突和保持环境隔离，强烈建议在虚拟环境中安装和使用 `toms-fast`。
+
+### 创建虚拟环境
+
+```bash
+# 使用 uv 创建虚拟环境（推荐）
+uv venv
+source .venv/bin/activate  # Linux/Mac
+# 或 .venv\Scripts\activate  # Windows
+
+# 或使用 Python 内置 venv
+python -m venv .venv
+source .venv/bin/activate  # Linux/Mac
+# 或 .venv\Scripts\activate  # Windows
+```
+
+### 使用 pip
+
+```bash
+pip install toms-fast
+```
+
+### 使用 uv（推荐）
+
+```bash
+uv pip install toms-fast
+```
+
+### 使用 poetry
+
+```bash
+poetry add toms-fast
+```
+
+---
+
+## 🚀 快速开始（Quick Start）
+
+### 使用脚手架创建新项目（推荐）
+
+使用 `toms-fast` 提供的脚手架工具，可以快速创建一个完整的项目结构。
+
+#### 方案一：使用临时虚拟环境（推荐用于隔离 CLI 工具）
+
+```bash
+# 1. 创建临时虚拟环境（用于安装 CLI 工具）
+uv venv cli-env
+source cli-env/bin/activate  # Linux/Mac
+# 或 cli-env\Scripts\activate  # Windows
+
+# 2. 安装 toms-fast
+uv pip install toms-fast
+
+# 3. 使用脚手架创建新项目
+fastapi-cli init my_project --type full
+
+# 4. 退出并删除临时环境（可选）
+deactivate
+rm -rf cli-env
+
+# 5. 进入 backend 目录（pyproject.toml 在这里）
+cd my_project/backend
+
+# 6. 创建项目虚拟环境
+uv venv
+source .venv/bin/activate  # Linux/Mac
+# 或 .venv\Scripts\activate  # Windows
+
+# 7. 安装项目依赖
+uv sync
+
+# 8. 配置环境变量
+cp .env.example .env
+# 编辑 .env 文件，配置数据库和 Redis 连接信息
+
+# 9. 初始化数据库迁移（FastAPI 项目）
+uv run alembic -c migrations/alembic.ini revision --autogenerate -m 'Initial migration'
+uv run alembic -c migrations/alembic.ini upgrade head
+
+# 10. 运行应用
+uv run uvicorn main:app --reload
+```
+
+#### 方案二：使用 uv 自动管理虚拟环境（最简洁）
+
+如果使用 `uv`，可以直接运行，无需手动创建虚拟环境：
+
+```bash
+# 1. 安装 toms-fast（全局或临时环境都可以）
+uv pip install toms-fast
+# 或：pip install toms-fast
+
+# 2. 使用脚手架创建新项目
+fastapi-cli init my_project --type full
+
+# 3. 进入 backend 目录（pyproject.toml 在这里）
+cd my_project/backend
+
+# 4. 直接使用 uv sync（会自动创建虚拟环境）
+uv sync
+
+# 5. 配置环境变量
+cp .env.example .env
+# 编辑 .env 文件，配置数据库和 Redis 连接信息
+
+# 6. 初始化数据库迁移（FastAPI 项目）
+uv run alembic -c migrations/alembic.ini revision --autogenerate -m 'Initial migration'
+uv run alembic -c migrations/alembic.ini upgrade head
+
+# 7. 运行应用
+uv run uvicorn main:app --reload
+```
+
+**项目类型说明：**
+- `full`（默认）：包含 FastAPI 和 Celery 的完整项目
+- `fastapi`：仅 FastAPI 项目
+- `celery`：仅 Celery 项目
+
+**更多脚手架选项：**
+```bash
+# 查看帮助
+fastapi-cli init --help
+
+# 指定目标目录
+fastapi-cli init my_project -d /path/to/target
+
+# 创建仅 FastAPI 项目
+fastapi-cli init my_project --type fastapi
+
+# 创建仅 Celery 项目
+fastapi-cli init my_project --type celery
+```
+
+### 基础示例
+
+```python
+from fastapi import FastAPI
+from tomskit.logger import setup_logging, LoggerConfig
+from tomskit.redis import RedisClientWrapper, RedisConfig
+from tomskit.sqlalchemy import db, DatabaseConfig
+
+# 初始化日志
+log_config = LoggerConfig()
+setup_logging(log_config)
+
+# 初始化 Redis
+redis_config = RedisConfig()
+RedisClientWrapper.initialize(redis_config.model_dump())
+
+# 初始化数据库
+db_config = DatabaseConfig()
+db.initialize_session_pool(
+    db_config.SQLALCHEMY_DATABASE_URI,
+    db_config.SQLALCHEMY_ENGINE_OPTIONS
+)
+
+app = FastAPI()
+
+@app.get("/")
+async def root():
+    return {"message": "Hello from toms-fast!"}
+```
+
+### 使用 Server 模块创建 RESTful API
+
+```python
+from tomskit.server import FastApp, FastModule, register_resource, Resource, api_doc
+from fastapi import Request
+from pydantic import BaseModel
+
+# 创建主应用
+app = FastApp(title="My API")
+
+# 创建模块
+user_module = FastModule(name="users")
+user_module.create_router(prefix="/api/v1")
+
+# 定义响应模型
+class UserResponse(BaseModel):
+    id: int
+    name: str
+    email: str
+
+# 注册资源
+@register_resource(module="users", path="/users", tags=["User Management"])
+class UserResource(Resource):
+    @api_doc(
+        summary="获取用户列表",
+        response_model=list[UserResponse]
+    )
+    async def get(self, request: Request):
+        return [
+            {"id": 1, "name": "Alice", "email": "alice@example.com"},
+            {"id": 2, "name": "Bob", "email": "bob@example.com"}
+        ]
+
+# 自动注册资源
+user_module.auto_register_resources()
+
+# 挂载模块
+app.mount("/api", user_module)
+```
+
+---
+
+## 📁 项目结构（Project Structure）
+
+```
+src/tomskit/
+├── server/        # FastAPI 扩展：资源管理、异常处理、中间件
+├── redis/         # Redis 客户端：异步/同步，支持多种模式
+├── sqlalchemy/    # SQLAlchemy 集成：异步数据库操作和分页
+├── celery/        # Celery 封装：异步任务队列支持
+├── logger/        # 日志管理：结构化日志和追踪 ID
+├── task/          # 异步任务管理：批量任务执行
+├── tools/         # 工具模块：Worker 管理等
+└── utils/         # 工具函数：数据序列化、响应处理
+```
+
+---
+
+## 📖 模块文档
+
+每个模块都有详细的 README 文档，包含完整的使用示例：
+
+- [**Server 模块**](src/tomskit/server/) - FastAPI 扩展，资源管理、异常处理
+- [**Redis 模块**](src/tomskit/redis/README.md) - Redis 客户端使用指南
+- [**SQLAlchemy 模块**](src/tomskit/sqlalchemy/README.md) - 数据库操作指南
+- [**Celery 模块**](src/tomskit/celery/README.md) - 异步任务队列指南
+- [**Logger 模块**](src/tomskit/logger/README.md) - 日志配置指南
+- [**Utils 模块**](src/tomskit/utils/README.md) - 数据序列化指南
+- [**Task 模块**](src/tomskit/task/README.md) - 异步任务管理指南
+- [**Tools 模块**](src/tomskit/tools/README.md) - Worker 管理指南
+
+---
+
+## 🔧 核心模块使用示例
+
+### Redis 使用
+
+```python
+from tomskit.redis import RedisClientWrapper, redis_client, RedisConfig
+
+# 初始化
+config = RedisConfig()
+RedisClientWrapper.initialize(config.model_dump())
+
+# 使用
+await redis_client.set("key", "value")
+value = await redis_client.get("key")
+```
+
+### 数据库使用
+
+```python
+from tomskit.sqlalchemy import db, DatabaseConfig
+
+# 初始化
+config = DatabaseConfig()
+db.initialize_session_pool(
+    config.SQLALCHEMY_DATABASE_URI,
+    config.SQLALCHEMY_ENGINE_OPTIONS
+)
+
+# 使用
+session = db.create_session()
+user = await session.get(User, user_id)
+await db.close_session(session)
+```
+
+### Celery 任务
+
+```python
+from tomskit.celery import AsyncCelery, AsyncTaskRunner
+from celery import shared_task
+
+celery_app = AsyncCelery('myapp', broker='redis://localhost:6379/0')
+
+@celery_app.task
+def my_task():
+    runner = AsyncTaskRunner(async_my_task)
+    return runner.run()
+
+async def async_my_task():
+    # 异步任务逻辑
+    return "done"
+```
+
+### 日志配置
+
+```python
+from tomskit.logger import setup_logging, LoggerConfig, set_app_trace_id
+import uuid
+
+# 初始化
+config = LoggerConfig(LOG_LEVEL="INFO")
+setup_logging(config)
+
+# 在请求中设置追踪 ID
+trace_id = str(uuid.uuid4())
+set_app_trace_id(trace_id)
+```
+
+---
+
+## ⚙️ 环境变量配置
+
+`toms-fast` 通过环境变量进行配置，应用需要显式加载 `.env` 文件（如使用 `python-dotenv`）。
+
+### Redis 配置
+
+```bash
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_DB=0
+REDIS_PASSWORD=
+REDIS_USE_SENTINEL=false
+REDIS_USE_CLUSTERS=false
+```
+
+### 数据库配置
+
+```bash
+DB_HOST=localhost
+DB_PORT=3306
+DB_USERNAME=user
+DB_PASSWORD=password
+DB_DATABASE=mydb
+DB_CHARSET=utf8mb4
+```
+
+### 日志配置
+
+```bash
+LOG_PREFIX=[MyApp]
+LOG_LEVEL=INFO
+LOG_DIR=logs
+LOG_NAME=apps
+LOG_USE_UTC=false
+```
+
+### SQLAlchemy 配置
+
+```bash
+SQLALCHEMY_POOL_SIZE=300
+SQLALCHEMY_MAX_OVERFLOW=10
+SQLALCHEMY_POOL_RECYCLE=3600
+SQLALCHEMY_POOL_PRE_PING=false
+```
+
+更多配置项请参考各模块的 README 文档。
+
+---
+
+## 🛠️ 开发环境（Development）
+
+### 克隆仓库
+
+```bash
+git clone https://github.com/tomszhou/toms-fast.git
+cd toms-fast
+```
+
+### 安装开发依赖
+
+```bash
+# 使用 uv（推荐）
+uv venv
+source .venv/bin/activate
+uv pip install -e ".[dev]"
+
+# 或使用 pip
+pip install -e ".[dev]"
+```
+
+### 运行测试
+
+```bash
+pytest
+```
+
+### 代码格式化
+
+```bash
+ruff format .
+ruff check .
+```
+
+---
+
+## 📋 适用场景（Use Cases）
+
+- ✅ 企业级 FastAPI 后端服务
+- ✅ 高并发异步 API 开发
+- ✅ 需要统一基础设施规范的团队
+- ✅ 中大型 Python 服务端项目
+- ✅ 微服务架构应用
+- ✅ 需要异步任务处理的系统
+
+---
+
+## 🤝 贡献（Contributing）
+
+欢迎贡献代码！🎉
+
+在提交 PR 前，请确保：
+
+- ✅ 代码风格一致（遵循项目规范）
+- ✅ 所有测试通过
+- ✅ 遵循现有模块设计约定
+- ✅ 添加必要的文档和示例
+- ✅ 更新相关的 README 文件
+
+### 贡献流程
+
+1. Fork 本仓库
+2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
+3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
+4. 推送到分支 (`git push origin feature/AmazingFeature`)
+5. 开启 Pull Request
+
+---
+
+## 📄 许可证（License）
+
+本项目采用 **MIT License**。
+
+---
+
+## 🔗 相关链接
+
+- [FastAPI 官方文档](https://fastapi.tiangolo.com/)
+- [SQLAlchemy 官方文档](https://docs.sqlalchemy.org/)
+- [Celery 官方文档](https://docs.celeryq.dev/)
+- [Redis 官方文档](https://redis.io/docs/)
+
+---
+
+## 📝 更新日志
+
+查看 [GIT_SUMMARY.md](GIT_SUMMARY.md) 了解详细的提交历史。
+
+---
+
+## 💬 支持
+
+如有问题或建议，请通过以下方式联系：
+
+- 提交 [Issue](https://github.com/tomszhou/toms-fast/issues)
+- 发送邮件至项目维护者
+
+---
+
+**Made with ❤️ by AllinOneAI Team**
