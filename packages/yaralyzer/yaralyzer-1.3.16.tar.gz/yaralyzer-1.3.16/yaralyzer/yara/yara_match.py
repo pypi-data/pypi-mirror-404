@@ -1,0 +1,162 @@
+"""
+Rich text decorator for YARA match dicts.
+
+A YARA match is returned as a `dict` with this structure:
+
+Example:
+    ```
+    {
+        'tags': ['foo', 'bar'],
+        'matches': True,
+        'namespace': 'default',
+        'rule': 'my_rule',
+        'meta': {},
+        'strings': [
+            StringMatch1,
+            StringMatch2
+        ]
+    }
+    ```
+"""
+import re
+from numbers import Number
+from typing import Any, Dict
+
+from rich.console import Console, ConsoleOptions, RenderResult
+from rich.padding import Padding
+from rich.panel import Panel
+from rich.text import Text
+from yara import StringMatch
+
+from yaralyzer.output.console import console_width
+from yaralyzer.output.theme import theme_colors_with_prefix
+from yaralyzer.util.helpers.bytes_helper import clean_byte_string
+from yaralyzer.util.helpers.rich_helper import DEFAULT_TABLE_OPTIONS
+from yaralyzer.util.helpers.string_helper import INDENT_SPACES
+from yaralyzer.util.logging import log
+
+MATCH_PADDING = (0, 0, 0, 1)
+
+DATE_REGEX = re.compile('\\d{4}-\\d{2}-\\d{2}')
+DIGITS_REGEX = re.compile("^\\d+$")
+HEX_REGEX = re.compile('^[0-9A-Fa-f]+$')
+MATCHER_VAR_REGEX = re.compile('\\$[a-z_]+')
+URL_REGEX = re.compile('^https?:')
+
+YARA_STRING_STYLES: Dict[re.Pattern, str] = {
+    HEX_REGEX: 'yara.hex',
+    DATE_REGEX: 'yara.date',
+    DIGITS_REGEX: 'yara.number',
+    MATCHER_VAR_REGEX: 'yara.match_var',
+    URL_REGEX: 'yara.url',
+}
+
+RAW_YARA_THEME_COLORS = [color[len('yara') + 1:] for color in theme_colors_with_prefix('yara')]
+RAW_YARA_THEME_TXT = Text('\nColor Code: ') + Text(' ').join(RAW_YARA_THEME_COLORS)
+RAW_YARA_THEME_TXT.justify = 'center'
+
+
+class YaraMatch:
+    """Rich text decorator for YARA match dicts."""
+
+    def __init__(self, match: dict, matched_against_bytes_label: Text) -> None:
+        """
+        Args:
+            match (dict): The YARA match dict.
+            matched_against_bytes_label (Text): Label indicating what bytes were matched against.
+        """
+        self.match = match
+        self.rule_name = match['rule']
+        self.label = matched_against_bytes_label.copy().append(f" matched rule: '", style='yara.matched_rule')
+        self.label.append(self.rule_name, style='on bright_red bold').append("'!", style='siren')
+
+    def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
+        """Renders a rich `Panel` showing the color highlighted raw YARA match info."""
+        yield Text("\n")
+        label_panel = Panel(self.label, expand=False, style=f"on color(251) reverse", **DEFAULT_TABLE_OPTIONS)
+        yield Padding(label_panel, MATCH_PADDING)
+        yield RAW_YARA_THEME_TXT
+        yield Padding(Panel(_rich_yara_match(self.match), **DEFAULT_TABLE_OPTIONS), MATCH_PADDING)
+
+
+def _rich_yara_match(element: Any, depth: int = 0) -> Text:
+    """
+    Painful/hacky way of recursively coloring a YARA match dict.
+
+    Args:
+        element (Any): The element to render (can be `dict`, `list`, `str`, `bytes`, `int`, `bool`).
+        depth (int): Current recursion depth (used for indentation).
+
+    Returns:
+        Text: The rich `Text` representation of the element.
+    """
+    indent = Text((depth + 1) * INDENT_SPACES)
+    end_indent = Text(depth * INDENT_SPACES)
+
+    if isinstance(element, str):
+        txt = _yara_string(element)
+    elif isinstance(element, bytes):
+        txt = Text(clean_byte_string(element), style='bytes')
+    elif isinstance(element, Number):
+        txt = Text(str(element), style='bright_cyan')
+    elif isinstance(element, bool):
+        txt = Text(str(element), style='red' if not element else 'green')
+    elif isinstance(element, (list, tuple)):
+        if len(element) == 0:
+            txt = Text('[]', style='white')
+        else:
+            if isinstance(element[0], StringMatch):
+                # In yara-python 4.3.0 the StringMatch type was introduced so we just make it look like
+                # the old list of tuples format (see: https://github.com/VirusTotal/yara-python/releases/tag/v4.3.0)
+                match_tuples = [
+                    (match.identifier, match_instance.offset, match_instance.matched_data)
+                    for match in element
+                    for match_instance in match.instances
+                ]
+
+                return _rich_yara_match(match_tuples, depth)
+
+            total_length = sum([len(str(e)) for e in element]) + ((len(element) - 1) * 2) + len(indent) + 2
+            elements_txt = [_rich_yara_match(e, depth + 1) for e in element]
+            list_txt = Text('[', style='white')
+
+            if total_length > console_width() or len(element) > 3:
+                join_txt = Text(f"\n{indent}")
+                list_txt.append(join_txt).append(Text(f",{join_txt}").join(elements_txt))
+                list_txt += Text(f'\n{end_indent}]', style='white')
+            else:
+                list_txt += Text(', ').join(elements_txt) + Text(']')
+
+            return list_txt
+    elif isinstance(element, dict):
+        element = {k: v for k, v in element.items() if k not in ['matches', 'rule']}
+
+        if len(element) == 0:
+            return Text('{}')
+
+        txt = Text('{\n', style='white')
+
+        for i, k in enumerate(element.keys()):
+            v = element[k]
+            txt += indent + Text(f"{k}: ", style='yara.key') + _rich_yara_match(v, depth + 1)
+
+            if (i + 1) < len(element.keys()):
+                txt.append(",\n")
+            else:
+                txt.append("\n")
+
+        txt += end_indent + Text('}', style='white')
+    else:
+        log.warning(f"Unknown yara return of type {type(element)}: {element}")
+        txt = indent + Text(str(element))
+
+    return txt
+
+
+def _yara_string(_string: str) -> Text:
+    """Apply special styles to certain types of yara strings (e.g. URLs, numbers, hex, dates, matcher vars)."""
+    for regex in YARA_STRING_STYLES.keys():
+        if regex.match(_string):
+            return Text(_string, YARA_STRING_STYLES[regex])
+
+    return Text(_string, style='yara.string')
