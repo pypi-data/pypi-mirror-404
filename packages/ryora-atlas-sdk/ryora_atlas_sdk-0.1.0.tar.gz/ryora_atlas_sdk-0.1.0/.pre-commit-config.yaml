@@ -1,0 +1,77 @@
+# Pre-commit configuration for Atlas SDK
+# This config runs from repo root, targeting atlas-sdk files only.
+# Install: pip install pre-commit && pre-commit install
+# Run manually: pre-commit run --all-files --config atlas-sdk/.pre-commit-config.yaml
+
+repos:
+  # General hygiene
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: '\.md$'
+        files: ^atlas-sdk/
+      - id: end-of-file-fixer
+        exclude: '\.md$'
+        files: ^atlas-sdk/
+      - id: check-yaml
+        args: [--unsafe]
+        files: ^atlas-sdk/
+      - id: check-json
+        files: ^atlas-sdk/
+      - id: check-toml
+        files: ^atlas-sdk/
+      - id: check-added-large-files
+        args: ['--maxkb=500']
+        files: ^atlas-sdk/
+      - id: check-merge-conflict
+        files: ^atlas-sdk/
+      - id: debug-statements
+        files: ^atlas-sdk/
+
+  # Python - Ruff (lint + format)
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.14
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+        types_or: [python, pyi]
+        files: ^atlas-sdk/
+        exclude: _version\.py$
+      - id: ruff-format
+        types_or: [python, pyi]
+        files: ^atlas-sdk/
+        exclude: _version\.py$
+
+  # Type checking - Mypy
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.19.1
+    hooks:
+      - id: mypy
+        args: [--strict, atlas-sdk/src/atlas_sdk]
+        additional_dependencies:
+          - pydantic==2.12.5
+          - httpx==0.28.1
+          - tenacity==9.1.2
+          - pytest==9.0.2
+          - respx==0.22.0
+        pass_filenames: false
+        files: ^atlas-sdk/
+
+  # Security - Bandit
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.9.3
+    hooks:
+      - id: bandit
+        args: [-r, atlas-sdk/src/atlas_sdk, -c, atlas-sdk/pyproject.toml]
+        pass_filenames: false
+        files: ^atlas-sdk/
+
+  # Security - pip-audit
+  - repo: https://github.com/pypa/pip-audit
+    rev: v2.10.0
+    hooks:
+      - id: pip-audit
+        args: [--requirement, atlas-sdk/requirements.txt]
+        pass_filenames: false
+        files: ^atlas-sdk/pyproject\.toml$
