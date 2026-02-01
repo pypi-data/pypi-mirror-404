@@ -1,0 +1,85 @@
+diff --git a/MistrasDTA/MistrasDTA.py b/MistrasDTA/MistrasDTA.py
+index 5329db0..6f47e32 100644
+--- a/MistrasDTA/MistrasDTA.py
++++ b/MistrasDTA/MistrasDTA.py
+@@ -48,7 +48,7 @@ def _bytes_to_RTOT(bytes):
+     return ((i1+2**32*i2)*.25e-6)
+ 
+ 
+-def read_bin(file, skip_wfm=False):
++def _read_bin_generator(file, skip_wfm=False):
+     """Function to read binary AEWin data files. The file structure schema is
+     described in Appendix II of the Mistras User's Manual.
+ 
+@@ -60,12 +60,6 @@ def read_bin(file, skip_wfm=False):
+         wfm (numpy.recarray): table containing any saved waveforms
+     """
+ 
+-    # Array to hold AE hit records
+-    rec = []
+-
+-    # Array to hold waveforms
+-    wfm = []
+-
+     # Array to hold AE hardware settings
+     hardware = []
+ 
+@@ -136,7 +130,8 @@ def read_bin(file, skip_wfm=False):
+                 # Parmetric channels
+                 data.read(LEN)
+ 
+-                rec.append(record)
++                # rec.append(record)
++                yield ('rec', record)
+ 
+             elif b1 == 7:
+                 logging.info("User Comments/Test Label:")
+@@ -256,7 +251,8 @@ def read_bin(file, skip_wfm=False):
+                     channel = hardware[hardware['CH'] == CID]
+                     re = [TOT, CID, channel['SRATE'][0], channel['TDLY'][0],
+                           (AmpScaleFactor*s).tobytes()]
+-                    wfm.append(re)
++                    # wfm.append(re)
++                    yield ('wfm', re)
+ 
+             else:
+                 logging.debug("ID "+str(b1)+" not yet implemented!")
+@@ -264,6 +260,14 @@ def read_bin(file, skip_wfm=False):
+ 
+             byte = data.read(2)
+ 
++
++def read_bin(file, skip_wfm=False):
++    # Array to hold AE hit records
++    rec = []
++
++    # Array to hold waveforms
++    wfm = []
++
+     # Convert numpy array and add record names
+     # fromrecords() fails on an empty list
+     if rec:
+@@ -273,11 +277,11 @@ def read_bin(file, skip_wfm=False):
+             + [CHID_to_str[i] for i in CHID_list])
+ 
+         # Append a Unix timestamp field
+-        timestamp = [
+-            (test_start_time + timedelta(seconds=t)).timestamp()
+-            for t in rec['SSSSSSSS.mmmuuun']]
+-        rec = append_fields(rec, 'TIMESTAMP', timestamp,
+-                            usemask=False, asrecarray=True)
++        # timestamp = [
++        #     (test_start_time + timedelta(seconds=t)).timestamp()
++        #     for t in rec['SSSSSSSS.mmmuuun']]
++        # rec = append_fields(rec, 'TIMESTAMP', timestamp,
++        #                     usemask=False, asrecarray=True)
+ 
+     if wfm:
+         wfm = np.rec.fromrecords(
+diff --git a/MistrasDTA/__init__.py b/MistrasDTA/__init__.py
+index 9775117..f7bc316 100644
+--- a/MistrasDTA/__init__.py
++++ b/MistrasDTA/__init__.py
+@@ -1 +1 @@
+-from .MistrasDTA import read_bin, get_waveform_data
++from .MistrasDTA import read_bin, get_waveform_data, _read_bin_generator
