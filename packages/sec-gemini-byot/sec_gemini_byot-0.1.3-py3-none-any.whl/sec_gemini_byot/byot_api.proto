@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+package byot;
+
+service BringYourOwnToolsHub {
+  // Bidi streaming for connection management and job dispatch
+  rpc Connect (stream ClientMessage) returns (stream ServerMessage);
+}
+
+message ClientMessage {
+  oneof payload {
+    Register register = 1;
+    JobResult job_result = 2;
+    Ping ping = 3;
+  }
+}
+
+message ServerMessage {
+  oneof payload {
+    JobRequest job_request = 1;
+    Pong pong = 2;
+  }
+}
+
+message Register {
+  string api_key = 1;
+  string name = 2;
+}
+
+enum RequestType {
+  REQUEST_TYPE_UNKNOWN = 0;
+  LIST_TOOLS = 1;
+  CALL_TOOL = 2;
+  PING = 3;
+}
+
+message JobRequest {
+  string job_id = 1;
+  string request_data = 2;
+  string user_id = 3;
+  string byot_name = 4;
+  RequestType request_type = 5;
+}
+
+message JobResult {
+  string job_id = 1;
+  string content = 2;
+  string error = 3; // Optional error message
+}
+
+message Ping {
+  string msg = 1;
+}
+
+message Pong {
+  string msg = 1;
+}
