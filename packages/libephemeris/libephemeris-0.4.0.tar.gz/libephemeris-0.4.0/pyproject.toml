@@ -1,0 +1,181 @@
+[project]
+name = "libephemeris"
+version = "0.4.0"
+description = "A high-precision, open-source astronomical ephemeris library for Python, powered by Skyfield."
+readme = "README.md"
+requires-python = ">=3.9"
+license = "LGPL-3.0-only"
+license-files = ["LICENSE"]
+authors = [
+    { name = "Giacomo Battaglia", email = "giacomo@libephemeris.dev" }
+]
+maintainers = [
+    { name = "Giacomo Battaglia", email = "giacomo@libephemeris.dev" }
+]
+keywords = [
+    "astronomy",
+    "ephemeris",
+    "astrology",
+    "planetary",
+    "skyfield",
+    "swiss-ephemeris",
+    "astrological",
+    "celestial",
+    "horoscope",
+    "zodiac",
+]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Education",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Astronomy",
+    "Topic :: Scientific/Engineering :: Physics",
+    "Typing :: Typed",
+]
+dependencies = [
+    "skyfield>=1.54",  # 1.54: deflectors= arg, 30% faster risings/settings, NumPy array Time subtraction
+    "skyfield-data>=7.0.0",
+]
+
+[project.optional-dependencies]
+# High-precision IAU 2006 precession/obliquity for true lunar nodes
+precision = [
+    "pyerfa>=2.0.0",
+]
+# Automatic SPK kernel downloads from JPL Horizons
+spk = [
+    "astroquery>=0.4.0",
+]
+# Star catalog building (scripts/build_star_catalog.py)
+stars = [
+    "astroquery>=0.4.0",
+    "astropy>=5.0.0",
+]
+# N-body integration for asteroid orbit propagation
+nbody = [
+    "rebound>=4.0.0",
+    "assist>=1.1.0",
+]
+# All optional features
+all = [
+    "pyerfa>=2.0.0",
+    "astroquery>=0.4.0",
+    "rebound>=4.0.0",
+    "assist>=1.1.0",
+]
+dev = [
+    "black>=25.1.0",
+    "mypy>=1.0.0",
+    "poethepoet>=0.38.0",
+    "pre-commit>=4.0.0",
+    "pyswisseph>=2.10.3.2",
+    "pytest>=9.0.1",
+    "pytest-xdist>=3.5.0",
+    "ruff>=0.14.6",
+    "pytest-cov>=6.0.0",
+    "build>=1.0.0",
+    "twine>=5.0.0",
+    "pytest-sugar>=1.1.1",
+]
+docs = [
+    "sphinx>=7.0.0",
+    "sphinx-rtd-theme>=2.0.0",
+    "myst-parser>=2.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/g-battaglia/libephemeris"
+Documentation = "https://github.com/g-battaglia/libephemeris#readme"
+Repository = "https://github.com/g-battaglia/libephemeris"
+Issues = "https://github.com/g-battaglia/libephemeris/issues"
+Changelog = "https://github.com/g-battaglia/libephemeris/blob/main/CHANGELOG.md"
+
+
+
+[build-system]
+requires = ["setuptools>=77.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["libephemeris"]
+
+[tool.setuptools.package-data]
+libephemeris = ["py.typed", "seorbel.txt"]
+
+[tool.poe.tasks]
+format = "ruff format ."
+format-black = "black libephemeris tests"
+lint = "ruff check . --fix"
+test = "pytest"
+"test:progress" = "pytest --no-header -q"
+"test:fast" = "pytest -n auto"
+coverage = "pytest --cov=libephemeris --cov-report=term-missing --cov-report=xml --cov-report=html"
+typecheck = "mypy libephemeris"
+pre-commit-install = "pre-commit install"
+pre-commit-run = "pre-commit run --all-files"
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = false
+warn_unused_configs = true
+ignore_missing_imports = true
+
+[tool.ruff]
+exclude = ["compare_scripts"]
+
+[tool.black]
+line-length = 88
+target-version = ["py39"]
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  compare_scripts
+)/
+'''
+
+[tool.ruff.lint]
+# Ignore star imports (F403, F405) - the library uses star imports for constants
+# Ignore unused imports in __init__.py (F401) - re-exports for public API
+# Ignore module level imports not at top of file (E402) - intentional for __init__.py
+ignore = ["F403", "F405", "F401", "E402"]
+# Also ignore unused local variables (F841) for now - complex astronomical calculations
+extend-ignore = ["F841"]
+
+[tool.coverage.run]
+source = ["libephemeris"]
+branch = true
+parallel = true
+omit = [
+    "libephemeris/__pycache__/*",
+]
+
+[tool.coverage.paths]
+source = [
+    "libephemeris/",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]
+show_missing = true
+precision = 2
+
+[tool.coverage.xml]
+output = "coverage.xml"
+
+[tool.coverage.html]
+directory = "htmlcov"
+
