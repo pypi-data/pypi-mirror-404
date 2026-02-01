@@ -1,0 +1,661 @@
+Metadata-Version: 2.4
+Name: mediathek-py
+Version: 0.1.0
+Summary: Python API wrapper and CLI for MediathekViewWeb
+Project-URL: Repository, https://github.com/maxboettinger/mediathek-py
+Project-URL: Homepage, https://github.com/maxboettinger/mediathek-py
+Author-email: Max Böttinger <max@boettinger.io>
+License: MIT
+License-File: LICENSE
+Keywords: api-wrapper,ard,arte,cli,downloader,german-tv,mediathek,mediathekview,zdf
+Classifier: Development Status :: 4 - Beta
+Classifier: Environment :: Console
+Classifier: Intended Audience :: End Users/Desktop
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Internet :: WWW/HTTP
+Classifier: Topic :: Multimedia :: Video
+Classifier: Topic :: Utilities
+Requires-Python: >=3.12
+Requires-Dist: click
+Requires-Dist: httpx
+Requires-Dist: pydantic
+Requires-Dist: rich
+Description-Content-Type: text/markdown
+
+# mediathek-py
+
+[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
+
+A Python API wrapper and CLI for [MediathekViewWeb](https://mediathekviewweb.de/), the search interface for German public broadcasting media libraries (ARD, ZDF, Arte, 3Sat, SWR, BR, MDR, NDR, WDR, HR, RBB, ORF, SRF, and more).
+
+## Features
+
+- 🔍 **Powerful search** with prefix syntax for filtering by channel, topic, title, and description
+- 📺 **Download videos** in HD, medium, or low quality with progress bars
+- 📦 **Batch download** entire series seasons with automatic episode detection
+- 🐍 **Fluent Python API** with builder pattern for programmatic use
+- 💻 **Beautiful CLI** with Rich-formatted tables and panels
+- 📋 **Pydantic models** for type-safe request/response handling
+
+## Installation
+
+```bash
+# Install with uv (recommended)
+uv add mediathek-py
+
+# Or install with pip
+pip install mediathek-py
+```
+
+**Requirements:** Python 3.12+
+
+## Quick Start
+
+### CLI
+
+```bash
+# Search for content
+mediathek search "tagesschau"
+
+# Search with filters
+mediathek search "!ard #tagesschau"
+
+# Get detailed info about the first result
+mediathek info "tagesschau"
+
+# Download a video
+mediathek download "tagesschau" --quality hd -o video.mp4
+
+# Batch download an entire series
+mediathek batch "#Feuer & Flamme" --season 1 --quality hd -o ./downloads/
+```
+
+### Python Library
+
+```python
+from mediathek_py import Mediathek, QueryField, SortField, SortOrder
+
+with Mediathek() as m:
+    # Fluent builder API
+    result = (
+        m.search()
+        .query([QueryField.TOPIC, QueryField.TITLE], "tagesschau")
+        .duration_min(10)  # in minutes
+        .sort_by(SortField.TIMESTAMP)
+        .sort_order(SortOrder.DESCENDING)
+        .size(10)
+        .execute()
+    )
+
+    for item in result.results:
+        print(f"{item.channel}: {item.title}")
+```
+
+---
+
+## CLI Reference
+
+### Global Options
+
+| Option | Description |
+|--------|-------------|
+| `--version` | Show version and exit |
+| `--help` | Show help message and exit |
+
+---
+
+### `mediathek search`
+
+Search the MediathekViewWeb database.
+
+```bash
+mediathek search [OPTIONS] QUERY
+```
+
+#### Arguments
+
+| Argument | Description |
+|----------|-------------|
+| `QUERY` | Search query using [prefix syntax](#search-prefix-syntax) |
+
+#### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `--sort-by` | `channel`, `timestamp`, `duration` | – | Sort results by field |
+| `--sort-order` | `asc`, `desc` | – | Sort direction |
+| `--size` | Integer | `15` | Number of results to return |
+| `--offset` | Integer | `0` | Pagination offset |
+| `--future / --no-future` | Flag | `--no-future` | Include future broadcasts |
+| `--everywhere` | Flag | – | Search all fields for unprefixed terms |
+
+#### Examples
+
+```bash
+# Basic search
+mediathek search "tagesschau"
+
+# Filter by channel and topic
+mediathek search "!ard #tagesschau"
+
+# Search with sorting and pagination
+mediathek search "dokumentation" --sort-by timestamp --sort-order desc --size 20
+
+# Include future broadcasts
+mediathek search "live" --future
+
+# Search everywhere (all fields)
+mediathek search "klimawandel" --everywhere
+```
+
+---
+
+### `mediathek info`
+
+Display detailed information about the first search result.
+
+```bash
+mediathek info [OPTIONS] QUERY
+```
+
+#### Arguments
+
+| Argument | Description |
+|----------|-------------|
+| `QUERY` | Search query using [prefix syntax](#search-prefix-syntax) |
+
+#### Options
+
+| Option | Description |
+|--------|-------------|
+| `--everywhere` | Search all fields for unprefixed terms |
+
+#### Examples
+
+```bash
+# Get info about a specific show
+mediathek info "#tagesschau"
+
+# Get info from a specific channel
+mediathek info "!zdf #heute"
+```
+
+**Output includes:**
+- Channel, topic, and title
+- Duration and broadcast date
+- Description (if available)
+- Website URL
+- Video URLs (standard, HD, low quality)
+- Subtitle URL (if available)
+
+---
+
+### `mediathek download`
+
+Download a video from search results.
+
+```bash
+mediathek download [OPTIONS] QUERY
+```
+
+#### Arguments
+
+| Argument | Description |
+|----------|-------------|
+| `QUERY` | Search query using [prefix syntax](#search-prefix-syntax) |
+
+#### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `--quality` | `hd`, `medium`, `low` | `hd` | Video quality preference |
+| `-o, --output` | Path | Auto-generated | Output file path |
+| `--everywhere` | Flag | – | Search all fields for unprefixed terms |
+
+#### Quality Fallback
+
+If the preferred quality is not available, the downloader automatically falls back:
+- `hd` → `medium` → `low`
+- `medium` → `hd` → `low`
+- `low` → `medium` → `hd`
+
+#### Examples
+
+```bash
+# Download in HD quality
+mediathek download "#tagesschau" --quality hd
+
+# Download with custom filename
+mediathek download "!arte #dokumentation" -o doku.mp4
+
+# Download in low quality (smaller file)
+mediathek download "nachrichten" --quality low
+```
+
+---
+
+### `mediathek batch`
+
+Batch download all episodes of a series. Automatically detects season and episode numbers from title patterns (`(SXX/EXX)` and `Folge N`).
+
+```bash
+mediathek batch [OPTIONS] QUERY
+```
+
+#### Arguments
+
+| Argument | Description |
+|----------|-------------|
+| `QUERY` | Show topic to search for. Use `#topic` prefix or plain text |
+
+#### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `-s, --season` | Integer | – | Filter to a specific season number |
+| `--quality` | `hd`, `medium`, `low` | `hd` | Video quality preference |
+| `-o, --output` | Path | `.` | Output directory (episodes saved to `{output}/{topic}/`) |
+| `-y, --yes` | Flag | – | Skip confirmation prompt |
+
+#### Behavior
+
+1. Searches all results for the given topic, paginating automatically
+2. Parses season/episode info from titles (deduplicates, sorts by season then episode)
+3. Displays a preview table of found episodes
+4. Prompts for confirmation (unless `--yes`)
+5. Downloads sequentially into `{output}/{topic}/s01e01.mp4` format
+6. Skips files that already exist, continues past individual failures
+
+#### Examples
+
+```bash
+# Preview all episodes (will prompt before downloading)
+mediathek batch "#Feuer & Flamme"
+
+# Download only season 3 in HD
+mediathek batch "#Feuer & Flamme" --season 3
+
+# Download everything, skip confirmation
+mediathek batch "#Feuer & Flamme" --yes -o ./downloads/
+
+# Download in low quality to save space
+mediathek batch "Tatortreiniger" --quality low -o ./shows/
+```
+
+---
+
+## Search Prefix Syntax
+
+The search query supports a powerful prefix syntax for filtering:
+
+| Prefix | Field | Example | Description |
+|--------|-------|---------|-------------|
+| `!` | Channel | `!ard` | Filter by channel name |
+| `#` | Topic | `#tagesschau` | Filter by topic/show name |
+| `+` | Title | `+nachrichten` | Filter by title |
+| `*` | Description | `*klimawandel` | Filter by description |
+| `>` | Min duration | `>10` | Minimum duration in **minutes** |
+| `<` | Max duration | `<30` | Maximum duration in **minutes** |
+| (none) | Topic + Title | `tagesschau` | Search topic and title fields |
+
+### Syntax Rules
+
+1. **Multiple filters** can be combined in one query:
+   ```bash
+   mediathek search "!ard #tagesschau >10 <30"
+   ```
+
+2. **Commas in prefixed tokens** are replaced with spaces:
+   ```bash
+   mediathek search "#sturm,der,liebe"  # Searches for "sturm der liebe"
+   ```
+
+3. **Unprefixed terms** search topic and title by default. Use `--everywhere` to search all fields.
+
+4. **Duration values** are specified in **minutes** (converted to seconds for the API).
+
+### Examples
+
+```bash
+# ARD channel, tagesschau topic, 10-30 minutes
+mediathek search "!ard #tagesschau >10 <30"
+
+# ZDF documentaries about nature
+mediathek search "!zdf #dokumentation *natur"
+
+# Any content about climate, at least 15 minutes
+mediathek search "klimawandel >15" --everywhere
+
+# Arte films, sorted by most recent
+mediathek search "!arte #spielfilm" --sort-by timestamp --sort-order desc
+```
+
+---
+
+## Python Library API
+
+### Basic Usage
+
+```python
+from mediathek_py import Mediathek
+
+# Using context manager (recommended)
+with Mediathek() as m:
+    result = m.search_by_string("!ard #tagesschau")
+    for item in result.results:
+        print(f"{item.channel}: {item.title}")
+
+# Manual lifecycle management
+m = Mediathek()
+try:
+    result = m.search_by_string("tagesschau")
+finally:
+    m.close()
+```
+
+### Client Options
+
+```python
+from mediathek_py import Mediathek
+
+m = Mediathek(
+    user_agent="my-app/1.0",  # Custom User-Agent header
+    base_url="https://mediathekviewweb.de"  # API base URL
+)
+```
+
+### Fluent Builder API
+
+The `SearchBuilder` provides a chainable interface for constructing queries:
+
+```python
+from mediathek_py import Mediathek, QueryField, SortField, SortOrder
+
+with Mediathek() as m:
+    result = (
+        m.search()
+        .query([QueryField.TOPIC], "tagesschau")
+        .query([QueryField.CHANNEL], "ARD")  # Multiple queries (AND logic)
+        .duration_min(10)  # Minimum 10 minutes
+        .duration_max(60)  # Maximum 60 minutes
+        .include_future(False)  # Exclude future broadcasts
+        .sort_by(SortField.TIMESTAMP)
+        .sort_order(SortOrder.DESCENDING)
+        .size(20)  # Return 20 results
+        .offset(0)  # Start from first result
+        .execute()
+    )
+```
+
+### Search Builder Methods
+
+| Method | Parameters | Description |
+|--------|------------|-------------|
+| `query(fields, text)` | `fields`: list of `QueryField`, `text`: str | Add a query filter |
+| `duration_min(minutes)` | `minutes`: int | Set minimum duration in minutes |
+| `duration_max(minutes)` | `minutes`: int | Set maximum duration in minutes |
+| `include_future(value)` | `value`: bool | Include/exclude future broadcasts |
+| `sort_by(field)` | `field`: `SortField` | Set sort field |
+| `sort_order(order)` | `order`: `SortOrder` | Set sort direction |
+| `size(n)` | `n`: int | Number of results to return |
+| `offset(n)` | `n`: int | Pagination offset |
+| `execute()` | – | Execute the query and return results |
+
+### String-Based Search
+
+For quick searches using prefix syntax:
+
+```python
+from mediathek_py import Mediathek
+
+with Mediathek() as m:
+    # Simple string search
+    result = m.search_by_string("!ard #tagesschau >10 <60")
+    
+    # Search everywhere (all fields)
+    result = m.search_by_string("klimawandel", search_everywhere=True)
+    
+    # Get a builder for further customization
+    builder = m.build_from_string("!zdf #heute")
+    result = builder.size(5).sort_by(SortField.TIMESTAMP).execute()
+```
+
+### Downloading Videos
+
+```python
+from pathlib import Path
+from mediathek_py import Mediathek
+
+with Mediathek() as m:
+    result = m.search_by_string("#tagesschau")
+    item = result.results[0]
+    
+    # Basic download
+    m.download(item.url_video, Path("video.mp4"))
+    
+    # Download with progress callback
+    def on_progress(downloaded: int, total: int | None):
+        if total:
+            percent = (downloaded / total) * 100
+            print(f"Downloaded: {percent:.1f}%")
+    
+    m.download(
+        item.url_video_hd or item.url_video,
+        Path("video_hd.mp4"),
+        progress_callback=on_progress
+    )
+```
+
+### Series & Batch Operations
+
+Collect and process entire series programmatically:
+
+```python
+from mediathek_py import Mediathek, collect_series, parse_episode_info
+
+# Parse episode info from a title string
+info = parse_episode_info("Folge 6: Explosion bei Brand (S06/E06)")
+print(info.season, info.episode)  # 6, 6
+
+# Also handles "Folge N" format (defaults to season 1)
+info = parse_episode_info("Folge 3: Some Episode")
+print(info.season, info.episode)  # 1, 3
+
+# Collect all episodes for a topic (paginates automatically)
+with Mediathek() as m:
+    episodes = collect_series(m, "Feuer & Flamme")
+
+    for ep in episodes:
+        print(f"S{ep.info.season:02d}E{ep.info.episode:02d}: {ep.item.title}")
+        print(f"  File: {ep.filename()}")  # s06e06.mp4
+        print(f"  URL:  {ep.item.url_video_hd}")
+```
+
+`collect_series()` handles pagination, deduplication (by season/episode), filtering of unparseable titles, and returns episodes sorted by season then episode. Deduplication keeps the earliest-timestamp occurrence.
+
+---
+
+## Data Models
+
+### QueryResult
+
+Returned by search operations:
+
+```python
+class QueryResult:
+    query_info: QueryInfo  # Metadata about the query
+    results: list[Item]    # List of matching items
+```
+
+### QueryInfo
+
+Metadata about the search:
+
+```python
+class QueryInfo:
+    filmliste_timestamp: int   # Timestamp of the media list
+    result_count: int          # Number of results returned
+    total_results: int         # Total matching results
+    search_engine_time: float  # Query execution time
+```
+
+### Item
+
+A single media item:
+
+```python
+class Item:
+    channel: str              # Broadcasting channel (e.g., "ARD", "ZDF")
+    topic: str                # Show/topic name
+    title: str                # Episode/video title
+    description: str | None   # Description text
+    timestamp: int            # Broadcast timestamp (Unix)
+    duration: int | None      # Duration in seconds (None for livestreams)
+    size: int | None          # File size in bytes
+    url_website: str          # Website URL
+    url_video: str            # Standard quality video URL
+    url_video_hd: str | None  # HD video URL
+    url_video_low: str | None # Low quality video URL
+    url_subtitle: str | None  # Subtitle URL
+    filmliste_timestamp: int  # Media list timestamp
+    id: str                   # Unique item ID
+```
+
+### SeriesEpisode
+
+Returned by `collect_series()`:
+
+```python
+class SeriesEpisode:
+    item: Item          # The full media item from the API
+    info: EpisodeInfo   # Parsed season/episode numbers
+
+    def filename(self) -> str:  # Returns "s01e06.mp4" format
+        ...
+```
+
+### EpisodeInfo
+
+```python
+class EpisodeInfo:
+    season: int    # Season number (defaults to 1 for "Folge N" format)
+    episode: int   # Episode number
+```
+
+### Enums
+
+```python
+from mediathek_py import QueryField, SortField, SortOrder
+
+# Query fields for filtering
+QueryField.CHANNEL      # "channel"
+QueryField.TOPIC        # "topic"
+QueryField.TITLE        # "title"
+QueryField.DESCRIPTION  # "description"
+
+# Sort fields
+SortField.CHANNEL       # "channel"
+SortField.TIMESTAMP     # "timestamp"
+SortField.DURATION      # "duration"
+
+# Sort order
+SortOrder.ASCENDING     # "asc"
+SortOrder.DESCENDING    # "desc"
+```
+
+---
+
+## Error Handling
+
+The library provides a hierarchy of exceptions:
+
+```python
+from mediathek_py import MediathekError, ApiError, EmptyResponseError
+
+try:
+    with Mediathek() as m:
+        result = m.search_by_string("test")
+except ApiError as e:
+    # API returned an error response
+    print(f"API errors: {e.messages}")
+except EmptyResponseError:
+    # API returned no result and no error
+    print("Empty response from API")
+except MediathekError as e:
+    # Base exception for all library errors (including HTTP errors)
+    print(f"Error: {e}")
+```
+
+### Exception Types
+
+| Exception | Description |
+|-----------|-------------|
+| `MediathekError` | Base exception for all library errors |
+| `ApiError` | API returned an error response (has `.messages` list) |
+| `EmptyResponseError` | API returned neither result nor error |
+
+---
+
+## Development
+
+### Setup
+
+```bash
+# Clone the repository
+git clone https://github.com/maxboettinger/mediathek-py.git
+cd mediathek-py
+
+# Install with uv (installs editable + dev dependencies)
+uv sync
+```
+
+### Running Tests
+
+```bash
+# Run all tests
+uv run pytest
+
+# Run with verbose output
+uv run pytest -v
+
+# Run a specific test file
+uv run pytest tests/test_client.py
+
+# Run a specific test
+uv run pytest tests/test_client.py::TestSearchBuilder::test_sends_correct_request -v
+```
+
+### Project Structure
+
+```
+mediathek-py/
+├── src/mediathek_py/
+│   ├── __init__.py      # Public API exports
+│   ├── client.py        # Mediathek client and SearchBuilder
+│   ├── models.py        # Pydantic request/response models
+│   ├── exceptions.py    # Exception hierarchy
+│   ├── series.py        # Series episode parsing and collection
+│   └── cli.py           # Click CLI with Rich output
+├── tests/
+│   ├── conftest.py      # Test fixtures
+│   ├── test_client.py   # Client/builder tests
+│   ├── test_models.py   # Model validation tests
+│   ├── test_series.py   # Series parsing/collection tests
+│   └── test_cli.py      # CLI integration tests
+└── pyproject.toml       # Project configuration (uv/hatchling)
+```
+
+---
+
+## License
+
+MIT License - see [LICENSE](LICENSE) for details.
+
+## Acknowledgments
+
+- [MediathekViewWeb](https://mediathekviewweb.de/) for providing the search API
+- Built with [httpx](https://www.python-httpx.org/), [Pydantic](https://docs.pydantic.dev/), [Click](https://click.palletsprojects.com/), and [Rich](https://rich.readthedocs.io/)
