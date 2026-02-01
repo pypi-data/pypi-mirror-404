@@ -1,0 +1,300 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
+
+## [Unreleased]
+
+## [0.2.2b1] - 2026-01-28
+
+### Added
+- **Blob storage for atmosphere datasets**: Full support for storing dataset shards as ATProto blobs via PDS
+  - `DatasetPublisher.publish_with_blobs()` for uploading shards as blobs
+  - `DatasetLoader.get_blobs()` and `get_blob_urls()` for retrieval
+  - `AtmosphereClient.upload_blob()` and `get_blob()` wrappers
+- **HuggingFace-style API**: `load_dataset()` function with path resolution, split handling, and streaming support
+  - WebDataset brace notation, glob patterns, local directories, remote URLs
+  - `DatasetDict` class for multi-split datasets
+  - `@handle/dataset` path resolution via atmosphere index
+- **Protocol-based architecture**: Abstract protocols for backend interoperability
+  - `IndexEntry`, `AbstractIndex`, `AbstractDataStore` protocols
+  - Enables polymorphic code across local and atmosphere backends
+- **Local to atmosphere promotion**: `promote_to_atmosphere()` workflow with schema deduplication
+- **Quarto documentation site**: Tutorials, reference docs, and API reference at docs/
+- **Comprehensive integration test suite**: 593 tests covering E2E flows, error handling, edge cases
+
+### Changed
+- Investigate upload-artifact not finding benchmark output (#512)
+- Fix duplicate CI runs for push+PR overlap (#511)
+- Scope contents:write permission to benchmark job only (#510)
+- Add benchmark docs auto-commit to CI workflow (#509)
+- Submit PR for v0.3.0b1 release to upstream/main (#508)
+- Implement GH#39: Production hardening (observability, error handling, testing infra) (#504)
+- Add pluggable structured logging via atdata.configure_logging (#507)
+- Add PartialFailureError and shard-level error handling to Dataset.map (#506)
+- Add atdata.testing module with mock clients, fixtures, and helpers (#505)
+- Fix CI linting failures (20 ruff errors) (#503)
+- Adversarial review: Post-benchmark suite assessment (#494)
+- Remove redundant protocol docstrings that restate signatures (#500)
+- Add missing unit tests for _type_utils.py (#499)
+- Strengthen weak assertions (assert X is not None → value checks) (#498)
+- Trim verbose exception constructor docstrings (#501)
+- Analyze benchmark results for performance improvement opportunities (#502)
+- Consolidate remaining duplicate sample types in test files (#497)
+- Remove dead code: _repo_legacy.py legacy UUID field, unused imports (#496)
+- Trim verbose docstrings in dataset.py and _index.py (#495)
+- Benchmark report: replace mean/stddev with median/IQR, add per-sample columns (#492)
+- Add parameter descriptions to benchmark suite with automatic report introspection (#491)
+- HTML benchmark reports with CI integration (#487)
+- Add bench + render step to CI on highest Python version only (#490)
+- Update justfile bench commands to export JSON and render (#489)
+- Create render_report.py script to convert JSON to HTML (#488)
+- Increase test coverage for low-coverage modules (#480)
+- Add providers/_postgres.py tests (mock-based) (#485)
+- Add _stub_manager.py tests (#484)
+- Add manifest/_query.py tests (#483)
+- Add repository.py tests (#482)
+- Add CLI tests (cli/__init__, diagnose, local, preview, schema) (#481)
+- Check test coverage for CLI utils (#479)
+- Add performance benchmark suite for atdata (#471)
+- Verify benchmarks run (#478)
+- Update pyproject.toml and justfile (#477)
+- Create bench_atmosphere.py (#476)
+- Create bench_query.py (#475)
+- Create bench_dataset_io.py (#474)
+- Create bench_index_providers.py (#473)
+- Create benchmarks/conftest.py with shared fixtures (#472)
+- Add per-shard manifest and query system (GH #35) (#462)
+- Write unit and integration tests (#470)
+- Integrate manifest into write path and Dataset.query() (#469)
+- Implement QueryExecutor and SampleLocation (#468)
+- Implement ManifestWriter (JSON + parquet) (#467)
+- Implement ManifestBuilder (#465)
+- Implement ShardManifest data model (#466)
+- Implement aggregate collectors (categorical, numeric, set) (#464)
+- Implement ManifestField annotation and resolve_manifest_fields() (#463)
+- Migrate type annotations from PackableSample to Packable protocol (#461)
+- Remove LocalIndex factory — consolidate to Index (#460)
+- Split local.py monolith into local/ package (#452)
+- Verify tests and lint pass (#459)
+- Create __init__.py re-export facade and delete local.py (#458)
+- Create _repo_legacy.py with deprecated Repo class (#457)
+- Create _index.py with Index class and LocalIndex factory (#456)
+- Create _s3.py with S3DataStore and S3 helpers (#455)
+- Create _schema.py with schema models and helpers (#454)
+- Create _entry.py with LocalDatasetEntry and constants (#453)
+- Migrate CLI from argparse to typer (#449)
+- Investigate test failures (#450)
+- Fix ensure_stub receiving LocalSchemaRecord instead of dict (#451)
+- GH#38: Developer experience improvements (#437)
+- CLI: atdata preview command (#440)
+- CLI: atdata schema show/diff commands (#439)
+- CLI: atdata inspect command (#438)
+- Dataset.__len__ and Dataset.select() for sample count and indexed access (#447)
+- Dataset.to_pandas() and Dataset.to_dict() export methods (#446)
+- Dataset.filter() and Dataset.map() streaming transforms (#445)
+- Dataset.get(key) for keyed sample access (#442)
+- Dataset.describe() summary statistics (#444)
+- Dataset.schema property and column_names (#443)
+- Dataset.head(n) and Dataset.__iter__ convenience methods (#441)
+- Custom exception hierarchy with actionable error messages (#448)
+- Adversarial review: Post-Repository consolidation assessment (#430)
+- Remove backwards-compat dict-access methods from SchemaField and LocalSchemaRecord (#436)
+- Add missing test coverage for Repository prefix routing edge cases and error paths (#435)
+- Trim over-verbose docstrings in local.py module/class level (#434)
+- Fix formally incorrect test assertions (batch_size, CID, brace notation) (#433)
+- Consolidate duplicate test sample types across test files into conftest.py (#432)
+- Consolidate duplicate entry-creation logic in Index (add_entry vs _insert_dataset_to_provider) (#431)
+- Switch default Index provider from Redis to SQLite (#429)
+- Consolidated Index with Repository system (#424)
+- Phase 4: Deprecate AtmosphereIndex, update exports (#428)
+- Phase 3: Default Index singleton and load_dataset integration (#427)
+- Phase 2: Extend Index with repos/atmosphere params and prefix routing (#426)
+- Phase 1: Create Repository dataclass and _AtmosphereBackend in repository.py (#425)
+- Adversarial review: Post-IndexProvider pluggable storage assessment (#417)
+- Convert TODO comments to tracked issues or remove (#422)
+- Remove deprecated shard_list property references from docstrings (#421)
+- Replace bare except in _stub_manager.py and cli/local.py with specific exceptions (#423)
+- Tighten generic pytest.raises(Exception) to specific exception types in tests (#420)
+- Replace assert statements with ValueError in production code (#419)
+- Consolidate duplicated _parse_semver into _type_utils.py (#418)
+- feat: Add SQLite/PostgreSQL index providers (GH #42) (#409)
+- Update documentation and public API exports (#416)
+- Add tests for all providers (#415)
+- Refactor Index class to accept provider parameter (#414)
+- Implement PostgresIndexProvider (#413)
+- Implement SqliteIndexProvider (#412)
+- Implement RedisIndexProvider (extract from Index class) (#411)
+- Define IndexProvider protocol in _protocols.py (#410)
+- Add just lint command to justfile (#408)
+- Add SQLite/PostgreSQL providers for LocalIndex (in addition to Redis) (#407)
+- Fix type hints for @atdata.packable decorator to show PackableSample methods (#406)
+- Review GitHub workflows and recommend CI improvements (#405)
+- Fix type signatures for Dataset.ordered and Dataset.shuffled (GH#28) (#404)
+- Investigate quartodoc Example section rendering - missing CSS classes on pre/code tags (#401)
+- Update all docstrings from Example: to Examples: format (#403)
+- Create GitHub issues for v0.3 roadmap feature domains (#402)
+- Expand Quarto documentation with architectural narrative (#395)
+- Expand atmosphere tutorial with federation context (#400)
+- Expand local-workflow tutorial with system narrative (#399)
+- Expand quickstart tutorial with design context (#398)
+- Expand index.qmd with architecture narrative (#397)
+- Add architecture overview page (reference/architecture.qmd) (#396)
+- Adversarial review: Post-PDSBlobStore comprehensive assessment (#389)
+- Remove deprecated shard_list property warnings if unused (#394)
+- Add test for Dataset iteration over empty tar file (#393)
+- Consolidate duplicate sample types in live atmosphere tests (#392)
+- Convert TODO comment in dataset.py to design note or remove (#391)
+- Remove redundant no-op statements in _stub_manager.py (#390)
+- Update atmosphere example with blob storage case (#216)
+- Implement PDSBlobStore for atmosphere data storage (#244)
+- Update docs and examples to include PDSBlobStore (#384)
+- Add API docs for PDSBlobStore and BlobSource (#388)
+- Update atmosphere_demo.py example (#387)
+- Update atmosphere reference docs (#386)
+- Update atmosphere tutorial with PDSBlobStore (#385)
+- Implement PDSBlobStore for ATProto blob storage (#380)
+- Add tests for PDSBlobStore and BlobSource (#383)
+- Add BlobSource for reading PDS blobs as DataSource (#382)
+- Create PDSBlobStore class in atmosphere module (#381)
+- Investigate Redis index entry expiration/reset issue (#376)
+- Audit codebase for xs/@property vs list_xs() convention (#377)
+- Evaluate PackableSample → Packable protocol migration (#375)
+- Fix load_dataset overload type hints for AbstractIndex (#379)
+- Fix load_dataset to use source-appropriate credentials (#378)
+- Review and plan human-review.md feedback items (#374)
+- Create v0.3 roadmap synthesis document (#373)
+- Document justfile in CLAUDE.md (#372)
+- Make docs script work from any directory (#371)
+- Add uv script shortcut 'docs' for documentation build (#370)
+- Update docstrings in local.py (#367)
+- Update docstrings in _protocols.py (#366)
+- Update docstrings in lens.py (#365)
+- Update docstrings in dataset.py (#364)
+- Review and address human-review.md feedback (#344)
+- Fix load_dataset overloads and AbstractIndex compatibility (#348)
+- Connect load_dataset to index data_store for S3 credentials (#361)
+- Fix load_dataset overload return types for DictSample (#360)
+- Add data_store to AbstractIndex protocol (#359)
+- Audit and fix xs/list_xs naming convention (#347)
+- Fix AtmosphereIndex: list_datasets/list_schemas return types (#357)
+- Refactor DataSource/Dataset: shards()/shard_list -> shards/list_shards() (#356)
+- Refactor local.py: entries/all_entries -> entries/list_entries (#355)
+- Update AbstractIndex protocol to match new naming convention (#358)
+- Investigate Redis index entry removal issue (#346)
+- Implement 'atdata diagnose' command for Redis health check (#354)
+- Implement 'atdata local up' command to run Redis + MinIO (#353)
+- Create atdata.cli module with entry point (#352)
+- Evaluate PackableSample → Packable protocol migration (#345)
+- Update publish_schema and other signatures to use Packable protocol (#351)
+- Update @packable decorator return type annotation (#350)
+- Define Packable protocol in _protocols.py (#349)
+- Review and update README for v0.2.2 release (#343)
+- Streamline Dataset API with DictSample default type (#338)
+- Add tests for DictSample and new API (#342)
+- Update load_dataset default type to DictSample (#341)
+- Update @packable to auto-register DictSample lens (#340)
+- Implement DictSample class with __getattr__ and __getitem__ (#339)
+- Fix failing tests in test_integration_error_handling.py (#337)
+- v0.2.2 beta release improvements (#326)
+- Document to_parquet() memory usage (#336)
+- Evaluate splitting local.py into modules (#335)
+- Add error path tests (timeouts, partial failures) (#334)
+- Add deployment guide to docs (#333)
+- Add troubleshooting/FAQ section to docs (#332)
+- Document __orig_class__ assumption in Dataset docstring (#331)
+- Centralize tar creation helper in test fixtures (#330)
+- Consolidate duplicate test sample types to conftest.py (#329)
+- Document expected filterwarnings in test suite (#328)
+- Complete truncated atmosphere.qmd documentation (#327)
+- Comprehensive v0.2.2 beta release review (#321)
+- Compile findings into .review/comprehensive-review.md (#325)
+- Review documentation website and examples (#324)
+- Review test suite coverage and quality (#323)
+- Review core codebase architecture and code quality (#322)
+- Human Review: Local Workflow API Improvements (#274)
+- Update documentation and examples for current codebase (#316)
+- Update README.md with current API (#320)
+- Update examples/*.py files for current API (#319)
+- Update reference/protocols.qmd with DataSource protocol (#318)
+- Update reference/datasets.qmd for DataSource API (#317)
+- Adversarial review: Post-DataSource refactor assessment (#307)
+- Clean up unused TypeAlias definitions in dataset.py (#315)
+- Remove verbose docstrings that restate function signatures (#314)
+- Consolidate schema reference parsing logic in local.py (#313)
+- Add error tests for corrupted msgpack data in Dataset.wrap() (#312)
+- Remove or implement skipped test_repo_insert_round_trip (#311)
+- Fix bare exception handlers in _stub_manager.py and _cid.py (#310)
+- Replace assertion with ValueError in lens.py input validation (#309)
+- Replace assertions with ValueError in dataset.py msgpack validation (#308)
+- Refactor Dataset to use DataSource abstraction (#299)
+- Research WebDataset streaming alternatives beyond HTTP/S URLs (#298)
+- Write tests for DataSource implementations (#306)
+- Update load_dataset to use DataSource (#305)
+- Update S3DataStore to create S3Source instances (#304)
+- Refactor Dataset to accept DataSource | str (#303)
+- Implement S3Source with boto3 streaming (#302)
+- Implement URLSource in new _sources.py module (#301)
+- Add DataSource protocol to _protocols.py (#300)
+- Fix S3 mock fixture regionname typo in tests (#297)
+- Human review feedback: API improvements from human-review-01 (#290)
+- AbstractIndex: Protocol vs subclass causing linting errors (#296)
+- load_dataset linting: no matching overloads error (#295)
+- @atdata.lens linting: LocalTextSample not recognized as PackableSample subclass (#291)
+- LocalDatasetEntry: underscore-prefixed attributes should be public (#294)
+- Default batch_size should be None for Dataset.ordered/shuffled (#292)
+- Improve SchemaNamespace typing for IDE support (#289)
+- Schema namespace API: index.load_schema() + index.schemas.MyType (#288)
+- Auto-typed get_schema/decode_schema return type (#287)
+- Improve decode_schema typing for IDE support (#286)
+- Fix stub filename collisions with authority-based namespacing (#285)
+- Auto-generate stubs on schema access (#281)
+- Add tests for auto-stub functionality (#284)
+- Integrate auto-stub into Index class (#283)
+- Add StubManager class for stub file management (#282)
+- Improve decoded_type dynamic typing/signatures (#279)
+- Document atdata URI specification (#280)
+- Create proper SampleSchema Python type (#278)
+- Fix @atdata.packable decorator class identity (#275)
+- Fix @atdata.packable decorator class identity (#275)
+- Fix @atdata.packable decorator class identity (#275)
+- Improve index.publish_schema API (#276)
+- Improve list_schemas API semantics (#277)
+- Fix @atdata.packable decorator class identity (#275)
+- **Architecture refactor**: `LocalIndex` + `S3DataStore` composable pattern
+  - `LocalIndex` now accepts optional `data_store` parameter
+  - `S3DataStore` implements `AbstractDataStore` for S3 operations
+- **Deprecated `Repo` class**: Use `LocalIndex(data_store=S3DataStore(...))` instead
+  - `Repo` remains as thin backwards-compatibility wrapper with deprecation warning
+- Renamed `BasicIndexEntry` to `LocalDatasetEntry` with CID-based identity
+- Added ATProto-compatible CID generation via libipld
+- Performance improvements: cached `sample_type` property, precompiled regex patterns
+
+### Fixed
+- Dark theme styling for callouts and code blocks in Quarto docs
+- Browser chrome color updates on dark/light mode toggle
+
+## [0.2.0] - 2026-01-06
+
+### Added
+- Initial atmosphere module with ATProto integration
+- Schema, dataset, and lens publishing to ATProto PDS
+- `AtmosphereClient` for ATProto authentication and record management
+- `AtmosphereIndex` for querying published datasets and schemas
+- Dynamic sample type reconstruction from published schemas
+
+### Changed
+- Improved type hint coverage throughout codebase
+- Enhanced error messages for common failure modes
+
+## [0.1.0] - 2025-12-15
+
+### Added
+- Core `PackableSample` and `@packable` decorator for typed samples
+- `Dataset[ST]` generic typed dataset with WebDataset backend
+- `SampleBatch[DT]` with automatic attribute aggregation
+- `Lens[S, V]` bidirectional transformations
+- Local storage with Redis index and S3 data store
+- WebDataset tar file reading and writing
+- NumPy array serialization via msgpack
