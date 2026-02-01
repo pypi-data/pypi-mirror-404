@@ -1,0 +1,160 @@
+Metadata-Version: 2.4
+Name: augent
+Version: 0.6.2
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: GNU Affero General Public License v3
+Classifier: Programming Language :: Rust
+Classifier: Operating System :: OS Independent
+Classifier: Topic :: Software Development :: Build Tools
+Classifier: Topic :: System :: Archiving :: Packaging
+License-File: LICENSE
+Summary: Lean package manager for various AI coding platforms
+Keywords: ai,agents,package-manager
+Author: Anssi Syrjäsalo
+License: AGPL-3.0
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown; charset=UTF-8; variant=GFM
+Project-URL: Documentation, https://docs.rs/augent
+Project-URL: Homepage, https://crates.io/crates/augent
+Project-URL: Repository, https://github.com/asyrjasalo/augent
+
+# Augent
+
+Augments AI coding platforms (such as Claude Code, OpenCode, Cursor) via bundles (of skills, commands, rules, MCP servers...) in a platform-independent, reproducible, and intuitive manner:
+
+- It frees you from the burden of managing AI coding platform specific formats.
+- It ensures reproducibility across the teams by locking bundle versions.
+- You get and share bundles via public or private Git repositories. That's it.
+
+## Setup
+
+You can install it from [PyPI](https://pypi.org/project/augent/) (recommended):
+
+    pip install --user augent
+
+Or you can install it from [npm](https://www.npmjs.com/package/augent):
+
+    npm install -g augent
+
+If you have neither Python nor Node.js available, you can download a
+[GitHub Release](https://github.com/asyrjasalo/augent/releases) for your system
+and put the binary in your PATH.
+
+## Quick Start
+
+To install a set of resources (bundles) for your AI coding platforms:
+
+    # Install bundle(s) from a public GitHub repository (select if many):
+    augent install @wshobson/agents
+
+    # List all installed bundles
+    augent list
+
+    # Show installation details
+    augent show @wshobson/agents
+
+    # Uninstall bundle (all under this prefix, select if many):
+    augent uninstall @wshobson/agents
+
+## Usage
+
+Augent stores AI coding platform resources in universal format in **bundles**.
+
+- **Bundle**: A path in a Git repository, optionally referencing other bundles
+- **Workspace**: Your project's Git repository where you and your team work
+- **Resources**: Universal resources transformed and installed for specific AI coding platforms
+
+When you install a bundle from a remote Git repository, Augent:
+
+1. Fetches the bundle(s) and adds it to `.augent/augent.yaml` in your workspace
+2. Resolves and locks the Git ref on first install (by creating a lockfile)
+3. By default, your AI coding platforms are auto-detected in the workspace.
+4. Transforms the bundle's resources to match your AI coding platform's format
+5. Installs resources to the platforms (and creates an index of what came where)
+
+To ensure a coherent Augent setup across your team, store all three
+created files in `.augent/` (yaml, index, and lock) in your Git repository.
+
+### Install Bundles
+
+Install from local directory within workspace:
+
+    augent install ./local-bundle
+
+Install only for specific platforms (otherwise installs to all detected):
+
+    augent install ./local-bundle --for cursor opencode
+
+Install from GitHub repository, `develop` branch, subdirectory `plugins/which`:
+
+    augent install github:author/repo#develop:plugins/which
+
+Install by using GitHub Web UI URL directly:
+
+    augent install https://github.com/author/bundle/tree/develop/plugins/which
+
+Install from a Git repository over SSH:
+
+    augent install git@yourcompany.com:author/bundled
+
+The install command understands different repo formats, such as Claude Marketplace plugins.
+
+If repository has many bundles (or Claude Marketplace plugins),
+you can select those from the menu (or pass `--all-bundles`).
+
+Most commands will display an interactive menu if used without arguments.
+
+### Workspace Scope
+
+All commands operate in your current workspace
+(you can pass `-w, --workspace <PATH>` to use different workspace).
+
+Resolves remote bundles to the latest versions (and updates the lockfile):
+
+    augent install --update
+
+List all installed bundles:
+
+    augent list
+
+Show where bundle's resources are enabled:
+
+    augent show @author/repository/bundle
+
+Uninstall the bundle and remove its resources:
+
+    augent uninstall @author/repository/bundle
+
+Resources that came from the bundle are removed, unless you modified them first.
+
+It also uninstalls the bundle's dependencies, unless used by other bundles.
+
+## Bundle Format
+
+A bundle contains resources in platform-independent format, e.g.:
+
+    my-bundle/
+    ├── augent.yaml          # Bundle metadata and dependencies (optional)
+    ├── commands/            # Universal files for AI coding platforms
+    │   └── debug.md
+    ├── skills/
+    │   └── web-browser.md
+    ├── AGENTS.md
+    └── mcp.jsonc
+
+## Documentation
+
+- [Commands Reference](docs/commands.md) - Detailed command documentation
+- [Bundle Format](docs/bundles.md) - Bundle structure and configuration
+- [Platform Support](docs/platforms.md) - Known platforms and adding new ones
+- [Workspace Configuration](docs/workspace.md) - Workspace setup and management
+
+## License
+
+AGPL v3 - see [LICENSE](LICENSE) for details.
+
+## Acknowledgments
+
+Platform conversion approach inspired by [OpenPackage](https://github.com/enulus/OpenPackage) and [rulesync](https://github.com/dyoshikawa/rulesync).
+
