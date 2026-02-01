@@ -1,0 +1,2 @@
+"use strict";(self.webpackChunkgitoon_frontend=self.webpackChunkgitoon_frontend||[]).push([["58975"],{46306:function(e,n,t){t.r(n);var o=t(9081);"undefined"==typeof Intl&&("undefined"!=typeof window?Object.defineProperty(window,"Intl",{value:{}}):"undefined"!=typeof global&&Object.defineProperty(global,"Intl",{value:{}})),Object.defineProperty(Intl,"getCanonicalLocales",{value:o.os,writable:!0,enumerable:!1,configurable:!0})}}]);
+//# sourceMappingURL=58975.8422ab3e04b79f83.js.map
