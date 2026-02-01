@@ -1,0 +1,121 @@
+# Sage
+
+**Memory for Claude Code.** Research → checkpoint → compaction → auto-restore.
+
+```
+┌─────────────┐    ┌─────────────┐    ┌─────────────┐
+│  Research   │───▶│ Checkpoint  │───▶│  Compaction │
+│  with Claude│    │  (auto)     │    │  happens    │
+└─────────────┘    └─────────────┘    └──────┬──────┘
+                                             │
+┌─────────────┐    ┌─────────────┐           │
+│  Continue   │◀───│ Auto-inject │◀──────────┘
+│  seamlessly │    │  context    │
+└─────────────┘    └─────────────┘
+```
+
+## Quick Start
+
+```bash
+# 1. Install
+pip install claude-sage[mcp]
+
+# 2. Setup (adds MCP server + installs methodology skills)
+sage mcp install
+sage skills install
+
+# 3. Use Claude - Sage handles the rest
+claude
+```
+
+That's it. Claude now has memory across sessions.
+
+## How It Works
+
+**The problem:** You're 2 hours into research. Context fills up, auto-compacts, nuanced findings gone. Tomorrow you start from scratch.
+
+**The solution:** Sage checkpoints at meaningful moments—not when tokens run out, but when something worth remembering happens:
+
+| Trigger | Example |
+|---------|---------|
+| Synthesis | "Therefore, the answer is..." |
+| Branch point | "We could either X or Y..." |
+| Constraint | "This won't work because..." |
+| Topic shift | Conversation changes direction |
+| Manual | You say "checkpoint this" |
+
+Each checkpoint captures your **thesis**, **confidence**, **open questions**, **sources**, and **tensions** (where experts disagree).
+
+## What Gets Saved
+
+```markdown
+# Where do stablecoins win vs traditional rails?
+
+## Thesis (75% confidence)
+Integrate, don't replace. Stablecoins win middle-mile,
+not POS checkout.
+
+## Open Questions
+- Timeline for Stripe's full stack?
+
+## Tensions
+- sheel_mohnot vs sam_broner: merchant profitability — unresolved
+```
+
+Checkpoints are Markdown files (Obsidian-compatible) in `~/.sage/checkpoints/` or `.sage/checkpoints/` (project-local).
+
+## The Three Layers
+
+```
+┌────────────────────────────────────────────────┐
+│  Skills (methodology)                          │
+│  sage-memory, sage-research, sage-session      │
+│  Load on-demand when context matches           │
+├────────────────────────────────────────────────┤
+│  MCP Server (tools)                            │
+│  sage_save_checkpoint, sage_recall_knowledge   │
+│  Always available to Claude                    │
+├────────────────────────────────────────────────┤
+│  Storage                                       │
+│  ~/.sage/checkpoints/, ~/.sage/knowledge/      │
+│  Markdown + YAML frontmatter                   │
+└────────────────────────────────────────────────┘
+```
+
+- **Skills** teach Claude *when* and *how* to checkpoint
+- **MCP** gives Claude the *tools* to save/load
+- **Storage** persists everything as readable Markdown
+
+## CLI Basics
+
+```bash
+sage checkpoint list          # See your checkpoints
+sage checkpoint show <id>     # View one
+sage knowledge list           # See stored knowledge
+sage knowledge match "query"  # Test what would recall
+sage skills list              # Check installed skills
+sage watcher start            # Auto-detect compaction
+```
+
+## Learn More
+
+- **[Features](docs/FEATURES.md)** — Complete feature reference
+- **[Architecture](docs/ARCHITECTURE.md)** — System design
+- **[Skills](docs/skills.md)** — How methodology skills work
+- **[Continuity](docs/continuity.md)** — Session persistence deep-dive
+
+## Requirements
+
+- Python 3.11+
+- [Claude Code](https://claude.ai/code) CLI
+
+## Development
+
+```bash
+pip install -e ".[dev,mcp]"
+pytest tests/ -v  # 931 tests
+```
+
+## License
+
+MIT
