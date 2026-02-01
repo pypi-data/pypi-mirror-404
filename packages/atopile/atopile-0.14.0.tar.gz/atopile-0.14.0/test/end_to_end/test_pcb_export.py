@@ -1,0 +1,158 @@
+from dataclasses import dataclass
+from pathlib import Path
+
+from faebryk.libs.kicad.fileformats import Property, kicad
+from test.end_to_end.conftest import dump_and_run
+
+
+@dataclass
+class PcbSummary:
+    num_layers: int
+    nets: list[str]
+    footprints: list[str]
+
+    @classmethod
+    def from_pcb(cls, pcb: kicad.pcb.PcbFile):
+        return cls(
+            num_layers=len(pcb.kicad_pcb.layers),
+            nets=sorted(
+                [net.name for net in pcb.kicad_pcb.nets if net.name is not None]
+            ),
+            footprints=sorted(
+                [
+                    Property.get_property(footprint.propertys, "Reference")
+                    for footprint in pcb.kicad_pcb.footprints
+                ],
+            ),
+        )
+
+    def add_net(self, net: str) -> "PcbSummary":
+        return PcbSummary(
+            num_layers=self.num_layers,
+            nets=sorted(self.nets + [net]),
+            footprints=self.footprints,
+        )
+
+    def add_footprint(self, footprint: str) -> "PcbSummary":
+        return PcbSummary(
+            num_layers=self.num_layers,
+            nets=self.nets,
+            footprints=sorted(self.footprints + [footprint]),
+        )
+
+
+def summarize_pcb_file(pcb_file: Path) -> PcbSummary:
+    pcb = kicad.loads(kicad.pcb.PcbFile, pcb_file.read_text(encoding="utf-8"))
+    return PcbSummary.from_pcb(pcb)
+
+
+SIMPLE_APP = """
+import Resistor
+module App:
+    a = new Resistor
+"""
+
+SIMPLE_APP_PCB_SUMMARY = PcbSummary(
+    num_layers=29,
+    nets=["unnamed[0]", "unnamed[1]"],
+    footprints=["R1"],
+)
+
+
+def test_empty_design(tmpdir: Path):
+    pcb_file = tmpdir / Path("layout/app/app.kicad_pcb")
+    assert not pcb_file.exists()
+
+    app = """
+    module App:
+        signal a
+    """
+
+    stdout, stderr, p = dump_and_run(app, [], working_dir=tmpdir)
+
+    assert p.returncode == 0
+    assert pcb_file.exists()
+    assert "Creating new layout" in stderr
+
+    assert summarize_pcb_file(pcb_file) == PcbSummary(
+        num_layers=29, nets=[], footprints=[]
+    )
+
+
+def test_pcb_file_created(tmpdir: Path):
+    pcb_file = tmpdir / Path("layout/app/app.kicad_pcb")
+    assert not pcb_file.exists()
+
+    stdout, stderr, p = dump_and_run(SIMPLE_APP, [], working_dir=tmpdir)
+
+    assert p.returncode == 0
+    assert pcb_file.exists()
+    assert "Creating new layout" in stderr
+
+    assert SIMPLE_APP_PCB_SUMMARY == summarize_pcb_file(pcb_file)
+
+
+def test_pcb_file_addition(tmpdir: Path):
+    pcb_file = tmpdir / Path("layout/app/app.kicad_pcb")
+    assert not pcb_file.exists()
+
+    stdout, stderr, p = dump_and_run(SIMPLE_APP, [], working_dir=tmpdir)
+    assert p.returncode == 0
+    assert pcb_file.exists()
+    assert "Creating new layout" in stderr
+    assert SIMPLE_APP_PCB_SUMMARY == summarize_pcb_file(pcb_file)
+
+    stdout, stderr, p = dump_and_run(
+        f"{SIMPLE_APP}\n    b = new Resistor",
+        [],
+        working_dir=tmpdir,
+    )
+    assert p.returncode == 0
+    assert "Creating new layout" not in stderr
+    # When two resistors exist, net names get prefixed to disambiguate conflicts
+    # Format: <owner>.-<base_name>
+    expected = PcbSummary(
+        num_layers=SIMPLE_APP_PCB_SUMMARY.num_layers,
+        nets=sorted(
+            [
+                "unnamed[0]",
+                "unnamed[1]",
+                "b-unnamed[0]",
+                "b-unnamed[1]",
+            ]
+        ),
+        footprints=["R1", "R2"],
+    )
+    assert expected == summarize_pcb_file(pcb_file)
+
+
+def test_pcb_file_removal(tmpdir: Path):
+    pcb_file = tmpdir / Path("layout/app/app.kicad_pcb")
+    assert not pcb_file.exists()
+
+    stdout, stderr, p = dump_and_run(
+        f"{SIMPLE_APP}\n    b = new Resistor",
+        [],
+        working_dir=tmpdir,
+    )
+    assert p.returncode == 0
+    assert "Creating new layout" in stderr
+    # When two resistors exist, net names get prefixed to disambiguate conflicts
+    expected_with_two = PcbSummary(
+        num_layers=SIMPLE_APP_PCB_SUMMARY.num_layers,
+        nets=sorted(
+            [
+                "unnamed[0]",
+                "unnamed[1]",
+                "b-unnamed[0]",
+                "b-unnamed[1]",
+            ]
+        ),
+        footprints=["R1", "R2"],
+    )
+    assert expected_with_two == summarize_pcb_file(pcb_file)
+
+    stdout, stderr, p = dump_and_run(SIMPLE_APP, [], working_dir=tmpdir)
+    assert p.returncode == 0
+    assert "Creating new layout" not in stderr
+    assert SIMPLE_APP_PCB_SUMMARY == summarize_pcb_file(pcb_file)
