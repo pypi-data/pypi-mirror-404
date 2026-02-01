@@ -1,0 +1,91 @@
+start: expand? (_NL* stage_declaration)* _NL*
+
+?declaration: variable
+    | list
+    | costume
+    | sound
+    | procedure
+    | warp_procedure
+    | event
+    | config
+    | monitor
+    | comment
+
+?stage_declaration: declaration
+    | sprite
+    | message
+
+sprite: "sprite" NAME _NL* "{" _NL* ((declaration _NL+)* declaration _NL*)? "}"
+
+expand: "expand" PATH
+
+variable: "var" NAME ["=" value]
+
+list: "list" NAME ("=" "[" _NL* ((value "," _NL*)* value)? _NL*"]")?
+
+message: "message" NAME
+
+costume: "costume" NAME "=" PATH ("{" _NL* (monitor_option _NL+)* monitor_option _NL* "}")?
+
+sound: "sound" NAME "=" PATH
+
+config_option: NAME "=" config_value
+
+config: "default" (config_option | "{" _NL* ((config_option _NL+)* config_option)? _NL* "}")
+
+?monitor: "monitor" NAME ["(" [option | identifier] ")"] _NL* "{" _NL* ((monitor_option _NL+)* monitor_option)? _NL* "}"
+
+monitor_option: NAME "=" config_value
+
+?argument: NAME "?" -> bool_argument
+    | NAME -> string_argument
+
+procedure: "proc" NAME ("(" ((argument ",")* argument)? ")")? position chain
+
+warp_procedure: "proc"? "warp" NAME ("(" ((argument ",")* argument)? ")")? position chain
+
+event: "on"? hat_block position chain
+
+position: ("[" INT "," INT "]")?
+
+comment: ":" STRING ("{" _NL* ((monitor_option _NL+)* monitor_option)? _NL* "}")?
+
+?expression: reporter_block 
+    | value 
+    | identifier
+    | option 
+    | chain
+
+chain: "{" _NL* ((statement_block _NL+)* statement_block)? _NL* "}"
+
+reporter_block: NAME "(" _NL* ((expression "," _NL*)* expression)? _NL* ")" [comment]
+
+statement_block: NAME "(" _NL* ((expression "," _NL*)* expression)? _NL* ")" [comment]
+
+hat_block: NAME ( "(" _NL* ((expression "," _NL*)* expression)? _NL* ")" )? [comment]
+
+identifier: NAME
+
+option: "$" NAME
+
+?value: INT -> int
+    | FLOAT -> float
+    | STRING -> string
+    | /#[0-9a-f]{6}/ -> color
+
+?config_value: value
+    | "true" -> true
+    | "false" -> false
+
+PATH: STRING
+
+_NL: NEWLINE
+
+%import common.SIGNED_INT -> INT
+%import common.SIGNED_FLOAT -> FLOAT
+%import common.ESCAPED_STRING -> STRING
+%import common.NEWLINE
+%import common.CNAME -> NAME
+%import common.WS_INLINE
+
+%ignore WS_INLINE
