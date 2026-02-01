@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+
+{% block content %}
+<!-- Flex container to manage layout -->
+<div class="flex-container" style="display: flex; flex-direction: column;">
+    <h1>AlphaSix Directory</h1>
+    <!-- Scrollable table with dynamic height -->
+    <div class="scrollable-list" style="flex-grow: 1; overflow-y: auto;">
+        <table class="table-analytics">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Email</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for user in users %}
+                    <tr>
+                        <td><a href="#" onclick="showUserInfo('{{ user.id }}')">{{ user.displayName }}</a></td>
+                        <td>{{ user.mail }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Bootstrap Modal for displaying user information -->
+<div class="modal fade" id="userModal" tabindex="-1" role="dialog" aria-labelledby="userModalLabel" aria-hidden="true">
+    <div class="modal-dialog wide-modal" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="userModalLabel">User Information</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">×</span>
+                </button>
+            </div>
+            <div class="modal-body" id="userInfo">
+                <!-- User info will be dynamically inserted here -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- JavaScript to set height and handle user info display -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var navbar = document.querySelector('.navbar');
+    var flexContainer = document.querySelector('.flex-container');
+    if (navbar && flexContainer) {
+        var navbarHeight = navbar.offsetHeight;
+        // Set height to window height minus navbar height and 50px
+        flexContainer.style.height = `calc(100vh - ${navbarHeight + 50}px)`;
+    }
+});
+
+// Pass user data from Jinja2 to JavaScript
+var users = {{ users | tojson }};
+
+function showUserInfo(userId) {
+    var user = users.find(u => u.id === userId);
+    if (user) {
+        var userInfoHtml = '<div class="table-analytics">';
+        for (var key in user) {
+            if (user.hasOwnProperty(key)) {
+                userInfoHtml += '<p><strong>' + key + ':</strong> ' + user[key] + '</p>';
+            }
+        }
+        userInfoHtml += '</div>';
+        document.getElementById('userInfo').innerHTML = userInfoHtml;
+        $('#userModal').modal('show');
+    }
+}
+</script>
+{% endblock %}
