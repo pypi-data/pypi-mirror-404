@@ -1,0 +1,283 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [0.20.2] - 2026-02-01
+
+### 🚀 Features
+
+- Improve upload speed for larger file using rsync
+
+### 🐛 Bug Fixes
+
+- Reload caddy on timenout to avoid cli hanging
+
+### Deps
+
+- Upgrade dependencies
+
+## [0.20.1] - 2026-01-31
+
+### 🚀 Features
+
+- Delete broken bundle after rollback
+
+## [0.20.0] - 2026-01-31
+
+### 🚀 Features
+
+- Improve installer debug output
+- Improve rollback prompt
+- Append git hash to deployed version
+- Auto rollback on app restart failure
+- Added git based versionning as the default
+
+### 🚜 Refactor
+
+- Rely more on python tools in _installer
+- Rename installer script
+
+## [0.19.5] - 2026-01-25
+
+### 🚀 Features
+
+- Installer helpers act on all instances of replicas
+
+## [0.19.4] - 2026-01-24
+
+### 🚀 Features
+
+- Added back showenv command
+- Added app helpers function in .appenv
+- Improve installer script to use uv full path
+
+## [0.19.3] - 2026-01-22
+
+### 🚀 Features
+
+- Improve falco templates
+- Added server upgrade command
+
+### 📚 Documentation
+
+- Update with server upgrade
+
+## [0.19.2] - 2026-01-22
+
+### 🐛 Bug Fixes
+
+- Pass host correctly to all commands
+
+## [0.19.1] - 2026-01-21
+
+### 🐛 Bug Fixes
+
+- Server exec
+
+## [0.19.0] - 2026-01-20
+
+### 🚀 Features
+
+- Scale now run apply to the server
+- Add caddy to user group during deployment
+
+### 🚜 Refactor
+
+- Rename fj alt cli to fa (fujin app)
+- Split back exec to app exec and server exec
+
+## [0.18.0] - 2026-01-18
+
+### 🚀 Features
+
+- Add fj entry point as shortcut to fujin app
+- Show warning on unresolved variables and remove useless cmds
+- Fetch logs on services failing to start
+
+### 🚜 Refactor
+
+- Rename info command to status
+- Remove bundle upload retry
+- Unify systemd units discovery
+- Rewrite to use systemd units and Caddyfile directly
+
+### 🧪 Testing
+
+- Fix integration tests
+
+## [0.17.2] - 2026-01-11
+
+### 🐛 Bug Fixes
+
+- Broken generated config with / instead /*
+
+## [0.17.1] - 2026-01-10
+
+### 🐛 Bug Fixes
+
+- Creating backup without --backup option
+
+## [0.17.0] - 2026-01-09
+
+### 🚀 Features
+
+- Added migrate command
+- Rewrite config for better webserver flexibility
+
+## [0.16.0] - 2025-12-28
+
+### 🚀 Features
+
+- Rework timer config with more options
+- Added operation logging and deployment history
+- Added multi server support
+- Added show command in favor or printenv
+- Improved error messages
+- Added ssh-setup helper
+- Logs filtering options
+- Migrate to zipapp
+
+### 🐛 Bug Fixes
+
+- Failed auth when key not in agent
+
+### 🚜 Refactor
+
+- Move third party plugins into separate packages
+- Move templates eject into it own command
+- Move custom context from process to host
+- Merge app exec and server exec into exec command
+- Consistent styling and help messages improvements
+
+### 📚 Documentation
+
+- Update documentation de reflect latest changes
+
+### 🎨 Styling
+
+- Deployment summary
+
+### 🧪 Testing
+
+- Rewrote from scratch
+
+## [0.14.1] - 2025-12-08
+
+### 🚀 Features
+
+- Added special case to print caddy config
+
+## [0.13.2] - 2025-11-29
+
+### 🐛 Bug Fixes
+
+- Hanging interactive shell on 3.14
+
+## [0.13.1] - 2025-11-28
+
+### 🐛 Bug Fixes
+
+- Broken cli because of missing gevent
+
+## [0.13.0] - 2025-11-27
+
+### 🚀 Features
+
+- [**breaking**] Refactor to ejectable defaults, enhanced config, and new docs
+
+## [0.12.2] - 2025-11-16
+
+### 🐛 Bug Fixes
+
+- Dummy proxy
+
+### 🚜 Refactor
+
+- Use custom caddy server name
+- Less files
+
+## [0.12.1] - 2025-03-12
+
+### 🚀 Features
+
+- Add process name to systemd service
+- Add fujin version info
+- Set system as the default secrets adapter
+- Add system secret reader
+
+### 🐛 Bug Fixes
+
+- Force .venv removal on deploy
+- Env content parse logic
+
+### 🚜 Refactor
+
+- Rename env_content to env
+
+### 📚 Documentation
+
+- Document integration with ci ci platforms
+- Apply a more consistent writing style
+
+### ⚙️ Miscellaneous Tasks
+
+- Specify source package to avoid failing build backend
+
+## [0.10.0] - 2024-11-24
+
+### 🚀 Features
+
+- Add doppler support to secrets
+
+## [0.9.1] - 2024-11-23
+
+### 🚜 Refactor
+
+- Drop configurable proxy manager
+
+### 📚 Documentation
+
+- Add links to template systemd service files
+
+### ⚡ Performance
+
+- Run systemd commands concurrently using gevent
+
+## [0.9.0] - 2024-11-23
+
+### 🚀 Features
+
+- Env content can be define directly in toml
+
+### 🚜 Refactor
+
+- Avoid running secret adapter if no secret placeholder is found
+
+## [0.8.0] - 2024-11-23
+
+### 🚀 Features
+
+- Rewrite hooks (#30)
+
+## [0.7.1] - 2024-11-23
+
+### 🐛 Bug Fixes
+
+- Broken .venv folder can fail deploy
+
+## [0.7.0] - 2024-11-22
+
+### 🚀 Features
+
+- Inject secrets via bitwarden and 1password (#29)
+- Add certbot_email configuration for nginx
+
+### 🚜 Refactor
+
+- Move requirements copy to transfer_files
+
+## [0.6.0] - 2024-11-19
+
+<!-- generated by git-cliff -->
