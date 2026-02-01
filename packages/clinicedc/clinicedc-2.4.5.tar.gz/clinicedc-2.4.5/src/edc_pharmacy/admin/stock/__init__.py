@@ -1,0 +1,34 @@
+from .allocation_admin import AllocationAdmin
+from .allocation_proxy_admin import AllocationProxyAdmin
+from .confirmation_admin import ConfirmationAdmin
+from .confirmation_at_location_admin import ConfirmationAtLocationAdmin
+from .confirmation_at_location_item_admin import ConfirmationAtLocationItemAdmin
+from .container_admin import ContainerAdmin
+from .container_type_admin import ContainerTypeAdmin
+from .dispense_admin import DispenseAdmin
+from .dispense_item_admin import DispenseItemAdmin
+from .history import (
+    ConfirmationAtLocationHistoryAdmin,
+    ConfirmationAtLocationItemHistoryAdmin,
+    StorageBinItemHistoryAdmin,
+)
+from .location_admin import LocationAdmin
+from .lot_admin import LotAdmin
+from .order_admin import OrderAdmin
+from .order_item_admin import OrderItemAdmin
+from .product_admin import ProductAdmin
+from .receive_admin import ReceiveAdmin
+from .receive_item_admin import ReceiveItemAdmin
+from .repack_request_admin import RequestRepackAdmin
+from .stock_adjustment_admin import StockAdjustmentAdmin
+from .stock_admin import StockAdmin
+from .stock_proxy_admin import StockProxyAdmin
+from .stock_request_admin import StockRequestAdmin
+from .stock_request_item_admin import StockRequestItemAdmin
+from .stock_transfer_admin import StockTransferAdmin
+from .stock_transfer_item_admin import StockTransferItemAdmin
+from .storage_bin_admin import StorageBinAdmin
+from .storage_bin_item_admin import StorageBinItemAdmin
+from .storage_bin_item_proxy_admin import StorageBinItemProxyAdmin
+from .storage_bin_proxy_admin import StorageBinProxyAdmin
+from .supplier_admin import SupplierAdmin
