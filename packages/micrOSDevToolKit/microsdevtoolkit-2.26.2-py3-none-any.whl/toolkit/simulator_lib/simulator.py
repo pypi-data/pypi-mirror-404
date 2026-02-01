@@ -1,0 +1,273 @@
+import sys
+import os
+import multiprocessing
+import time
+import copy
+import json
+from pathlib import Path
+
+MYPATH = os.path.dirname(__file__)
+SIM_PATH = os.path.join(MYPATH, '../workspace/simulator')
+PACKAGES_PATH = os.path.join(MYPATH, '../../micrOS/packages/')
+sys.path.insert(0, SIM_PATH)                         # Add Sim to path
+sys.path.append(os.path.join(MYPATH, '../lib'))             # Add devtoolkit/lib to path
+from sim_common import console
+import micrOSloader
+import LocalMachine
+if os.path.exists(PACKAGES_PATH):
+    sys.path.append(PACKAGES_PATH)
+    try:
+        import _tools.unpack as package_unpack
+    except ImportError:
+        print(f"[WARNING] Import error Packages._tools: {PACKAGES_PATH}")
+        package_unpack = None
+else:
+    print(f"[WARNING] No Packages._tools available: {PACKAGES_PATH}")
+    package_unpack = None
+
+# Enable/Disable Simulator Config and Packages import
+ENABLE_SIM_CONFIG = True
+ENABLE_SIM_PACKAGES = True
+EXTERNAL_LOAD_MODULES_FROM_PACKAGES = []
+
+
+def apply_sim_patch():
+    """
+    Apply Config and more
+    """
+    global EXTERNAL_LOAD_MODULES_FROM_PACKAGES
+
+    # APPLY SIM CONFIG - for testing: enable webui, etc...
+    if ENABLE_SIM_CONFIG:
+        print("Copy SIM config - for testing: enable webui, etc.")
+        sim_config = os.path.join(MYPATH, 'node_config.json')
+        LocalMachine.FileHandler().copy(sim_config, os.path.join(SIM_PATH))
+
+    if ENABLE_SIM_PACKAGES and package_unpack is not None:
+        overwritten_files, ext_load_module = package_unpack.unpack_all(Path(SIM_PATH))
+        for mod in overwritten_files:
+            print(f"\t⚠️ [SIM][UNPACK] Overwritten file from packages submodule: {mod}")
+        EXTERNAL_LOAD_MODULES_FROM_PACKAGES = [elm.lstrip("LM_").split(".")[0] for elm in ext_load_module if elm.startswith("LM_")]
+        # Time module patch - extend with basic micropython utime features for micrOS Simulator
+        import utime
+        time.ticks_ms = utime.ticks_ms
+        time.ticks_diff = utime.ticks_diff
+        #sys.modules['time'] = time
+    else:
+        print("⚠️ [SIM][UNPACK] Package unpacking disabled or package_unpack module not available.")
+
+
+class micrOSIM():
+    SIM_PROCESS_LIST = []
+
+    def __init__(self, doc_resolve=False):
+        if doc_resolve:
+            console("[micrOSIM] Create micrOS LM doc (env proc)")
+            self._init_sim_doc_resolve()
+            # json_structure, html_structure
+            self.doc_output = (None, None)
+        else:
+            console("[micrOSIM] INFO: Number of cpu : {}".format(multiprocessing.cpu_count()))
+            console("[micrOSIM] Create micrOS simulator process...")
+            self.process = multiprocessing.Process(target=self.micrOS_sim_worker)
+            self.pid = None
+            micrOSIM.SIM_PROCESS_LIST.append(self.process)
+
+    def _init_sim_doc_resolve(self):
+        """
+        Init micrOS in simulator - folder structure creation
+        """
+        apply_sim_patch()
+        sim_path = LocalMachine.SimplePopPushd()
+        sim_path.pushd(SIM_PATH)
+        import micrOS               # Init micrOS - DO NOT REMOVE
+        sim_path.popd()
+
+    def micrOS_sim_worker(self, trace=False):
+        """
+        Start micrOS in python simulator
+        """
+        sim_path = LocalMachine.SimplePopPushd()
+        sim_path.pushd(SIM_PATH)
+        console("[micrOSIM] Start micrOS loader in: {}".format(SIM_PATH))
+        prev_t = time.time()
+
+        def trace_func(frame, event, arg):
+            nonlocal prev_t
+            elapsed_time = "{:.2e}".format(time.time() - prev_t)
+            prev_t = time.time()
+            file = frame.f_code.co_filename
+            line = frame.f_lineno
+            code = frame.f_code.co_name
+            if 'simulator/' in file and code != 'idle_task':
+                print(f"{' '*50}[trace][{elapsed_time}s][{event}] {line}: {'/'.join(file.split('/')[-1:])}.{code} {arg if arg else ''}")
+
+        if trace:
+            # Trace handling - DEBUG
+            sys.settrace(trace_func)
+
+        apply_sim_patch()
+        micrOSloader.main()
+
+        console("[micrOSIM] Stop micrOS ({})".format(SIM_PATH))
+        sim_path.popd()
+
+    def wait_process(self):
+        try:
+            self.process.join()
+        except Exception as e:
+            console(e)
+
+    def start(self):
+        console("[micrOSIM] Start micrOS simulator process")
+        self.process.start()
+        self.pid = self.process.pid
+        console("[micrOSIM] micrOS process was started: {}".format(self.pid))
+
+    def terminate(self):
+        if self.process.is_alive():
+            self.process.terminate()
+            while self.process.is_alive():
+                console("[micrOSIM] Wait process to terminate: {}".format(self.pid))
+                time.sleep(1)
+        self.process.close()
+        console("[micrOSIM] Proc was finished: {}".format(self.pid))
+
+    @staticmethod
+    def stop_all():
+        proc_list = micrOSIM.SIM_PROCESS_LIST
+        proc_len = len(proc_list)
+        for i, proc in enumerate(proc_list):
+            try:
+                if proc.is_alive():
+                    proc.terminate()
+                    while proc.is_alive():
+                        console("[micrOSIM] Wait process to terminate: {}/{}".format(i+1, proc_len))
+                        time.sleep(1)
+                proc.close()
+            except Exception as e:
+                console("[micrOSIM] Proc already stopped: {}/{}: {}".format(i+1, proc_len, e))
+            console("[micrOSIM] Proc was finished: {}/{}".format(i+1, proc_len))
+        micrOSIM.SIM_PROCESS_LIST = []
+
+    @staticmethod
+    def _lm_doc_builder(mod, func_dict, structure, structure_to_html):
+        # Embed img url to table - module level
+        img_url = structure[mod]['img']
+        structure_to_html[mod]['img'] = f'<img src="{img_url}" alt="{mod}" height=150>'
+        # Parse function doc strings
+        for func in func_dict:
+            # -- Skip functions --
+            if not isinstance(structure[mod][func], dict):
+                continue
+            # -- Skip functions --
+
+            console(f"[micrOSIM][Extract doc-str] LM_{mod}.{func}.__doc__")
+            try:
+                # Get function doc string
+                exec(f"from modules import LM_{mod}")
+                doc_str = eval(f"LM_{mod}.{func}.__doc__")
+                # Get function pin map
+                if func == 'pinmap':
+                    # Get module pin map - module level
+                    console(f"[micrOSIM][Extract pin map tokens] LM_{mod}.pinmap()")
+                    try:
+                        mod_pinmap = eval(f"LM_{mod}.pinmap()")
+                        if mod_pinmap is not None:
+                            mod_pinmap = ', '.join(dict(mod_pinmap).keys())
+                            mod_pinmap = f"\npin map: {mod_pinmap}"
+                    except:
+                        mod_pinmap = ''
+                    # Add pinmap to doc string of pinmap() function
+                    doc_str = "" if doc_str is None else doc_str
+                    doc_str += mod_pinmap
+                if func == 'help':
+                    console(f"[micrOSIM][Render widgets from help] LM_{mod}.help(True)")
+                    if f"{mod}" in EXTERNAL_LOAD_MODULES_FROM_PACKAGES:
+                        mod_help = f"\n\tEXTERNAL PACKAGE: https://github.com/BxNxM/micrOSPackages"
+                    else:
+                        mod_help = ""
+                    mod_help += f"\n[i] micrOS Widget Types:"
+                    try:
+                        widgets_help = eval(f"LM_{mod}.help(True)")
+                        if widgets_help is not None and isinstance(widgets_help, tuple):
+                            for widget in widgets_help:
+                                widget = json.loads(widget)
+                                mod_help += f"\n\t{widget}"
+                    except:
+                        mod_help += '\n\tN/A'
+                    # Add help renderes widgets to doc string
+                    doc_str = "" if doc_str is None else doc_str
+                    doc_str += mod_help
+            except Exception as e:
+                doc_str = str(e)
+            # Update structure with doc-str
+            structure[mod][func]['doc'] = doc_str
+            structure_to_html[mod][func]['doc'] = 'No doc string available' if doc_str is None else doc_str.strip() \
+                .replace('\n', '<br>\n').replace(' ', '&nbsp;')
+            # Remove empty param(s) cells
+            param_cell = structure_to_html[mod][func].get('param(s)', None)
+            if param_cell is not None and len(param_cell.strip()) == 0:
+                structure_to_html[mod][func].pop('param(s)')
+
+
+    def _lm_doc_strings(self, structure):
+        """
+        Collect function doc strings and module logical pins (pin map)
+        Create 4 dict structures adding docstring
+        - html json + raw json for built-in modules
+        - html json + raw json for external (installable packages) modules
+        """
+        structure_to_html = copy.deepcopy(structure)
+        structure_ext_to_html = copy.deepcopy(structure)
+        structure_external = copy.deepcopy(structure)
+
+        # Step into workspace path
+        popd = LocalMachine.SimplePopPushd()
+        popd.pushd(SIM_PATH)
+
+        # Based on created module-function structure collect doc strings
+        for mod, func_dict in structure.items():
+            # Embed img url to table - module level
+            if mod in EXTERNAL_LOAD_MODULES_FROM_PACKAGES:
+                # EXTERNAL MODULE STRUCTURE
+                self._lm_doc_builder(mod, func_dict, structure_external, structure_ext_to_html)
+            else:
+                # BUILT-IN MODULE STRUCTURE
+                self._lm_doc_builder(mod, func_dict, structure, structure_to_html)
+        # CLEANUP DUPLICATES:
+        for mod, func_dict in structure_external.items():
+            if mod in EXTERNAL_LOAD_MODULES_FROM_PACKAGES:
+                # Remove mod from built-ins
+                del structure[mod]
+                del structure_to_html[mod]
+        for mod, func_dict in structure.items():
+            if mod not in EXTERNAL_LOAD_MODULES_FROM_PACKAGES:
+                # Remove mod from external packages
+                del structure_external[mod]
+                del structure_ext_to_html[mod]
+
+        # restore path
+        popd.popd()
+        self.doc_output = (structure, structure_to_html, structure_external, structure_ext_to_html)
+
+    def gen_lm_doc_json_html(self, structure):
+        try:
+            proc = multiprocessing.Process(target=self._lm_doc_strings(structure))
+            while proc.is_alive():
+                time.sleep(0.1)
+            return self.doc_output
+        except Exception as e:
+            console("[micrOSIM][DOC ERR] Doc generation error: gen_lm_doc_json_html: {}".format(e))
+        return None
+
+
+if __name__ == '__main__':
+    sim = micrOSIM()
+    console("Test mode - Stop after 3 sec")
+    sim.start()
+    console("Test mode - Stop after 3 sec")
+    time.sleep(3)
+    sim.terminate()
+    micrOSIM.stop_all()
+
