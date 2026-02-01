@@ -1,0 +1,517 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:svg="http://www.w3.org/2000/svg"
+           xmlns:xlink="http://www.w3.org/1999/xlink"
+           xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+           xmlns:dc="http://purl.org/dc/elements/1.1/"
+           xmlns:fbf="http://opentoonz.github.io/fbf/1.0#"
+           targetNamespace="http://www.w3.org/2000/svg"
+           xmlns:fbfstruct="http://www.w3.org/2000/svg"
+           elementFormDefault="qualified"
+           attributeFormDefault="unqualified">
+
+  <xs:annotation>
+    <xs:documentation>
+      FBF.SVG XML Schema Definition (XSD)
+      Version: 0.1.2a4
+      Date: 2025-11-07
+
+      This schema defines the structural requirements for FBF.SVG
+      (Frame-by-Frame SVG) documents, a candidate substandard of SVG
+      optimized for declarative frame-by-frame animation.
+
+      FBF.SVG documents MUST:
+      1. Be valid SVG 1.1 or SVG 2.0 documents
+      2. Conform to the structural constraints defined herein
+      3. Use SMIL animation for frame sequencing
+      4. Include RDF/XML metadata (Full Conformance)
+
+      Reference: https://github.com/Emasoft/svg2fbf/docs/FBF_SVG_SPECIFICATION.md
+    </xs:documentation>
+  </xs:annotation>
+
+  <!-- ================================================================ -->
+  <!-- Type Definitions -->
+  <!-- ================================================================ -->
+
+  <!-- Frame ID pattern: FRAME followed by 5 digits (00001-99999) -->
+  <xs:simpleType name="frameIDType">
+    <xs:annotation>
+      <xs:documentation>
+        Frame ID format: FRAMExxxxx where xxxxx is a zero-padded 5-digit integer.
+        Examples: FRAME00001, FRAME00023, FRAME12345
+      </xs:documentation>
+    </xs:annotation>
+    <xs:restriction base="xs:string">
+      <xs:pattern value="FRAME[0-9]{5}"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Reserved element ID type -->
+  <xs:simpleType name="reservedIDType">
+    <xs:annotation>
+      <xs:documentation>
+        Reserved IDs for FBF.SVG structural elements.
+      </xs:documentation>
+    </xs:annotation>
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="ANIMATION_BACKDROP"/>
+      <xs:enumeration value="STAGE_BACKGROUND"/>
+      <xs:enumeration value="ANIMATION_STAGE"/>
+      <xs:enumeration value="STAGE_FOREGROUND"/>
+      <xs:enumeration value="ANIMATED_GROUP"/>
+      <xs:enumeration value="PROSKENION"/>
+      <xs:enumeration value="OVERLAY_LAYER"/>
+      <xs:enumeration value="SHARED_DEFINITIONS"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Animation type enumeration -->
+  <xs:simpleType name="animationTypeType">
+    <xs:annotation>
+      <xs:documentation>
+        Supported FBF.SVG animation types.
+      </xs:documentation>
+    </xs:annotation>
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="once"/>
+      <xs:enumeration value="once_reversed"/>
+      <xs:enumeration value="loop"/>
+      <xs:enumeration value="loop_reversed"/>
+      <xs:enumeration value="pingpong_once"/>
+      <xs:enumeration value="pingpong_loop"/>
+      <xs:enumeration value="pingpong_once_reversed"/>
+      <xs:enumeration value="pingpong_loop_reversed"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- SMIL repeatCount values -->
+  <xs:simpleType name="repeatCountType">
+    <xs:annotation>
+      <xs:documentation>
+        Valid repeatCount values: positive integer or "indefinite".
+      </xs:documentation>
+    </xs:annotation>
+    <xs:union>
+      <xs:simpleType>
+        <xs:restriction base="xs:positiveInteger"/>
+      </xs:simpleType>
+      <xs:simpleType>
+        <xs:restriction base="xs:string">
+          <xs:enumeration value="indefinite"/>
+        </xs:restriction>
+      </xs:simpleType>
+    </xs:union>
+  </xs:simpleType>
+
+  <!-- SMIL duration format: Xs where X is a positive decimal -->
+  <xs:simpleType name="durationType">
+    <xs:annotation>
+      <xs:documentation>
+        Duration format: decimal number followed by 's' (seconds).
+        Examples: "0.25s", "2.5s", "10.0s"
+      </xs:documentation>
+    </xs:annotation>
+    <xs:restriction base="xs:string">
+      <xs:pattern value="[0-9]+(\.[0-9]+)?s"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Frame reference list: semicolon-separated frame IDs with # prefix -->
+  <xs:simpleType name="frameReferenceListType">
+    <xs:annotation>
+      <xs:documentation>
+        Semicolon-separated list of frame ID references.
+        Each reference starts with # followed by a valid frame ID.
+        Example: "#FRAME00001;#FRAME00002;#FRAME00003"
+      </xs:documentation>
+    </xs:annotation>
+    <xs:restriction base="xs:string">
+      <xs:pattern value="(#FRAME[0-9]{5})(;#FRAME[0-9]{5})*"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- viewBox format: "minX minY width height" -->
+  <xs:simpleType name="viewBoxType">
+    <xs:annotation>
+      <xs:documentation>
+        ViewBox format: four space-separated numbers (minX minY width height).
+        Numbers can be negative or positive decimals.
+        Examples: "0 0 800 600", "-100 -100 200 200"
+      </xs:documentation>
+    </xs:annotation>
+    <xs:restriction base="xs:string">
+      <xs:pattern value="-?[0-9]+(\.[0-9]+)?\s+-?[0-9]+(\.[0-9]+)?\s+[0-9]+(\.[0-9]+)?\s+[0-9]+(\.[0-9]+)?"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- ================================================================ -->
+  <!-- FBF.SVG Structural Elements -->
+  <!-- ================================================================ -->
+
+  <!-- PROSKENION animate element -->
+  <xs:element name="fbfAnimate">
+    <xs:annotation>
+      <xs:documentation>
+        SMIL animate element for frame sequencing.
+        MUST be a child of PROSKENION use element.
+        Animates the xlink:href attribute to switch between frames.
+      </xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:attribute name="attributeName" type="xs:string" use="required" fixed="xlink:href"/>
+      <xs:attribute name="values" type="frameReferenceListType" use="required"/>
+      <xs:attribute name="dur" type="durationType" use="required"/>
+      <xs:attribute name="repeatCount" type="repeatCountType" use="required"/>
+      <xs:attribute name="begin" type="xs:string" default="0s">
+        <xs:annotation>
+          <xs:documentation>
+            Start time: "0s" (immediate) or "click" (user interaction).
+          </xs:documentation>
+        </xs:annotation>
+      </xs:attribute>
+      <xs:attribute name="fill" default="freeze">
+        <xs:annotation>
+          <xs:documentation>
+            Fill behavior: "freeze" (maintain final state) or "remove" (return to initial).
+          </xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:restriction base="xs:string">
+            <xs:enumeration value="freeze"/>
+            <xs:enumeration value="remove"/>
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:attribute>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- PROSKENION use element -->
+  <xs:element name="fbfProskenion">
+    <xs:annotation>
+      <xs:documentation>
+        PROSKENION staging area - a use element that references the current frame.
+        MUST have id="PROSKENION" and contain exactly one animate child.
+      </xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="fbfstruct:fbfAnimate" minOccurs="1" maxOccurs="1"/>
+      </xs:sequence>
+      <xs:attribute name="id" type="xs:string" use="required" fixed="PROSKENION"/>
+      <xs:attribute ref="xlink:href" use="required">
+        <xs:annotation>
+          <xs:documentation>
+            Initial frame reference, typically "#FRAME00001".
+          </xs:documentation>
+        </xs:annotation>
+      </xs:attribute>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- ANIMATED_GROUP -->
+  <xs:element name="fbfAnimatedGroup">
+    <xs:annotation>
+      <xs:documentation>
+        Animation orchestration group.
+        MUST have id="ANIMATED_GROUP" and contain exactly one PROSKENION child.
+      </xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="fbfstruct:fbfProskenion" minOccurs="1" maxOccurs="1"/>
+      </xs:sequence>
+      <xs:attribute name="id" type="xs:string" use="required" fixed="ANIMATED_GROUP"/>
+      <xs:attribute name="cursor" type="xs:string" default="auto">
+        <xs:annotation>
+          <xs:documentation>
+            Cursor style. Use "pointer" for interactive (click-to-start) animations.
+          </xs:documentation>
+        </xs:annotation>
+      </xs:attribute>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- ANIMATION_STAGE -->
+  <xs:element name="fbfAnimationStage">
+    <xs:annotation>
+      <xs:documentation>
+        Foreground stage container.
+        MUST have id="ANIMATION_STAGE" and contain exactly one ANIMATED_GROUP child.
+      </xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="fbfstruct:fbfAnimatedGroup" minOccurs="1" maxOccurs="1"/>
+      </xs:sequence>
+      <xs:attribute name="id" type="xs:string" use="required" fixed="ANIMATION_STAGE"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- STAGE_BACKGROUND (NEW!) -->
+  <xs:element name="fbfStageBackground">
+    <xs:annotation>
+      <xs:documentation>
+        Background layer container (Z-order: behind animation).
+        MUST have id="STAGE_BACKGROUND". Contains SVG elements displayed behind the animation.
+        All content at same resolution as main viewBox. Used with dynamic API for runtime editing.
+      </xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:sequence>
+        <xs:any namespace="http://www.w3.org/2000/svg" minOccurs="0" maxOccurs="unbounded"/>
+      </xs:sequence>
+      <xs:attribute name="id" type="xs:string" use="required" fixed="STAGE_BACKGROUND"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- STAGE_FOREGROUND (NEW!) -->
+  <xs:element name="fbfStageForeground">
+    <xs:annotation>
+      <xs:documentation>
+        Foreground layer container (Z-order: in front of animation).
+        MUST have id="STAGE_FOREGROUND". Contains SVG elements displayed in front of the animation.
+        All content at same resolution as main viewBox. Used with dynamic API for runtime editing.
+      </xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:sequence>
+        <xs:any namespace="http://www.w3.org/2000/svg" minOccurs="0" maxOccurs="unbounded"/>
+      </xs:sequence>
+      <xs:attribute name="id" type="xs:string" use="required" fixed="STAGE_FOREGROUND"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- ANIMATION_BACKDROP -->
+  <xs:element name="fbfAnimationBackdrop">
+    <xs:annotation>
+      <xs:documentation>
+        Static background container.
+        MUST have id="ANIMATION_BACKDROP" and contain STAGE_BACKGROUND, ANIMATION_STAGE, and STAGE_FOREGROUND.
+      </xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="fbfstruct:fbfStageBackground" minOccurs="1" maxOccurs="1"/>
+        <xs:element ref="fbfstruct:fbfAnimationStage" minOccurs="1" maxOccurs="1"/>
+        <xs:element ref="fbfstruct:fbfStageForeground" minOccurs="1" maxOccurs="1"/>
+      </xs:sequence>
+      <xs:attribute name="id" type="xs:string" use="required" fixed="ANIMATION_BACKDROP"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- OVERLAY_LAYER (NEW!) -->
+  <xs:element name="fbfOverlayLayer">
+    <xs:annotation>
+      <xs:documentation>
+        Overlay layer container (Z-order: superimposed on all elements).
+        MUST have id="OVERLAY_LAYER". Contains SVG elements for badges, titles, logos, subtitles, borders, PiP.
+        All content at same resolution as main viewBox. Used with dynamic API for runtime editing.
+      </xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:sequence>
+        <xs:any namespace="http://www.w3.org/2000/svg" minOccurs="0" maxOccurs="unbounded"/>
+      </xs:sequence>
+      <xs:attribute name="id" type="xs:string" use="required" fixed="OVERLAY_LAYER"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- Frame group definition -->
+  <xs:element name="fbfFrame">
+    <xs:annotation>
+      <xs:documentation>
+        Individual frame container.
+        MUST have id matching frameIDType pattern (e.g., FRAME00001).
+        Contains all SVG content for that frame.
+      </xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:sequence>
+        <xs:any namespace="http://www.w3.org/2000/svg" minOccurs="0" maxOccurs="unbounded"/>
+      </xs:sequence>
+      <xs:attribute name="id" type="frameIDType" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- SHARED_DEFINITIONS group -->
+  <xs:element name="fbfSharedDefinitions">
+    <xs:annotation>
+      <xs:documentation>
+        Container for deduplicated elements shared across frames.
+        MUST have id="SHARED_DEFINITIONS".
+      </xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:sequence>
+        <xs:any namespace="http://www.w3.org/2000/svg" minOccurs="0" maxOccurs="unbounded"/>
+      </xs:sequence>
+      <xs:attribute name="id" type="xs:string" use="required" fixed="SHARED_DEFINITIONS"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- defs element with FBF structure -->
+  <xs:element name="fbfDefs">
+    <xs:annotation>
+      <xs:documentation>
+        Definitions container.
+        MUST contain SHARED_DEFINITIONS first, followed by all FRAME groups.
+      </xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="fbfstruct:fbfSharedDefinitions" minOccurs="1" maxOccurs="1"/>
+        <xs:element ref="fbfstruct:fbfFrame" minOccurs="1" maxOccurs="unbounded"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- ================================================================ -->
+  <!-- FBF.SVG Metadata -->
+  <!-- ================================================================ -->
+
+  <!-- Dublin Core metadata fields -->
+  <xs:element name="fbfDublinCore">
+    <xs:annotation>
+      <xs:documentation>
+        Dublin Core metadata fields for FBF.SVG documents.
+      </xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="title" type="xs:string" minOccurs="0"/>
+        <xs:element name="creator" type="xs:string" minOccurs="0"/>
+        <xs:element name="date" type="xs:dateTime" minOccurs="0"/>
+        <xs:element name="description" type="xs:string" minOccurs="0"/>
+        <xs:element name="rights" type="xs:string" minOccurs="0"/>
+        <xs:element name="source" type="xs:string" minOccurs="0"/>
+        <xs:element name="language" type="xs:string" minOccurs="0"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- FBF-specific metadata fields -->
+  <xs:element name="fbfMetadata">
+    <xs:annotation>
+      <xs:documentation>
+        FBF-specific metadata fields (namespace: fbf:).
+      </xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:sequence>
+        <!-- Generator information -->
+        <xs:element name="generator" type="xs:string" minOccurs="1"/>
+        <xs:element name="generatorVersion" type="xs:string" minOccurs="1"/>
+
+        <!-- Animation properties -->
+        <xs:element name="frameCount" type="xs:positiveInteger" minOccurs="1"/>
+        <xs:element name="fps" type="xs:decimal" minOccurs="1"/>
+        <xs:element name="duration" type="xs:decimal" minOccurs="1"/>
+        <xs:element name="animationType" type="animationTypeType" minOccurs="1"/>
+
+        <!-- Dimensions -->
+        <xs:element name="viewBox" type="viewBoxType" minOccurs="0"/>
+        <xs:element name="width" type="xs:decimal" minOccurs="0"/>
+        <xs:element name="height" type="xs:decimal" minOccurs="0"/>
+
+        <!-- Content features -->
+        <xs:element name="useMeshGradient" type="xs:boolean" minOccurs="0"/>
+        <xs:element name="useEmbeddedImages" type="xs:boolean" minOccurs="0"/>
+        <xs:element name="useFilters" type="xs:boolean" minOccurs="0"/>
+        <xs:element name="useClipping" type="xs:boolean" minOccurs="0"/>
+        <xs:element name="useMasking" type="xs:boolean" minOccurs="0"/>
+
+        <!-- Additional metadata fields (optional) -->
+        <xs:any namespace="##other" minOccurs="0" maxOccurs="unbounded"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- ================================================================ -->
+  <!-- Root FBF.SVG Document Structure -->
+  <!-- ================================================================ -->
+
+  <xs:element name="fbfSvgDocument">
+    <xs:annotation>
+      <xs:documentation>
+        Root element for FBF.SVG document validation.
+
+        This is a simplified representation for validation purposes.
+        Actual FBF.SVG documents are standard SVG documents with
+        additional structural constraints.
+
+        For complete validation:
+        1. Validate as SVG 1.1 or SVG 2.0
+        2. Validate FBF-specific structure using custom validator
+        3. Validate metadata schema using this XSD
+      </xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:sequence>
+        <!-- SVG header elements -->
+        <xs:any namespace="http://www.w3.org/2000/svg"
+                processContents="skip"
+                minOccurs="0"
+                maxOccurs="1">
+          <xs:annotation>
+            <xs:documentation>metadata element (RDF/XML)</xs:documentation>
+          </xs:annotation>
+        </xs:any>
+
+        <xs:any namespace="http://www.w3.org/2000/svg"
+                processContents="skip"
+                minOccurs="1"
+                maxOccurs="1">
+          <xs:annotation>
+            <xs:documentation>desc element (REQUIRED)</xs:documentation>
+          </xs:annotation>
+        </xs:any>
+
+        <!-- FBF.SVG structure -->
+        <xs:element ref="fbfstruct:fbfAnimationBackdrop" minOccurs="1" maxOccurs="1"/>
+        <xs:element ref="fbfstruct:fbfOverlayLayer" minOccurs="1" maxOccurs="1"/>
+        <xs:element ref="fbfstruct:fbfDefs" minOccurs="1" maxOccurs="1"/>
+
+        <!-- Optional script element for mesh gradient polyfill -->
+        <xs:any namespace="http://www.w3.org/2000/svg"
+                processContents="skip"
+                minOccurs="0"
+                maxOccurs="1">
+          <xs:annotation>
+            <xs:documentation>
+              script element (OPTIONAL, only for mesh gradient polyfill)
+            </xs:documentation>
+          </xs:annotation>
+        </xs:any>
+      </xs:sequence>
+
+      <!-- Required SVG root attributes -->
+      <xs:attribute name="xmlns" type="xs:anyURI" use="required" fixed="http://www.w3.org/2000/svg"/>
+      <xs:attribute name="xmlns:xlink" type="xs:anyURI" use="required" fixed="http://www.w3.org/1999/xlink"/>
+      <xs:attribute name="viewBox" type="viewBoxType" use="required"/>
+      <xs:attribute name="preserveAspectRatio" type="xs:string" default="xMidYMid meet"/>
+      <xs:attribute name="version" type="xs:string" default="1.1"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- ================================================================ -->
+  <!-- Validation Assertions -->
+  <!-- ================================================================ -->
+
+  <xs:annotation>
+    <xs:documentation>
+      Additional validation rules not expressible in XSD:
+
+      1. Frame IDs MUST be sequential (FRAME00001, FRAME00002, ...)
+      2. animate values MUST reference existing frame IDs
+      3. animate dur MUST equal frameCount / fps
+      4. All frame IDs in values MUST exist in defs
+      5. No external resource references (all xlink:href MUST be local #refs or data: URIs)
+      6. If script present, MUST contain approved mesh gradient polyfill hash
+      7. Reserved IDs MUST NOT be used for other elements
+
+      These rules are enforced by the reference validator (validate_fbf.py).
+    </xs:documentation>
+  </xs:annotation>
+
+</xs:schema>

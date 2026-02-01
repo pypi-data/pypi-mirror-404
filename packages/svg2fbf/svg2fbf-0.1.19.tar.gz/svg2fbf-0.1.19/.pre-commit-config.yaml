@@ -1,0 +1,32 @@
+repos:
+  # Ruff: format + lint (runs on pre-commit stage)
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.4
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+# NOTE: Pre-push validation is handled by scripts/hooks/pre-push
+# which runs the comprehensive scripts/validate.sh script.
+#
+# The pre-push hook performs:
+#   - Ruff lint check (no auto-fix)
+#   - Ruff format check
+#   - Pytest (all tests)
+#   - TruffleHog secret scanning
+#
+# Install hooks with: just install-hooks
+#
+# The old TruffleHog pre-push hook via pre-commit is kept below
+# as a fallback if custom hooks are not installed.
+
+  # TruffleHog: scan git diffs before push (fallback if custom hook not installed)
+  - repo: local
+    hooks:
+      - id: trufflehog-pre-push
+        name: trufflehog (scan for secrets)
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+        entry: bash -c 'if git rev-parse --verify origin/main >/dev/null 2>&1; then trufflehog git file://. --since-commit origin/main --branch HEAD --results=verified,unknown --fail --exclude-paths .trufflehog-exclude-paths.txt; else trufflehog filesystem --results=verified,unknown --fail --exclude-paths .trufflehog-exclude-paths.txt .; fi'
