@@ -1,0 +1,753 @@
+"""Reusable plotting configuration utilities for analyzer visualizations."""
+
+import logging
+from dataclasses import dataclass
+from typing import Any
+
+import numpy as np
+
+_logger = logging.getLogger(__name__)
+
+__all__ = ["PlotConfig", "PlotConfigs", "AnimationConfig", "finalize_figure"]
+
+
+@dataclass
+class PlotConfig:
+    """Unified configuration class for plotting helpers in ``canns.analyzer``.
+
+    Examples:
+        >>> import numpy as np
+        >>> from canns.analyzer.visualization import PlotConfig, energy_landscape_1d_static
+        >>>
+        >>> # Dummy input (matches test-style energy_landscape usage)
+        >>> x = np.linspace(0, 1, 5)
+        >>> data_sets = {"u": (x, np.sin(x))}
+        >>> config = PlotConfig(title="Demo", show=False)
+        >>> fig, ax = energy_landscape_1d_static(data_sets, config=config)
+        >>> print(fig is not None)
+        True
+    """
+
+    title: str = ""
+    xlabel: str = ""
+    ylabel: str = ""
+    figsize: tuple[int, int] = (10, 6)
+    grid: bool = False
+    save_path: str | None = None
+    show: bool = True
+
+    time_steps_per_second: int | None = None
+    fps: int = 30
+    repeat: bool = True
+    show_progress_bar: bool = True
+
+    # Animation backend configuration
+    render_backend: str | None = None  # 'auto', 'imageio', or 'matplotlib'
+    render_workers: int | None = None  # Number of parallel workers (None = auto)
+    render_start_method: str | None = None  # Multiprocessing start method
+
+    show_legend: bool = True
+    color: str = "black"
+    clabel: str = "Value"
+
+    kwargs: dict[str, Any] | None = None
+    savefig_kwargs: dict[str, Any] | None = None
+    rasterized: bool | None = None
+    save_dpi: int = 300
+    save_bbox_inches: str | None = "tight"
+    save_format: str | None = None
+    verbose: bool = False
+
+    def __post_init__(self) -> None:
+        if self.kwargs is None:
+            self.kwargs = {}
+
+    @classmethod
+    def for_static_plot(cls, **kwargs: Any) -> "PlotConfig":
+        """Return configuration tailored for static plots."""
+
+        config = cls(**kwargs)
+        config.time_steps_per_second = None
+        return config
+
+    @classmethod
+    def for_animation(cls, time_steps_per_second: int, **kwargs: Any) -> "PlotConfig":
+        """Return configuration tailored for animations."""
+
+        return cls(time_steps_per_second=time_steps_per_second, **kwargs)
+
+    def to_matplotlib_kwargs(self) -> dict[str, Any]:
+        """Materialize matplotlib keyword arguments from the config."""
+
+        kwargs = self.kwargs.copy() if self.kwargs else {}
+        if self.rasterized is not None and "rasterized" not in kwargs:
+            kwargs["rasterized"] = self.rasterized
+        return kwargs
+
+    def to_savefig_kwargs(self) -> dict[str, Any]:
+        """Return keyword arguments for ``matplotlib.pyplot.savefig``."""
+
+        savefig_kwargs: dict[str, Any] = {}
+        if self.savefig_kwargs:
+            savefig_kwargs.update(self.savefig_kwargs)
+
+        savefig_kwargs.setdefault("dpi", self.save_dpi)
+        if self.save_bbox_inches is not None:
+            savefig_kwargs.setdefault("bbox_inches", self.save_bbox_inches)
+        if self.save_format is not None:
+            savefig_kwargs.setdefault("format", self.save_format)
+        return savefig_kwargs
+
+
+def finalize_figure(
+    fig,
+    config: PlotConfig,
+    *,
+    rasterize_artists: list[Any] | None = None,
+    savefig_kwargs: dict[str, Any] | None = None,
+    always_close: bool = False,
+):
+    """Centralized save/show/close helper for plot functions.
+
+    Args:
+        fig: Matplotlib Figure to finalize.
+        config: PlotConfig carrying show/save options.
+        rasterize_artists: Optional list of artists to rasterize before saving.
+        savefig_kwargs: Extra kwargs merged into ``savefig`` (wins over config).
+        always_close: If True, close the figure even when ``config.show`` is True.
+
+    Examples:
+        >>> import numpy as np
+        >>> from matplotlib import pyplot as plt
+        >>> from canns.analyzer.visualization import PlotConfig
+        >>> from canns.analyzer.visualization.core.config import finalize_figure
+        >>>
+        >>> x = np.linspace(0, 1, 5)
+        >>> y = np.sin(x)
+        >>> fig, ax = plt.subplots()
+        >>> _ = ax.plot(x, y)
+        >>> config = PlotConfig(title="Finalize Demo", show=False)
+        >>> finalized = finalize_figure(fig, config)
+        >>> print(finalized is not None)
+        True
+    """
+
+    from matplotlib import pyplot as plt
+
+    if rasterize_artists:
+        for artist in rasterize_artists:
+            try:
+                artist.set_rasterized(True)
+            except (AttributeError, TypeError):
+                # Best-effort; ignore artists that do not expose set_rasterized
+                pass
+
+    if config.save_path:
+        merged_kwargs = config.to_savefig_kwargs()
+        if savefig_kwargs:
+            merged_kwargs.update(savefig_kwargs)
+        fig.savefig(config.save_path, **merged_kwargs)
+        if getattr(config, "verbose", False):
+            _logger.info("Plot saved to: %s", config.save_path)
+
+    if config.show:
+        plt.show()
+
+    if always_close or not config.show:
+        plt.close(fig)
+
+    return fig
+
+
+@dataclass
+class AnimationConfig:
+    """Configuration for animation rendering.
+
+    Provides unified settings for optimized animation rendering with automatic
+    quality presets and parallel rendering support.
+
+    Attributes:
+        fps: Frames per second for the animation
+        enable_blitting: Whether to use blitting optimization (auto-detected by default)
+        use_parallel: Force parallel rendering even for short animations
+        num_workers: Number of worker processes for parallel rendering
+        quality: Quality preset - 'draft', 'medium', or 'high'
+        npoints_multiplier: Resolution multiplier (< 1.0 for draft mode)
+        auto_parallel_threshold: Auto-enable parallel rendering for animations with
+                                more than this many frames
+
+    Example:
+        >>> from canns.analyzer.visualization import AnimationConfig
+        >>>
+        >>> # Dummy input representing total frames
+        >>> total_frames = 120
+        >>> config = AnimationConfig(fps=30, quality="high")
+        >>> print(config.fps, total_frames)
+        30 120
+    """
+
+    fps: int = 30
+    enable_blitting: bool = True  # Auto-detect backend support
+    use_parallel: bool = False  # Auto-enable for long animations
+    num_workers: int = 4
+    quality: str = "high"  # Options: 'draft', 'medium', 'high'
+    npoints_multiplier: float = 1.0  # Automatically set to 0.5 for draft mode
+    auto_parallel_threshold: int = 500  # Enable parallel for > 500 frames
+
+    def __post_init__(self):
+        """Automatically adjust settings based on quality preset."""
+        if self.quality == "draft":
+            self.npoints_multiplier = 0.5
+            self.fps = max(15, self.fps // 2)
+        elif self.quality == "medium":
+            self.npoints_multiplier = 0.75
+
+
+class PlotConfigs:
+    """Collection of commonly used plot configurations.
+
+    Examples:
+        >>> import numpy as np
+        >>> from canns.analyzer.visualization import PlotConfigs, energy_landscape_1d_static
+        >>>
+        >>> x = np.linspace(0, 1, 5)
+        >>> data_sets = {"u": (x, np.sin(x))}
+        >>> config = PlotConfigs.energy_landscape_1d_static(show=False)
+        >>> fig, ax = energy_landscape_1d_static(data_sets, config=config)
+        >>> print(fig is not None)
+        True
+    """
+
+    @staticmethod
+    def energy_landscape_1d_static(**kwargs: Any) -> PlotConfig:
+        defaults: dict[str, Any] = {
+            "title": "1D Energy Landscape",
+            "xlabel": "Collective Variable / State",
+            "ylabel": "Energy",
+            "figsize": (10, 6),
+        }
+        defaults.update(kwargs)
+        return PlotConfig.for_static_plot(**defaults)
+
+    @staticmethod
+    def energy_landscape_1d_animation(**kwargs: Any) -> PlotConfig:
+        defaults: dict[str, Any] = {
+            "title": "Evolving 1D Energy Landscape",
+            "xlabel": "Collective Variable / State",
+            "ylabel": "Energy",
+            "figsize": (10, 6),
+            "fps": 30,
+        }
+        time_steps = kwargs.pop("time_steps_per_second", 1000)
+        defaults.update(kwargs)
+        return PlotConfig.for_animation(time_steps, **defaults)
+
+    @staticmethod
+    def energy_landscape_2d_static(**kwargs: Any) -> PlotConfig:
+        defaults: dict[str, Any] = {
+            "title": "2D Static Landscape",
+            "xlabel": "X-Index",
+            "ylabel": "Y-Index",
+            "clabel": "Value",
+            "figsize": (8, 7),
+        }
+        defaults.update(kwargs)
+        return PlotConfig.for_static_plot(**defaults)
+
+    @staticmethod
+    def energy_landscape_2d_animation(**kwargs: Any) -> PlotConfig:
+        defaults: dict[str, Any] = {
+            "title": "Evolving 2D Landscape",
+            "xlabel": "X-Index",
+            "ylabel": "Y-Index",
+            "clabel": "Value",
+            "figsize": (8, 7),
+            "fps": 30,
+        }
+        time_steps = kwargs.pop("time_steps_per_second", 1000)
+        defaults.update(kwargs)
+        return PlotConfig.for_animation(time_steps, **defaults)
+
+    @staticmethod
+    def cohomap(**kwargs: Any) -> PlotConfig:
+        defaults: dict[str, Any] = {
+            "title": "CohoMap",
+            "xlabel": "",
+            "ylabel": "",
+            "figsize": (10, 4),
+        }
+        defaults.update(kwargs)
+        return PlotConfig.for_static_plot(**defaults)
+
+    @staticmethod
+    def cohospace_trajectory_2d(**kwargs: Any) -> PlotConfig:
+        defaults: dict[str, Any] = {
+            "title": "CohoSpace trajectory",
+            "xlabel": "theta1 (deg)",
+            "ylabel": "theta2 (deg)",
+            "figsize": (6, 6),
+        }
+        defaults.update(kwargs)
+        return PlotConfig.for_static_plot(**defaults)
+
+    @staticmethod
+    def cohospace_trajectory_1d(**kwargs: Any) -> PlotConfig:
+        defaults: dict[str, Any] = {
+            "title": "CohoSpace trajectory (1D)",
+            "xlabel": "cos(theta)",
+            "ylabel": "sin(theta)",
+            "figsize": (6, 6),
+        }
+        defaults.update(kwargs)
+        return PlotConfig.for_static_plot(**defaults)
+
+    @staticmethod
+    def cohospace_neuron_2d(**kwargs: Any) -> PlotConfig:
+        defaults: dict[str, Any] = {
+            "title": "Neuron activity on coho-space",
+            "xlabel": "Theta 1 (deg)",
+            "ylabel": "Theta 2 (deg)",
+            "figsize": (6, 6),
+        }
+        defaults.update(kwargs)
+        return PlotConfig.for_static_plot(**defaults)
+
+    @staticmethod
+    def cohospace_neuron_1d(**kwargs: Any) -> PlotConfig:
+        defaults: dict[str, Any] = {
+            "title": "Neuron activity on coho-space (1D)",
+            "xlabel": "cos(theta)",
+            "ylabel": "sin(theta)",
+            "figsize": (6, 6),
+        }
+        defaults.update(kwargs)
+        return PlotConfig.for_static_plot(**defaults)
+
+    @staticmethod
+    def cohospace_population_2d(**kwargs: Any) -> PlotConfig:
+        defaults: dict[str, Any] = {
+            "title": "Population activity on coho-space",
+            "xlabel": "Theta 1 (deg)",
+            "ylabel": "Theta 2 (deg)",
+            "figsize": (6, 6),
+        }
+        defaults.update(kwargs)
+        return PlotConfig.for_static_plot(**defaults)
+
+    @staticmethod
+    def cohospace_population_1d(**kwargs: Any) -> PlotConfig:
+        defaults: dict[str, Any] = {
+            "title": "Population activity on coho-space (1D)",
+            "xlabel": "cos(theta)",
+            "ylabel": "sin(theta)",
+            "figsize": (6, 6),
+        }
+        defaults.update(kwargs)
+        return PlotConfig.for_static_plot(**defaults)
+
+    @staticmethod
+    def fr_heatmap(**kwargs: Any) -> PlotConfig:
+        defaults: dict[str, Any] = {
+            "title": "Firing Rate Heatmap",
+            "xlabel": "Time",
+            "ylabel": "Neuron",
+            "figsize": (10, 5),
+            "clabel": "Value",
+        }
+        defaults.update(kwargs)
+        return PlotConfig.for_static_plot(**defaults)
+
+    @staticmethod
+    def frm(**kwargs: Any) -> PlotConfig:
+        defaults: dict[str, Any] = {
+            "title": "Firing Rate Map",
+            "xlabel": "X bin",
+            "ylabel": "Y bin",
+            "figsize": (6, 5),
+            "clabel": "Rate",
+        }
+        defaults.update(kwargs)
+        return PlotConfig.for_static_plot(**defaults)
+
+    @staticmethod
+    def path_compare_2d(**kwargs: Any) -> PlotConfig:
+        defaults: dict[str, Any] = {
+            "title": "Path Compare",
+            "figsize": (12, 5),
+        }
+        defaults.update(kwargs)
+        return PlotConfig.for_static_plot(**defaults)
+
+    @staticmethod
+    def path_compare_1d(**kwargs: Any) -> PlotConfig:
+        defaults: dict[str, Any] = {
+            "title": "Path Compare (1D)",
+            "figsize": (12, 5),
+        }
+        defaults.update(kwargs)
+        return PlotConfig.for_static_plot(**defaults)
+
+    @staticmethod
+    def raster_plot(mode: str = "block", **kwargs: Any) -> PlotConfig:
+        defaults: dict[str, Any] = {
+            "title": "Raster Plot",
+            "xlabel": "Time Step",
+            "ylabel": "Neuron Index",
+            "figsize": (12, 6),
+            "color": "black",
+        }
+        defaults.update(kwargs)
+        config = PlotConfig.for_static_plot(**defaults)
+        config.mode = mode
+        return config
+
+    @staticmethod
+    def average_firing_rate_plot(mode: str = "per_neuron", **kwargs: Any) -> PlotConfig:
+        defaults: dict[str, Any] = {
+            "title": "Average Firing Rate",
+            "figsize": (12, 5),
+        }
+        defaults.update(kwargs)
+        config = PlotConfig.for_static_plot(**defaults)
+        config.mode = mode
+        return config
+
+    @staticmethod
+    def population_activity_heatmap(**kwargs: Any) -> PlotConfig:
+        """Configuration for population activity heatmap visualization.
+
+        Displays neural population activity over time as a 2D heatmap where
+        rows represent neurons and columns represent time points.
+
+        Args:
+            **kwargs: Additional configuration parameters to override defaults.
+
+        Returns:
+            PlotConfig: Configuration object for population activity heatmaps.
+
+        Example:
+            >>> config = PlotConfigs.population_activity_heatmap(
+            ...     title="Network Activity",
+            ...     save_path="activity.png"
+            ... )
+        """
+        defaults: dict[str, Any] = {
+            "title": "Population Activity",
+            "xlabel": "Time (s)",
+            "ylabel": "Neuron Index",
+            "figsize": (10, 6),
+        }
+        plot_kwargs: dict[str, Any] = {"cmap": "viridis"}
+        plot_kwargs.update(kwargs.pop("kwargs", {}))
+        defaults["kwargs"] = plot_kwargs
+        defaults.update(kwargs)
+        return PlotConfig.for_static_plot(**defaults)
+
+    @staticmethod
+    def theta_population_activity_static(**kwargs: Any) -> PlotConfig:
+        defaults: dict[str, Any] = {
+            "title": "Population Activity with Theta",
+            "xlabel": "Time (s)",
+            "ylabel": "Direction (°)",
+            "figsize": (12, 4),
+        }
+        plot_kwargs: dict[str, Any] = {"cmap": "jet"}
+        plot_kwargs.update(kwargs.pop("kwargs", {}))
+        defaults["kwargs"] = plot_kwargs
+        defaults.update(kwargs)
+        return PlotConfig.for_static_plot(**defaults)
+
+    @staticmethod
+    def grid_cell_manifold_static(**kwargs: Any) -> PlotConfig:
+        defaults: dict[str, Any] = {
+            "title": "Grid Cell Activity on Manifold",
+            "figsize": (8, 6),
+        }
+        plot_kwargs: dict[str, Any] = {"cmap": "jet", "add_colorbar": True}
+        plot_kwargs.update(kwargs.pop("kwargs", {}))
+        defaults["kwargs"] = plot_kwargs
+        defaults.update(kwargs)
+        return PlotConfig.for_static_plot(**defaults)
+
+    @staticmethod
+    def internal_position_trajectory_static(**kwargs: Any) -> PlotConfig:
+        defaults: dict[str, Any] = {
+            "title": "Internal Position vs. Real Trajectory",
+            "figsize": (6, 4),
+        }
+        plot_kwargs: dict[str, Any] = {
+            "cmap": "cool",
+            "add_colorbar": True,
+            "colorbar": {"label": "Max GC activity"},
+            "trajectory_color": "black",
+            "trajectory_linewidth": 1.0,
+            "scatter_size": 4,
+            "scatter_alpha": 0.9,
+        }
+        plot_kwargs.update(kwargs.pop("kwargs", {}))
+        defaults["kwargs"] = plot_kwargs
+        defaults.update(kwargs)
+        return PlotConfig.for_static_plot(**defaults)
+
+    @staticmethod
+    def direction_cell_polar(**kwargs: Any) -> PlotConfig:
+        """Configuration for direction cell polar plot visualization.
+
+        Creates polar coordinate plots showing directional tuning of head direction
+        cells or other orientation-selective neurons.
+
+        Args:
+            **kwargs: Additional configuration parameters to override defaults.
+
+        Returns:
+            PlotConfig: Configuration object for polar plots.
+
+        Example:
+            >>> config = PlotConfigs.direction_cell_polar(
+            ...     title="Head Direction Cell",
+            ...     save_path="direction_cell.png"
+            ... )
+        """
+        defaults: dict[str, Any] = {
+            "title": "Direction Cell Activity",
+            "figsize": (6, 6),
+        }
+        defaults.update(kwargs)
+        return PlotConfig.for_static_plot(**defaults)
+
+    @staticmethod
+    def theta_sweep_animation(**kwargs: Any) -> PlotConfig:
+        defaults: dict[str, Any] = {
+            "figsize": (12, 3),
+            "fps": 10,
+            "show_progress_bar": True,
+        }
+        animation_kwargs: dict[str, Any] = {
+            "cmap": "jet",
+            "alpha": 0.8,
+            "trajectory_color": "#FFFFFF",
+            "trajectory_outline": "#1A1A1A",
+            "current_marker_color": "#FF2D00",
+        }
+        animation_kwargs.update(kwargs.pop("kwargs", {}))
+        defaults["kwargs"] = animation_kwargs
+        time_steps = kwargs.pop("time_steps_per_second", None)
+        defaults.update(kwargs)
+        defaults["time_steps_per_second"] = time_steps
+        return PlotConfig(**defaults)
+
+    @staticmethod
+    def theta_sweep_place_cell_animation(**kwargs: Any) -> PlotConfig:
+        """Configuration for theta sweep place cell animation.
+
+        Creates synchronized 2-panel animation showing trajectory with place cell
+        activity overlay and population activity heatmap.
+
+        Args:
+            **kwargs: Additional configuration parameters to override defaults.
+                Must include 'time_steps_per_second' if not using default.
+
+        Returns:
+            PlotConfig: Configuration object for place cell animations.
+
+        Example:
+            >>> config = PlotConfigs.theta_sweep_place_cell_animation(
+            ...     time_steps_per_second=1000,
+            ...     fps=10,
+            ...     save_path="place_cell_sweep.gif"
+            ... )
+        """
+        defaults: dict[str, Any] = {
+            "figsize": (12, 4),
+            "fps": 10,
+            "show_progress_bar": True,
+        }
+        animation_kwargs: dict[str, Any] = {
+            "cmap": "jet",
+            "alpha": 0.8,
+        }
+        animation_kwargs.update(kwargs.pop("kwargs", {}))
+        defaults["kwargs"] = animation_kwargs
+        time_steps = kwargs.pop("time_steps_per_second", None)
+        defaults.update(kwargs)
+        if time_steps is not None:
+            return PlotConfig.for_animation(time_steps, **defaults)
+        else:
+            return PlotConfig(**defaults)
+
+    @staticmethod
+    def tuning_curve(
+        num_bins: int = 50,
+        pref_stim: np.ndarray | None = None,
+        **kwargs: Any,
+    ) -> PlotConfig:
+        defaults: dict[str, Any] = {
+            "title": "Tuning Curve",
+            "xlabel": "Stimulus Value",
+            "ylabel": "Average Firing Rate",
+            "figsize": (10, 6),
+        }
+        defaults.update(kwargs)
+        config = PlotConfig.for_static_plot(**defaults)
+        config.num_bins = num_bins
+        config.pref_stim = pref_stim
+        return config
+
+    @staticmethod
+    def firing_field_heatmap(**kwargs: Any) -> PlotConfig:
+        """Configuration for firing field (rate map) heatmap visualization.
+
+        Displays spatial firing rate distribution for grid cells, place cells, or
+        other spatially-tuned neurons. Uses 'jet' colormap for high-contrast
+        visualization of firing fields.
+
+        Args:
+            **kwargs: Additional configuration parameters to override defaults.
+
+        Returns:
+            PlotConfig: Configuration object for firing field heatmaps.
+
+        Example:
+            >>> from canns.analyzer.visualization import PlotConfigs
+            >>> config = PlotConfigs.firing_field_heatmap(
+            ...     title="Grid Cell Firing Field",
+            ...     save_path="ratemap.png"
+            ... )
+        """
+        defaults: dict[str, Any] = {
+            "title": "Firing Field (Rate Map)",
+            "xlabel": "X Position (bins)",
+            "ylabel": "Y Position (bins)",
+            "figsize": (6, 6),
+        }
+        plot_kwargs: dict[str, Any] = {"cmap": "jet", "origin": "lower", "aspect": "auto"}
+        plot_kwargs.update(kwargs.pop("kwargs", {}))
+        defaults["kwargs"] = plot_kwargs
+        defaults.update(kwargs)
+        return PlotConfig.for_static_plot(**defaults)
+
+    @staticmethod
+    def grid_autocorrelation(**kwargs: Any) -> PlotConfig:
+        """Configuration for spatial autocorrelation heatmap visualization.
+
+        Used to visualize hexagonal periodicity patterns in grid cell firing fields.
+        Applies diverging colormap (RdBu_r) suitable for correlation values [-1, 1].
+
+        Args:
+            **kwargs: Additional configuration parameters to override defaults.
+
+        Returns:
+            PlotConfig: Configuration object for autocorrelation plots.
+
+        Example:
+            >>> from canns.analyzer.visualization import PlotConfigs
+            >>> config = PlotConfigs.grid_autocorrelation(
+            ...     title="Grid Cell Autocorrelation",
+            ...     save_path="autocorr.png"
+            ... )
+        """
+        defaults: dict[str, Any] = {
+            "title": "Spatial Autocorrelation",
+            "xlabel": "X Lag (bins)",
+            "ylabel": "Y Lag (bins)",
+            "figsize": (6, 6),
+        }
+        plot_kwargs: dict[str, Any] = {"cmap": "RdBu_r", "vmin": -1, "vmax": 1}
+        plot_kwargs.update(kwargs.pop("kwargs", {}))
+        defaults["kwargs"] = plot_kwargs
+        defaults.update(kwargs)
+        return PlotConfig.for_static_plot(**defaults)
+
+    @staticmethod
+    def grid_score_plot(**kwargs: Any) -> PlotConfig:
+        """Configuration for grid score bar chart visualization.
+
+        Displays rotational correlations at different angles used to compute grid score.
+        Highlights hexagonal angles (60°, 120°) versus non-hexagonal angles.
+
+        Args:
+            **kwargs: Additional configuration parameters to override defaults.
+
+        Returns:
+            PlotConfig: Configuration object for grid score plots.
+
+        Example:
+            >>> config = PlotConfigs.grid_score_plot(
+            ...     title="Grid Cell Quality Assessment",
+            ...     save_path="grid_score.png"
+            ... )
+        """
+        defaults: dict[str, Any] = {
+            "title": "Grid Score Analysis",
+            "xlabel": "Rotation Angle (°)",
+            "ylabel": "Correlation",
+            "figsize": (8, 5),
+            "grid": True,
+        }
+        defaults.update(kwargs)
+        return PlotConfig.for_static_plot(**defaults)
+
+    @staticmethod
+    def grid_spacing_plot(**kwargs: Any) -> PlotConfig:
+        """Configuration for grid spacing radial profile visualization.
+
+        Shows how autocorrelation decays with distance from center, revealing
+        the periodic spacing of grid fields.
+
+        Args:
+            **kwargs: Additional configuration parameters to override defaults.
+
+        Returns:
+            PlotConfig: Configuration object for spacing analysis plots.
+
+        Example:
+            >>> config = PlotConfigs.grid_spacing_plot(
+            ...     title="Grid Field Spacing",
+            ...     save_path="spacing.png"
+            ... )
+        """
+        defaults: dict[str, Any] = {
+            "title": "Grid Spacing Analysis",
+            "xlabel": "Distance (bins)",
+            "ylabel": "Autocorrelation",
+            "figsize": (8, 5),
+            "grid": True,
+        }
+        defaults.update(kwargs)
+        return PlotConfig.for_static_plot(**defaults)
+
+    @staticmethod
+    def grid_cell_tracking_animation(**kwargs: Any) -> PlotConfig:
+        """Configuration for grid cell tracking animation.
+
+        Creates 3-panel synchronized animation showing trajectory, activity time course,
+        and rate map with position overlay for analyzing grid cell behavior.
+
+        Args:
+            **kwargs: Additional configuration parameters to override defaults.
+                Must include 'time_steps_per_second' if not using default.
+
+        Returns:
+            PlotConfig: Configuration object for tracking animations.
+
+        Example:
+            >>> config = PlotConfigs.grid_cell_tracking_animation(
+            ...     time_steps_per_second=1000,  # dt=1ms
+            ...     fps=20,
+            ...     save_path="tracking.gif"
+            ... )
+        """
+        defaults: dict[str, Any] = {
+            "title": "Grid Cell Tracking",
+            "figsize": (15, 5),
+            "fps": 20,
+            "show_progress_bar": True,
+        }
+        time_steps = kwargs.pop("time_steps_per_second", None)
+        defaults.update(kwargs)
+        if time_steps is not None:
+            return PlotConfig.for_animation(time_steps, **defaults)
+        else:
+            # Return config without time_steps_per_second set
+            # Will be validated when animation function is called
+            return PlotConfig(**defaults)
