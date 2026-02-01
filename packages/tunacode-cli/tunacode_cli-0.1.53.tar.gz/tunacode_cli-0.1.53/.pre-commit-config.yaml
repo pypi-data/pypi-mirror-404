@@ -1,0 +1,166 @@
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+default_language_version:
+  python: python3
+
+# Global exclusions to prevent hooks from scanning unnecessary directories
+exclude: ^(venv/|build/|dist/|\.git/|__pycache__/|.*\.egg-info/|\.pytest_cache/|\.mypy_cache/|\.ruff_cache/|\.uv-cache/|\.uv_cache/|htmlcov/|\.coverage|reports/|llm-agent-tools/|\.tickets/)
+
+repos:
+  # Pre-commit framework hooks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+        # models_registry.json is auto-generated config; lsp/__init__.py is empty stub
+        # trailing newline changes create diff noise
+        exclude: (models_registry\.json|lsp/__init__\.py)$
+      - id: check-yaml
+        args: ['--allow-multiple-documents']
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+      - id: check-case-conflict
+      - id: check-merge-conflict
+      - id: check-json
+      - id: check-toml
+      - id: check-ast
+      - id: debug-statements
+      - id: mixed-line-ending
+        args: ['--fix=lf']
+      - id: check-docstring-first
+      - id: check-executables-have-shebangs
+      - id: check-shebang-scripts-are-executable
+
+  # Python specific security checks
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.8.0
+    hooks:
+      - id: bandit
+        args: ['-c', 'pyproject.toml']
+        additional_dependencies: ['bandit[toml]']
+
+  # Ruff - Fast Python linter and formatter
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.9
+    hooks:
+      - id: ruff
+        args: ['--fix', '--show-fixes']
+      - id: ruff-format  # Re-enabled - ruff handles linting, ruff-format handles formatting
+        exclude: (models_registry\.json|lsp/__init__\.py)$
+
+  # Type checking with mypy
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.14.1
+    hooks:
+      - id: mypy
+        additional_dependencies:
+          - 'pydantic>=2.0'
+          - 'typer>=0.15'
+          - 'types-requests'
+        args: ['--ignore-missing-imports', '--no-strict-optional']
+        exclude: '(conftest\.py|src/tunacode/core/agents/|^tests/|^scripts/)'
+
+
+  # Local hooks for project-specific checks
+  - repo: local
+    hooks:
+      # UV-managed tools
+      - id: dead-imports
+        name: Check for unused imports in changed files
+        entry: scripts/run-dead-imports.sh
+        language: script
+        files: \.py$
+        stages: [pre-commit]
+
+      - id: vulture-changed
+        name: Check for dead code in changed files
+        entry: uv run vulture --min-confidence 80 src/ scripts/utils/vulture_whitelist.py
+        language: system
+        files: \.py$
+        exclude: ^(tests/|test_)
+        stages: [pre-commit]
+
+      - id: unused-constants
+        name: Check for unused constants
+        entry: uv run python scripts/check-unused-constants.py
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+
+      # Check for common security issues
+      - id: security-check
+        name: Security audit
+        entry: bash -c 'find src/ -name "*.py" -type f | xargs grep -H "PRIVATE\|SECRET\|PASSWORD\|TOKEN" | grep -v "test_" || exit 0'
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      # Validate no print statements in production code
+      - id: no-print-statements
+        name: Check for print statements
+        entry: bash -c 'find src/ -name "*.py" -type f | xargs grep -H "print(" | grep -v "# noqa" | grep -v "# pragma" || exit 0'
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      # Check for files longer than 500 lines
+      - id: check-file-length
+        name: Check for files longer than 500 lines
+        entry: scripts/check-file-length.sh
+        language: script
+        pass_filenames: false
+        always_run: true
+
+      # Check naming conventions
+      - id: naming-conventions
+        name: Check naming conventions
+        entry: uv run python scripts/check-naming-conventions.py
+        language: system
+        files: ^src/.*\.py$
+        exclude: ^(tests/|scripts/)
+
+      # Check for duplicate code
+      - id: pylint-duplicates
+        name: Check for duplicate code
+        entry: uv run pylint --disable=all --enable=R0801 --min-similarity-lines=15
+        language: system
+        files: ^src/.*\.py$
+        exclude: ^(tests/|scripts/|__pycache__/)
+        pass_filenames: true
+        stages: [pre-commit]
+
+  # Import sorting with isort - DISABLED (ruff handles this with extend-select = ["I"])
+  # - repo: https://github.com/pycqa/isort
+  #   rev: 5.13.2
+  #   hooks:
+  #     - id: isort
+  #       args: ['--profile', 'black', '--filter-files']
+
+  # Documentation linting
+  - repo: https://github.com/pycqa/doc8
+    rev: v1.1.2
+    hooks:
+      - id: doc8
+        args: ['--max-line-length=120']
+
+  # Markdown linting - temporarily disabled due to Node.js v23 compatibility issue
+  # - repo: https://github.com/igorshubovych/markdownlint-cli
+  #   rev: v0.42.0
+  #   hooks:
+  #     - id: markdownlint
+  #       args: ['--disable', 'MD013', 'MD033', 'MD041']
+
+# Configuration for ci
+ci:
+  autofix_commit_msg: |
+    [pre-commit.ci] auto fixes from pre-commit hooks
+
+    for more information, see https://pre-commit.ci
+  autofix_prs: true
+  autoupdate_branch: ''
+  autoupdate_commit_msg: '[pre-commit.ci] pre-commit autoupdate'
+  autoupdate_schedule: weekly
+  # Skip hooks that require project-specific environment setup
+  skip: [vulture-changed]
+  submodules: false

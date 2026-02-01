@@ -1,0 +1,232 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tunacode-cli"
+
+version = "0.1.53"
+description = "Your agentic CLI developer."
+keywords = ["cli", "agent", "development", "automation"]
+readme = "README.md"
+requires-python = ">=3.11,<3.14"
+license = {text = "MIT"}
+authors = [
+    { name = "larock22", email = "noreply@github.com" },
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development",
+    "Topic :: Utilities",
+]
+dependencies = [
+    "typer>=0.15.0",
+    "click>=8.1.0,<8.2.0",
+    "prompt_toolkit>=3.0.52,<4.0.0",
+    "pydantic>=2.12.4,<3.0.0",
+    "pydantic-ai>=1.18.0,<2.0.0",
+    "pygments>=2.19.2,<3.0.0",
+    "rich>=14.2.0,<15.0.0",
+    "defusedxml",
+    "textual>=4.0.0,<5.0.0",
+    "pathspec>=0.12.1",
+    "textual-autocomplete>=4.0.6",
+    "html2text>=2024.2.26",
+    "python-Levenshtein>=0.21.0",
+    "ruff>=0.14.0",
+]
+
+[project.scripts]
+tunacode = "tunacode.ui.main:app"
+
+[project.optional-dependencies]
+dev = [
+    "build",
+    "twine",
+    "ruff==0.14.9",
+    "pytest",
+    "pytest-cov",
+    "pytest-asyncio",
+    "textual-dev",
+    "pre-commit",
+    "vulture>=2.7",
+    "unimport>=1.0.0",
+    "autoflake>=2.0.0",
+    "dead>=1.5.0",
+    "mypy",
+    "bandit",
+    "pylint>=3.0.0",
+
+]
+
+[project.urls]
+Homepage = "https://tunacode.xyz/"
+Repository = "https://github.com/alchemiststudiosDOTai/tunacode"
+Issues = "https://github.com/alchemiststudiosDOTai/tunacode/issues"
+Documentation = "https://github.com/alchemiststudiosDOTai/tunacode#readme"
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle
+    "F",   # Pyflakes
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "SIM", # flake8-simplify
+    "I",   # isort
+]
+ignore = ["E203"]
+exclude = [
+    ".bzr",
+    ".direnv",
+    ".eggs",
+    ".git",
+    ".hg",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    "__pypackages__",
+    "__pycache__",
+    "build",
+    "dist",
+    "venv",
+    "vulture_whitelist.py",
+    ".osgrep",
+    "*.lance",
+    "*.egg-info",
+]
+
+[tool.ruff.lint.isort]
+section-order = [
+    "future",
+    "standard-library",
+    "third-party",
+    "tunacode-shared",
+    "tunacode-tools",
+    "tunacode-infrastructure",
+    "tunacode-core",
+    "tunacode-ui",
+    "first-party",
+    "local-folder",
+]
+
+[tool.ruff.lint.isort.sections]
+"tunacode-shared" = [
+    "tunacode.configuration*",
+    "tunacode.constants*",
+    "tunacode.exceptions*",
+    "tunacode.indexing*",
+    "tunacode.lsp*",
+    "tunacode.prompts*",
+    "tunacode.templates*",
+    "tunacode.types*",
+    "tunacode.utils*",
+]
+"tunacode-tools" = ["tunacode.tools*"]
+"tunacode-infrastructure" = ["tunacode.infrastructure*"]
+"tunacode-core" = ["tunacode.core*"]
+"tunacode-ui" = ["tunacode.ui*"]
+
+[tool.vulture]
+min_confidence = 80
+paths = ["src", "tests"]
+exclude = ["venv/", "build/", "dist/", ".git/", "__pycache__/", "*.egg-info/", ".osgrep/"]
+# Whitelist of false positives
+ignore_names = [
+    # TYPE_CHECKING imports
+    "ReadStream",
+    "WriteStream",
+    "StateManager",
+    "ModelRequest",
+    "CommandRegistry",
+    # Pytest fixtures
+    "caplog",
+    "temp_workspace",
+    "setup_test_environment",
+    "excinfo",
+    # Common patterns
+    "_complete_event",  # prompt_toolkit API requirement
+    "kw",  # **kw pattern
+    "kwargs",  # **kwargs pattern
+    "message",  # exception handling
+    "response_obj",  # API responses
+    # Test parameters and mock arguments
+    "should_restart",  # test parameter
+    "exc",  # exception handling in __aexit__
+    "exc_type",  # exception handling in __aexit__
+    "tb",  # traceback in __aexit__
+    "style_dict",  # Style.from_dict parameter
+    "style_str",  # get_attrs_for_style_str parameter
+]
+
+[tool.bandit]
+# Skip low-severity warnings for subprocess and assert statements
+skips = ["B404", "B603", "B101", "B607", "B110", "B324", "B103", "B604", "B602", "B108"]
+# B404: import subprocess
+# B603: subprocess without shell=True
+# B101: assert statements
+# B607: start process with partial path
+# B110: try/except/pass
+# B324: hashlib (SHA1 for non-security fingerprinting)
+# B103: chmod permissions (needed for template dirs)
+# B604: shell=True (validated usage in REPL)
+# B602: subprocess with shell=True (security utils)
+# B108: hardcoded tmp paths (test fixtures)
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+warn_return_any = false
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = false
+no_implicit_optional = true
+
+[tool.pylint.messages_control]
+# Enable duplicate code detection (R0801)
+enable = ["R0801"]
+min-similarity-lines = 6
+ignore-patterns = ["test_.*", ".*_test.py", "conftest.py"]
+
+[tool.pylint.reports]
+# Only show duplicate code messages to reduce noise
+reports = false
+score = false
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tunacode"]
+include = ["src/tunacode/ui/assets/*.ansi", "src/tunacode/configuration/*.json"]
+
+[tool.hatch.build]
+artifacts = [
+    "src/tunacode/configuration/models_registry.json",
+]
+
+[tool.pytest.ini_options]
+markers = [
+    "hypothesis: property-based tests using hypothesis (may be slow)",
+    "integration: tests requiring real API access (skipped by default)",
+]
+asyncio_mode = "auto"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.1",
+    "pytest-asyncio>=1.3.0",
+    "hypothesis>=6.150.0",
+    "grimp>=3.14",
+    "pylint>=4.0.4",
+]
