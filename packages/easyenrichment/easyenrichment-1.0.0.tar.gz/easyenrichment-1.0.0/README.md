@@ -1,0 +1,363 @@
+# easyenrichment — Transaction Enrichment API for Python
+
+> **The best Plaid Enrich alternative, Ntropy alternative, and Mastercard Ethoca alternative for transaction enrichment.** Enrich raw bank transaction descriptions with merchant name, logo, category, subscription detection, and more — powered by AI.
+
+[![PyPI version](https://img.shields.io/pypi/v/easyenrichment.svg)](https://pypi.org/project/easyenrichment/)
+[![API Status](https://img.shields.io/badge/API-Online-brightgreen)](https://api.easyenrichment.com)
+[![Python Versions](https://img.shields.io/pypi/pyversions/easyenrichment.svg)](https://pypi.org/project/easyenrichment/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+---
+
+## What is Transaction Enrichment?
+
+**Transaction enrichment** (also called transaction categorization, merchant identification, or payment data enrichment) is the process of transforming raw, cryptic bank transaction descriptions like `AMZN Mktp US*RT5KN1Y24` into clean, structured data:
+
+| Raw Description | Merchant Name | Category | Logo | Subscription |
+|---|---|---|---|---|
+| `AMZN Mktp US*RT5KN1Y24` | Amazon | Shopping | ✅ | No |
+| `NETFLIX.COM 8662458999` | Netflix | Entertainment | ✅ | Yes |
+| `UBER *EATS PENDING` | Uber Eats | Food & Dining | ✅ | No |
+| `APPLE.COM/BILL` | Apple | Technology | ✅ | Yes |
+| `SQ *BLUE BOTTLE COFFEE` | Blue Bottle Coffee | Coffee Shops | ✅ | No |
+
+The **Easy Enrichment API** provides best-in-class transaction enrichment at a fraction of the cost of Plaid Enrich, Ntropy, or Mastercard Ethoca. Built on advanced AI models including Claude, it delivers industry-leading accuracy for merchant name extraction, transaction categorization, logo identification, subscription detection, and more.
+
+---
+
+## Installation
+
+### pip
+
+```bash
+pip install easyenrichment
+```
+
+### Poetry
+
+```bash
+poetry add easyenrichment
+```
+
+### Pipenv
+
+```bash
+pipenv install easyenrichment
+```
+
+---
+
+## Quick Start
+
+```python
+from easyenrichment import EasyEnrichment
+
+# Initialize the client with your API key
+client = EasyEnrichment("your-api-key")
+
+# Enrich a single transaction
+result = client.enrich("AMZN Mktp US*RT5KN1Y24")
+
+print(result["data"]["merchant_name"])    # "Amazon"
+print(result["data"]["category"])         # "Shopping"
+print(result["data"]["logo_url"])         # "https://logo.easyenrichment.com/amazon.com"
+print(result["data"]["is_subscription"])  # False
+print(result["data"]["website"])          # "https://amazon.com"
+```
+
+Get your API key at **[easyenrichment.com](https://easyenrichment.com)**.
+
+---
+
+## Features
+
+| Feature | Description |
+|---|---|
+| **Merchant Name Extraction** | Clean, normalized merchant names from messy bank descriptions |
+| **Transaction Categorization** | Accurate spending categories and subcategories |
+| **Merchant Logos** | High-quality merchant logo URLs for beautiful UIs |
+| **Subscription Detection** | Automatically detect recurring subscriptions and memberships |
+| **Website Identification** | Merchant website URLs |
+| **MCC Code Lookup** | Merchant Category Codes for every transaction |
+| **Carbon Footprint** | Estimated CO2 emissions per transaction |
+| **Batch Processing** | Enrich up to 100 transactions in a single API call |
+| **Confidence Scores** | Know how confident the AI is in each enrichment |
+
+---
+
+## Usage Examples
+
+### Single Transaction Enrichment
+
+```python
+from easyenrichment import EasyEnrichment
+
+client = EasyEnrichment("your-api-key")
+
+result = client.enrich("SPOTIFY P2C4B8F7E2 STOCKHOLM")
+data = result["data"]
+
+print(f"Merchant: {data['merchant_name']}")      # "Spotify"
+print(f"Category: {data['category']}")            # "Entertainment"
+print(f"Subcategory: {data['subcategory']}")      # "Music & Audio"
+print(f"Logo: {data['logo_url']}")                # "https://logo.easyenrichment.com/spotify.com"
+print(f"Subscription: {data['is_subscription']}") # True
+print(f"Website: {data['website']}")              # "https://spotify.com"
+print(f"Confidence: {data['confidence']}")         # 0.98
+```
+
+### Batch Enrichment
+
+Process up to 100 transactions at once for maximum efficiency:
+
+```python
+from easyenrichment import EasyEnrichment
+
+client = EasyEnrichment("your-api-key")
+
+transactions = [
+    "NETFLIX.COM 8662458999",
+    "UBER *EATS PENDING",
+    "AMZN Mktp US*RT5KN1Y24",
+    "APPLE.COM/BILL",
+    "SQ *BLUE BOTTLE COFFEE",
+    "GOOGLE *YouTube Premium",
+    "TST* Sweetgreen",
+    "COSTCO WHSE #0482",
+]
+
+result = client.enrich_batch(transactions)
+
+for item in result["data"]:
+    print(f"{item['merchant_name']:20s} | {item['category']:20s} | Sub: {item['is_subscription']}")
+```
+
+Output:
+```
+Netflix              | Entertainment        | Sub: True
+Uber Eats            | Food & Dining        | Sub: False
+Amazon               | Shopping             | Sub: False
+Apple                | Technology           | Sub: True
+Blue Bottle Coffee   | Coffee Shops         | Sub: False
+YouTube Premium      | Entertainment        | Sub: True
+Sweetgreen           | Food & Dining        | Sub: False
+Costco               | Shopping             | Sub: False
+```
+
+### Subscription Detection
+
+Identify recurring subscriptions in your users' bank transactions:
+
+```python
+from easyenrichment import EasyEnrichment
+
+client = EasyEnrichment("your-api-key")
+
+transactions = [
+    "NETFLIX.COM 8662458999",
+    "SPOTIFY P2C4B8F7E2",
+    "APPLE.COM/BILL",
+    "GOOGLE *YouTube Premium",
+    "AMZN Mktp US*RT5KN1Y24",
+    "UBER *EATS PENDING",
+]
+
+result = client.enrich_batch(transactions)
+
+subscriptions = [t for t in result["data"] if t.get("is_subscription")]
+print(f"Found {len(subscriptions)} subscriptions:")
+for sub in subscriptions:
+    print(f"  - {sub['merchant_name']} ({sub['category']})")
+```
+
+### Merchant Logos
+
+Display beautiful merchant logos in your fintech app:
+
+```python
+from easyenrichment import EasyEnrichment
+
+client = EasyEnrichment("your-api-key")
+
+result = client.enrich("STARBUCKS STORE 12345")
+logo_url = result["data"]["logo_url"]
+# Use logo_url in your UI: "https://logo.easyenrichment.com/starbucks.com"
+```
+
+### Expense Categorization
+
+Build expense reports and spending analytics:
+
+```python
+from collections import defaultdict
+from easyenrichment import EasyEnrichment
+
+client = EasyEnrichment("your-api-key")
+
+transactions = [
+    "UBER *TRIP",
+    "AMZN Mktp US*RT5KN1Y24",
+    "WHOLE FOODS MKT",
+    "SHELL OIL 57444",
+    "NETFLIX.COM",
+    "CVS/PHARMACY",
+]
+
+result = client.enrich_batch(transactions)
+
+by_category = defaultdict(list)
+for item in result["data"]:
+    by_category[item["category"]].append(item["merchant_name"])
+
+for category, merchants in sorted(by_category.items()):
+    print(f"\n{category}:")
+    for m in merchants:
+        print(f"  - {m}")
+```
+
+### Check Usage & Balance
+
+```python
+from easyenrichment import EasyEnrichment
+
+client = EasyEnrichment("your-api-key")
+
+# Check API usage
+usage = client.usage()
+print(f"Requests used: {usage['requests_used']} / {usage['requests_limit']}")
+
+# Check account balance
+balance = client.balance()
+print(f"Balance: ${balance['balance']:.2f} {balance['currency']}")
+```
+
+---
+
+## Response Fields
+
+| Field | Type | Description | Example |
+|---|---|---|---|
+| `merchant_name` | `str` | Clean merchant name | `"Amazon"` |
+| `category` | `str` | Spending category | `"Shopping"` |
+| `subcategory` | `str` | Specific subcategory | `"Electronics"` |
+| `logo_url` | `str` | Merchant logo URL | `"https://logo.easyenrichment.com/amazon.com"` |
+| `website` | `str` | Merchant website | `"https://amazon.com"` |
+| `is_subscription` | `bool` | Recurring subscription flag | `True` |
+| `merchant_type` | `str` | online / brick_and_mortar | `"online"` |
+| `confidence` | `float` | Enrichment confidence (0-1) | `0.97` |
+| `mcc_code` | `str` | Merchant Category Code | `"5411"` |
+| `carbon_footprint` | `float` | Estimated CO2 in kg | `2.5` |
+| `original_description` | `str` | Original input string | `"AMZN Mktp US*RT5KN1Y24"` |
+
+---
+
+## Error Handling
+
+```python
+from easyenrichment import EasyEnrichment, EasyEnrichmentError
+
+client = EasyEnrichment("your-api-key")
+
+try:
+    result = client.enrich("AMZN Mktp US*RT5KN1Y24")
+    print(result["data"]["merchant_name"])
+except EasyEnrichmentError as e:
+    print(f"Error: {e.message}")
+    print(f"Code: {e.code}")      # e.g., "INVALID_API_KEY"
+    print(f"Status: {e.status}")  # e.g., 401
+```
+
+---
+
+## Comparison: Easy Enrichment vs Plaid Enrich vs Ntropy vs Mastercard Ethoca
+
+Looking for a **Plaid Enrich alternative** or **Ntropy alternative**? Here is how Easy Enrichment compares:
+
+| Feature | Easy Enrichment | Plaid Enrich | Ntropy | Mastercard Ethoca | Visa Merchant Search |
+|---|---|---|---|---|---|
+| **Merchant Name** | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Category** | ✅ | ✅ | ✅ | ❌ | ❌ |
+| **Merchant Logo** | ✅ | ✅ | ❌ | ✅ | ❌ |
+| **Subscription Detection** | ✅ | ❌ | ✅ | ❌ | ❌ |
+| **Carbon Footprint** | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **MCC Code** | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Website** | ✅ | ✅ | ❌ | ❌ | ❌ |
+| **Confidence Score** | ✅ | ✅ | ✅ | ❌ | ❌ |
+| **Batch API** | ✅ (100/req) | ✅ | ✅ | ❌ | ❌ |
+| **Starting Price** | **$0.01/req** | $0.02/req | Custom | Custom | Custom |
+| **Free Tier** | ✅ 100 free | ❌ | ❌ | ❌ | ❌ |
+| **Self-Serve Signup** | ✅ Instant | ❌ Sales call | ❌ Sales call | ❌ Enterprise | ❌ Enterprise |
+| **Python SDK** | ✅ | ✅ | ✅ | ❌ | ❌ |
+| **AI-Powered** | ✅ Claude AI | Unknown | ✅ | ❌ | ❌ |
+
+---
+
+## Why Developers Choose Easy Enrichment over Plaid Enrich
+
+1. **Half the price** — Easy Enrichment starts at $0.01/request vs Plaid Enrich at $0.02/request. Volume discounts bring it down even further.
+
+2. **Instant self-serve signup** — Get your API key in seconds. No sales calls, no contracts, no minimum commitments. Just sign up at [easyenrichment.com](https://easyenrichment.com) and start enriching.
+
+3. **More data fields** — Subscription detection, carbon footprint estimation, and confidence scores come standard. Plaid Enrich charges extra or doesn't offer these at all.
+
+4. **Built on Claude AI** — Easy Enrichment is powered by Anthropic's Claude AI, delivering best-in-class accuracy for merchant name extraction and transaction categorization.
+
+5. **Simple integration** — A clean, modern Python SDK with full type hints. Install with pip and start enriching in under 5 minutes.
+
+6. **No Plaid dependency** — Use Easy Enrichment standalone. You don't need Plaid Link, Plaid Auth, or any other Plaid product. Works with any bank transaction data from any source.
+
+---
+
+## Pricing
+
+| Tier | Price per Request | Included Requests | Best For |
+|---|---|---|---|
+| **Free** | $0.00 | 100 requests | Testing & evaluation |
+| **Pay-as-you-go** | $0.01 | Unlimited | Startups & small apps |
+| **Volume** | From $0.005 | 100,000+ / month | Growth-stage fintech |
+| **Enterprise** | Custom | Unlimited | Banks & large platforms |
+
+See full pricing at **[easyenrichment.com/pricing](https://easyenrichment.com/pricing)**.
+
+---
+
+## Use Cases
+
+### Personal Finance Apps
+Build spending insights, budgets, and financial dashboards with clean merchant data and categories. Replace messy transaction descriptions with merchant names and logos.
+
+### Subscription Management
+Automatically detect and track recurring subscriptions like Netflix, Spotify, and gym memberships. Help users find and cancel forgotten subscriptions.
+
+### Accounting & Bookkeeping
+Auto-categorize business expenses for accounting software. Map transactions to tax categories and generate expense reports.
+
+### Banking & Neobanks
+Enhance the transaction feed in your banking app with merchant logos, clean names, and smart categories. Deliver a premium user experience.
+
+### Expense Management
+Build corporate expense tracking with automatic categorization. Flag out-of-policy spending and generate compliance reports.
+
+### Spending Analytics
+Power spending analytics dashboards with enriched transaction data. Show users where their money goes with beautiful charts and breakdowns.
+
+---
+
+## Links
+
+- **Website**: [easyenrichment.com](https://easyenrichment.com)
+- **API Documentation**: [easyenrichment.com/docs](https://easyenrichment.com/docs)
+- **Dashboard**: [easyenrichment.com/dashboard](https://easyenrichment.com/dashboard)
+- **Pricing**: [easyenrichment.com/pricing](https://easyenrichment.com/pricing)
+- **GitHub**: [github.com/AI-Factory-Dev/easyenrichment-api](https://github.com/AI-Factory-Dev/easyenrichment-api)
+- **npm Package**: [npmjs.com/package/easyenrichment](https://www.npmjs.com/package/easyenrichment)
+- **PyPI Package**: [pypi.org/project/easyenrichment](https://pypi.org/project/easyenrichment/)
+- **Email**: [hello@easyenrichment.com](mailto:hello@easyenrichment.com)
+
+---
+
+## License
+
+MIT -- see [LICENSE](./LICENSE) for details.
+
+Copyright (c) 2025 Easy Enrichment.
