@@ -1,0 +1,358 @@
+# Photo Dedup
+
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
+
+Advanced duplicate photo detection and management system using perceptual hashing, template similarity, and rotation-aware comparison.
+
+## Why This Exists
+
+**The Real Problem: Google Photos Searches Cluttered with Duplicates**
+
+You love Google Photos' daily memories and search features. But they're **cluttered with duplicates**:
+- Search for "beach 2015" → See the same photo 5 times (low-res Picasa + high-res upload + edited versions)
+- Daily memories → Half the photos are duplicates from different uploads
+- Face recognition → Same person's face counted multiple times from duplicate photos
+
+**The Root Cause:**
+
+15+ years of digital photography chaos:
+- **Early days:** Uploaded to Picasa at low resolution (to save space)
+- **2010s:** Google Photos replaced Picasa → Re-uploaded everything at full resolution
+- **Multi-cloud era:** Migrated between iCloud, Dropbox, OneDrive → Multiple copies everywhere
+- **NAS nightmares:** QNAP/Synology sync tools failed mid-sync → Created duplicates (`IMG_1234(1).jpg`, `IMG_1234(2).jpg`)
+- **Phone upgrades:** Each backup/restore cycle → More duplicates
+
+**What You Really Want:**
+
+**Spatial photo stacking** - where variants of the same photo are grouped together and only the best one shows in searches and memories.
+
+**Important distinction:**
+- ✅ **Temporal stacking** (burst shots) - Google Photos already has this
+- ❌ **Spatial stacking** (variants of same photo) - Google Photos doesn't have this
+
+**Google Photos can group burst shots (different moments), but can't group variants of the same moment** (low-res vs high-res, edited vs original, different formats).
+
+**The Deployment Problem:**
+
+You can't easily act on the duplicates Photo Dedup finds:
+- ❌ **Takeout → Delete All → Re-upload** loses face recognition training
+- ❌ **Not reliable enough** for automatic deletion
+- ❌ **Google doesn't support bulk delete** anyway
+- ❌ **Manual deletion** of thousands of photos is impractical
+
+**Photo Dedup's Real Value:**
+
+1. **Immediate:** Identify duplicate photo stacks in your library
+2. **Analysis:** Understand how many duplicates you have and why
+3. **Advocacy:** Generate evidence for a Google Photos enhancement request
+4. **Future-ready:** Export stack definitions if/when Google adds stacking support
+
+**The Solution:** Photo Dedup intelligently finds **spatial duplicates** - all photos that originate from the **same source image** using multiple techniques:
+- **Byte-identical detection** - Same file, different names/locations
+- **Perceptual hashing** - Different resolutions, crops, edits, or format conversions of the same photo
+- **Template similarity** - Hierarchical clustering to find versions of the same original
+- **Rotation-aware** - Detects same photo even if rotated or flipped differently
+- **Metadata analysis** - Groups photos by capture date, camera, settings
+
+**What it finds (spatial duplicates):**
+- Low-res Picasa version + high-res Google Photos version (same photo, different resolutions)
+- Edited version + original (same photo, different edits)
+- JPEG + HEIC of the same image (same photo, different formats)
+- Cloud sync duplicates like `IMG_1234.jpg` and `IMG_1234(1).jpg`
+
+**What it doesn't find (temporal sequences):**
+- Burst shots (different moments in time - that's temporal stacking, which Google already has)
+- Different photos from the same scene (those are separate images, not duplicates)
+
+**The Result:** A web interface where you review duplicate groups, understand your duplication problem, and **build a case for Google to add native photo stacking**.
+
+## What Google Photos Needs (And You Can Help!)
+
+### The Missing Feature: Spatial Photo Stacking
+
+**Google Photos already has:**
+- ✅ **Temporal stacking** - Groups burst shots (photos taken in rapid succession)
+
+**What Google Photos is missing:**
+- ❌ **Spatial stacking** - Groups variants of the SAME photo
+
+**Why spatial stacking matters:**
+- Professional photo workflows create variants (original + edits)
+- Cloud migrations create duplicates (Picasa low-res + Google Photos high-res)
+- Sync failures create copies (IMG_1234.jpg + IMG_1234(1).jpg)
+- Format conversions create duplicates (JPEG + HEIC of same image)
+
+**What Spatial Stacking Would Do:**
+
+- **Searches:** Show only one version per photo (low-res + high-res = one result)
+- **Memories:** Don't repeat the same photo in different resolutions/edits
+- **Storage view:** See variant stacks collapsed (expand to see all versions)
+- **Face recognition:** Count each person once per photo (not once per duplicate)
+- **Sharing:** Share the best version automatically
+
+**Examples of what would stack:**
+- Picasa low-res + Google Photos high-res (same photo, different resolutions)
+- Original + edited versions (same photo, different edits)
+- JPEG + HEIC (same photo, different formats)
+- IMG_1234.jpg + IMG_1234(1).jpg (sync duplicates)
+
+**How Photo Dedup Helps:**
+
+1. **Proves it's solvable:** This tool finds the stacks - Google could do it natively
+2. **Quantifies the problem:** See how many duplicates you have
+3. **Generates evidence:** Export stack data to show Google what you need
+4. **Advocacy template:** Use [GOOGLE_ENHANCEMENT_REQUEST.md](GOOGLE_ENHANCEMENT_REQUEST.md) to request this feature
+
+**Your voice matters:** If this resonates with you, please:
+- ⭐ **Star this repository** to show demand
+- 📢 **Submit Google Photos feedback** (see enhancement request template)
+- 🗣️ **Share your story** in Google Photos community forums
+
+See **[GOOGLE_ENHANCEMENT_REQUEST.md](GOOGLE_ENHANCEMENT_REQUEST.md)** for how to advocate for this feature.
+
+## Who This Is For
+
+✅ **Perfect for you if:**
+- **Google Photos user** frustrated by duplicates in searches and memories
+- You've accumulated photos across multiple cloud services (Picasa → Google Photos → iCloud → etc.)
+- You want to **understand your duplication problem** before taking action
+- You want to **advocate for Google Photos stacking** with evidence
+- You're technical enough to run command-line tools and interpret results
+- You want a **takeout cleanup** but need to review carefully (not auto-delete)
+
+❌ **Maybe not for you if:**
+- You only have a few dozen photos (manual review is faster)
+- You expect automatic deletion (this tool identifies, you decide)
+- You need simple drag-and-drop (this is web-based but technical)
+
+**📖 New user?** Start with **[GETTING_STARTED.md](GETTING_STARTED.md)** for step-by-step instructions including Google Takeout export.
+
+## Requirements
+
+- **Python 3.11+** (tested with Python 3.13)
+- **Operating Systems:** Windows, macOS, Linux
+- **Dependencies:** Automatically installed via pip (see pyproject.toml for full list)
+
+## Installation
+
+### Option 1: Install from GitHub (Recommended)
+
+```bash
+# Install directly from GitHub
+pip install git+https://github.com/gbarrett28/photo_dedup.git
+
+# Or clone and install in development mode
+git clone https://github.com/gbarrett28/photo_dedup.git
+cd photo_dedup
+pip install -e .
+```
+
+### Option 2: Manual Setup (for development)
+
+```bash
+# Clone the repository
+git clone https://github.com/gbarrett28/photo_dedup.git
+cd photo_dedup
+
+# Create virtual environment
+python -m venv .venv
+.venv\Scripts\activate  # Windows
+# or: source .venv/bin/activate  # Unix/macOS
+
+# Install dependencies
+pip install -e ".[dev]"  # Install with development tools
+```
+
+## Quick Start
+
+### Usage
+
+```bash
+# After pip installation, simply run:
+photo-dedup
+
+# Or if running from source:
+cd src/scripts
+python orchestrate.py
+
+# Browser will open automatically to http://localhost:8000
+# Configure settings and run pipeline through the UI
+```
+
+### Run Tests
+
+```bash
+# All comprehensive tests
+python -m pytest tests/test_*_comprehensive.py -v
+
+# With coverage
+python -m pytest tests/test_*_comprehensive.py -v --cov=src --cov-report=html
+```
+
+### Quality Checks (Bronze Gate)
+
+```bash
+# Format and lint
+python -m ruff check --fix --ignore PLR0912,PLR0915,C901 .
+python -m ruff format .
+
+# Type check
+python -m mypy --strict src/utils/config.py  # Example file
+
+# Run all tests
+python -m pytest tests/test_*_comprehensive.py -v
+```
+
+## Documentation
+
+### Essential Docs
+
+- **[CLAUDE.md](CLAUDE.md)** - AI assistant instructions for this project
+- **[BASELINE.md](BASELINE.md)** - Initial code quality baseline (historical record)
+
+### Portable Methodology (For Your Next Project)
+
+- **[docs/PORTABLE_METHODOLOGY.md](docs/PORTABLE_METHODOLOGY.md)** - Python-ready development methodology
+- **[docs/PORTABLE_METHODOLOGY_UNIVERSAL.md](docs/PORTABLE_METHODOLOGY_UNIVERSAL.md)** - Language-agnostic methodology
+- **[docs/LESSONS_LEARNED.md](docs/LESSONS_LEARNED.md)** - Project retrospective and insights
+
+### Development Guides
+
+- **[docs/WORKFLOW.md](docs/WORKFLOW.md)** - Development workflow and git conventions
+- **[docs/GUIDELINES.md](docs/GUIDELINES.md)** - Project coding guidelines
+- **[docs/ISSUE_TEMPLATES.md](docs/ISSUE_TEMPLATES.md)** - GitHub issue templates
+- **[docs/AGENTS.md](docs/AGENTS.md)** - AI agents available for development tasks
+- **[docs/PUPPETEER_TESTING.md](docs/PUPPETEER_TESTING.md)** - Frontend testing with Puppeteer
+
+### Technical Specifications
+
+- **[src/scripts/PIPELINE_SPEC.md](src/scripts/PIPELINE_SPEC.md)** - Pipeline architecture
+- **[src/scripts/BENCHMARKS_SPEC.md](src/scripts/BENCHMARKS_SPEC.md)** - Benchmark system
+- **[src/scripts/REVIEW_SPEC.md](src/scripts/REVIEW_SPEC.md)** - Review interface
+- **[src/utils/COMPUTE_TEMPLATE_SIMILARITY.md](src/utils/COMPUTE_TEMPLATE_SIMILARITY.md)** - Template similarity algorithm
+
+### Module READMEs
+
+- **[src/utils/README.md](src/utils/README.md)** - Pipeline utilities
+- **[src/photo_compare/README.md](src/photo_compare/README.md)** - Image comparison methods
+
+### Historical Documentation
+
+Archived implementation plans, test strategies, and status reports are in **[docs/archive/](docs/archive/)** for reference.
+
+## Project Structure
+
+```
+photo_dedup/
+├── src/
+│   ├── utils/              # Pipeline stages and utilities
+│   ├── photo_compare/      # Image comparison algorithms
+│   └── orchestrator/       # Web UI and API
+├── tests/
+│   ├── fixtures/           # Test fixtures and utilities
+│   └── test_*_comprehensive.py  # Comprehensive stage tests
+├── docs/                   # Documentation
+│   ├── PORTABLE_METHODOLOGY*.md  # Reusable methodology
+│   ├── LESSONS_LEARNED.md        # Project insights
+│   └── archive/                  # Historical docs
+└── CLAUDE.md              # AI assistant instructions
+```
+
+## Features
+
+### Pipeline Stages
+
+1. **ComputeSHABins** - Group identical files by SHA256 hash
+2. **ComputeIdentical** - Detect binary-identical photos
+3. **ComputeTemplates** - Select reference photos for comparison
+4. **ComputeVersions** - Group photos by field-level similarity (Cramer's V)
+5. **ComputeTemplateSimilarity** - Iterative bin subdivision using template comparison
+6. **ComputeIndices** - Create review indices for similar photos
+7. **ComputePerceptualHash** - Generate perceptual hashes (dhash, phash, whash)
+8. **ComputePerceptualMatch** - Find perceptually similar photos using hamming distance
+9. **ComputeBenchmarks** (optional) - Evaluate comparison methods against ground truth
+
+### Key Technologies
+
+- **Perceptual Hashing** - dhash, phash, whash for near-duplicate detection
+- **Rotation Awareness** - Context manager pattern for canonical rotation
+- **Template Similarity** - Hierarchical clustering with iterative refinement
+- **Web UI** - FastAPI + vanilla JavaScript, Puppeteer-tested
+- **Type Safety** - Full mypy --strict compliance
+- **Quality Gates** - Bronze/Silver/Gold enforcement with ruff and mypy
+
+## Development
+
+### Quality Gates
+
+**Bronze Gate (Minimum for any commit):**
+- All tests pass
+- Code formatted with ruff
+- No critical linter errors
+- Type checked with mypy --strict on touched files
+
+**Silver Gate (Feature branches):**
+- No linter warnings in modified files
+- Type hints on all new/modified functions
+- Code coverage maintained
+
+**Gold Gate (Releases):**
+- Zero ruff/mypy issues across entire codebase
+- 100% public API documented
+- CHANGELOG updated
+
+See **[docs/PORTABLE_METHODOLOGY.md](docs/PORTABLE_METHODOLOGY.md)** for complete quality gate definitions.
+
+### Conventional Commits
+
+```bash
+git commit -m "feat: implement lazy canonical rotation"
+git commit -m "fix: preserve error messages in pipeline status"
+git commit -m "refactor: migrate to pixel array architecture"
+git commit -m "docs: update methodology with lessons learned"
+```
+
+### AI Development
+
+This project was developed with AI assistance (Claude). Key learnings:
+
+1. **Write tests first** - AI excels at comprehensive test generation
+2. **Use algorithmic tools** - ruff/mypy > code review for mechanical issues
+3. **Context managers for cross-cutting concerns** - Major breakthrough for rotation feature
+4. **Test integrity** - Never silently change test expectations
+5. **Token optimization** - Use Grep/Glob tools, not AI, for code search
+
+See **[docs/LESSONS_LEARNED.md](docs/LESSONS_LEARNED.md)** for detailed insights.
+
+## License
+
+**AGPL v3** (GNU Affero General Public License v3.0)
+
+This software is licensed under AGPL v3, which means:
+- ✅ **Free for personal, academic, and internal business use**
+- ✅ **You must share any modifications publicly** (copyleft)
+- ✅ **Network use requires sharing source** (even SaaS deployments)
+- 💼 **Commercial licensing available** for proprietary use
+
+💼 **Commercial licensing:** Contact via [GitHub Discussions](https://github.com/gbarrett28/photo_dedup/discussions)
+
+📄 **See [LICENSE](LICENSE) for full legal text**
+📖 **See [LICENSING.md](LICENSING.md) for usage examples and FAQ**
+
+## Contributing
+
+See **[docs/WORKFLOW.md](docs/WORKFLOW.md)** for development workflow and **[docs/ISSUE_TEMPLATES.md](docs/ISSUE_TEMPLATES.md)** for issue templates.
+
+## Project Status
+
+**Development complete** (January 2026)
+- 9 comprehensive pipeline stages
+- 85% test coverage
+- Full type safety (mypy --strict)
+- Zero ruff/mypy errors
+- Rotation-aware photo comparison
+- Web-based review interface
+
+This project serves as a reference implementation of AI-assisted development methodology documented in **[docs/PORTABLE_METHODOLOGY.md](docs/PORTABLE_METHODOLOGY.md)**.

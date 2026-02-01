@@ -1,0 +1,314 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.package-data]
+orchestrator = ["static/*", "py.typed"]
+
+[project]
+name = "photo-stack-finder"
+version = "0.1.3"
+description = "Photo deduplication using perceptual hashing and sequence detection"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "AGPL-3.0-or-later"}
+authors = [
+    {name = "Geoff Barrett"}
+]
+maintainers = [
+    {name = "Geoff Barrett"}
+]
+keywords = ["photo", "deduplication", "perceptual-hashing", "image-processing"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Multimedia :: Graphics",
+    "Topic :: Utilities",
+]
+dependencies = [
+    # Core dependencies
+    "numpy<2.5.0",  # NumPy 2.x compatibility constraint
+    "pillow",
+    "pillow_heif",
+    "pandas",
+    "opencv-python-headless>=4.12.0",
+    "scikit-image",
+    "scipy",
+    "ImageHash",
+    "joblib>=1.3.0",
+    "imagesize",  # Fast dimension reading without loading pixels
+
+    # Image processing support
+    "PyWavelets",
+    "tifffile",
+    "imageio",
+    "networkx",
+
+    # Utilities
+    "python-dateutil",
+    "pytz",
+    "tzdata",
+    "psutil",  # System monitoring for benchmarks
+
+    # Benchmarks (part of main package API via ComputeBenchmarks)
+    "matplotlib>=3.10.0",
+    "scikit-learn>=1.7.0",
+
+    # Web UI (optional but included by default)
+    "fastapi",
+    "uvicorn",
+]
+
+[project.urls]
+Homepage = "https://github.com/gbarrett28/photo_dedup"
+Repository = "https://github.com/gbarrett28/photo_dedup"
+Issues = "https://github.com/gbarrett28/photo_dedup/issues"
+Discussions = "https://github.com/gbarrett28/photo_dedup/discussions"
+
+[project.scripts]
+photo-stack-finder = "scripts.orchestrate:main"
+
+[project.optional-dependencies]
+dev = [
+    "ruff",
+    "mypy",
+    "pre-commit",
+    "autopep8",
+    "pytest",
+    "pytest-cov",
+]
+
+# ============================================================================
+# Ruff Configuration (Linter & Formatter)
+# ============================================================================
+[tool.ruff]
+# Target Python 3.13+
+target-version = "py313"
+
+# Line length limit
+line-length = 120
+
+# Source code location
+src = ["src"]
+
+# File/directory exclusions
+exclude = [
+    ".git",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".venv",
+    ".venv1",
+    "__pycache__",
+    "build",
+    "dist",
+    "*.egg-info",
+]
+
+[tool.ruff.lint]
+# Enable strict rule sets (4.2: strict from day one)
+select = [
+    "F",     # Pyflakes (errors and likely bugs)
+    "E",     # pycodestyle errors (PEP 8)
+    "W",     # pycodestyle warnings (PEP 8)
+    "I",     # isort (import sorting)
+    "N",     # pep8-naming (PEP 8 naming conventions)
+    "UP",    # pyupgrade (modernize Python code)
+    "B",     # flake8-bugbear (additional bug detection)
+    "C4",    # flake8-comprehensions
+    "SIM",   # flake8-simplify
+    "RET",   # flake8-return (return statement issues)
+    "ARG",   # flake8-unused-arguments
+    "PTH",   # flake8-use-pathlib
+    "D",     # pydocstyle (PEP 257 docstrings)
+    "Q",     # flake8-quotes (quote consistency)
+    "T20",   # flake8-print (disallow print statements)
+    "ERA",   # eradicate (no commented-out code)
+    "PL",    # Pylint (comprehensive style and error detection)
+    "RUF",   # Ruff-specific rules (best practices)
+]
+
+# Ignore specific rules that conflict with project style
+ignore = [
+    "E501",   # Line too long (handled by formatter)
+    "SIM108", # Use ternary operator (sometimes hurts readability)
+    "ARG002", # Unused method argument (common in inheritance)
+    # Docstring rules (relax for now, enforce incrementally)
+    "D100",   # Missing docstring in public module
+    "D101",   # Missing docstring in public class
+    "D102",   # Missing docstring in public method
+    "D103",   # Missing docstring in public function
+    "D104",   # Missing docstring in public package
+    "D105",   # Missing docstring in magic method
+    "D107",   # Missing docstring in __init__
+    # Pylint rules that may be too strict
+    "PLR0913", # Too many arguments to function call
+    "PLR2004", # Magic value used in comparison
+]
+
+# Allow unused variables when prefixed with underscore
+dummy-variable-rgx = "^_.*$"
+
+[tool.ruff.lint.per-file-ignores]
+# Test files can have additional relaxed rules
+"tests/**/*.py" = [
+    "ARG001",  # Unused function argument (fixtures)
+    "T201",    # print() allowed for test output/debugging
+]
+
+# Scripts can use print()
+"src/scripts/**/*.py" = [
+    "T201",  # print() allowed in scripts
+]
+
+[tool.ruff.lint.isort]
+# Group imports: stdlib, third-party, first-party
+section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
+known-first-party = ["utils", "photo_compare"]
+
+[tool.ruff.lint.pydocstyle]
+# Use Google-style docstrings
+convention = "google"
+
+[tool.ruff.lint.mccabe]
+# Maximum cyclomatic complexity
+max-complexity = 15
+
+[tool.ruff.format]
+# Use double quotes for strings
+quote-style = "double"
+
+# Indent with 4 spaces
+indent-style = "space"
+
+# Unix line endings
+line-ending = "auto"
+
+# ============================================================================
+# Mypy Configuration (Type Checker)
+# ============================================================================
+[tool.mypy]
+# Target Python version
+python_version = "3.13"
+
+# Source directories to check by default (when running mypy without arguments)
+# NOTE: Checking both src and tests together allows tests to import from src,
+# but we must ensure src files NEVER import from tests (enforced by code review)
+files = ["src", "tests"]
+
+# CRITICAL: Set mypy_path to project root AND src directory AND stubs directory
+# This allows BOTH import styles to work:
+#   - Tests: "from src.utils.compute_identical import X" (absolute from project root)
+#   - Src code: "from utils.models import X" (from within src/)
+# The project root "." allows tests to find "src.utils.*"
+# The "src" path allows src code to use "utils.*" imports
+# The "stubs" path provides type stubs for external libraries (cv2, skimage)
+mypy_path = ".:src:stubs"
+
+# Strict mode incrementally (4.3: fix if file is changed)
+# Start with moderate strictness, ramp up to strict for new code
+
+# Import discovery
+# Enable namespace_packages and explicit_package_bases for src-layout projects
+# This tells mypy that top-level packages are based in mypy_path members
+# Both flags must be enabled together (mypy requirement)
+namespace_packages = true
+explicit_package_bases = true
+
+# Warnings to enable (strict from day one on these)
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_unused_configs = true
+warn_return_any = true
+warn_unreachable = true
+
+# Error on missing imports (but allow for third-party without stubs)
+ignore_missing_imports = false
+
+# Disallow untyped definitions in new/modified code
+# NOTE: Set to true for Silver/Gold gates, false for Bronze (legacy code)
+disallow_untyped_defs = false  # Enable when ready for Silver gate
+disallow_untyped_calls = false  # Enable when ready for Silver gate
+disallow_incomplete_defs = true  # Require return types if any arg typed
+
+# Additional strictness
+check_untyped_defs = true  # Check bodies of untyped functions
+strict_equality = true     # Strict equality checks
+no_implicit_optional = true  # Explicit Optional[T] required
+
+# Error codes to show
+show_error_codes = true
+show_error_context = true
+pretty = true
+
+# Per-module configuration
+[[tool.mypy.overrides]]
+# Third-party libraries without stubs
+# NOTE: cv2 and skimage.metrics now have stubs in stubs/ directory
+module = [
+    "PIL.*",
+    "pillow_heif.*",
+    "imagehash.*",
+    "joblib.*",
+    "sklearn.*",
+]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# Legacy code: Allow untyped for now, fix when modified
+module = "src.utils.*"
+disallow_untyped_defs = false
+
+[[tool.mypy.overrides]]
+# Allow custom types in pandas Series (PhotoFile objects) in sequence module
+module = "src.utils.sequence"
+disable_error_code = ["type-var"]
+
+[[tool.mypy.overrides]]
+# Scripts: Allow untyped and missing __init__.py
+module = "src.scripts.*"
+disallow_untyped_defs = false
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# Test fixtures: Allow some flexibility for test infrastructure
+module = "tests.fixtures.*"
+disallow_untyped_defs = false
+
+# ============================================================================
+# Coverage Configuration
+# ============================================================================
+[tool.coverage.run]
+source = ["src"]
+parallel = true  # Enable parallel mode for multiprocessing coverage
+concurrency = ["multiprocessing", "thread"]  # Handle both multiprocessing and threading
+omit = [
+    "*/tests/*",
+    "*/__pycache__/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
+
+# ============================================================================
+# Pytest Configuration (Future)
+# ============================================================================
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "-ra",  # Show summary of all test outcomes
+]
