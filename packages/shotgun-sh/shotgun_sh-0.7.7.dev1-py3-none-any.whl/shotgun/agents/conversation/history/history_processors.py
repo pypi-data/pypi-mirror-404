@@ -1,0 +1,858 @@
+"""History processors for managing conversation history in Shotgun agents."""
+
+from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING, Any, Protocol
+
+from anthropic import APIStatusError
+from pydantic_ai import ModelSettings
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
+    TextPart,
+    UserPromptPart,
+)
+
+from shotgun.agents.conversation.filters import filter_orphaned_tool_responses
+from shotgun.agents.llm import shotgun_model_request
+from shotgun.agents.messages import AgentSystemPrompt, SystemStatusPrompt
+from shotgun.agents.models import AgentDeps
+from shotgun.exceptions import ContextSizeLimitExceeded
+from shotgun.logging_config import get_logger
+from shotgun.posthog_telemetry import track_event
+from shotgun.prompts import PromptLoader
+
+from .constants import CHUNK_SAFE_RATIO, SUMMARY_MARKER, TOKEN_LIMIT_RATIO
+from .context_extraction import extract_context_from_messages
+from .history_building import ensure_ends_with_model_request
+from .message_utils import (
+    get_agent_system_prompt,
+    get_first_user_request,
+    get_latest_system_status,
+)
+from .token_estimation import (
+    calculate_max_summarization_tokens as _calculate_max_summarization_tokens,
+)
+from .token_estimation import (
+    estimate_post_summary_tokens,
+    estimate_tokens_from_messages,
+)
+
+if TYPE_CHECKING:
+    from . import chunking
+
+
+class ContextProtocol(Protocol):
+    """Protocol defining the interface needed by token_limit_compactor."""
+
+    deps: AgentDeps
+    usage: Any  # Optional usage information
+
+
+logger = get_logger(__name__)
+
+# Global prompt loader instance
+prompt_loader = PromptLoader()
+
+
+async def _safe_token_estimation(
+    estimation_func: Callable[..., Awaitable[int]],
+    model_name: str,
+    max_tokens: int,
+    *args: Any,
+    **kwargs: Any,
+) -> int:
+    """Safely estimate tokens with proper error handling.
+
+    Wraps token estimation functions to handle failures gracefully.
+    Only RuntimeError (from token counters) is wrapped in ContextSizeLimitExceeded.
+    Other errors (network, auth) are allowed to bubble up.
+
+    Args:
+        estimation_func: Async function that estimates tokens
+        model_name: Name of the model for error messages
+        max_tokens: Maximum tokens for the model
+        *args: Arguments to pass to estimation_func
+        **kwargs: Keyword arguments to pass to estimation_func
+
+    Returns:
+        Token count from estimation_func
+
+    Raises:
+        ContextSizeLimitExceeded: If token counting fails with RuntimeError
+        Exception: Any other exceptions from estimation_func
+    """
+    try:
+        return await estimation_func(*args, **kwargs)
+    except Exception as e:
+        # Log the error with full context
+        logger.warning(
+            f"Token counting failed for {model_name}",
+            extra={
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "model": model_name,
+            },
+        )
+
+        # Token counting behavior with oversized context (verified via testing):
+        #
+        # 1. OpenAI/tiktoken:
+        #    - Successfully counts any size (tested with 752K tokens, no error)
+        #    - Library errors: ValueError, KeyError, AttributeError, SSLError (file/cache issues)
+        #    - Wrapped as: RuntimeError by our counter
+        #
+        # 2. Gemini/SentencePiece:
+        #    - Successfully counts any size (tested with 752K tokens, no error)
+        #    - Library errors: RuntimeError, IOError, TypeError (file/model loading issues)
+        #    - Wrapped as: RuntimeError by our counter
+        #
+        # 3. Anthropic API:
+        #    - Successfully counts large token counts (tested with 752K tokens, no error)
+        #    - Only enforces 32 MB request size limit (not token count)
+        #    - Raises: APIStatusError(413) with error type 'request_too_large' for 32MB+ requests
+        #    - Other API errors: APIConnectionError, RateLimitError, APIStatusError (4xx/5xx)
+        #    - Wrapped as: RuntimeError by our counter
+        #
+        # IMPORTANT: No provider raises errors for "too many tokens" during counting.
+        # Token count validation happens separately by comparing count to max_input_tokens.
+        #
+        # We wrap RuntimeError (library-level failures from tiktoken/sentencepiece).
+        # We also wrap Anthropic's 413 error (request exceeds 32 MB) as it indicates
+        # context is effectively too large and needs user action to reduce it.
+        if isinstance(e, RuntimeError):
+            raise ContextSizeLimitExceeded(
+                model_name=model_name, max_tokens=max_tokens
+            ) from e
+
+        # Check for Anthropic's 32 MB request size limit (APIStatusError with status 413)
+        if isinstance(e, APIStatusError) and e.status_code == 413:
+            raise ContextSizeLimitExceeded(
+                model_name=model_name, max_tokens=max_tokens
+            ) from e
+
+        # Re-raise other exceptions (network errors, auth failures, etc.)
+        raise
+
+
+def is_summary_part(part: Any) -> bool:
+    """Check if a message part is a compacted summary."""
+    return isinstance(part, TextPart) and part.content.startswith(SUMMARY_MARKER)
+
+
+def find_last_summary_index(messages: list[ModelMessage]) -> int | None:
+    """Find the index of the last summary in the message history.
+
+    Args:
+        messages: List of messages in the conversation history
+    Returns:
+        Index of the last summary message, or None if no summary exists.
+    """
+    for i in range(len(messages) - 1, -1, -1):
+        if isinstance(messages[i], ModelResponse):
+            for part in messages[i].parts:
+                if is_summary_part(part):
+                    return i
+    return None
+
+
+def extract_summary_content(summary_part: Any) -> str:
+    """Extract the summary content without the marker prefix."""
+    if isinstance(summary_part, TextPart):
+        return summary_part.content[len(SUMMARY_MARKER) :].strip()
+    return ""
+
+
+def create_marked_summary_part(summary_response: Any) -> TextPart:
+    """Create a TextPart with the summary marker prefix.
+
+    This consolidates the duplicate summary creation logic.
+    """
+    first_part = summary_response.parts[0]
+    if isinstance(first_part, TextPart):
+        summary_content = f"{SUMMARY_MARKER} {first_part.content}"
+        return TextPart(content=summary_content)
+    else:
+        # Fallback in case the response part is not TextPart
+        summary_content = f"{SUMMARY_MARKER} Summary content unavailable"
+        return TextPart(content=summary_content)
+
+
+def log_summarization_request(
+    model: Any, max_tokens: int, prompt: str, context: str, request_type: str
+) -> None:
+    """Log detailed summarization request information.
+
+    Consolidates duplicate logging patterns across the codebase.
+    """
+    logger.debug(f"{request_type} SUMMARIZATION REQUEST - Model: {model}")
+    logger.debug(f"{request_type} SUMMARIZATION REQUEST - Max tokens: {max_tokens}")
+    logger.debug(f"{request_type} SUMMARIZATION REQUEST - Instructions: {prompt}")
+    logger.debug(f"{request_type} SUMMARIZATION REQUEST - Context: {context}")
+
+
+def log_summarization_response(response: Any, request_type: str) -> None:
+    """Log detailed summarization response information.
+
+    Consolidates duplicate logging patterns across the codebase.
+    """
+    logger.debug(f"{request_type} SUMMARIZATION RESPONSE - Full response: {response}")
+    logger.debug(
+        f"{request_type} SUMMARIZATION RESPONSE - Content: "
+        f"{response.parts[0] if response.parts else 'No content'}"
+    )
+    logger.debug(f"{request_type} SUMMARIZATION RESPONSE - Usage: {response.usage}")
+
+
+# Use centralized calculate_max_summarization_tokens function
+calculate_max_summarization_tokens = _calculate_max_summarization_tokens
+
+
+async def token_limit_compactor(
+    ctx: ContextProtocol,
+    messages: list[ModelMessage],
+    force: bool = False,
+) -> list[ModelMessage]:
+    """Compact message history based on token limits with incremental processing.
+
+    This incremental compactor prevents cascading summarization by:
+    1. Preserving existing summaries
+    2. Only processing NEW messages since the last summary
+    3. Combining summaries incrementally
+    4. Never re-processing already compacted content
+
+    Args:
+        ctx: Run context with usage information and dependencies
+        messages: Current conversation history
+        force: If True, force compaction even if below token threshold
+
+    Returns:
+        Compacted list of messages within token limits
+    """
+    # Extract dependencies from context
+    deps = ctx.deps
+
+    # Get token limit from model configuration
+    model_max_tokens = deps.llm_model.max_input_tokens
+    max_tokens = int(model_max_tokens * TOKEN_LIMIT_RATIO)
+
+    # Find existing summaries to determine compaction strategy
+    last_summary_index = find_last_summary_index(messages)
+
+    if last_summary_index is not None:
+        # Check if post-summary conversation exceeds threshold for incremental compaction
+        post_summary_tokens = await _safe_token_estimation(
+            estimate_post_summary_tokens,
+            deps.llm_model.name,
+            model_max_tokens,
+            messages,
+            last_summary_index,
+            deps.llm_model,
+        )
+
+        post_summary_percentage = (
+            (post_summary_tokens / max_tokens) * 100 if max_tokens > 0 else 0
+        )
+
+        logger.debug(
+            f"Found existing summary at index {last_summary_index}. "
+            f"Post-summary tokens: {post_summary_tokens}, threshold: {max_tokens}, "
+            f"percentage: {post_summary_percentage:.2f}%%"
+        )
+
+        # Only do incremental compaction if post-summary conversation exceeds threshold
+        if post_summary_tokens < max_tokens and not force:
+            logger.debug(
+                f"Post-summary conversation under threshold ({post_summary_tokens} < {max_tokens}), "
+                f"keeping all {len(messages)} messages"
+            )
+            return messages
+
+        # INCREMENTAL COMPACTION: Process new messages since last summary
+        logger.debug(
+            "Post-summary conversation exceeds threshold, performing incremental compaction"
+        )
+
+        # Track compaction event
+        messages_before = len(messages)
+        tokens_before = post_summary_tokens
+
+        # Extract existing summary content
+        summary_message = messages[last_summary_index]
+        existing_summary_part = None
+        for part in summary_message.parts:
+            if is_summary_part(part):
+                existing_summary_part = part
+                break
+
+        if not existing_summary_part:
+            logger.warning(
+                "Found summary index but no summary part, falling back to full compaction"
+            )
+            return await _full_compaction(deps, messages)
+
+        existing_summary = extract_summary_content(existing_summary_part)
+
+        # Get messages AFTER the last summary for incremental processing
+        messages_to_process = messages[last_summary_index + 1 :]
+
+        if not messages_to_process:
+            logger.debug(
+                "No new messages since last summary, returning existing history"
+            )
+            return messages
+
+        # Extract context from new messages only
+        new_context = extract_context_from_messages(messages_to_process)
+
+        # Check if there's meaningful content (responses) to summarize
+        has_meaningful_content = any(
+            isinstance(msg, ModelResponse) for msg in messages_to_process
+        )
+
+        # If there are only user requests and no responses, no need to summarize
+        if not has_meaningful_content or not new_context.strip():
+            logger.debug(
+                "No meaningful new content to summarize, returning existing history"
+            )
+            return messages
+
+        # Use incremental summarization prompt with proper template variables
+        try:
+            incremental_prompt = prompt_loader.render(
+                "history/incremental_summarization.j2",
+                existing_summary=existing_summary,
+                new_messages=new_context,
+            )
+        except Exception:
+            # Fallback to regular summarization if incremental template doesn't exist yet
+            logger.warning(
+                "Incremental summarization template not found, using regular template"
+            )
+            incremental_prompt = prompt_loader.render("history/summarization.j2")
+            # Combine existing and new context for fallback
+            new_context = (
+                f"EXISTING SUMMARY:\n{existing_summary}\n\nNEW MESSAGES:\n{new_context}"
+            )
+
+        # Create incremental summary
+        request_messages: list[ModelMessage] = [
+            ModelRequest.user_text_prompt(new_context, instructions=incremental_prompt)
+        ]
+
+        # Calculate optimal max_tokens for summarization
+        max_tokens = await calculate_max_summarization_tokens(
+            deps.llm_model, request_messages
+        )
+
+        # Debug logging using shared utilities
+        log_summarization_request(
+            deps.llm_model, max_tokens, incremental_prompt, new_context, "INCREMENTAL"
+        )
+
+        # Use shotgun wrapper to ensure full token utilization
+        summary_response = await shotgun_model_request(
+            model_config=deps.llm_model,
+            messages=request_messages,
+            model_settings=ModelSettings(
+                max_tokens=max_tokens  # Use calculated optimal tokens for summarization
+            ),
+        )
+
+        log_summarization_response(summary_response, "INCREMENTAL")
+
+        # Calculate token reduction (from new messages only)
+        new_tokens = len(new_context.split())  # Rough estimate
+        summary_tokens = (
+            summary_response.usage.output_tokens if summary_response.usage else 0
+        )
+        logger.debug(
+            f"Incremental compaction: processed {len(messages_to_process)} new messages, "
+            f"reduced ~{new_tokens} tokens to {summary_tokens} tokens"
+        )
+
+        # Build the new compacted history with the updated summary
+        new_summary_part = create_marked_summary_part(summary_response)
+
+        # Extract essential context from messages before the last summary (if any)
+        agent_prompt = ""
+        system_status = ""
+        first_user_prompt = ""
+        if last_summary_index > 0:
+            # Get agent system prompt and first user from original conversation
+            agent_prompt = get_agent_system_prompt(messages[:last_summary_index]) or ""
+            first_user_prompt = (
+                get_first_user_request(messages[:last_summary_index]) or ""
+            )
+
+        # Get the latest system status from all messages
+        system_status = get_latest_system_status(messages) or ""
+
+        # Create the updated summary message
+        updated_summary_message = ModelResponse(parts=[new_summary_part])
+
+        # Build final compacted history with CLEAN structure
+        compacted_messages: list[ModelMessage] = []
+
+        # Build parts for the initial request
+        from pydantic_ai.messages import ModelRequestPart
+
+        parts: list[ModelRequestPart] = []
+        if agent_prompt:
+            parts.append(AgentSystemPrompt(content=agent_prompt))
+        if system_status:
+            parts.append(SystemStatusPrompt(content=system_status))
+        if first_user_prompt:
+            parts.append(UserPromptPart(content=first_user_prompt))
+
+        # Only add if we have at least one part
+        if parts:
+            compacted_messages.append(ModelRequest(parts=parts))
+
+        # Add the summary
+        compacted_messages.append(updated_summary_message)
+
+        # Ensure history ends with ModelRequest for PydanticAI compatibility
+        compacted_messages = ensure_ends_with_model_request(
+            compacted_messages, messages
+        )
+
+        # Filter out orphaned tool responses (tool responses without tool calls)
+        compacted_messages = filter_orphaned_tool_responses(compacted_messages)
+
+        logger.debug(
+            f"Incremental compaction complete: {len(messages)} -> {len(compacted_messages)} messages"
+        )
+
+        # Track compaction completion
+        messages_after = len(compacted_messages)
+        tokens_after = await estimate_tokens_from_messages(
+            compacted_messages, deps.llm_model
+        )
+        reduction_percentage = (
+            ((messages_before - messages_after) / messages_before * 100)
+            if messages_before > 0
+            else 0
+        )
+
+        # Track incremental compaction with simple metrics (fast, no token counting)
+        track_event(
+            "context_compaction_triggered",
+            {
+                "compaction_type": "incremental",
+                "messages_before": messages_before,
+                "messages_after": messages_after,
+                "tokens_before": tokens_before,
+                "tokens_after": tokens_after,
+                "reduction_percentage": round(reduction_percentage, 2),
+                "agent_mode": deps.agent_mode.value
+                if hasattr(deps, "agent_mode") and deps.agent_mode
+                else "unknown",
+                # Model and provider info (no computation needed)
+                "model_name": deps.llm_model.name_str,
+                "provider": deps.llm_model.provider.value,
+                "key_provider": deps.llm_model.key_provider.value,
+            },
+        )
+
+        return compacted_messages
+
+    else:
+        # Check if total conversation exceeds threshold for full compaction
+        total_tokens = await _safe_token_estimation(
+            estimate_tokens_from_messages,
+            deps.llm_model.name,
+            model_max_tokens,
+            messages,
+            deps.llm_model,
+        )
+
+        total_percentage = (total_tokens / max_tokens) * 100 if max_tokens > 0 else 0
+
+        logger.debug(
+            f"No existing summary found. Total tokens: {total_tokens}, threshold: {max_tokens}, "
+            f"percentage: {total_percentage:.2f}%%"
+        )
+
+        # Only do full compaction if total conversation exceeds threshold
+        if total_tokens < max_tokens and not force:
+            logger.debug(
+                f"Total conversation under threshold ({total_tokens} < {max_tokens}), "
+                f"keeping all {len(messages)} messages"
+            )
+            return messages
+
+        # FIRST-TIME COMPACTION: Process all messages
+        logger.debug(
+            "Total conversation exceeds threshold, performing initial full compaction"
+        )
+        return await _full_compaction(deps, messages)
+
+
+async def _full_compaction(
+    deps: AgentDeps,
+    messages: list[ModelMessage],
+) -> list[ModelMessage]:
+    """Perform full compaction for first-time summarization.
+
+    If the conversation is too large for single-pass compaction, delegates
+    to chunked compaction which breaks the conversation into logical chunks.
+    """
+    # Extract context from all messages
+    context = extract_context_from_messages(messages)
+
+    # Check if context would exceed model limit for compaction request
+    # We use CHUNK_SAFE_RATIO (70%) to leave room for prompt overhead
+    max_safe_input = int(deps.llm_model.max_input_tokens * CHUNK_SAFE_RATIO)
+
+    # Estimate context tokens
+    context_request: list[ModelMessage] = [ModelRequest.user_text_prompt(context)]
+    context_tokens = await estimate_tokens_from_messages(
+        context_request, deps.llm_model
+    )
+
+    if context_tokens > max_safe_input:
+        # Context too large for single-pass compaction - use chunked approach
+        logger.info(
+            f"Context ({context_tokens:,} tokens) exceeds safe limit "
+            f"({max_safe_input:,} tokens), using chunked compaction"
+        )
+        return await _chunked_compaction(deps, messages)
+
+    # Use regular summarization prompt
+    summarization_prompt = prompt_loader.render("history/summarization.j2")
+    request_messages: list[ModelMessage] = [
+        ModelRequest.user_text_prompt(context, instructions=summarization_prompt)
+    ]
+
+    # Calculate optimal max_tokens for summarization
+    max_tokens = await calculate_max_summarization_tokens(
+        deps.llm_model, request_messages
+    )
+
+    # Debug logging using shared utilities
+    log_summarization_request(
+        deps.llm_model, max_tokens, summarization_prompt, context, "FULL"
+    )
+
+    # Use shotgun wrapper to ensure full token utilization
+    summary_response = await shotgun_model_request(
+        model_config=deps.llm_model,
+        messages=request_messages,
+        model_settings=ModelSettings(
+            max_tokens=max_tokens  # Use calculated optimal tokens for summarization
+        ),
+    )
+
+    # Calculate token reduction
+    current_tokens = await estimate_tokens_from_messages(messages, deps.llm_model)
+    summary_usage = summary_response.usage
+    reduction_percentage = (
+        ((current_tokens - summary_usage.output_tokens) / current_tokens) * 100
+        if current_tokens > 0 and summary_usage
+        else 0
+    )
+
+    log_summarization_response(summary_response, "FULL")
+
+    # Log token reduction (already calculated above)
+    logger.debug(
+        "Full compaction: %s tokens -> %s tokens (%.2f%% reduction)",
+        current_tokens,
+        summary_usage.output_tokens if summary_usage else 0,
+        reduction_percentage,
+    )
+
+    # Mark summary with special prefix
+    marked_summary_part = create_marked_summary_part(summary_response)
+
+    # Build compacted history structure
+    agent_prompt = get_agent_system_prompt(messages) or ""
+    system_status = get_latest_system_status(messages) or ""
+    user_prompt = get_first_user_request(messages) or ""
+
+    # Build parts for the initial request
+    from pydantic_ai.messages import ModelRequestPart
+
+    parts: list[ModelRequestPart] = []
+    if agent_prompt:
+        parts.append(AgentSystemPrompt(content=agent_prompt))
+    if system_status:
+        parts.append(SystemStatusPrompt(content=system_status))
+    if user_prompt:
+        parts.append(UserPromptPart(content=user_prompt))
+
+    # Create base structure
+    compacted_messages: list[ModelMessage] = []
+    if parts:
+        compacted_messages.append(ModelRequest(parts=parts))
+    compacted_messages.append(ModelResponse(parts=[marked_summary_part]))
+
+    # Ensure history ends with ModelRequest for PydanticAI compatibility
+    compacted_messages = ensure_ends_with_model_request(compacted_messages, messages)
+
+    # Filter out orphaned tool responses (tool responses without tool calls)
+    compacted_messages = filter_orphaned_tool_responses(compacted_messages)
+
+    # Track full compaction event
+    messages_before = len(messages)
+    messages_after = len(compacted_messages)
+    tokens_before = current_tokens  # Already calculated above
+    tokens_after = summary_usage.output_tokens if summary_usage else 0
+
+    # Track full compaction with simple metrics (fast, no token counting)
+    track_event(
+        "context_compaction_triggered",
+        {
+            "compaction_type": "full",
+            "messages_before": messages_before,
+            "messages_after": messages_after,
+            "tokens_before": tokens_before,
+            "tokens_after": tokens_after,
+            "reduction_percentage": round(reduction_percentage, 2),
+            "agent_mode": deps.agent_mode.value
+            if hasattr(deps, "agent_mode") and deps.agent_mode
+            else "unknown",
+            # Model and provider info (no computation needed)
+            "model_name": deps.llm_model.name_str,
+            "provider": deps.llm_model.provider.value,
+            "key_provider": deps.llm_model.key_provider.value,
+        },
+    )
+
+    return compacted_messages
+
+
+async def _chunked_compaction(
+    deps: AgentDeps,
+    messages: list[ModelMessage],
+) -> list[ModelMessage]:
+    """Perform chunked compaction for oversized conversations.
+
+    Breaks the conversation into logical chunks, summarizes each sequentially,
+    then combines the summaries into a master summary.
+    """
+    from .chunking import chunk_messages_for_compaction
+
+    # Split into chunks and retention window
+    chunks, retained_messages = await chunk_messages_for_compaction(
+        messages, deps.llm_model
+    )
+
+    if not chunks:
+        # No chunks to summarize (conversation too small), return retained messages
+        logger.debug("No chunks to summarize, returning retained messages")
+        return retained_messages
+
+    # Track chunked compaction
+    total_chunks = len(chunks)
+    logger.info(f"Starting chunked compaction: {total_chunks} chunks to process")
+
+    # Summarize each chunk sequentially
+    chunk_summaries: list[str] = []
+    for chunk in chunks:
+        try:
+            summary = await _summarize_chunk(chunk, total_chunks, deps)
+            chunk_summaries.append(summary)
+            logger.debug(
+                f"Chunk {chunk.chunk_index + 1}/{total_chunks} summarized successfully"
+            )
+        except Exception as e:
+            logger.warning(
+                f"Failed to summarize chunk {chunk.chunk_index + 1}/{total_chunks}: {e}"
+            )
+            # Continue with other chunks - we'll note the gap in fusion
+            chunk_summaries.append(
+                f"[Chunk {chunk.chunk_index + 1} summary unavailable]"
+            )
+
+    # Combine summaries into master summary
+    if len(chunk_summaries) == 1:
+        final_summary = chunk_summaries[0]
+    else:
+        final_summary = await _combine_chunk_summaries(chunk_summaries, deps)
+
+    # Build final compacted history
+    compacted = _build_chunked_compaction_result(
+        final_summary, messages, retained_messages, deps
+    )
+
+    # Track chunked compaction event
+    track_event(
+        "chunked_compaction_triggered",
+        {
+            "num_chunks": total_chunks,
+            "chunks_succeeded": sum(
+                1 for s in chunk_summaries if not s.startswith("[Chunk")
+            ),
+            "retention_window_size": len(retained_messages),
+            "model_name": deps.llm_model.name_str,
+            "provider": deps.llm_model.provider.value,
+        },
+    )
+
+    return compacted
+
+
+async def _summarize_chunk(
+    chunk: "chunking.Chunk",
+    total_chunks: int,
+    deps: AgentDeps,
+) -> str:
+    """Summarize a single chunk of messages."""
+    chunk_messages = chunk.get_all_messages()
+    context = extract_context_from_messages(chunk_messages)
+
+    # Use chunk summarization template
+    chunk_prompt = prompt_loader.render(
+        "history/chunk_summarization.j2",
+        chunk_index=chunk.chunk_index + 1,
+        total_chunks=total_chunks,
+        chunk_content=context,
+    )
+
+    request_messages: list[ModelMessage] = [
+        ModelRequest.user_text_prompt(context, instructions=chunk_prompt)
+    ]
+
+    max_tokens = await calculate_max_summarization_tokens(
+        deps.llm_model, request_messages
+    )
+
+    log_summarization_request(
+        deps.llm_model,
+        max_tokens,
+        chunk_prompt,
+        context[:500] + "..." if len(context) > 500 else context,
+        f"CHUNK_{chunk.chunk_index + 1}",
+    )
+
+    response = await shotgun_model_request(
+        model_config=deps.llm_model,
+        messages=request_messages,
+        model_settings=ModelSettings(max_tokens=max_tokens),
+    )
+
+    log_summarization_response(response, f"CHUNK_{chunk.chunk_index + 1}")
+
+    if response.parts and isinstance(response.parts[0], TextPart):
+        return response.parts[0].content
+    return ""
+
+
+async def _combine_chunk_summaries(
+    summaries: list[str],
+    deps: AgentDeps,
+) -> str:
+    """Combine multiple chunk summaries into a unified summary."""
+    # Check if combined summaries exceed limit (may need recursive combination)
+    combined_text = "\n\n".join(summaries)
+    combined_request: list[ModelMessage] = [
+        ModelRequest.user_text_prompt(combined_text)
+    ]
+    combined_tokens = await estimate_tokens_from_messages(
+        combined_request, deps.llm_model
+    )
+
+    max_safe_input = int(deps.llm_model.max_input_tokens * CHUNK_SAFE_RATIO)
+
+    if combined_tokens > max_safe_input:
+        # Recursive: split summaries in half and combine each half first
+        logger.warning(
+            f"Combined summaries too large ({combined_tokens:,} tokens), "
+            f"applying recursive combination"
+        )
+        mid = len(summaries) // 2
+        first_half = await _combine_chunk_summaries(summaries[:mid], deps)
+        second_half = await _combine_chunk_summaries(summaries[mid:], deps)
+        summaries = [first_half, second_half]
+
+    # Use combination template
+    combine_prompt = prompt_loader.render(
+        "history/combine_summaries.j2",
+        num_summaries=len(summaries),
+        chunk_summaries=summaries,
+    )
+
+    request_messages: list[ModelMessage] = [
+        ModelRequest.user_text_prompt(
+            "\n\n---\n\n".join(summaries), instructions=combine_prompt
+        )
+    ]
+
+    max_tokens = await calculate_max_summarization_tokens(
+        deps.llm_model, request_messages
+    )
+
+    log_summarization_request(
+        deps.llm_model,
+        max_tokens,
+        combine_prompt,
+        f"[{len(summaries)} summaries to combine]",
+        "COMBINE",
+    )
+
+    response = await shotgun_model_request(
+        model_config=deps.llm_model,
+        messages=request_messages,
+        model_settings=ModelSettings(max_tokens=max_tokens),
+    )
+
+    log_summarization_response(response, "COMBINE")
+
+    if response.parts and isinstance(response.parts[0], TextPart):
+        return response.parts[0].content
+    return ""
+
+
+def _build_chunked_compaction_result(
+    final_summary: str,
+    original_messages: list[ModelMessage],
+    retained_messages: list[ModelMessage],
+    deps: AgentDeps,
+) -> list[ModelMessage]:
+    """Build the final compacted history from chunked compaction."""
+    from pydantic_ai.messages import ModelRequestPart
+
+    # Extract system context from original messages
+    agent_prompt = get_agent_system_prompt(original_messages) or ""
+    system_status = get_latest_system_status(original_messages) or ""
+    first_user = get_first_user_request(original_messages) or ""
+
+    # Create marked summary
+    summary_part = TextPart(content=f"{SUMMARY_MARKER} {final_summary}")
+    summary_message = ModelResponse(parts=[summary_part])
+
+    # Build compacted structure
+    compacted: list[ModelMessage] = []
+
+    # Initial request with system context
+    parts: list[ModelRequestPart] = []
+    if agent_prompt:
+        parts.append(AgentSystemPrompt(content=agent_prompt))
+    if system_status:
+        parts.append(SystemStatusPrompt(content=system_status))
+    if first_user:
+        parts.append(UserPromptPart(content=first_user))
+
+    if parts:
+        compacted.append(ModelRequest(parts=parts))
+
+    # Add summary
+    compacted.append(summary_message)
+
+    # Add retained messages (recent context)
+    compacted.extend(retained_messages)
+
+    # Ensure ends with ModelRequest for PydanticAI compatibility
+    compacted = ensure_ends_with_model_request(compacted, original_messages)
+
+    # Filter orphaned tool responses
+    compacted = filter_orphaned_tool_responses(compacted)
+
+    logger.info(
+        f"Chunked compaction complete: {len(original_messages)} messages -> "
+        f"{len(compacted)} messages (retained {len(retained_messages)} recent)"
+    )
+
+    return compacted
