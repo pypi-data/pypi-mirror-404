@@ -1,0 +1,356 @@
+# Project metadata, including build by setuptools
+# See https://setuptools.pypa.io/en/latest/userguide/pyproject_config.html
+
+# TOML syntax at https://toml.io/en/
+
+
+[build-system]
+# Minimum requirements for the build system to execute.
+requires = ['argparse-manpage[setuptools]'] # PEP 508 specifications.
+# Setuptools specification
+build-backend = 'setuptools.build_meta'
+
+[project]
+# See https://packaging.python.org/en/latest/specifications/declaring-project-metadata/
+dynamic = ['version', 'dependencies']
+name = 'webchanges'
+description = 'Web Changes Delivered. AI-Summarized. Totally Anonymous.'
+readme = { file = 'README.rst', content-type = 'text/x-rst' }
+requires-python = '>=3.11'
+license = { file = 'LICENSE.md' }
+authors = [{ name = 'Mike Borsetti', email = 'mike+webchanges@borsetti.com' }]
+maintainers = [
+    { name = 'Mike Borsetti', email = 'mike+webchanges@borsetti.com' },
+]
+keywords = ['webmonitoring', 'monitoring']
+classifiers = [
+    'Development Status :: 5 - Production/Stable',
+    'Environment :: Console',
+    'Intended Audience :: Developers',
+    'Intended Audience :: End Users/Desktop',
+    'Intended Audience :: System Administrators',
+    'License :: OSI Approved :: BSD License',
+    'License :: OSI Approved :: MIT License',
+    'Natural Language :: English',
+    'Operating System :: OS Independent',
+    'Programming Language :: Python',
+    'Programming Language :: Python :: 3',
+    'Programming Language :: Python :: 3 :: Only',
+    'Programming Language :: Python :: 3.11',
+    'Programming Language :: Python :: 3.12',
+    'Programming Language :: Python :: 3.13',
+    'Programming Language :: Python :: 3.14',
+    'Programming Language :: Python :: Free Threading',
+    'Programming Language :: Python :: Free Threading :: 4 - Resilient',
+    'Programming Language :: Python :: Implementation :: CPython',
+    'Topic :: Internet',
+    'Topic :: Internet :: WWW/HTTP',
+    'Topic :: Internet :: WWW/HTTP :: Indexing/Search',
+    'Topic :: System :: Monitoring',
+    'Topic :: Utilities',
+    'Typing :: Typed',
+]
+
+[project.urls]
+Documentation = 'https://webchanges.readthedocs.io/'
+Repository = 'https://github.com/mborsetti/webchanges/'
+Changelog = 'https://webchanges.readthedocs.io/en/stable/changelog.html'
+Issues = 'https://github.com/mborsetti/webchanges/issues'
+CI = 'https://github.com/mborsetti/webchanges/actions'
+
+[project.scripts]
+# entry points https://setuptools.pypa.io/en/latest/userguide/entry_point.html
+webchanges = 'webchanges.cli:main'
+
+[project.optional-dependencies]
+use_browser = ['playwright', 'psutil']
+# filters
+# lxml is now optional with beautifulsoup4
+# note: also update the list of all possible dependencies in show_detailed_versions() in command.py!
+beautify = ['beautifulsoup4', 'jsbeautifier', 'cssbeautifier']
+bs4 = ['beautifulsoup4']
+html5lib = ['html5lib']
+ical2text = ['vobject']
+jq = ['jq; os_name != "nt"']
+ocr = ['pytesseract', 'Pillow']
+pdf2text = ['pdftotext']
+pypdf = ['pypdf']
+pypdf_crypto = ['pypdf', 'cryptography']
+# differs
+deepdiff = ['deepdiff']
+deepdiff_xml = ['deepdiff', 'xmltodict']
+imagediff = ['Pillow']
+# reporters
+matrix = ['matrix_client']
+pushbullet = ['pushbullet.py']
+pushover = ['chump']
+xmpp = ['aioxmpp']
+# other
+redis = ['redis']
+requests = ['requests']
+safe_password = ['keyring']
+# all
+all = [
+    'webchanges[use_browser,beautify,bs4,html5lib,ical2text,jq,ocr,pdf2text,pypdf_crypto,deepdiff_xml,imagediff,matrix,pushbullet,pushover,xmpp,redis,requests,safe_password]',
+]
+
+
+# -------------------------- setuptools --------------------------
+[tool.setuptools]
+# Called by build
+# See https://setuptools.pypa.io/en/latest/userguide/pyproject_config.html
+
+# Explicit package listing is required for building in tox -e new-install
+# https://setuptools.pypa.io/en/latest/userguide/package_discovery.html
+packages = ['webchanges', 'webchanges._vendored']
+
+[tool.setuptools.dynamic]
+version = { attr = 'webchanges.__version__' }
+dependencies = { file = 'requirements.txt' }
+
+[tool.setuptools.package-data]
+'webchanges' = ['py.typed']
+
+# -------------------------- manpages --------------------------
+# https://github.com/praiskup/argparse-manpage/blob/main/README.md
+[tool.build_manpages]
+manpages = ['man/webchanges.1:function=get_parser:pyfile=get_parser']
+
+# -------------------------- coverage --------------------------
+[tool.coverage.run]
+# Runs in Github Actions (see .github/workflows/ci-cd.yaml) and in tox (see tox.ini).
+# Config file documentation at https://coverage.readthedocs.io/en/latest/config.html
+
+branch = true
+concurrency = ['multiprocessing']
+source = ['./']
+omit = [
+    '.*/*',
+    'build/*',
+    'dist/*',
+    'docs/*',
+    'htmlcov/*',
+    'pip/*',
+    'tests/*',
+    'webchanges/_vendored/*',
+    'webchanges.egg-info/*',
+]
+relative_files = true
+command_line = '-m pytest -vv'
+plugins = ['coverage_conditional_plugin']
+
+[tool.coverage.coverage_conditional_plugin.rules]
+# Requires pip install coverage-conditional-plugin
+# Here we specify our pragma rules:
+has-b4 = "is_installed('bs4')"
+has-jq = "is_installed('jq')"
+has-pdftotext = "is_installed('pdftotext')"
+has-pytesseract = "is_installed('pytesseract')"
+
+[tool.coverage.report]
+# Regexes for lines to exclude from consideration
+exclude_lines = [
+    # Don't complain about missing debug-only code:
+    'def __repr__',
+    'if self\.debug:',
+
+    # Have to re-enable the standard pragma
+    'pragma: no cover',
+
+    # Don't complain if tests don't hit defensive assertion code:
+    'raise AssertionError',
+    'raise NotImplementedError',
+
+    # Don't complain if non-runnable code isn't run:
+    'if 0:',
+    'if __name__ == .__main__.:',
+
+    # Don't complain if module is not importable (handled by code):
+    'except ImportError:',
+
+    # Don't cover IDE code:
+    'if TYPE_CHECKING:',
+]
+# Exclude entire files if they have a custom # pragma: exclude file remark
+# exclude_also = '(?s)\A.*# pragma: exclude file.*\Z'
+# ignore_errors = true
+
+
+# -------------------------- rstcheck --------------------------
+[tool.rstcheck]
+# Checks syntax of reStructuredText and code blocks nested within it.
+# Runs as part of pre-commit.
+# Config file documentation at https://rstcheck.readthedocs.io/en/latest/usage/config/
+
+report_level = 'WARNING'
+# The below is needed when comments in *.rst files turn it into invalid python code
+# ignore_language = 'python'
+
+
+# -------------------------- pytest --------------------------
+[tool.pytest.ini_options]
+# Testing framework
+# Config file documentation at https://docs.pytest.org/en/stable/reference/reference.html#ini-options-ref
+
+# log_auto_indent = 2
+# Enable log display during test run (aka "live logging" https://docs.pytest.org/en/stable/logging.html#live-logs)
+# log_cli = true
+minversion = '9.0.2'
+testpaths = ['tests']
+
+# pytest-playwright
+# addopts = ['--browser', 'chromium', '--browser-channel', 'chrome']
+
+# Adds pytest-cov functionality (see https://pytest-cov.readthedocs.io/en/latest/config.html)
+# Note: --cov moved to .github/workflows/ci-cd.yaml and tox.ini due to interference with PyCharm breakpoints (see
+# https://github.com/pytest-dev/pytest-cov/issues/131) and to enable running tox --parallel
+# Instead of below, now runs with $ coverage run --parallel-mode
+# addopts = --cov=./ --cov-report=term --cov-report=html
+
+
+# -------------------------- ruff --------------------------
+[tool.ruff]
+# Config file documentation at https://docs.astral.sh/ruff/configuration/ and https://docs.astral.sh/ruff/settings/
+
+# File patterns to omit from formatting and linting, in addition to those specified by exclude.
+extend-exclude = ['webchanges/storage_minidb.py', 'webchanges/_vendored']
+
+# By default, Ruff will discover files matching *.py, *.pyi, *.ipynb, or pyproject.toml.
+# Include additional files
+# include = []
+
+# Set the maximum line length.
+line-length = 120
+
+# Target Python version
+# target-version = 'py311'  # Commented out to infer from [project] requires-python
+
+[tool.ruff.lint]
+# By default, Ruff enables Flake8's F rules, along with a subset of the E rules
+# Enable rules not enabled by default, and ignore specific rules.
+select = [
+    'ANN', # flake8-annotations
+    'S',   # flake8-bandit
+    'BLE', # flake8-blind-except
+    'B',   # flake8-bugbear
+    'A',   # flake8-builtin
+    'C4',  # flake8-comprehensions
+    'DTZ', # flake8-datetimez
+    # 'EM',   # flake8-errmsg  # TODO
+    'FA',  # flake8-future-annotations
+    'INT', # flake8-gettext
+    'ISC', # flake8-implicit-str-concat
+    'LOG', # flake8-logging
+    # 'G',    # flake8-logging-format  # Prefer f-string to lazy `%` formatting and OK with '+'
+    'PIE', # flake8-pie
+    'PYI', # flake8-pyi
+    'PT',  # flake8-pytest-style
+    'Q',   # flake8-quotes
+    'RSE', # flake8-raise
+    'RET', # flake8-return
+    'SIM', # flake8-simplify
+    'TID', # flake8-tidy-imports
+    'TD',  # flake8-todos
+    'TC',  # flake8-type-checking
+    # 'ARG',  # flake8-unused-arguments  # Code loses clarity
+    'PTH',  # flake8-use-pathlib
+    'FLY',  # flynt
+    'I',    # isort
+    'C90',  # mccabe 
+    'N',    # pep8-naming
+    'PERF', # Perflint
+    'E',    # pycodestyle errors
+    'W',    # pycodestyle warnings
+    # 'DOC',  # pydoclint  # TODO
+    # 'D',    # pydocstyle  # TODO
+    'F', # Pyflakes
+    # 'PL',   # Pylint  # TODO
+    'FURB', # refurb 
+    'RUF',  # Ruff-specific rules
+    # 'TRY',  # tryceratops  # TODO
+]
+
+ignore = [
+    'FLY002', # Consider f-string instead of string join
+    # 'G003',    # Logging statement uses `+`'
+    # 'G004',    # Logging statement uses f-string (Prefer f-string to lazy `%` formatting)
+    'PLC0415', # `import` should be at the top-level of a file
+    'PT011',   # pytest.raises({exception}) is too broad, set the match parameter or use a more specific exception
+    'PT030',   # pytest.warns({warning}) is too broad, set the match parameter or use a more specific warning
+    'RUF012',  # Mutable class attributes should be annotated with `typing.ClassVar`
+    'SIM105',  # Use contextlib.suppress({exception}) instead of try-except-pass
+    'SIM115',  # Use a context manager for opening files
+    'TD002',   #	Missing author in TODO
+    'TD003',   # Missing issue link for this TODO
+]
+
+# Allow fix for all enabled rules (when `--fix`) is provided.
+fixable = ['ALL']
+unfixable = []
+
+# Allow unused variables when underscore-prefixed.
+dummy-variable-rgx = '^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$'
+
+[tool.ruff.lint.flake8-annotations]
+allow-star-arg-any = true # TODO
+
+[tool.ruff.lint.flake8-quotes]
+inline-quotes = 'single'
+
+[tool.ruff.lint.mccabe]
+# Flag errors (`C901`) whenever the complexity level exceeds below.
+max-complexity = 30
+
+[tool.ruff.lint.per-file-ignores]
+'tests/*' = [
+    'S101', # Use of `assert` detected
+]
+
+[tool.ruff.lint.pydoclint]
+# Skip docstrings which fit on a single line.
+ignore-one-line-docstrings = true
+
+[tool.ruff.lint.pydocstyle]
+convention = 'google'
+
+[tool.ruff.format]
+# Enable the formatter, which is a drop-in replacement for Black.
+# No extra configuration is needed for basic formatting.
+
+# Exclude files for formatting only
+exclude = []
+
+# Use single quotes for strings.
+quote-style = 'single'
+
+# Like Black, indent with spaces, rather than tabs.
+indent-style = 'space'
+
+# Like Black, respect magic trailing commas.
+skip-magic-trailing-comma = false
+
+# Like Black, automatically detect the appropriate line ending.
+line-ending = 'auto'
+
+# Enable auto-formatting of code examples in docstrings. Markdown,
+# reStructuredText code/literal blocks and doctests are all supported.
+#
+# This is currently disabled by default, but it is planned for this
+# to be opt-out in the future.
+docstring-code-format = true
+
+# Set the line length limit used when formatting code snippets in
+# docstrings.
+#
+# This only has an effect when the `docstring-code-format` setting is
+# enabled.
+docstring-code-line-length = 'dynamic'
+
+# -------------------------- ty --------------------------
+# Config file documentation at https://docs.astral.sh/ty/reference/configuration/
+
+[tool.ty.environment]
+extra-paths = ['./webchanges']
+
+[tool.ty.src]
+exclude = ['./webchanges/storage_minidb.py']
