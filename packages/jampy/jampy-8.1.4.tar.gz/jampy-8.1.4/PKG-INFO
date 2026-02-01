@@ -1,0 +1,1338 @@
+Metadata-Version: 2.4
+Name: jampy
+Version: 8.1.4
+Summary: JamPy: Jeans Anisotropic Models for Galactic Dynamics
+Home-page: https://purl.org/cappellari/software
+Author: Michele Cappellari
+Author-email: michele.cappellari@physics.ox.ac.uk
+License: Other/Proprietary License
+Classifier: Development Status :: 5 - Production/Stable
+Classifier: Intended Audience :: Developers
+Classifier: Intended Audience :: Science/Research
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3
+Description-Content-Type: text/x-rst
+Requires-Dist: numpy
+Requires-Dist: scipy
+Requires-Dist: matplotlib
+Requires-Dist: plotbin
+Dynamic: author
+Dynamic: author-email
+Dynamic: classifier
+Dynamic: description
+Dynamic: description-content-type
+Dynamic: home-page
+Dynamic: license
+Dynamic: requires-dist
+Dynamic: summary
+
+The JamPy Package
+=================
+
+**Jeans Anisotropic Modelling for Galactic Dynamics**
+
+.. image:: https://users.physics.ox.ac.uk/~cappellari/images/jam-logo.svg
+    :target: https://users.physics.ox.ac.uk/~cappellari/software
+    :width: 100
+.. image:: https://img.shields.io/pypi/v/jampy.svg
+    :target: https://pypi.org/project/jampy/
+.. image:: https://img.shields.io/badge/arXiv-0806.0042-orange.svg
+    :target: https://arxiv.org/abs/0806.0042
+.. image:: https://img.shields.io/badge/DOI-10.1111/...-green.svg
+    :target: https://doi.org/10.1111/j.1365-2966.2008.13754.x
+
+``JamPy`` is a Python implementation of the Jeans Anisotropic Modelling (JAM)
+formalism for the dynamical modelling of galaxies. 
+
+This software can be used e.g. to measure the mass of supermassive black holes 
+in galaxies, to infer their dark-matter content or to measure galaxy masses and
+density profiles.
+
+The method calculates all the first and second velocity moments, for both the
+intrinsic and the projected kinematics, in spherical and axisymmetric geometry.
+
+The JAM solution assuming a cylindrically-oriented velocity ellipsoid was introduced in 
+`Cappellari (2008) <https://ui.adsabs.harvard.edu/abs/2008MNRAS.390...71C>`_,
+while the solution assuming a spherically-oriented velocity ellipsoid was introduced in 
+`Cappellari (2020) <https://ui.adsabs.harvard.edu/abs/2020MNRAS.494.4819C>`_
+
+.. contents:: :depth: 2
+
+Attribution
+-----------
+
+If you use this software for your research, please cite `Cappellari (2008)`_
+for the cylindrically-aligned JAM solution and `Cappellari (2020)`_
+for the spherically-aligned JAM solution.
+
+The BibTeX entry for the two main JAM papers are respectively::
+
+    @ARTICLE{Cappellari2008,
+        author = {Cappellari, Michele},
+        title = "{Measuring the inclination and mass-to-light ratio of axisymmetric 
+            galaxies via anisotropic Jeans models of stellar kinematics}",
+        journal = {MNRAS},
+        eprint = {0806.0042},
+        year = 2008,
+        volume = 390,
+        pages = {71-86},
+        doi = {10.1111/j.1365-2966.2008.13754.x}
+    }
+
+    @ARTICLE{Cappellari2020,
+        author = {{Cappellari}, Michele},
+        title = "{Efficient solution of the anisotropic spherically-aligned axisymmetric
+            Jeans equations of stellar hydrodynamics for galactic dynamics}",
+        journal = {MNRAS},
+        eprint = {1907.09894},
+        year = 2020,
+        volume = 494,
+        pages = {4819-4837},
+        doi = {10.1093/mnras/staa959}
+    }
+
+Installation
+------------
+
+install with::
+
+    pip install jampy
+
+Without writing access to the global ``site-packages`` directory, use::
+
+    pip install --user jampy
+
+To upgrade ``JamPy`` to the latest version use::
+
+    pip install --upgrade jampy
+
+Documentation
+-------------
+
+Full documentation is contained in the individual files docstrings.
+
+Usage examples are contained in the directory ``jampy/examples`` 
+which is copied by ``pip`` within the global folder
+`site-packages <https://stackoverflow.com/a/46071447>`_.
+
+What follows is the documentation of the two main procedures of the ``JamPy``
+package, extracted from their Python docstrings. The other procedures are 
+documented in their respective docstrings.
+
+###########################################################################
+
+jam.axi.proj
+============
+
+Purpose
+-------
+This procedure calculates a prediction for all the projected first or second
+velocity moments for an anisotropic (three-integral) axisymmetric galaxy model.
+
+Any of the three components of the first velocity moment or any of the six
+components of the symmetric velocity dispersion tensor are supported.
+These include the line-of-sight velocities and the components of the proper motion.
+
+Two assumptions for the orientation of the velocity ellipsoid are supported:
+
+- The cylindrically-aligned ``(R, z, phi)`` solution was presented in
+  `Cappellari (2008) <https://ui.adsabs.harvard.edu/abs/2008MNRAS.390...71C>`_
+
+- The spherically-aligned ``(r, th, phi)`` solution was presented in
+  `Cappellari (2020) <https://ui.adsabs.harvard.edu/abs/2020MNRAS.494.4819C>`_
+
+Calling Sequence
+----------------
+.. code-block:: python
+
+    import jampy as jam
+
+    out = jam.axi.proj(
+             surf_lum, sigma_lum, qobs_lum, surf_pot, sigma_pot, qobs_pot,
+             inc, mbh, distance, xbin, ybin, align='cyl', analytic_los=True,
+             beta=None, data=None, epsrel=1e-2, errors=None, flux_obs=None,
+             gamma=None, goodbins=None, interp=True, kappa=None,
+             logistic=False, ml=None, moment='zz', nang=10, nlos=1500,
+             nodots=False, normpsf=1., nrad=20, pixang=0., pixsize=0.,
+             plot=True, quiet=False, rbh=0.01, sigmapsf=0., step=0.,
+             vmax=None, vmin=None)
+
+    vrms = out.model  # with moment='zz' the output is the LOS Vrms
+
+    out.plot()   # Generate data/model comparison when data is given
+
+See more examples in the ``jampy/examples`` folder inside
+`site-packages <https://stackoverflow.com/a/46071447>`_.
+
+Parameters
+----------
+surf_lum: array_like with shape (n,)
+    peak surface values of the `Multi-Gaussian Expansion
+    <https://pypi.org/project/mgefit/>`_ (MGE) Gaussians describing the
+    surface brightness of the tracer population for which the kinematics
+    is derived.
+
+    The units are arbitrary as they cancel out in the final results.
+
+    EXAMPLE: when one obtains the kinematics from optical spectroscopy,
+    surf_lum contains the galaxy optical surface brightness, which has
+    typical units of ``Lsun/pc^2`` (solar luminosities per ``parsec^2``).
+sigma_lum: array_like with shape (n,)
+    dispersion (sigma) in arcseconds of the MGE Gaussians describing the
+    distribution of the kinematic-tracer population.
+qobs_lum: array_like with shape (n,)
+    observed axial ratio (q') of the MGE Gaussians describing the
+    distribution of the kinematic-tracer population.
+surf_pot: array_like with shape (m,)
+    peak value of the MGE Gaussians describing the galaxy total-mass
+    surface density in units of ``Msun/pc^2`` (solar masses per ``parsec^2``).
+    This is the MGE model from which the model gravitational potential is
+    computed.
+
+    EXAMPLE: with a self-consistent model, one has the same Gaussians
+    for both the kinematic-tracer and the gravitational potential.
+    This implies ``surf_pot = surf_lum``, ``sigma_pot = sigma_lum`` and
+    ``qobs_pot = qobs_lum``. The global M/L of the model is fitted by the
+    routine when passing the ``data`` and ``errors`` keywords with the
+    observed kinematics.
+sigma_pot: array_like with shape (m,)
+    dispersion in arcseconds of the MGE Gaussians describing the galaxy
+    total-mass surface density.
+qobs_pot: array_like with shape (m,)
+    observed axial ratio of the MGE Gaussians describing the galaxy
+    total-mass surface density.
+inc: float
+    inclination in degrees between the line-of-sight and the galaxy symmetry
+    axis (0 being face-on and 90 edge-on).
+mbh: float
+    Mass of a nuclear supermassive black hole in solar masses.
+
+    IMPORTANT: The model predictions are computed assuming ``surf_pot``
+    gives the total mass. In the self-consistent case, one has
+    ``surf_pot = surf_lum`` and if requested (keyword ``ml``) the program
+    can scale the output ``model`` to best fit the data. The scaling is
+    equivalent to multiplying *both* ``surf_pot`` and ``mbh`` by a factor M/L.
+    To avoid mistakes, the actual ``mbh`` used by the output model is
+    printed on the screen.
+distance: float
+    the distance of the galaxy in ``Mpc``. When the distance is derived 
+    from redshift one should use the angular diameter distance ``D_A`` here.
+xbin: array_like with shape (p,)
+    X coordinates in arcseconds of the bins (or pixels) at which one wants
+    to compute the model predictions. The X-axis is assumed to coincide with
+    the galaxy projected major axis. The galaxy center is at ``(0,0)``.
+    
+    In general the coordinates ``(xbin, ybin)`` have to be rotated to bring 
+    the galaxy major axis on the X-axis, before calling ``jam.axi.proj``.
+
+    When no PSF/pixel convolution is performed (``sigmapsf=0`` or
+    ``pixsize=0``) there is a singularity at ``(0,0)`` which must be
+    avoided by the user in the input coordinates.
+ybin: array_like with shape (p,)
+    Y coordinates in arcseconds of the bins (or pixels) at which one wants
+    to compute the model predictions. The Y-axis is assumed to coincide with
+    the projected galaxy symmetry axis.
+
+Other Parameters
+----------------
+align: {'cyl', 'sph'}, optional.
+    Assumed alignment for the velocity ellipsoid during the solution of
+    the Jeans equations.
+
+    - ``align='cyl'`` assumes a cylindrically-aligned velocity ellipsoid
+      using the solution of `Cappellari (2008)`_
+
+    - ``align='sph'`` assumes a spherically-aligned velocity ellipsoid
+      using the solution of `Cappellari (2020)`_
+
+analytic_los: bool, optional
+    This is ``True`` (default) if the line-of-sight integral is performed
+    analytically and ``False`` if it is done via numerical quadrature.
+
+    An analytic integral is only possible with ``align='cyl'`` and only for
+    the second velocity moments. For this reason, when comparing the two
+    second-moment solutions with ``align='cyl'`` and ``align='sph'``, it
+    may be preferable to set ``analytic_los=False`` to ensure that
+    numerical interpolation error is exactly the same in both cases.
+
+    When ``align='sph'``, or when the user requests a first velocity
+    moment, this keyword is automatically set to ``False``.
+beta: array_like with shape (n,) or (4,)
+    Radial anisotropy of the individual kinematic-tracer MGE Gaussians
+    (Default: ``beta=np.zeros(n)``)::
+
+        beta = 1 - (sigma_th/sigma_r)^2  # with align='sph'
+        beta = 1 - (sigma_z/sigma_R)^2   # with align='cyl'
+
+    When ``logistic=True`` the procedure assumes::
+
+        beta = [r_a, beta_0, beta_inf, alpha]
+
+    and the anisotropy of the whole JAM model varies as a logistic
+    function of the logarithmic spherical radius (with ``align='sph'``) or
+    of the logarithmic distance from the equatorial plane (with ``align='cyl'``)::
+
+        beta(r) = beta_0 + (beta_inf - beta_0)/[1 + (r_a/r)^alpha]    # with align='sph'
+        beta(z) = beta_0 + (beta_inf - beta_0)/[1 + (z_a/|z|)^alpha]  # with align='cyl'
+
+    Here ``beta_0`` represents the anisotropy at ``r = 0``, ``beta_inf`` is
+    the anisotropy at ``r = inf`` and ``r_a`` is the anisotropy transition
+    radius (in arcsec like ``sigma_lum``), with ``alpha`` controlling the
+    sharpness of the transition. 
+    In the special case ``beta_0 = 0, beta_inf = 1, alpha = 2`` the
+    anisotropy variation reduces to the form by Osipkov & Merritt, but the
+    extra parameters allow for much more realistic anisotropy profiles. See
+    details and an application in `Simon, Cappellari & Hartke (2024)
+    <https://ui.adsabs.harvard.edu/abs/2024MNRAS.527.2341S>`_.
+data: array_like with shape (p,), optional
+    observed first or second velocity moment used to fit the model.
+
+    EXAMPLE: In the common case where one has only line-of-sight velocities
+    the second moment is given by::
+
+        Vrms = np.sqrt(velBin**2 + sigBin**2)
+
+    at the coordinates positions given by the vectors ``xbin`` and ``ybin``.
+
+    If ``data`` is set and ``ml`` is negative or ``None``, then the model
+    is fitted to the data, otherwise, the adopted ``ml`` is used and just
+    the ``chi**2`` is returned.
+epsrel: float, optional
+    Relative error requested for the numerical computation of the intrinsic
+    moments (before line-of-sight quadrature). (Default: ``epsrel=1e-2``)
+errors: array_like with shape (p,), optional
+    1sigma uncertainty associated with the ``data`` measurements.
+
+    EXAMPLE: In the case where the data are given by the
+    ``Vrms = np.sqrt(velBin**2 + sigBin**2)``, from the error propagation::
+
+        errors = np.sqrt((dVel*velBin)**2 + (dSig*sigBin)**2)/Vrms,
+
+    where ``velBin`` and ``sigBin`` are the velocity and dispersion in each
+    bin and ``dVel`` and ``dSig`` are the corresponding 1sigma uncertainties.
+    (Default: constant ``errors = 0.05*np.median(data)``)
+flux_obs: array_like with shape (p,), optional
+    Optional mean surface brightness of each bin for plotting.
+gamma: array_like with shape (n,)
+    tangential anisotropy of the individual kinematic-tracer MGE Gaussians
+    (Default: ``gamma=np.zeros(n)``)::
+
+        gamma = 1 - (sigma_phi/sigma_r)^2  # with align='sph'
+        gamma = 1 - (sigma_phi/sigma_R)^2  # with align='cyl'
+
+    When ``logistic=True`` the procedure assumes::
+
+        gamma = [r_a, gamma_0, gamma_inf, alpha]
+
+    and the anisotropy of the whole JAM model varies as a logistic
+    function of the logarithmic spherical radius (with ``align='sph'``) or
+    of the logarithmic distance from the equatorial plane (with ``align='cyl'``)::
+
+        gamma(r) = gamma_0 + (gamma_inf - gamma_0)/[1 + (r_a/r)^alpha]    # with align='sph'
+        gamma(z) = gamma_0 + (gamma_inf - gamma_0)/[1 + (z_a/|z|)^alpha]  # with align='cyl'
+
+    Here ``gamma_0`` represents the anisotropy at ``r = 0``, ``gamma_inf``
+    is the anisotropy at ``r = inf`` and ``r_a`` is the anisotropy
+    transition radius (in arcsec like ``sigma_lum``), with ``alpha``
+    controlling the sharpness of the transition. In the special case
+    ``gamma_0 = 0, gamma_inf = 1, alpha = 2`` the anisotropy variation
+    reduces to the form by Osipkov & Merritt, but the extra parameters
+    allow for much more realistic anisotropy profiles.
+
+    IMPORTANT: ``gamma`` only affects the projected first velocity moments.
+    The projected second moments are rigorously independent of ``gamma``.
+goodbins: array_like with shape (p,)
+    Boolean vector with values ``True`` for the bins/spaxels which have to
+    be included in the fit (if requested) and in the ``chi**2`` calculation.
+    (Default: fit all bins).
+interp: bool, optional
+    This keyword is for advanced use only! Set ``interp=False`` to force 
+    no-interpolation on the sky plane. In this way ``out.vel`` and 
+    ``out.vel2`` contain all the first and second velocity moments at the 
+    input coordinates ``(xbin, ybin)``, without PSF convolution.
+    By default ``interp=True`` and one should generally not change this.
+
+    IMPORTANT: If ``sigmapsf=0`` or ``pixsize=0`` or ``interp=False`` then
+    PSF convolution is not performed.
+
+    This keyword is mainly useful for testing against analytic results or
+    to compute all moments, including proper motions,  simultaneously.
+kappa: float, optional
+    Scaling factor for the first velocity moments.
+
+    - If ``kappa=None`` (default): The model's first velocity moments are
+      scaled so that the projected angular momentum of the model matches
+      that of the data (see equation 52 of `Cappellari (2008)`_). The sign
+      of ``kappa`` is chosen to best fit the observed velocity field.
+    
+    - If ``kappa`` is a float (e.g., ``kappa=1``): The model's first
+      velocity moments are multiplied by this value. ``kappa=1`` means no
+      scaling is applied.
+      
+logistic: bool, optional
+    When ``logistic=True``, JAM interprets the anisotropy parameters
+    ``beta`` and ``gamma`` as defining a 4-parameters logistic function.
+    See the documentation of the anisotropy keywords for details.
+    (Default ``logistic=False``)
+ml: float, optional
+    Mass-to-light ratio (M/L) to multiply the values given by ``surf_pot``.
+    Setting this keyword is completely equivalent to multiplying the
+    output ``model`` by ``np.sqrt(M/L)`` after the fit. This implies that
+    the BH mass is also scaled and becomes ``mbh*ml``.
+
+    If ``ml=None`` (default) the M/L is fitted from the data and the
+    best-fitting M/L is returned in output. The BH mass of the model is
+    also scaled and becomes ``mbh*ml``.
+moment: {'x', 'y', 'z', 'xx', 'yy', 'zz', 'xy', 'xz', 'yz'}, optional
+    String specifying the component of the velocity first or second moments
+    requested by the user in output. All values ar in ``km/s``.
+
+    - ``moment='x'`` gives the first moment ``<V_x'>`` of the proper motion
+      in the direction orthogonal to the projected symmetry axis.
+
+    - ``moment='y'`` gives the first moment ``<V_y'>`` of the proper motion
+      in the direction parallel to the projected symmetry axis.
+
+    - ``moment='z'`` gives the first moment ``Vlos = <V_z'>`` of the
+      line-of-sight velocity.
+
+    - ``moment='xx'`` gives ``sqrt<V_x'^2>`` of the component of the proper
+      motion dispersion tensor in the direction orthogonal to the projected
+      symmetry axis.
+
+    - ``moment='yy'`` gives ``sqrt<V_y'^2>`` of the component of the proper
+      motion dispersion tensor in the direction parallel to the projected
+      symmetry axis.
+
+    - ``moment='zz'`` (default) gives the usual line-of-sight
+      ``Vrms = sqrt<V_z'^2>``.
+
+    - ``moment='xy'`` gives the mixed component ``<V_x'V_y'>`` of the proper
+      motion dispersion tensor.
+
+    - ``moment='xz'`` gives the mixed component ``<V_x'V_z'>`` of the proper
+      motion dispersion tensor.
+
+    - ``moment='yz'`` gives the mixed component ``<V_y'V_z'>`` of the proper
+      motion dispersion tensor.
+nang: int, optional
+    The number of linearly-spaced intervals in the eccentric anomaly at
+    which the model is evaluated before interpolation and PSF convolution.
+    (default: ``nang=10``)
+nlos: int (optional)
+    Number of values used for the numerical line-of-sight quadrature.
+    (default ``nlos=1500``)
+nodots: bool, optional
+    Set to ``True`` to hide the dots indicating the centers of the bins in
+    the linearly-interpolated two-dimensional map (default ``False``).
+normpsf: array_like with shape (q,)
+    fraction of the total PSF flux contained in the circular Gaussians
+    describing the PSF of the kinematic observations.
+    The PSF will be used for seeing convolution of the model kinematics.
+    It has to be ``np.sum(normpsf) = 1``.
+nrad: int, optional
+    The number of logarithmically spaced radial positions at which the
+    model is evaluated before interpolation and PSF convolution. One may
+    want to increase this value if the model has to be evaluated over many
+    orders of magnitude in radius (default: ``nrad=20``).
+pixang: float, optional
+    Angle between the observed spaxels and the galaxy major axis X.
+    This angle only rotates the spaxels around their centers, *not* the
+    whole coordinate system ``(xbin, ybin)``, which must be rotated
+    independently by the user before calling ``jam.axi.proj``. 
+    Using the keyword is generally unnecessary.
+pixsize: float, optional
+    Size in arcseconds of the (square) spatial elements at which the
+    kinematics is obtained. This may correspond to the side of the spaxel
+    or lenslets of an integral-field spectrograph. This size is used to
+    compute the kernel for the seeing and aperture convolution.
+
+    IMPORTANT: If ``sigmapsf=0`` or ``pixsize=0`` or ``interp=False`` then
+    PSF convolution is not performed.
+plot: bool
+    When ``data is not None`` setting this keyword produces a plot with the
+    data/model comparison at the end of the calculation.
+quiet: bool
+    Set this keyword to avoid printing values on the console.
+rbh: float, optional
+    This keyword is ignored unless ``align='cyl'`` and ``analytic_los=True``.
+    In all other cases JAM assume a point-like central black hole.
+    This scalar gives the sigma in arcsec of the Gaussian approximating the
+    central black hole of mass MBH [See Section 3.1.2 of `Cappellari (2008)`_]
+    The gravitational potential is indistinguishable from a point source
+    for ``radii > 2*rbh``, so the default ``rbh=0.01`` arcsec is appropriate
+    in most current situations.
+
+    When using different units as input, e.g. pc instead of arcsec, one
+    should check that ``rbh`` is not too many order of magnitude smaller
+    than the spatial resolution of the data.
+sigmapsf: array_like with shape (q,)
+    dispersion in arcseconds of the circular Gaussians describing the PSF
+    of the kinematic observations.
+
+    IMPORTANT: If ``sigmapsf=0`` or ``pixsize=0`` or ``interp=False`` then
+    PSF convolution is not performed.
+
+    IMPORTANT: PSF convolution is done by creating a 2D image, with pixels
+    size given by ``step=np.min(sigmapsf)/4``, and convolving it with the
+    PSF + aperture. If the input radii are very large compared to ``step``,
+    the 2D image may require a too large amount of memory. If this is the
+    case one may compute the model predictions at small radii with a first
+    call to ``jam.axi.proj`` with PSF convolution, and the model
+    predictions at large radii with a second call to ``jam.axi.proj``
+    without PSF convolution.
+step: float, optional
+    Spatial step for the model calculation and PSF convolution in arcsec.
+    This value is automatically computed by default as
+    ``step=np.min(sigmapsf)/4``. It is assumed that when ``sigmapsf`` is
+    large, high-resolution calculations are not needed. In some cases,
+    however, e.g. to accurately estimate the Vrms inside a large aperture,
+    comparable with the PSF size, one may want to override the default
+    value to force smaller spatial pixels using this keyword.
+vmax: float, optional
+    Maximum value of the ``data`` to plot.
+vmin: float, optional
+    Minimum value of the ``data`` to plot.
+
+Returns
+-------
+Stored as attributes of the ``jam.axi.proj`` class.
+
+.chi2: float
+    Reduced ``chi**2``, namely per degree of freedom,  describing the 
+    quality of the fit::
+
+        d, m = (data/errors)[goodbins], (model/errors)[goodbins]
+        chi2 = ((d - m)**2).sum()/goodbins.sum()
+
+    When no data are given in input, this is returned as ``np.nan``.
+.flux: array_like with shape (p,)
+    PSF-convolved MGE surface brightness of each bin in ``Lsun/pc^2``,
+    used to plot the isophotes of the kinematic-tracer on the model results.
+.kappa: float
+    Ratio by which the model was scaled to fit the observed velocity
+    [defined by equation 52 of `Cappellari (2008)`_]
+.ml: float
+    Best fitting M/L by which the mass was scaled to fit the observed moments.
+.model: array_like with shape (p,)
+    Model predictions for the selected velocity moments for each input bin
+    ``(xbin, ybin)``. This attribute is the main output from the program.
+
+    Any of the six components of the symmetric proper motion dispersion
+    tensor ``{'xx', 'yy', 'zz', 'xy', 'xz', 'yz'}``, or any of the three 
+    first velocity moments ``{'x', 'y', 'z'}`` can be returned in output.
+    The desired model output is selected using the ``moment`` keyword.
+    See the ``moment`` documentation for details.
+.vel: array_like with shape (3, p)
+    This attribute generally contains an intermediate result of the
+    calculation and should not be used. Instead, the output kinematic
+    model predictions are contained in the ``.model`` attribute.
+
+    However, for advanced use only, when setting ``interp=False`` and
+    ``analytic_los=False``, this attribute contains the first velocity
+    moments for all the x, y and z components, *not* PSF convolved, at the
+    sky coordinates ``(xbin, ybin)``.
+.vel2: array_like with shape (3, 3, p)
+    This attribute generally contains an intermediate result of the
+    calculation and should not be used. Instead, the output kinematic
+    model predictions are contained in the ``.model`` attribute.
+
+    However, for advanced use only, when setting ``interp=False`` and
+    ``analytic_los=False``, this attribute contains the full 3x3 second
+    velocity moment tensor, *not* PSF convolved, at the sky coordinates
+    ``(xbin, ybin)``.
+
+###########################################################################
+
+jam.axi.intr
+============
+
+Purpose
+-------
+This procedure calculates all the intrinsic first and second velocity
+moments for an anisotropic axisymmetric galaxy model.
+
+This program is useful e.g. to model the kinematics of galaxies
+like our Milky Way, for which the intrinsic moments can be observed
+directly, or to compute starting conditions for N-body numerical
+simulations of galaxies.
+
+Two assumptions for the orientation of the velocity ellipsoid are supported:
+
+- The cylindrically-aligned ``(R, z, phi)`` solution was presented in
+  `Cappellari (2008) <https://ui.adsabs.harvard.edu/abs/2008MNRAS.390...71C>`_
+
+- The spherically-aligned ``(r, th, phi)`` solution was presented in
+  `Cappellari (2020) <https://ui.adsabs.harvard.edu/abs/2020MNRAS.494.4819C>`_
+
+Calling Sequence
+----------------
+.. code-block:: python
+
+    import jampy as jam
+
+    out = jam.axi.intr(
+             dens_lum, sigma_lum, qintr_lum, dens_pot, sigma_pot, qintr_pot,
+             mbh, Rbin, zbin, align='cyl', beta=None, data=None, epsrel=1e-2,
+             errors=None, gamma=None, goodbins=None, interp=True,
+             logistic=False, ml=None, nang=10, nodots=False, nrad=20,
+             plot=True, proj_cyl=False, quiet=False)
+
+    # The meaning of the output is different depending on `align`
+    sig2R, sig2z, sig2phi, v2phi = out.model  # with align='cyl'
+    sig2r, sig2th, sig2phi, v2phi = out.model  # with align='sph'
+
+    out.plot()   # Generate data/model comparison
+
+Parameters
+----------
+dens_lum: array_like with shape (n,)
+    vector containing the peak value of the MGE Gaussians describing
+    the intrinsic density of the tracer population for which the kinematics
+    is derived.
+    The units are arbitrary as they cancel out in the final results.
+    Typical units are e.g. ``Lsun/pc^3`` (solar luminosities per ``parsec^3``)
+sigma_lum: array_like with shape (n,)
+    vector containing the dispersion (sigma) in ``pc`` of the MGE
+    Gaussians describing the galaxy kinematic-tracer population.
+qintr_lum: array_like with shape (n,)
+    vector containing the intrinsic axial ratio (q) of the MGE
+    Gaussians describing the galaxy kinematic-tracer population.
+surf_pot: array_like with shape (m,)
+    vector containing the peak value of the MGE Gaussians
+    describing the galaxy total-mass density in units of ``Msun/pc^3``
+    (solar masses per ``parsec^3``). This is the MGE model from which the
+    model gravitational potential is computed.
+sigma_pot: array_like with shape (m,)
+    vector containing the dispersion in ``pc`` of the MGE
+    Gaussians describing the galaxy total-mass density.
+qintr_pot: array_like with shape (m,)
+    vector containing the intrinsic axial ratio of the MGE
+    Gaussians describing the galaxy total-mass density.
+mbh: float
+    Mass of a nuclear supermassive black hole in solar masses.
+Rbin: array_like with shape (p,)
+    Vector with the ``R`` coordinates in ``pc`` of the bins (or pixels) at
+    which one wants to compute the model predictions. This is the first
+    cylindrical coordinate ``(R, z)`` with the galaxy center at ``(0,0)``.
+
+    There is a singularity at ``(0, 0)`` which should be avoided by the user
+    in the input coordinates.
+zbin: array_like with shape (p,)
+    Vector with the ``z`` coordinates in ``pc`` of the bins (or pixels) at
+    which one wants to compute the model predictions. This is the second
+    cylindrical coordinate ``(R, z)``, with the z-axis coincident with the
+    galaxy symmetry axis.
+
+Other Parameters
+----------------
+align: {'cyl', 'sph'} optional
+    If ``align='cyl'`` the program computes the solution of the Jeans
+    equations with cylindrically-aligned velocity ellipsoid, presented
+    in `Cappellari (2008)`_. If ``align='sph'`` the spherically-aligned
+    solution of `Cappellari (2020)`_ is returned.
+beta: array_like with shape (n,) or (4,)
+    Vector with the axial anisotropy of the individual kinematic-tracer
+    MGE Gaussians (Default: ``beta=np.zeros(n)``)::
+
+        beta = 1 - (sigma_th/sigma_r)^2  # with align='sph'
+        beta = 1 - (sigma_z/sigma_R)^2   # with align='cyl'
+
+    When ``logistic=True`` the procedure assumes::
+
+        beta = [r_a, beta_0, beta_inf, alpha]
+
+    and the anisotropy of the whole JAM model varies as a logistic
+    function of the logarithmic spherical radius (with ``align='sph'``) or
+    of the logarithmic distance from the equatorial plane (with ``align='cyl'``)::
+
+        beta(r) = beta_0 + (beta_inf - beta_0)/[1 + (r_a/r)^alpha]    # with align='sph'
+        beta(z) = beta_0 + (beta_inf - beta_0)/[1 + (z_a/|z|)^alpha]  # with align='cyl'
+
+    Here ``beta_0`` represents the anisotropy at ``r = 0``, ``beta_inf`` is
+    the anisotropy at ``r = inf`` and ``r_a`` is the anisotropy transition
+    radius (in arcsec like ``sigma_lum``), with ``alpha`` controlling the
+    sharpness of the transition. 
+    In the special case ``beta_0 = 0, beta_inf = 1, alpha = 2`` the
+    anisotropy variation reduces to the form by Osipkov & Merritt, but the
+    extra parameters allow for much more realistic anisotropy profiles. See
+    details and an application in `Simon, Cappellari & Hartke (2024)
+    <https://ui.adsabs.harvard.edu/abs/2024MNRAS.527.2341S>`_.
+data: array_like of shape (4, p), optional
+    Four input vectors with the observed values of:
+
+    - ``[sigR, sigz, sigphi, vrms_phi]`` in ``km/s``, when ``align='cyl'``
+      (or ``align='sph'`` and ``proj_cyl=True``).
+
+      ``vrms_phi`` is the square root of the velocity second moment in the
+      tangential direction. If the velocities ``vphi_j`` are measured from
+      individual stars then ``vrms_phi = sqrt(mean(vphi_j^2))``.
+      One can also use the relation ``vrms_phi = sqrt(vphi^2 + sigphi^2)``,
+      where ``vphi = mean(vphi_j)`` and ``sigphi = std(vphi_j)``
+
+    - ``[sigr, sigth, sigphi, vrms_phi]`` in ``km/s``, when ``align='sph'``,
+      where ``vrms_phi`` is defined above.
+
+epsrel: float, optional
+    Relative error requested for the numerical quadratures, before
+    interpolation (Default: ``epsrel=1e-2``).
+errors: array_like of shape (4, p), optional
+    ``1sigma`` uncertainties on ``data``, in the same format (default 5 ``km/s``).
+gamma: array_like with shape (n,)
+    Vector with the tangential anisotropy of the individual kinematic-tracer
+    MGE Gaussians (Default: ``gamma=np.zeros(n)``)::
+
+        gamma = 1 - (sigma_phi/sigma_r)^2  # with align='sph'
+        gamma = 1 - (sigma_phi/sigma_R)^2  # with align='cyl'
+
+    When ``logistic=True`` the procedure assumes::
+
+        gamma = [r_a, gamma_0, gamma_inf, alpha]
+
+    and the anisotropy of the whole JAM model varies as a logistic
+    function of the logarithmic spherical radius (with ``align='sph'``) or
+    of the logarithmic distance from the equatorial plane (with ``align='cyl'``)::
+
+        gamma(r) = gamma_0 + (gamma_inf - gamma_0)/[1 + (r_a/r)^alpha]    # with align='sph'
+        gamma(z) = gamma_0 + (gamma_inf - gamma_0)/[1 + (z_a/|z|)^alpha]  # with align='cyl'
+
+    Here ``gamma_0`` represents the anisotropy at ``r = 0``, ``gamma_inf``
+    is the anisotropy at ``r = inf`` and ``r_a`` is the anisotropy
+    transition radius (in arcsec like ``sigma_lum``), with ``alpha``
+    controlling the sharpness of the transition. In the special case
+    ``gamma_0 = 0, gamma_inf = 1, alpha = 2`` the anisotropy variation
+    reduces to the form by Osipkov & Merritt, but the extra parameters
+    allow for much more realistic anisotropy profiles.
+
+    IMPORTANT: ``gamma`` only affects the projected first velocity moments.
+    The projected second moments are rigorously independent of ``gamma``.
+goodbins: array_like with shape (4, p), optional
+    Boolean vector of the same shape as ``data`` with values ``True``
+    for the bins which have to be included in the fit (if requested) and
+    ``chi^2`` calculation (Default: fit all bins).
+interp: bool, optional
+    If ``interp=False`` no interpolation is performed and the model is
+    computed at every set of input (R, z) coordinates.
+    If ``interp=True`` (default), the model is interpolated if the number
+    of requested input (R, z) coordinates is larger than ``nang*nrad``.
+logistic: bool, optional
+    When ``logistic=True``, JAM interprets the anisotropy parameters
+    ``beta`` and ``gamma`` as defining a 4-parameters logistic function.
+    See the documentation of the anisotropy keywords for details.
+    (Default ``logistic=False``)
+ml: float, optional
+    Mass-to-light ratio M/L. If ``ml=None`` (default) the M/L is fitted to
+    the data and the best-fitting value is returned in output.
+    The ``mbh`` is also scaled and becomes ``mbh*ml``.
+    If ``ml=1`` no scaling is applied to the model.
+nang: int, optional
+    The number of linearly-spaced intervals in the eccentric anomaly at
+    which the model is evaluated before interpolation (default: ``nang=10``).
+nodots: bool, optional
+    Set to ``True`` to hide the dots indicating the centers of the bins in
+    the two-dimensional map (default ``False``).
+nrad: int, optional
+    The number of logarithmically spaced radial positions at which the
+    model is evaluated before interpolation. One may want to increase this
+    value if the model has to be evaluated over many orders of magnitude in
+    radius (default: ``nrad=20``).
+plot: bool, optional
+    If ``plot=True`` (default) and ``data is not None``, produce a plot of
+    the data-model comparison at the end of the calculation.
+proj_cyl: bool, optional
+    If ``align='sph'`` and ``proj_cyl=True``, the function projects the
+    spherically-aligned moments to cylindrical coordinates and returns the
+    ``[sig2R, sig2z, sig2phi, v2phi]`` components as in the case
+    ``align='cyl'``. This is useful for a direct comparison of results with
+    either the spherical or cylindrical alignment, as it allows one to fit
+    the same data with both modelling assumptions.
+quiet: bool, optional
+    If ``quiet=False`` (default), print the best-fitting M/L and chi2 at
+    the end for the calculation.
+
+Returns
+-------
+Returned as attributes of the ``jam.axi.intr`` class.
+
+.chi2: float
+    Reduced chi^2 (chi^2/DOF) describing the quality of the fit::
+
+        d = (data/errors)[goodbins]
+        m = (model/errors)[goodbins]
+        chi2 = ((d - m)**2).sum()/goodbins.sum()
+
+.flux: array_like  with shape (p,)
+    Vector with the MGE luminosity density at each ``(R, z)`` location in
+    ``Lsun/pc^3``, used to plot the isophotes on the model results.
+.ml: float
+    Best fitting M/L. This value is fitted while ignoring ``sigphi`` and it
+    is strictly independent of the adopted tangential anisotropy ``gamma``.
+.model: array_like with shape (4, p)
+    - Contains ``[sig2R, sig2z, sig2phi, v2phi]`` with ``align='cyl'``
+
+    - Contains ``[sig2r, sig2th, sig2phi, v2phi]`` with ``align='sph'``
+
+    where the above quantities are defined as follows:
+
+    sig2R (sig2r): array_like with shape (p,)
+        squared intrinsic dispersion in ``(km/s)^2`` along the R (r)
+        direction at each ``(R, z)`` location.
+
+    sig2z (sig2th): array_like with shape (p,)
+        squared intrinsic dispersion in ``(km/s)^2`` along the z (th)
+        direction at each ``(R, z)`` location.
+
+    sig2phi: array_like with shape (p,)
+        squared intrinsic dispersion in ``(km/s)^2``  along the
+        tangential ``phi`` direction at each ``(R, z)`` location.
+
+    v2phi: array_like with shape (p,)
+        the second velocity moment in ``(km/s)^2`` along the
+        tangential ``phi`` direction at each ``(R, z)`` location.
+
+    The mean velocity along the tangential direction can be computed as
+    ``vphi = np.sqrt(v2phi - sig2phi)``
+
+    NOTE: I return squared velocities instead of taking the square root,
+    to allow for negative values (unphysical solutions).
+
+###########################################################################
+
+License
+=======
+
+Other/Proprietary License
+
+Copyright (c) 2003-2025 Michele Cappellari
+
+This software is provided as is with no warranty. You may use it for
+non-commercial purposes and modify it for personal or internal use, as long
+as you include this copyright and disclaimer in all copies. You may not
+redistribute the code.
+
+###########################################################################
+
+Changelog
+---------
+
+V8.1.4: MC, Oxford, 31 January 2026
++++++++++++++++++++++++++++++++++++
+
+- ``jam.sph.proj``: Restored functionality for legacy inputs where the
+  anisotropy ``beta`` is specified as a vector with one value for each Gaussian.
+  This feature was broken in v7.1.0 during the update to support the 
+  (recommended) ``logistic`` anisotropy keyword.
+- ``jam.util.betax()``: New general purpose special function to compute the
+  incomplete Beta function for arrays of values (including negative parameters).
+- ``jam.axi.proj.plot()``: New optional keywords ``vmin`` and ``vmmax`` to
+  manually control the plotting limits.
+
+V8.1.3: MC, Oxford, 17 December 2025
+++++++++++++++++++++++++++++++++++++
+
+- ``jam.sph.proj``: Fixed bug in output convolved surface brightness ``flux``.
+  Thanks to Felipe Urcelay (physics.ox.ac.uk) for reporting.
+  Return MGE unconvolved when no convolution is applied to the model.
+- ``jam.axi.intr``: Return ``chi2 = np.nan`` when no data is provided, instead
+  of ``chi2 = None``, for consistency with ``jam.axi.proj``.
+
+V8.1.0: MC, Oxford, 26 October 2025
++++++++++++++++++++++++++++++++++++
+
+- Adapted all examples as ``jupytext`` notebooks, which can be opened as
+  Jupyter notebooks or as Python scripts in any Python IDE.
+- ``jam.axi.sersic_mass``: Now supports elliptical apertures.
+- ``jam.sph.proj``: Added a small perturbation to prevent singularities in the
+  ``gamma`` function for negative integers. This change only affects rare
+  cases involving negative integer beta anisotropy values.
+- ``jam.mge.weighted_slope``: New function to compute analytically 
+  ``<d(ln rho)/d(ln r)>`` the mass-weighted slope of an MGE.
+- ``jam.mge.cylindrical_mass``: Rewritten and vectorized integrand.
+
+V8.0.0: MC, Oxford, 26 September 2024
++++++++++++++++++++++++++++++++++++++
+
+- Breaking changes to the overall package interface. However, the necessary
+  modifications can be easily made using search and replace. There are no
+  changes to the internal code. The new interface enhances discoverability and
+  autocompletion of functions in current Python editors, and it simplifies
+  imports. Previous calls like:
+
+  .. code-block:: python
+  
+    from jampy.jam_axi_intr import jam_axi_intr
+    from jampy.jam_axi_proj import jam_axi_proj
+    from jampy.jam_axi_sersic import jam_axi_sersic_mass
+
+    from jampy.jam_sph_intr import jam_sph_intr    
+    from jampy.jam_sph_proj import jam_sph_proj    
+
+    from jampy.mge_cylindrical_mass import mge_cylindrical_mass
+    from jampy.mge_half_light_isophote import mge_half_light_isophote
+    from jampy.mge_radial_density import mge_radial_density
+    from jampy.mge_radial_mass import mge_radial_mass
+    from jampy.mge_vcirc import mge_vcirc
+
+    out = jam_axi_intr(...)
+    out = jam_axi_proj(...)
+    out = jam_axi_sersic_mass(...)
+
+    out = jam_sph_intr(...)
+    out = jam_sph_proj(...)
+
+    out = mge_cylindrical_mass(...)
+    out = mge_half_light_isophote(...)
+    out = mge_radial_density(...)
+    out = mge_radial_mass(...)
+    out = mge_vcirc(...)
+  
+  must be converted into:
+
+  .. code-block:: python
+  
+    import jampy as jam
+
+    out = jam.axi.intr(...)
+    out = jam.axi.proj(...)
+    out = jam.axi.sersic_mass(...)
+
+    out = jam.sph.intr(...)
+    out = jam.sph.proj(...)
+
+    out = jam.mge.cylindrical_mass(...)
+    out = jam.mge.half_light_isophote(...)
+    out = jam.mge.radial_density(...)
+    out = jam.mge.radial_mass(...)
+    out = jam.mge.vcirc(...)
+
+
+V7.2.6: MC, Oxford, 04 August 2024
+++++++++++++++++++++++++++++++++++
+
+- ``quad1d``: Replaced ``np.Inf`` with ``np.inf`` for compatibility with the
+  latest NumPy 2.0.
+
+V7.2.5: MC, Oxford, 20 May 2024
++++++++++++++++++++++++++++++++
+
+- ``quad1d`` and ``quad2d``: Require positive values for either ``epsrel`` or
+  ``epsabs`` keywords. Thanks to Carlos Melo (cufrgs.br) for the feedback.
+- ``jam_axi_proj``: Dropped support for Python 3.9.
+
+V7.2.4: MC, Oxford, 10 January 2024
++++++++++++++++++++++++++++++++++++
+
+- ``jam_axi_proj``: Support prolate models with ``qobs_lum > 1`` or 
+  ``qobs_pot > 1``.
+- ``jam_axi_proj``: Output unconvolved surface brightness ``jam.flux`` when no
+  PSF/aperture convolution is applied to the kinematics, due to zero
+  ``sigmapsf`` or ``pixsize``.
+- ``mge_vcirc``: Use scale-independent integration ranges like other JamPy
+  functions.
+- ``jam_axi_sersic``: Include ``sigma_e`` in the output and enable rotated
+  aperture option. Updated docstring.
+
+V7.2.1: MC, Oxford, 21 July 2023
+++++++++++++++++++++++++++++++++
+
+- ``jam_axi_intr``: Integrate all velocity components at the same time with a
+  single call to the updated ``quad1d`` and ``quad2d``. Significant speedup.
+- ``quad1d``, ``quad2d``: Allow for integration of vector functions. All
+  components are integrated over the same set of evaluation points.
+- ``jam_axi_proj``: Updated verbose output with more information.
+- New procedure ``jam_axi_sersic`` to efficiently compute dynamical masses of
+  axisymmetric galaxies described by Sersic profiles while allowing for seeing
+  and aperture effects and assuming a given intrinsic axial ratio. This is
+  meant to be a simple and quick replacement for the similar but less accurate
+  virial estimators.
+- New utility function ``cosmology_distance`` used in examples.
+
+V7.1.0: MC, Oxford, 5 June 2023
++++++++++++++++++++++++++++++++
+
+- Separated computation for the black hole kinematics for both the
+  cylindrically and spherically-aligned solutions. In both cases, this removed
+  one numerical quadrature. This is useful in extreme situations when the
+  minimum radius one wants to model around the black hole is orders of
+  magnitude smaller than the smallest MGE Gaussian. This change eliminated the
+  need for the ``rbh`` keyword in ``jam_axi_intr``, which I removed. The only
+  case where the black hole is still approximated with a small Gaussian is in
+  ``jam_axi_proj`` when both ``align='cyl'`` and ``analytic_los=True``.
+- Adopted minimum radius based on ``step`` for the intrinsic interpolation grid
+  as already done for the projected one.
+- Simplified minimum-inclination test.
+- Removed ``legacy`` folder with old redundant procedures.
+- Moved the formalism for the LOS analytic integrand with ``align='cyl'`` into
+  ``jam_axi_proj``.
+- ``jam_axi_proj``, ``jam_axi_intr``, ``jam_sph_proj``, ``jam_sph_intr``: New
+  keyword ``logistic`` to specify when JAM should interpret the input
+  anisotropy parameters ``beta`` and ``gamma`` as defining a logistic function
+  anisotropy profile.
+- ``jam_axi_intr``: Use DE quadrature from ``[z, inf]`` instead of ``[0, 1]``
+  with ``align='cyl'`` as already done with ``align='sph'``.
+- ``jam_sph_proj``: Return convolved surface brightness.
+- ``jam_hernquist_model_example``: New test against Osipkov-Merritt radial
+  variation of the anisotropy using ``logistic=True``. Revised plot.
+
+V7.0.10: MC, Oxford, 17 January 2023
+++++++++++++++++++++++++++++++++++++
+
+- Introduced an analytic radial variation of the anisotropy ``beta``
+  and ``gamma`` using a flexible logistic function of logarithmic radius
+  ``beta(r) = beta_0 + (beta_inf - beta_0)/[1 + (r_a/r)^alpha]``.
+  This function specifies the inner/outer anisotropy ``beta_0`` and
+  ``beta_inf``, the anisotropy radius ``r_a`` and the sharpness ``alpha``
+  of the transition. This new function is an alternative to assigning
+  different anisotropies to different Gaussians. All procedures
+  ``jam_axi_proj``, ``jam_axi_intr``, ``jam_sph_proj`` and ``jam_sph_intr``,
+  with both ``align='sph'`` and ``align='cyl'``, were modified, documented
+  and extensively tested to support the variable-anisotropy function.
+- ``jam_sph_proj_example``: adapted to show the usage of the new analytic
+  radial anisotropy variation.
+- ``jam_axi_intr``: Fixed program stop in the plotting function.
+- ``jam_axi_proj``: Raise an error when ``rbh`` is too small.
+- ``jam_axi_proj``: Raise an error if the user includes the singularity
+  ``(x,y) = (0,0)`` in the input coordinates without PSF convolution.
+- ``quad1d``: new defaults ``singular=0`` and ``epsabs=0`` like ``quad2d``.
+
+V6.4.0: MC, Oxford, 3 October 2022
+++++++++++++++++++++++++++++++++++
+
+- ``jam_sph_proj``: Created this new function by renaming the procedure
+  ``legacy.jam_sph_rms`` and changing its interface to be consistent with
+  the axisymmetric version.
+- ``jam_sph_proj``: Included special isotropic formula for testing.
+- ``jam_sph_proj``: Included Osipkov-Merritt anisotropy for testing.
+- ``jam_sph_proj``: Made quadrature limits insensitive to scaling.
+- ``jam_sph_proj``: Simplified integrand with formulas of Cappellari (2020)
+  and using recurrence relations to reduce calls to special functions.
+- ``jam_sph_proj``: More efficient TANH transformation of the integration
+  variable following Cappellari (2020).
+- ``jam_sph_intr``: New function to compute the intrinsic moments in
+  spherical symmetry.
+- ``jam_axi_proj``: Removed fixed minimum radius limit in pc for the
+  interpolation without PSF convolution. This avoids the risk of artificial 
+  truncation when using small arbitrary spatial coordinates for testing.
+- ``jam_axi_proj``: Tenfold increase of LOS evaluations to ``nlos=1500``.
+- New procedure ``examples.jam_dark_halo_bayes_example.py``.
+- Renamed ``quadva`` as ``quad1d`` with modified interface and new
+  ``singular`` keyword to skip transforming the integration variable.
+
+V6.3.3: MC, Oxford, 7 July 2021
++++++++++++++++++++++++++++++++
+
+- ``jam_axi_proj``: Clarified meaning of ``interp`` keyword in docstring.     
+  Thanks to Kai Zhu (nao.cas.cn) for the feedback.
+- ``jam_axi_proj``: print "No PSF/pixel convolution" when ``interp == False``.
+
+V6.3.2: MC, Oxford, 28 April 2021
++++++++++++++++++++++++++++++++++
+
+- Use the new ``jam_axi_proj`` instead of ``legacy`` software in the examples.
+- Removed redundant ``legacy`` examples. 
+
+V6.3.1: MC, Oxford, 11 November 2020
+++++++++++++++++++++++++++++++++++++
+
+- ``jam_axi_proj``: New keyword ``analytic_los`` to chose between numeric
+  or analytic line-of-sight integral for the second velocity moment,
+  when ``align='cyl'``.
+- ``jam_axi_proj``: Increased default value of ``nlos`` keyword.
+- ``jam_axi_proj``: Raise an error if ``rbh`` is too small.
+- ``jam_axi_proj`` and ``jam_axi_intr``: Removed ``**kwargs`` argument and
+  included new ``nodots`` keyword passed to ``plot_velfield``.
+
+V6.2.1: MC, Oxford, 15 September 2020
++++++++++++++++++++++++++++++++++++++
+
+- ``jam_axi_proj``: Fixed program stop when ``data == ml == None``.
+  Thank to Bitao Wang (pku.edu.cn) for reporting.
+
+V6.2.0: MC, Oxford, 17 August 2020
+++++++++++++++++++++++++++++++++++
+
+- ``jam_axi_proj``: Avoid possible division by zero after convolution,
+  when the tracer MGE is much smaller than the field of view.
+- ``jam_axi_proj``: Fully broadcasted ``vmom_proj``.
+- ``jam_axi_proj``: Removed minimum-radius clipping in ``vmom_proj``.
+- ``jam_axi_proj``: New ``interp`` keyword to force no-interpolation
+  when using the full first and second velocity moments simultaneously.
+- Made ``jam.plot()`` callable after ``jam_axi_proj`` or ``jam_axi_intr``.
+- New axisymmetric analytic vs MGE test in ``mge_vcirc_example``.
+- ``mge_vcirc``: Upgraded formalism.
+- Fixed Numpy 1.9 ``VisibleDeprecationWarning``.
+- Updated documentation.
+
+V6.1.5: MC, Oxford, 23 July 2020
+++++++++++++++++++++++++++++++++
+
+- Fixed program stop in first velocity moment without input data,
+  introduced in V6.1.2. Thanks to Bitao Wang (pku.edu.cn) for reporting.
+- Implemented the ``kappa`` input keyword as scalar.
+
+V6.1.4: MC, Oxford, 16 July 2020
+++++++++++++++++++++++++++++++++
+
+- Added ``kappa`` to the returned parameters of ``jam_axi_proj``.
+- Compute both velocity and Vrms in ``jam_axi_proj_example``.
+
+V6.1.3: MC, Oxford, 13 July 2020
+++++++++++++++++++++++++++++++++
+
+- Fixed program stop in ``legacy.jam_axi_vel`` due to a variable name typo 
+  introduced in V6.1.2.
+
+V6.1.2: MC, Oxford, 20 June 2020
+++++++++++++++++++++++++++++++++
+
+- ``jam_axi_proj``: Fixed input ``ml`` being ignored. Thanks to Sabine
+  Thater (univie.ac.at) and Takafumi Tsukui (grad.nao.ac.jp) for reporting.
+- ``jam_axi_rms``: I reduced the interpolation error before the PSF
+  convolution for all the routines in the ``legacy`` sub-folder, as already
+  implemented in the new ``jam_axi_proj``. Thanks to Takafumi Tsukui
+  (grad.nao.ac.jp) for reporting differences.
+- ``jam_axi_intr``: Request input ``data = [sigR, sigz, sigphi, vrms_phi]``
+  instead of ``data = [sigR, sigz, sigphi, vphi]``.
+- ``jam_axi_intr``: exclude ``sigphi`` from ``ml`` fitting. These two
+  changes make the fitted ``ml`` strictly independent of the adopted
+  tangential anisotropy ``gamma``.
+
+V6.0.1: MC, Oxford, 23 April 2020
++++++++++++++++++++++++++++++++++
+
+- Fixed ``model`` output when fitting ``ml``.
+  Thanks to Selina Nitschai (mpia-hd.mpg.de) for reporting.
+
+V6.0.0: MC, Oxford, 22 April 2020
++++++++++++++++++++++++++++++++++
+
+- Major changes to the whole ``jampy`` package: from this version
+  I include the new spherically-aligned solution of the Jeans 
+  equations from Cappellari (2020, MNRAS).
+- Two new functions ``jam_axi_intr`` and ``jam_axi_proj``
+  now provide either the intrinsic or the projected moments,
+  respectively, for both the spherically-aligned and 
+  cylindrically-aligned JAM solutions.
+- I moved the previous procedures ``jam_axi_rms``, ``jam_axi_vel``
+  and ``jam_sph_rms`` to the ``jampy.legacy`` folder.  
+
+V5.0.23: MC, Oxford, 31 October 2019
+++++++++++++++++++++++++++++++++++++
+
+- Use analytic ``mge_surf`` in convolution.
+
+V5.0.22: MC, Oxford, 21 March 2019
+++++++++++++++++++++++++++++++++++
+
+- Reformatted documentation of all procedures.
+
+V5.0.21: MC, Oxford, 14 February 2019
++++++++++++++++++++++++++++++++++++++
+
+- Significant speedup of ``mge_vcirc``.
+- Formatted documentation.
+- Created package-wide CHANGELOG: before this version, the
+  CHANGELOG file only refers to the procedure ``jam_axi_rms``.
+
+V5.0.16: MC, Oxford, 27 September 2018
+++++++++++++++++++++++++++++++++++++++
+
+- Fixed clock ``DeprecationWarning`` in Python 3.7.
+
+V5.0.15: MC, Oxford, 12 May 2018
+++++++++++++++++++++++++++++++++
+
+- Dropped Python 2.7 support.
+
+V5.0.14: MC, Oxford, 17 April 2018
+++++++++++++++++++++++++++++++++++
+
+- Fixed ``MatplotlibDeprecationWarning`` in Matplotlib 2.2.
+- Changed imports for jam as a package.
+- Removed example.
+
+V5.0.13: MC, Oxford, 7 March 2018
++++++++++++++++++++++++++++++++++
+
+- Check that PSF is normalized.
+
+V5.0.12: MC, Oxford, 22 January 2018
+++++++++++++++++++++++++++++++++++++
+
+- Print a message when no PSF convolution was performed.
+- Broadcast kernel and MGE convolution loops.
+- Fixed missing tensor in assertion test.
+
+V5.0.11: MC, Oxford, 10 September 2017
+++++++++++++++++++++++++++++++++++++++
+
+- Make default ``step`` depend on ``sigmapsf`` regardless of ``pixsize``.
+
+V5.0.10: MC, Oxford, 10 August 2017
++++++++++++++++++++++++++++++++++++
+
+- Raise an error if ``goodbins`` is all False.
+
+V5.0.9: MC, Oxford, 17 March 2017
++++++++++++++++++++++++++++++++++
+
+- Included ``flux_obs`` keyword. Updated documentation.
+- Fixed ``DeprecationWarning`` in Numpy 1.12.
+
+V5.0.8: MC, Oxford, 17 February 2017
+++++++++++++++++++++++++++++++++++++
+
+- Use odd kernel size for convolution.
+- Fixed corner case with coordinates falling outside the 
+  interpolation region, due to finite machine precision.
+
+V5.0.7: MC, Oxford, 23 February 2016
+++++++++++++++++++++++++++++++++++++
+
+- Scale rmsModel by the input M/L also when rms is not given.
+  Thanks to Alex Grainger (Oxford) for pointing out the inconsistency.
+- Pass ``**kwargs`` for plotting.
+
+V5.0.6: MC, Oxford, 18 September 2015
++++++++++++++++++++++++++++++++++++++
+
+- Plot bad bins on the data.
+
+V5.0.5: MC, Oxford, 23 May 2015
++++++++++++++++++++++++++++++++
+
+- Changed the meaning of ``goodbins`` to be a boolean vector.
+
+V5.0.4: MC, Sydney, 5 February 2015
++++++++++++++++++++++++++++++++++++
+
+- Introduced further checks on matching input sizes.
+
+V5.0.3: MC, Oxford, 31 October 2014
++++++++++++++++++++++++++++++++++++
+
+- Modified final plot layout.
+
+V5.0.2: MC, Oxford, 25 May 2014
++++++++++++++++++++++++++++++++
+
+- Support both Python 2.7 and Python 3.
+
+V5.0.1: MC, Oxford, 24 February 2014
+++++++++++++++++++++++++++++++++++++
+
+- Plot bi-symmetrized ``V_rms`` as in IDL version.
+
+V5.0.0: MC, Paranal, 11 November 2013
++++++++++++++++++++++++++++++++++++++
+
+- Translated from IDL into Python.
+
+V4.1.5: MC, Paranal, 8 November 2013
+++++++++++++++++++++++++++++++++++++
+
+- Use renamed CAP* routines to avoid potential naming conflicts.
+
+V4.1.4: MC, Oxford, 12 February 2013
+++++++++++++++++++++++++++++++++++++
+
+- Include _EXTRA and RANGE keywords for plotting.
+
+V4.1.3: MC, Oxford, 1 February 2013
++++++++++++++++++++++++++++++++++++
+
+- Output FLUX in ``Lsun/pc^2``.
+
+V4.1.2: MC, Oxford, 28 May 2012
++++++++++++++++++++++++++++++++
+
+- Updated documentation.
+
+V4.1.1: MC, Oxford, 8 December 2011
++++++++++++++++++++++++++++++++++++
+
+- Only calculates FLUX if required.
+
+V4.1.0: MC, Oxford 19 October 2010
+++++++++++++++++++++++++++++++++++
+
+- Included TENSOR keyword to calculate any of the six components of
+  the symmetric proper motion dispersion tensor (as in note 5 of the paper).
+
+V4.0.9: MC, Oxford, 15 September 2010
++++++++++++++++++++++++++++++++++++++
+
+- Plot and output with the FLUX keyword the PSF-convolved MGE surface brightness.
+
+V4.0.8: MC, Oxford, 09 August 2010
+++++++++++++++++++++++++++++++++++
+
+- Use linear instead of smooth interpolation. After feedback from Eric Emsellem.
+
+V4.0.7: MC, Oxford, 01 March 2010
++++++++++++++++++++++++++++++++++
+
+- Forces ``q_lum && q_pot < 1``.
+
+V4.0.6: MC, Oxford, 08 February 2010
+++++++++++++++++++++++++++++++++++++
+
+- The routine TEST_JAM_AXISYMMETRIC_RMS with the usage example now adopts 
+  more realistic input kinematics.
+- Updated documentation.
+
+V4.0.5: MC, Oxford, 6 July 2009
++++++++++++++++++++++++++++++++
+
+- Skip unnecessary interpolation when computing a few points without PSF
+  convolution. After feedback from Eric Emsellem.
+
+V4.0.4: MC, Oxford, 29 May 2009
++++++++++++++++++++++++++++++++
+
+- Compute FLUX even when not plotting.
+
+V4.0.3: MC, Oxford 4 April 2009
++++++++++++++++++++++++++++++++
+
+- Added keyword RBH.
+
+V4.0.2: MC, Oxford, 21 November 2008
+++++++++++++++++++++++++++++++++++++
+
+- Added keywords NRAD and NANG. Thanks to Michael Williams for
+  reporting possible problems with too coarse interpolation.
+
+V4.0.1: MC, Windhoek, 29 September 2008
++++++++++++++++++++++++++++++++++++++++
+
+- Bug fix: when ERMS was not given, the default was not properly set.
+  Included keyword STEP. The keyword FLUX is now only used for output:
+  the surface brightness for plotting is computed from the MGE model.
+
+V4.0.0: MC, Oxford, 11 September 2008
++++++++++++++++++++++++++++++++++++++
+
+- Implemented PSF convolution using interpolation on a polar grid.
+  Dramatic speed-up of calculation. Further documentation.
+
+V3.2.0: MC, Oxford, 14 August 2008
+++++++++++++++++++++++++++++++++++
+
+- Updated documentation.
+
+V3.1.3: MC, Oxford, 12 August 2008
+++++++++++++++++++++++++++++++++++
+
+- First released version.
+
+V2.0.0: MC, Oxford, 20 September 2007
++++++++++++++++++++++++++++++++++++++
+
+- Introduced a new solution of the MGE Jeans equations with constant
+  anisotropy ``sig_R = b*sig_z``.
+
+V1.0.0: Michele Cappellari, Vicenza, 19 November 2003
++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+- Written and tested
