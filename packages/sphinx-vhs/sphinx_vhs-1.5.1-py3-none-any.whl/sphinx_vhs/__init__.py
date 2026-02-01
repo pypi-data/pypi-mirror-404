@@ -1,0 +1,522 @@
+import base64
+import collections
+import hashlib
+import os
+import pathlib
+import re
+import shutil
+import typing as _t
+import urllib.parse
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from multiprocessing.pool import ThreadPool
+
+import docutils.nodes
+import docutils.statemachine
+import sphinx.application
+import sphinx.config
+import sphinx.environment
+import sphinx.errors
+import sphinx.util.parallel
+import sphinx.writers
+import sphinx.writers.html
+import vhs
+from docutils.parsers.rst import directives
+from docutils.parsers.rst.directives.images import Figure
+from sphinx.transforms import SphinxTransform
+from sphinx.util import logging
+from sphinx.util.console import colorize, term_width_line
+from sphinx.util.docutils import SphinxDirective
+
+from sphinx_vhs._version import *
+
+vhs._logger = _logger = logging.getLogger(  # pyright: ignore[reportPrivateUsage]
+    "sphinx-vhs"
+)
+
+
+@dataclass(unsafe_hash=True)
+class VhsData:
+    docname: str
+    lineno: int
+    tape_hash: str
+    tape_file: pathlib.Path
+    render_file: pathlib.Path
+    gif_file: pathlib.Path
+    origname: str
+
+
+def _get_used_files(
+    env: sphinx.environment.BuildEnvironment,
+) -> _t.Dict[str, list[VhsData]]:
+    res = collections.defaultdict(list)
+    for f in getattr(env, "vhs_used_files", set()):
+        res[f.tape_hash].append(f)
+    return dict(res)
+
+
+class VhsDirective(SphinxDirective, Figure):
+    option_spec = {
+        **Figure.option_spec,  # type: ignore
+        "format": lambda x: directives.choice(x, ["gif", "svg", "webm", "mp4"]),
+    }
+
+    def run(self):
+        lines = self._get_tape_contents_inlined()
+        tape = "\n".join(lines)
+
+        filename = "vhs-" + (self._get_gif_filename() or "inline")
+        tape_hash = base64.urlsafe_b64encode(
+            hashlib.sha256(tape.encode()).digest()
+        ).decode()
+        dest_dir = pathlib.Path(
+            self.env.app.builder.doctreedir,
+            "vhs_tapes_cache",
+            tape_hash,
+        )
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest_tape = dest_dir / ("vhs.tape")
+        format = self.options.get("format") or self.env.config["vhs_format"] or "gif"
+        dest_render = dest_dir / (f"vhs.{format}")
+        dest_file = dest_dir / (filename + f".{format}")
+
+        with dest_tape.open("w") as file:
+            file.write(tape)
+
+        if not hasattr(self.env, "vhs_used_files"):
+            setattr(self.env, "vhs_used_files", set())
+        getattr(self.env, "vhs_used_files").add(
+            VhsData(
+                docname=self.env.docname,
+                lineno=self.lineno,
+                tape_hash=tape_hash,
+                tape_file=dest_tape,
+                render_file=dest_render,
+                gif_file=dest_file,
+                origname=(
+                    self.env.relfn2path(self.arguments[0])[0]
+                    if self.arguments
+                    else "<inline>"
+                ),
+            )
+        )
+
+        # We have to use data uri to obscure the fact that the image
+        # is generated later. If we were to use `dest_file` directly,
+        # HTML builder would complain that image doesn't exist.
+        # We substitute actual URI in `ProcessVhsNodes`.
+        self.arguments = [f"data:vhs-tape;{dest_file}"]
+        return super().run()
+
+    def _get_gif_filename(self) -> str | None:
+        name = pathlib.Path(self.arguments[0]).name
+        if name.endswith(".tape"):
+            return name[:-5]
+        elif name.endswith(".vhs"):
+            return name[:-4]
+        else:
+            return name
+
+    def _get_tape_contents(
+        self, path: _t.Optional[pathlib.Path] = None
+    ) -> tuple[list[str], pathlib.Path | str]:
+        if path is None:
+            relpath, abspath = self.env.relfn2path(self.arguments[0])
+            path = pathlib.Path(abspath)
+        else:
+            path = path.expanduser().resolve()
+            relpath = path.relative_to(self.env.srcdir, walk_up=True)
+        self.env.note_dependency(path)
+        if not path.exists():
+            _logger.error("Path %s does not exist", path, type="vhs")
+            return [], relpath
+        elif not path.is_file():
+            _logger.error("Path %s is not a file", path, type="vhs")
+            return [], relpath
+        else:
+            try:
+                with path.open() as file:
+                    lines = file.read().splitlines()
+                    self.state.document.settings.record_dependencies.add(str(path))
+            except Exception as e:
+                raise self.error(str(e))
+
+        return lines, relpath
+
+    def _get_tape_contents_inlined(self):
+        seen: list[pathlib.Path] = []
+        imports: list[tuple[str, str, int]] = []
+
+        cwd = pathlib.Path(self.env.app.config["vhs_cwd"] or self.env.srcdir)
+
+        def inline(lines: list[str], path: pathlib.Path | str):
+            flatten_lines = []
+            for i, line in enumerate(lines):
+                if match := re.match(
+                    r"^\s*Source\s+['\"`]?(?P<path>.*?)['\"`]?\s*$", line, re.IGNORECASE
+                ):
+                    next_path = (cwd / match.group("path")).expanduser().resolve()
+                    if next_path in seen:
+                        include_chain = "\n  -> ".join(
+                            f"{orig}:{ln + 1}: {what}" for (orig, what, ln) in imports
+                        )
+                        raise self.error(
+                            f"Circular include detected in this tape:\n  -> {include_chain}\n"
+                        )
+                    seen.append(next_path)
+                    imports.append((str(path), match.group(), i))
+                    self.env.note_dependency(path)
+                    flatten_lines.extend(inline(*self._get_tape_contents(next_path)))
+                    seen.pop()
+                    imports.pop()
+                elif match := re.match(r'^((["\'`]).*?\2|[^"\'`#])*', line):
+                    line = match.group().strip()
+                    if line:
+                        flatten_lines.append(match.group().strip())
+
+            return flatten_lines
+
+        return inline(*self._get_tape_contents())
+
+
+class InlineVhsDirective(VhsDirective):
+    required_arguments = 0
+    optional_arguments = 0
+
+    def _get_gif_filename(self) -> str | None:
+        return None
+
+    def _get_tape_contents(
+        self, path: _t.Optional[pathlib.Path] = None
+    ) -> tuple[list[str], pathlib.Path | str]:
+        if path:
+            return super()._get_tape_contents(path)
+
+        self.assert_has_content()
+        lines: list[str] = list(self.content)
+        self.content = docutils.statemachine.StringList()
+        return lines, "<inline>"
+
+
+class ProgressReporter(vhs.DefaultProgressReporter):
+    _prev_desc = None
+    _prev_len = 0
+
+    def __init__(self, verbosity: int):
+        super().__init__()
+
+        self._verbosity = verbosity
+
+    def progress(self, desc: str, dl_size: int, total_size: int, speed: float, /):
+        if self._verbosity:
+            if desc != self._prev_desc:
+                _logger.info("%s", desc, type="vhs")
+        else:
+            super().progress(desc, dl_size, total_size, speed)
+
+        self._prev_desc = desc
+
+    def format_desc(self, desc: str) -> str:
+        return colorize("bold", desc + "...")
+
+    def format_progress(self, dl_size: int, total_size: int, speed: float) -> str:
+        dl_size_mb = dl_size / 1024**2
+        total_size_mb = total_size / 1024**2
+        speed_mb = speed / 1024**2
+        progress = dl_size / total_size
+
+        return f" [{progress: >3.0%}] {dl_size_mb:.1f}/{total_size_mb:.1f}MB ({speed_mb:.1f}MB/s)"
+
+    def write(self, msg: str):
+        _logger.info(msg, nonl=True, type="vhs")
+
+
+def clear_unused_files(
+    env: sphinx.environment.BuildEnvironment,
+):
+    dest_dir = pathlib.Path(env.app.builder.doctreedir, "vhs_tapes_cache")
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    used_files = _get_used_files(env)
+
+    _logger.debug("cleaning up old VHS files...", type="vhs")
+    for dir in dest_dir.glob("*"):
+        if dir.name not in used_files:
+            modified = datetime.fromtimestamp(dir.stat().st_mtime)
+            if datetime.now() - modified > env.config["vhs_cleanup_delay"]:
+                _logger.debug("removing %s", dir, type="vhs")
+                shutil.rmtree(dir)
+
+
+# Merge `vhs_used_files` from one environment into another.
+def merge_used_files(
+    app: sphinx.application.Sphinx,
+    env: sphinx.environment.BuildEnvironment,
+    docnames: _t.List[str],
+    other: sphinx.environment.BuildEnvironment,
+):
+    if not hasattr(env, "vhs_used_files"):
+        setattr(env, "vhs_used_files", set())
+    getattr(env, "vhs_used_files").update(getattr(other, "vhs_used_files", set()))
+
+
+# Drop `vhs_used_files` entries from an env. This runs when sphinx is going
+# to re-read a source file.
+def purge_used_files(
+    app: sphinx.application.Sphinx,
+    env: sphinx.environment.BuildEnvironment,
+    docname: str,
+):
+    if hasattr(env, "vhs_used_files"):
+        vhs_used_files = {
+            used_files
+            for used_files in getattr(env, "vhs_used_files")
+            if used_files.docname != docname
+        }
+        setattr(env, "vhs_used_files", vhs_used_files)
+
+
+# Actually runs VHS
+def generate_vhs(
+    app: sphinx.application.Sphinx, env: sphinx.environment.BuildEnvironment
+):
+    # Another clean-up run after re-reading docs and updating a list of used gifs.
+    clear_unused_files(env)
+
+    used_files = _get_used_files(env)
+
+    outdated_files = [
+        entry
+        for entries in used_files.values()
+        for entry in entries
+        if not entry.render_file.exists()
+    ]
+
+    to_render = {
+        (entry.tape_file, entry.render_file): entry for entry in outdated_files
+    }
+
+    if to_render:
+        environ = os.environ.copy()
+        if "READTHEDOCS" in environ:
+            environ["VHS_NO_SANDBOX"] = "true"
+        try:
+            runner = vhs.resolve(
+                min_version=app.config["vhs_min_version"],
+                max_version=app.config["vhs_max_version"],
+                cwd=app.config["vhs_cwd"] or env.srcdir,
+                reporter=ProgressReporter(app.verbosity),
+                install=app.config["vhs_auto_install"],
+                cache_path=app.config["vhs_auto_install_location"],
+                env=environ,
+                repo=app.config["vhs_repo"],
+            )
+        except vhs.VhsError as e:
+            raise sphinx.errors.ExtensionError(str(e)) from e
+
+        in_progress = collections.Counter(p.origname for p in to_render.values())
+
+        def on_tape_done(origname: str | None):
+            if app.verbosity:
+                return
+
+            if origname:
+                orignames_left = in_progress[origname] - 1
+                if orignames_left > 0:
+                    in_progress[origname] = orignames_left
+                else:
+                    in_progress.pop(origname, None)
+
+            total = len(to_render)
+            left = in_progress.total()
+            done = total - left
+            tape = f" {sorted(in_progress)[0]}" if in_progress else ""
+            if left > 1:
+                tape += f" +{left - 1} more"
+            _logger.info(
+                term_width_line(
+                    f"{colorize("bold", "rendering terminal GIFs...")} [{done}/{total}]{colorize("teal", tape)}"
+                ),
+                nonl=True,
+            )
+
+        if "READTHEDOCS" in environ:
+            parallel = app.config["vhs_n_jobs_read_the_docs"] or app.parallel or 1
+        else:
+            parallel = app.config["vhs_n_jobs"] or app.parallel or 1
+
+        if sphinx.util.parallel.parallel_available and parallel <= 1:
+            _logger.info(
+                colorize(
+                    "yellow",
+                    "rendering terminal GIFs in sequence; pass -j auto to enable parallel run",
+                ),
+                type="vhs",
+            )
+        else:
+            _logger.info(
+                "rendering terminal GIFs: %s files, parallel=%s",
+                len(to_render),
+                parallel,
+                type="vhs",
+            )
+            on_tape_done(None)
+
+        def worker(arg: VhsData):
+            _logger.debug("rendering %s", arg.tape_file, type="vhs")
+            try:
+                runner.run(arg.tape_file, arg.render_file)
+            except vhs.VhsError as e:
+                path = env.doc2path(arg.docname)
+                raise sphinx.errors.ExtensionError(
+                    f"at {path}:{arg.lineno}:\n{e}"
+                ) from e
+            on_tape_done(arg.origname)
+
+        with ThreadPool(parallel) as tasks:
+            for _ in tasks.imap_unordered(worker, to_render.values()):
+                pass
+
+        if not app.verbosity:
+            _logger.info("")
+
+    for instances in used_files.values():
+        for data in instances:
+            if data.render_file != data.gif_file and not data.gif_file.exists(
+                follow_symlinks=False
+            ):
+                _logger.debug("make link: %s -> %s", data.render_file, data.gif_file)
+                try:
+                    data.gif_file.symlink_to(data.render_file)
+                except NotImplementedError:
+                    shutil.copyfile(data.render_file, data.gif_file)
+            else:
+                _logger.debug(
+                    "already linked: %s -> %s", data.render_file, data.gif_file
+                )
+
+
+class ProcessVhsNodes(SphinxTransform):
+    # We need to run before image converters, data extractors, etc.
+    default_priority = 100
+
+    def apply(self, **kwargs: _t.Any):
+        for image in self.document.findall(docutils.nodes.image):
+            uri = image["uri"]
+            if uri.startswith("data:vhs-tape;"):
+                uri = uri[len("data:vhs-tape;") :]
+                ext = pathlib.Path(uri).suffix.lstrip(".")
+                if ext in ["mp4", "webm"]:
+                    image.replace_self(
+                        video_node(
+                            ids=image["ids"],
+                            sources=[(uri, f"video/{ext}")],
+                            alt=image.get("alt", ""),
+                            attrs=["autoplay", "loop", "muted", "playsinline"],
+                            height=image.get("height", ""),
+                            width=image.get("width", ""),
+                        )
+                    )
+                    self.env.images.add_file(self.env.docname, uri)
+                    self.app.builder.images[uri] = self.env.images[uri][1]
+                else:
+                    image["uri"] = uri
+                    image["candidates"] = {"*": uri, f"image/{ext}": uri}
+                    self.env.images.add_file(self.env.docname, uri)
+
+
+class video_node(docutils.nodes.General, docutils.nodes.Element):
+    pass
+
+
+def visit_video_node_html(
+    translator: sphinx.writers.html.HTMLTranslator, node: video_node
+) -> None:
+    # Based on sphinxcontrib-video, Apache License 2.0, by Raphael Massabot
+
+    html = f"<video "
+    if node["ids"]:
+        html += f' id="{node["ids"][0]}"'
+    if width := node.get("width"):
+        html += f' width="{width}"'
+    if height := node.get("height"):
+        html += f' height="{height}"'
+    html += " ".join(node.get("attrs", []))
+    html += ">"
+
+    builder = translator.builder
+    for src, mimetype in node["sources"]:
+        if src in builder.images:
+            src = pathlib.Path(
+                builder.imgpath, urllib.parse.quote(builder.images[src])
+            ).as_posix()
+        html += f'<source src="{src}" type="{mimetype}">'
+
+    html += node["alt"]
+
+    translator.body.append(html)
+
+
+def depart_video_node_html(translator, node: video_node) -> None:
+    # Based on sphinxcontrib-video, Apache License 2.0, by Raphael Massabot
+    translator.body.append(f"</video>")
+
+
+def visit_video_node_unsupported(translator, node: video_node) -> None:
+    _logger.warning(
+        "video %s: unsupported output format (node skipped)", node["sources"][0][0]
+    )
+    raise docutils.nodes.SkipNode
+
+
+def setup(app: sphinx.application.Sphinx):
+    app.add_node(
+        video_node,
+        html=(visit_video_node_html, depart_video_node_html),
+        epub=(visit_video_node_unsupported, None),
+        latex=(visit_video_node_unsupported, None),
+        man=(visit_video_node_unsupported, None),
+        texinfo=(visit_video_node_unsupported, None),
+        text=(visit_video_node_unsupported, None),
+    )
+
+    app.add_config_value("vhs_min_version", "0.5.0", rebuild="env", types=str)
+    app.add_config_value("vhs_max_version", "2.0.0", rebuild="env", types=str)
+    app.add_config_value(
+        "vhs_auto_install_location",
+        None,
+        rebuild="",
+        types=(str, pathlib.Path, pathlib.PosixPath, pathlib.WindowsPath),
+    )
+    app.add_config_value("vhs_auto_install", True, rebuild="", types=bool)
+    app.add_config_value(
+        "vhs_cwd",
+        None,
+        rebuild="env",
+        types=(str, pathlib.Path, pathlib.PosixPath, pathlib.WindowsPath),
+    )
+    app.add_config_value("vhs_n_jobs", None, rebuild="", types=int)
+    app.add_config_value("vhs_n_jobs_read_the_docs", 8, rebuild="", types=int)
+    app.add_config_value(
+        "vhs_cleanup_delay", timedelta(days=1), rebuild="env", types=timedelta
+    )
+    app.add_config_value("vhs_repo", "charmbracelet/vhs", rebuild="env", types=str)
+    app.add_config_value(
+        "vhs_format",
+        "gif",
+        rebuild="env",
+        types=sphinx.config.ENUM("gif", "svg", "webm", "mp4"),
+    )
+
+    app.add_directive("vhs", VhsDirective)
+    app.add_directive("vhs-inline", InlineVhsDirective)
+
+    app.connect("env-merge-info", merge_used_files)
+    app.connect("env-purge-doc", purge_used_files)
+    app.connect("env-updated", generate_vhs)
+    app.add_post_transform(ProcessVhsNodes)
+
+    return {
+        "version": __version__,
+        "parallel_read_safe": True,
+        "parallel_write_safe": True,
+    }
