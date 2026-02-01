@@ -1,0 +1,145 @@
+name: "Python Bindings Unit Tests"
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+concurrency:
+  group: build-python-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  python-tests:
+    name: "Test Python bindings"
+    strategy:
+      matrix:
+        on: [ 'ubuntu-22.04', 'ubuntu-24.04', 'macos-15-intel', 'macos-26' ]
+        python: [ '3.10', '3.11', '3.12', '3.13', '3.14' ]
+
+    runs-on: ${{ matrix.on }}
+    env:
+      INSTALL_PREFIX: "/usr/local"
+
+    steps:
+      - name: "Checkout repository"
+        uses: actions/checkout@v4
+
+      - name: "Set up Python ${{ matrix.python }}"
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+
+      # Install platform build dependencies
+      - name: "Install system packages (Ubuntu)"
+        if: startsWith(matrix.on, 'ubuntu-')
+        run: sudo apt-get update && sudo apt-get install -y ninja-build g++ cmake libcurl4-gnutls-dev
+
+      - name: "Setup Homebrew (macOS)"
+        if: startsWith(matrix.on, 'macos-')
+        uses: Homebrew/actions/setup-homebrew@main
+
+      - name: "Install system packages (macOS)"
+        if: startsWith(matrix.on, 'macos-')
+        run: brew install ninja gcc cmake curl
+
+      - name: "Create virtual environment"
+        run: |
+          python -m venv venv
+          . ./venv/bin/activate
+          pip install -r build-requirements.txt
+          pip install -r test-requirements.txt
+
+      # Install Python build dependencies
+      - name: "Build and Install Python package"
+        run: |
+          mkdir -p /tmp/capio_cl_jsons
+          mkdir -p /tmp/capio_cl_tomls
+          cp -r tests/jsons/* /tmp/capio_cl_jsons
+          cp -r tests/tomls/* /tmp/capio_cl_tomls
+          . ./venv/bin/activate
+          pip install .
+
+      # Run unit tests
+      - name: "Run Python tests (Ubuntu)"
+        if: startsWith(matrix.on, 'ubuntu-')
+        run: |
+          . ./venv/bin/activate
+          pytest -v tests/python/test_*
+
+      - name: "Run Python tests (MacOS)"
+        if: startsWith(matrix.on, 'macos-')
+        run: |
+          . ./venv/bin/activate
+          pytest -k "not test_home_node" -v tests/python/test_*
+      
+
+      - name: "Generate coverage report"
+        if: ${{ startsWith(matrix.on, 'ubuntu-') }}
+        run: |
+          pip install --upgrade gcovr
+           gcovr                                          \
+            --exclude-throw-branches                      \
+            --gcov-ignore-parse-errors=negative_hits.warn \
+            --exclude tests/                              \
+            --xml coverage.xml                            \
+            .
+
+      - name: "Upload coverage report"
+        if: ${{ startsWith(matrix.on, 'ubuntu-') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ format('{0}-{1}-tests', matrix.on, matrix.python) }}
+          path: ./coverage.xml
+          retention-days: 1
+          if-no-files-found: error
+
+  riscv-tests:
+    name: "Build & Test on RISC-V (QEMU)"
+    strategy:
+      matrix:
+        python: [ '3.10', '3.11', '3.12', '3.13', '3.14' ]
+    runs-on: ubuntu-latest
+
+    env:
+      INSTALL_PREFIX: "/usr/local"
+      PYTHON_VERSION: "${{ matrix.python }}"
+
+    steps:
+      - name: "Checkout repository"
+        uses: actions/checkout@v4
+
+      - name: "Build and test inside RISC-V emulated environment (Debian based)"
+        uses: uraimo/run-on-arch-action@v2
+        with:
+          arch: riscv64
+          distro: ubuntu22.04
+          githubToken: ${{ github.token }}
+
+          install: |
+            apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y \
+              python3 python3-pip python3-venv python3-wheel python3-setuptools \
+              g++ cmake ninja-build git
+
+          run: |
+            set -eux
+            echo "Building for RISC-V on Ubuntu 22.04"
+            
+            python3 -m pip install --upgrade pip
+            python3 -m pip install -r build-requirements.txt
+            
+            mkdir -p /tmp/capio_cl_jsons
+            mkdir -p /tmp/capio_cl_tomls
+            cp -r tests/jsons/* /tmp/capio_cl_jsons
+            cp -r tests/tomls/* /tmp/capio_cl_tomls
+            
+            python3 -m build \
+              -Ccmake.define.ENABLE_COVERAGE=OFF \
+              -Ccmake.build-type=Release \
+              -Ccmake.define.CAPIO_CL_BUILD_TESTS=OFF
+            
+            pip install dist/*.whl
+            python3 -m pip install -r test-requirements.txt
+
+            pytest -v tests/python/test_* | tee pytest-riscv.log
