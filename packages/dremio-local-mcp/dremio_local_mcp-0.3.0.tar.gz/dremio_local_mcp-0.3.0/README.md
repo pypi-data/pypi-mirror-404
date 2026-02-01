@@ -1,0 +1,92 @@
+# Project Overview `dremio-local-mcp`
+
+[Full Documentation on Git Repo Here](https://github.com/AlexMercedCoder/dremio-local-mcp)
+
+The `dremio-local-mcp` is a Model Context Protocol (MCP) server that connects AI assistants (like Claude) to your Dremio lakehouse.
+
+## Features
+- **Semantic Layer Management**: Create views, update wikis, and tag datasets directly from chat.
+- **Data Exploration**: List datasets, inspect schemas, and package context for analysis.
+- **Query Execution**: Run SQL queries safely (destructive queries require confirmation).
+- **Job Analysis**: Analyze job profiles for performance improvements.
+
+## Installation
+
+```bash
+pip install dremio-local-mcp
+```
+
+## Configuration
+
+This tool uses the standard Dremio CLI configuration format. You can manage your Dremio credentials using the **dremio-cli** utility (recommended) or manually via a YAML file.
+
+### Option 1: Using dremio-cli
+
+First, install the CLI (if not already present):
+```bash
+pip install dremio-cli
+```
+
+Then create a profile for your environment:
+
+**For Dremio Cloud:**
+```bash
+# Create a profile named 'default'
+dremio profile create --name default --type cloud --token <your-pat-token> --project-id <your-project-id> --base-url https://api.dremio.cloud
+```
+
+**For Dremio Software:**
+```bash
+# Create a profile named 'software'
+dremio profile create --name software --type software --base-url http://localhost:9047 --username <user> --password <pass>
+```
+*(For Software, `verify_ssl` defaults to `true`. Add `--no-verify-ssl` if using self-signed certs)*
+
+### Option 2: Manual YAML
+
+Create or edit `~/.dremio/profiles.yaml` manually:
+
+```yaml
+default_profile: cloud
+profiles:
+  cloud:
+    base_url: "https://api.dremio.cloud"
+    token: "your-pat-token"
+    project_id: "your-project-id"
+    verify_ssl: true
+  software:
+    base_url: "http://localhost:9047"
+    username: "admin"
+    password: "password123"
+    verify_ssl: false
+```
+
+## Usage
+
+### Start the Server
+
+```bash
+dremio-local-mcp start --profile default
+```
+
+### Connectivity Test
+
+```bash
+dremio-local-mcp test --profile default
+```
+
+### Claude Desktop Config
+
+Generate the configuration block:
+
+```bash
+dremio-local-mcp config --profile default
+```
+
+Copy the output into your `claude_desktop_config.json`.
+
+## Documentation
+- [CLI Commands](docs/cli/README.md)
+- [Tools Reference](docs/tools/README.md)
+- [Prompts Reference](docs/prompts/README.md)
+- [Client Configuration](docs/clients.md)
