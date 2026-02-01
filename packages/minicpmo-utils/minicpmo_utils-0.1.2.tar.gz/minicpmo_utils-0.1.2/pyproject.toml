@@ -1,0 +1,83 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "minicpmo-utils"
+version = "0.1.2"
+description = "Unified utilities package for MiniCPM-o: includes cosyvoice + stepaudio2 and extensible utils."
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "Apache-2.0"}
+authors = [
+  {name = "MiniCPM-o Utils Maintainers"},
+]
+keywords = ["minicpmo", "audio", "tts", "utils", "cosyvoice", "stepaudio2"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+]
+
+# NOTE:
+# - 这是“一个分发包(minicpmo-utils)”同时提供多个顶层 import 包：
+#   - cosyvoice (来自 ../cosyvoice/src)
+#   - matcha    (来自 ../cosyvoice/src)
+#   - stepaudio2(来自 ../stepaudio2/src)
+#   - s3tokenizer (来自 S3Tokenizer-main)
+#   - minicpmo (本项目扩展 utils 的统一入口：from minicpmo.utils import ...)
+dependencies = [
+  "numpy",
+  "pillow==10.4.0",
+  "librosa==0.9.0",
+  "decord==0.6.0",
+  "moviepy==2.1.2"
+]
+
+[project.optional-dependencies]
+# cosyvoice TTS 相关依赖
+tts = [
+  "torch>=2.3.0",
+  "torchaudio>=2.3.0",
+  "transformers>=4.49.0",
+  "hyperpyyaml",
+  "openai-whisper",
+  "tqdm",
+  "tiktoken",
+  "inflect",
+  "omegaconf",
+  "einops",
+]
+
+# stepaudio2 / streaming 相关依赖
+streaming = [
+  "minicpmo-utils[tts]",  # streaming 依赖 tts
+  "onnxruntime>=1.18.0,<=1.21.0",
+  "onnx",
+  "diffusers",
+]
+
+# Linux GPU onnxruntime 可以很重，且与环境强相关，保留为可选 extra
+gpu = [
+  "onnxruntime-gpu>=1.18.0,<=1.23.2; sys_platform == 'linux'",
+]
+
+all = [
+  "minicpmo-utils[tts,streaming,gpu]",
+]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+# 现在所有代码都在本项目的 src/ 下
+where = ["src"]
+
+[tool.setuptools.package-data]
+"cosyvoice.tokenizer.assets" = ["*.tiktoken"]
+"s3tokenizer.assets" = ["*.wav", "*.npz"]
+
