@@ -1,0 +1,147 @@
+Metadata-Version: 2.4
+Name: marknotion
+Version: 0.2.7
+Summary: Bidirectional Markdown ↔ Notion blocks converter
+Project-URL: Homepage, https://github.com/li3p/marknotion
+Project-URL: Repository, https://github.com/li3p/marknotion
+Project-URL: Issues, https://github.com/li3p/marknotion/issues
+Author-email: Libo <markdown@outlook.com>
+License-Expression: MIT
+License-File: LICENSE
+Keywords: converter,markdown,notion
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.13
+Requires-Python: >=3.13
+Requires-Dist: click>=8.1.0
+Requires-Dist: markdown-it-py>=3.0.0
+Requires-Dist: mdit-py-plugins>=0.4.0
+Requires-Dist: notion-client>=2.7.0
+Requires-Dist: python-dotenv>=1.0.0
+Provides-Extra: dev
+Requires-Dist: pytest-cov>=4.0.0; extra == 'dev'
+Requires-Dist: pytest>=8.0.0; extra == 'dev'
+Description-Content-Type: text/markdown
+
+# marknotion
+
+Bidirectional Markdown ↔ Notion converter with CLI tools.
+
+## Installation
+
+```bash
+# With uv (recommended for CLI tools)
+uv tool install marknotion
+
+# Or with pip
+pip install marknotion
+```
+
+## Setup
+
+### 1. Create a Notion Integration
+
+1. Go to [Notion Integrations](https://www.notion.so/my-integrations)
+2. Click "New integration"
+3. Give it a name (e.g., "marknotion")
+4. Select capabilities: Read, Update, Insert content
+5. Copy the "Internal Integration Token"
+
+### 2. Set Environment Variable
+
+```bash
+export NOTION_TOKEN="secret_xxxxx..."
+```
+
+Or create a `.env` file in your project:
+
+```
+NOTION_TOKEN=secret_xxxxx...
+```
+
+### 3. Connect Pages to Your Integration
+
+In Notion, open the page you want to access, click "..." menu → "Connections" → Add your integration.
+
+## CLI Commands
+
+### md2notion - Upload Markdown to Notion
+
+```bash
+# Update an existing page
+md2notion README.md --page "https://notion.so/My-Page-abc123..."
+
+# Create a new child page
+md2notion guide.md --parent "abc123..." --title "User Guide"
+```
+
+### notion2md - Export Notion to Markdown
+
+```bash
+# Print to stdout
+notion2md "https://notion.so/My-Page-abc123..."
+
+# Save to file
+notion2md abc123... -o exported.md
+```
+
+### notion-search - Search Notion Pages and Databases
+
+```bash
+# Search all (pages and databases)
+notion-search "project"
+
+# Search only databases (useful for finding database IDs)
+notion-search "tracker" --type database
+
+# Search only pages
+notion-search "notes" --type page
+
+# Limit results
+notion-search project -n 5
+```
+
+Output includes type, ID, and clickable URL:
+
+```
+[Database] Projects
+           ID:  1d73963f-ce05-8183-9af4-000b16a57189
+           URL: https://www.notion.so/1d73963fce05813bac29eba023f0dd25
+
+[Page]     Meeting Notes
+           ID:  abc123de-f456-7890-1234-56789012abcd
+           URL: https://www.notion.so/Meeting-Notes-abc123def4567890123456789012abcd
+```
+
+## Python API
+
+```python
+from marknotion import markdown_to_blocks, blocks_to_markdown, NotionClient
+
+# Convert Markdown to Notion blocks
+blocks = markdown_to_blocks("# Hello\n\nWorld")
+
+# Convert Notion blocks to Markdown
+md = blocks_to_markdown(blocks)
+
+# Use NotionClient for API operations
+client = NotionClient()  # Uses NOTION_TOKEN env var
+client.update_page_content_from_markdown(page_id, markdown)
+```
+
+## Supported Features
+
+- Headings (h1-h3)
+- Paragraphs
+- Bold, italic, strikethrough, inline code
+- Links
+- Bullet lists, numbered lists
+- Code blocks (with language)
+- Blockquotes
+- Horizontal rules
+
+## License
+
+MIT
