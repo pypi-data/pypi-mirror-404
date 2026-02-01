@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+<meta charset="utf-8" />
+<title>kcwebs云管</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+<meta name="HandheldFriendly" content="true"/>
+<meta name="MobileOptimized" content="320"/>
+<link rel="icon" href="${config.domain['kcwebsimg']}/icon/yung.png"/>
+<link rel="shortcut icon" href="${config.domain['kcwebsimg']}/icon/yung.png"/>
+<%include file="../include/static.html"/>
+</head>
+<body style="background:#FFF">
+<div id="app">
+    <div style="">
+    <van-swipe-cell v-for="(item,index) in data.lists" style="border-top:1px solid #cccccc">
+        <div class="goods-card van-card" @click="setadminsheet(item)" :style="'width:'+(winwidth)+'px;overflow: hidden;'">
+            <div class="van-card__header">
+                <a class="van-card__thumb">
+                    <div class="van-image" style="width: 100%; height: 100%;">
+                        <img v-if="item.icon" :src="item.icon" class="van-image__img" style="object-fit: cover;">
+                        <img v-else src="https://img.kwebapp.cn/icon/user1.png" class="van-image__img" style="object-fit: cover;">
+                    </div>
+                </a>
+                <div class="van-card__content">
+                    <div>
+                        <div class="van-card__title van-multi-ellipsis--l2">{{item.username}}（{{item.nickname}}）</div>
+                        <div class="van-card__desc van-ellipsis">{{item.describes}}</div>
+                    </div>
+                    <div>
+                        <span v-if="item.phone" class="van-card__price-decimal">手机：{{item.phone}}</span>
+                        <span v-if="item.name" class="van-card__price-decimal" style="float:right">姓名：{{item.name}}</span>
+                    </div>
+                    <div class="van-card__bottom">
+                        <div class="van-card__price">
+                            <div>
+                                <span class="van-card__price-currency">权限：{{item.title}}</span>
+                            </div>
+                        </div>
+                        <div class="van-card__num"><span class="van-card__price-decimal">{{time_date(item.logintime)}}&nbsp登录</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <template #right>
+            <van-button @click="setpwdsheet(item)" square type="info" text="设置密码" style="float:left;height:100%"></van-button>
+            <van-button @click="setadminsheet(item)" square type="primary" text="编辑" style="float:left;height:100%"></van-button>
+            <van-button @click="deletes(item.id)" square type="danger" text="删除" style="float:left;height:100%"></van-button>
+        </template>
+    </van-swipe-cell>
+    <div style="text-align:right;position: fixed;bottom: 0;width:100%">
+        <van-button @click="setadminsheet({name:'',icon:'',username:'',phone:'',nickname:''})" type="primary" size="small">添加管理员</van-button>
+        <!-- <van-button type="primary" size="small">角色管理</van-button> -->
+        <van-button @click="dellogin()" type="danger" size="small">清除所有会话</van-button>
+    </div>
+    </div>
+    <div v-if="status==1">
+        <van-divider><van-loading size="24px">加载中...</van-loading></van-divider>
+    </div>
+    <div v-else-if="status==0">
+        <van-divider v-if="data.pagenow<data.pagecount" @click="xyygetlist"><span>下一页</span></van-divider>
+        <van-divider v-else-if="data.count<=0" style="margin-top:200px">暂无数据</van-divider>
+        <van-divider v-else>我已到底了</van-divider>
+    </div>
+    <div style="height:50px"></div>
+    <van-action-sheet v-model="show" title="设置密码" @close="settabbarheight(70)">
+        <div>
+            <van-field v-model="password" type="password" label="密码" placeholder="请你输入新密码"></van-field>
+            <van-button @click="setpwd()" type="primary" block>确定</van-button>
+        </div>
+    </van-action-sheet>
+    <van-action-sheet v-model="show1" title="管理员" @close="settabbarheight(70)">
+        <div>
+            <van-cell-group>
+                <van-field v-model="items.name" label="姓名" placeholder="姓名"></van-field>
+                <van-field v-model="items.icon" label="头像" placeholder="头像地址">
+                    <template #button>
+                        <van-button @click="win.show=true;win.url='/intapp/imgmt?select=1'" size="small" type="primary">选择图片</van-button>
+                    </template>
+                </van-field>
+                <van-field v-model="items.username" label="用户名" placeholder="用户名"></van-field>
+                <van-field v-model="items.phone" type="tel" label="手机号" placeholder="手机号"></van-field>
+                <van-field v-model="items.nickname" label="昵称" placeholder="昵称"></van-field>
+                <van-field label="权限">
+                    <template #input>
+                        <van-radio-group v-model="items.role" direction="horizontal">
+                            <van-radio v-for="item1 in rolelist" :name="item1.id">{{item1.title}}</van-radio>
+                        </van-radio-group>
+                    </template>
+                </van-field>
+                <van-button v-if="items.id" @click="update()" type="primary" block>修改</van-button>
+                <van-button v-else @click="insert()" type="primary" block>添加</van-button>
+            </van-cell-group>
+        </div>
+    </van-action-sheet>
+<van-action-sheet v-model="win.show" :title="win.title">
+    <div :style="'max-height:'+(winheight-160)+'px;overflow-y: scroll;'">
+        <iframe :src="win.url" id="iframe" style="margin:0px;padding:0px;overflow:hidden;" frameborder="0" border="0" marginwidth="0" marginheight="0" scrolling="yes" allowtransparency="no" width="100%" v-bind:height="(winheight-124)+'px'"></iframe>
+    </div>
+</van-action-sheet>
+</div>
+<script>
+function setimgmt(domain,paths,item){
+    mysetimgmt(domain,paths,item)
+}
+ var VU=new Vue({
+    el: '#app',
+    data:{
+        winheight:document.documentElement.clientHeight,winwidth:document.documentElement.clientWidth,
+        data:{
+            count:0,
+            lists:[],
+            pagecount:0,
+            pagenow:1,
+            pagesize:10
+        },rolelist:{},
+        kw:'',status:1,//1加载中 0加载完成
+        items:{},
+        show:false,password:'',
+        show1:false,
+        win:{show:false,title:'',url:''},
+    },
+    mounted:function(){
+        self=this
+        window.onresize = function(){
+            self.winheight=document.documentElement.clientHeight
+            self.winwidth=document.documentElement.clientWidth
+        }
+        window.mysetimgmt = this.mysetimgmt;
+        try{
+            parent.window.setheader({height:49,type:'',title:'管理员',icon:'https://img.kwebapp.cn/icon/admin.png',
+                lefturl:{text:'',url:''}
+            })
+        }catch(exception){}
+        self.getrolelist()
+    },
+    methods: {
+        mysetimgmt:function(domain,paths,item){
+            this.win.show=false
+            if (item.suffix=='jpg' || item.suffix=='JPG' || item.suffix=='png' || item.suffix=='PNG' || item.suffix=='gif' || item.suffix=='GIF'){
+                self.items.icon=domain+paths+item.name
+            }else{
+                self.$notify({type: 'warning',message: '请选择图片文件'});
+            }
+        },
+        dellogin:function(){
+            var self=this;
+            self.$dialog.confirm({
+                title: '警告',
+                message: '确定要退出所有管理员',
+            })
+            .then(() => {
+                self.delete("/index/index/admin/dellogin").then(function(res){
+                    self.$notify({type: 'success',message: '所有用户已退出!'});
+                    setTimeout(function(){
+                        top.location.reload();
+                    },2000)
+                })
+            })
+            .catch(() => {});
+        },
+        getrolelist:function(){
+            var self=this;
+			self.get("/index/index/admin/getrolelist",{'kw':self.kw,'pagesize':self.data.pagesize,'pagenow':self.data.pagenow}).then(function(res){
+				self.rolelist=res.data.lists
+                self.getlist()
+			})
+        },
+        setpwdsheet:function(item){
+            var self=this;
+            self.settabbarheight(0)
+            self.items=item;self.show=true
+        },setadminsheet:function(item){
+            var self=this;
+            self.settabbarheight(0)
+            self.items=item;self.show1=true
+        },
+        settabbarheight:function(key){
+            if(key){
+                setTimeout(function(){
+                    parent.window.vantabbar('settabbarheight',key)
+                },300)
+            }else{
+                parent.window.vantabbar('settabbarheight',0)
+            }
+        },
+        setpwd:function(){
+            var self=this;
+            self.put('/index/index/admin/setpwd',{'id':self.items.id,password:md5('kcws'+self.password)},'设置中').then(function(res){
+                self.$notify({type: 'success',message: '您设置的新密码是: ' + self.password});
+                self.show=false;self.settabbarheight(70)
+            })
+        },
+        update:function(){
+            var self=this
+			self.put("/index/index/admin/update",self.items,"更新中").then(function(res){
+                self.show1=false;self.settabbarheight(70)
+                self.$notify({type: 'success',message: '更新成功'});
+			})
+        },
+        insert:function(){
+			var self=this
+			self.items['password']=md5('kcws'+self.items['password'])
+			self.post("/index/index/admin/insert",self.items,"请稍后...").then(function(res){
+				self.show1=false;self.settabbarheight(70)
+                self.$notify({type: 'success',message: '添加成功'});
+				self.getlist()
+			}).catch(function(err){
+                
+            })
+		},
+        xyygetlist:function(){
+            var self=this;
+            self.data.pagenow+=1
+            self.getlist()
+        },
+        getlist:function(){
+            var self=this;
+            self.status=1
+			self.get("/index/index/admin/getlist",{'kw':self.kw,'pagesize':self.data.pagesize,'pagenow':self.data.pagenow}).then(function(res){
+                self.data.count=res.data.count
+                self.data.pagecount=res.data.pagecount
+                self.data.pagenow=res.data.pagenow
+                self.data.pagesize=res.data.pagesize
+                if(self.data.pagenow==1){
+                    self.data.lists=[]
+                }
+                for (var i=0;i<res.data.lists.length;i++){
+                    self.data.lists.push(res.data.lists[i])
+                }
+                self.status=0
+			})
+        },
+        deletes:function(id){
+            var self=this;
+            self.$dialog.confirm({
+                title: '警告',
+                message: '确定要删除该管理员',
+            })
+            .then(() => {
+                self.delete("/index/index/admin/delete/"+id,null,'正在删除').then(function(res){
+                    self.data.pagenow=1
+                    self.getlist()
+                })
+            })
+            .catch(() => {});
+        }
+    }
+ });
+  </script>
+</body>
+</html>
