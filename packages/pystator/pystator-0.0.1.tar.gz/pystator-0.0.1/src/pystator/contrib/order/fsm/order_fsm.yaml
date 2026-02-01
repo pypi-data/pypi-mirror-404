@@ -1,0 +1,95 @@
+# Order Management State Machine (contrib)
+# Canonical order lifecycle for trading systems
+
+meta:
+  version: "1.0.0"
+  machine_name: "order_management"
+  strict_mode: true
+  description: "Order lifecycle state machine for trading systems"
+
+states:
+  - name: PENDING_NEW
+    type: initial
+    description: "Order submitted, waiting for exchange acknowledgment"
+    timeout:
+      seconds: 5.0
+      destination: TIMED_OUT_ACK
+
+  - name: OPEN
+    type: stable
+    description: "Order is live on the exchange book"
+    on_enter:
+      - notify_ui_open
+      - log_audit_trail
+
+  - name: PARTIALLY_FILLED
+    type: stable
+    description: "Some quantity executed, remainder still open"
+
+  - name: FILLED
+    type: terminal
+    description: "Order fully executed (100%)"
+
+  - name: REJECTED
+    type: terminal
+    description: "Exchange or risk check rejected the order"
+
+  - name: CANCELED
+    type: terminal
+    description: "Order canceled by user request"
+
+  - name: TIMED_OUT_ACK
+    type: terminal
+    description: "Exchange did not acknowledge in time"
+
+transitions:
+  - trigger: exchange_ack
+    source: PENDING_NEW
+    dest: OPEN
+    description: "Exchange acknowledged the order"
+    actions:
+      - update_order_id
+
+  - trigger: exchange_nack
+    source: PENDING_NEW
+    dest: REJECTED
+    description: "Exchange rejected the order"
+    actions:
+      - record_rejection_reason
+
+  - trigger: execution_report
+    source:
+      - OPEN
+      - PARTIALLY_FILLED
+    dest: FILLED
+    description: "Full fill execution"
+    guards:
+      - is_full_fill
+    actions:
+      - update_positions
+      - release_buying_power
+
+  - trigger: execution_report
+    source: OPEN
+    dest: PARTIALLY_FILLED
+    description: "Partial fill execution"
+    guards:
+      - is_partial_fill
+    actions:
+      - update_positions
+      - decrement_remaining_qty
+
+  - trigger: cancel_request
+    source:
+      - OPEN
+      - PARTIALLY_FILLED
+    dest: CANCELED
+    description: "User requested order cancellation"
+    guards:
+      - is_cancellable
+    actions:
+      - send_cancel_to_exchange
+
+error_policy:
+  default_fallback: REJECTED
+  retry_attempts: 3

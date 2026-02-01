@@ -1,0 +1,161 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pystator"
+version = "0.0.1"
+description = "A configuration-driven, stateless finite state machine library for Python"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "StatFYI", email = "contact@statfyi.com"}
+]
+keywords = [
+    "state-machine",
+    "fsm",
+    "finite-state-machine",
+    "workflow",
+    "configuration-driven",
+    "declarative",
+    "guards",
+    "transitions",
+    "order-management",
+    "event-driven",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Typing :: Typed",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+]
+
+dependencies = [
+    "pyyaml>=6.0",
+    "pydantic>=2.0.0",
+]
+
+[project.optional-dependencies]
+# pip install pystator (core) or pystator[api,ui] (with extras)
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "ruff>=0.4.0",
+    "mypy>=1.8.0",
+    "build>=1.0.0",
+    "twine>=5.0.0",
+    "types-PyYAML>=6.0.0",
+]
+api = [
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    "python-multipart>=0.0.6",
+    "sqlalchemy>=2.0.0",
+]
+ui = [
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "httpx>=0.24.0",
+    "aiofiles>=23.0.0",
+]
+recipes = [
+    "simpleeval>=0.9.0",
+    "httpx>=0.24.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/statfyi/pystator"
+Documentation = "https://github.com/statfyi/pystator#readme"
+Repository = "https://github.com/statfyi/pystator"
+Issues = "https://github.com/statfyi/pystator/issues"
+Changelog = "https://github.com/statfyi/pystator/blob/main/CHANGELOG.md"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["pystator", "pystator.*"]
+# Single installable package; api and ui are subpackages (pystator.api, pystator.ui)
+
+[tool.setuptools.package-dir]
+"" = "src"
+
+[project.scripts]
+pystator = "pystator.cli:main"
+
+[tool.setuptools.package-data]
+pystator = [
+    "py.typed",
+    "contrib/order/fsm/*.yaml",
+    "contrib/rebalance/fsm/*.yaml",
+    "ui/static/*",
+    "ui/static/**/*",
+    "ui/out/*",
+    "ui/out/**/*",
+]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+"tests/*" = ["B008"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+strict = true
+exclude = ["tests/"]
+
+[[tool.mypy.overrides]]
+module = ["yaml"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = ["-v", "--strict-markers", "--tb=short"]
+markers = [
+    "slow: marks tests as slow",
+    "integration: marks tests as integration tests",
+]
+
+[tool.coverage.run]
+source = ["src/pystator"]
+omit = ["*/tests/*", "*/__pycache__/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+]
