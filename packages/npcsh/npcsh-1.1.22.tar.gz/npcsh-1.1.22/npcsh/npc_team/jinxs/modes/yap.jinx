@@ -1,0 +1,716 @@
+jinx_name: yap
+description: Voice chat TUI - speech-to-text input, text-to-speech output
+interactive: true
+inputs:
+  - model: null
+  - provider: null
+  - tts_model: kokoro
+  - voice: af_heart
+  - files: null
+
+steps:
+  - name: yap_tui
+    engine: python
+    code: |
+      import os, sys, tty, termios, time, tempfile, threading, queue
+      import select as _sel
+      from termcolor import colored
+
+      # Audio imports
+      try:
+          import torch
+          import pyaudio
+          import wave
+          import numpy as np
+          from faster_whisper import WhisperModel
+          from gtts import gTTS
+          from npcpy.data.audio import (
+              FORMAT, CHANNELS, RATE, CHUNK,
+              transcribe_recording, convert_mp3_to_wav
+          )
+          AUDIO_AVAILABLE = True
+      except ImportError:
+          AUDIO_AVAILABLE = False
+
+      from npcpy.llm_funcs import get_llm_response
+      from npcpy.npc_sysenv import get_system_message, render_markdown
+      from npcpy.data.load import load_file_contents
+      from npcpy.data.text import rag_search
+
+      npc = context.get('npc')
+      team = context.get('team')
+      messages = context.get('messages', [])
+      files = context.get('files')
+      tts_model_name = context.get('tts_model', 'kokoro')
+      voice_name = context.get('voice', 'af_heart')
+
+      if isinstance(npc, str) and team:
+          npc = team.get(npc) if hasattr(team, 'get') else None
+      elif isinstance(npc, str):
+          npc = None
+
+      model = context.get('model') or (npc.model if npc and hasattr(npc, 'model') else None)
+      provider = context.get('provider') or (npc.provider if npc and hasattr(npc, 'provider') else None)
+      npc_name = npc.name if npc else "yap"
+
+      # ================================================================
+      #  Non-interactive fallback
+      # ================================================================
+      if not sys.stdin.isatty():
+          context['output'] = "Yap requires an interactive terminal."
+          context['messages'] = messages
+          exit()
+
+      # ================================================================
+      #  Audio models
+      # ================================================================
+      vad_model = None
+      whisper_model = None
+
+      if AUDIO_AVAILABLE:
+          try:
+              vad_model, _ = torch.hub.load(
+                  repo_or_dir="snakers4/silero-vad",
+                  model="silero_vad",
+                  force_reload=False,
+                  onnx=False,
+                  verbose=False
+              )
+              vad_model.to('cpu')
+          except Exception:
+              pass
+          try:
+              whisper_model = WhisperModel("base", device="cpu", compute_type="int8")
+          except Exception:
+              AUDIO_AVAILABLE = False
+
+      # ================================================================
+      #  File loading for RAG
+      # ================================================================
+      loaded_chunks = {}
+      if files:
+          if isinstance(files, str):
+              files = [f.strip() for f in files.split(',')]
+          for fp in files:
+              fp = os.path.expanduser(fp)
+              if os.path.exists(fp):
+                  try:
+                      loaded_chunks[fp] = load_file_contents(fp)
+                  except Exception:
+                      pass
+
+      # System message
+      sys_msg = get_system_message(npc) if npc else "You are a helpful assistant."
+      sys_msg += "\n\nProvide brief responses of 1-2 sentences unless asked for more detail. Keep responses clear and conversational for voice."
+      if not messages or messages[0].get("role") != "system":
+          messages.insert(0, {"role": "system", "content": sys_msg})
+
+      # ================================================================
+      #  State
+      # ================================================================
+      class UI:
+          tab = 0           # 0=chat, 1=settings
+          TAB_NAMES = ['Chat', 'Settings']
+
+          # chat
+          chat_log = []     # [(role, text)]
+          chat_scroll = -1
+          input_buf = ""
+          thinking = False
+          spinner_frame = 0
+          recording = False
+          rec_seconds = 0.0
+          transcribing = False
+          speaking = False
+
+          # VAD listening
+          listening = AUDIO_AVAILABLE  # auto-listen by default
+          listen_stop = False          # signal to stop listener thread
+
+          # settings
+          set_sel = 0
+          tts_enabled = AUDIO_AVAILABLE
+          auto_speak = True
+          vad_threshold = 0.4     # speech probability threshold
+          silence_timeout = 1.5   # seconds of silence before cut
+          min_speech = 0.3        # minimum speech duration to process
+          editing = False
+          edit_buf = ""
+          edit_key = ""
+
+      ui = UI()
+
+      # ================================================================
+      #  Helpers
+      # ================================================================
+      def sz():
+          try:
+              s = os.get_terminal_size()
+              return s.columns, s.lines
+          except:
+              return 80, 24
+
+      TURQ = '\033[38;2;64;224;208m'
+      PURPLE = '\033[38;2;180;130;255m'
+      ORANGE = '\033[38;2;255;165;0m'
+      GREEN = '\033[32m'
+      DIM = '\033[90m'
+      BOLD = '\033[1m'
+      REV = '\033[7m'
+      RST = '\033[0m'
+      RED = '\033[31m'
+      SPINNERS = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+
+      def wrap_text(text, width):
+          lines = []
+          for line in text.split('\n'):
+              while len(line) > width:
+                  lines.append(line[:width])
+                  line = line[width:]
+              lines.append(line)
+          return lines
+
+      # ================================================================
+      #  Audio functions
+      # ================================================================
+      def transcribe_audio(audio_path):
+          if not whisper_model or not audio_path:
+              return ""
+          try:
+              segments, _ = whisper_model.transcribe(audio_path, beam_size=5)
+              text = " ".join([seg.text for seg in segments]).strip()
+              try: os.remove(audio_path)
+              except: pass
+              return text
+          except Exception as e:
+              ui.chat_log.append(('error', f'Transcribe error: {e}'))
+              return ""
+
+      def speak_text(text):
+          if not AUDIO_AVAILABLE or not ui.tts_enabled:
+              return
+          try:
+              ui.speaking = True
+              tts = gTTS(text=text, lang='en')
+              mp3_f = tempfile.NamedTemporaryFile(suffix='.mp3', delete=False)
+              mp3_path = mp3_f.name
+              mp3_f.close()
+              tts.save(mp3_path)
+              wav_path = mp3_path.replace('.mp3', '.wav')
+              convert_mp3_to_wav(mp3_path, wav_path)
+              import subprocess
+              if sys.platform == 'darwin':
+                  subprocess.run(['afplay', wav_path], check=True, timeout=30)
+              elif sys.platform == 'linux':
+                  subprocess.run(['aplay', wav_path], check=True, timeout=30,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+              for _p in [mp3_path, wav_path]:
+                  try: os.remove(_p)
+                  except: pass
+          except Exception as e:
+              ui.chat_log.append(('error', f'TTS error: {e}'))
+          finally:
+              ui.speaking = False
+
+      def save_frames_to_wav(frames, sample_width):
+          f = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
+          path = f.name
+          f.close()
+          wf = wave.open(path, 'wb')
+          wf.setnchannels(CHANNELS)
+          wf.setsampwidth(sample_width)
+          wf.setframerate(RATE)
+          wf.writeframes(b''.join(frames))
+          wf.close()
+          return path
+
+      # ================================================================
+      #  VAD continuous listener
+      # ================================================================
+      def vad_listener_loop():
+          """Background thread: continuously monitors mic, detects speech via
+          VAD, records until silence, then transcribes and sends."""
+          try:
+              p = pyaudio.PyAudio()
+              sw = p.get_sample_size(FORMAT)
+              stream = p.open(format=FORMAT, channels=CHANNELS, rate=RATE,
+                              input=True, frames_per_buffer=CHUNK)
+          except Exception as e:
+              ui.chat_log.append(('error', f'Mic open failed: {e}'))
+              ui.listening = False
+              return
+
+          chunk_dur = CHUNK / RATE  # duration of one chunk in seconds
+
+          while not ui.listen_stop:
+              # Skip if busy
+              if ui.thinking or ui.speaking or ui.transcribing:
+                  time.sleep(0.1)
+                  continue
+              if not ui.listening:
+                  time.sleep(0.1)
+                  continue
+
+              # Read a chunk and run VAD
+              try:
+                  data = stream.read(CHUNK, exception_on_overflow=False)
+              except Exception:
+                  time.sleep(0.05)
+                  continue
+
+              audio_np = np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0
+              if len(audio_np) != CHUNK:
+                  continue
+
+              try:
+                  tensor = torch.from_numpy(audio_np)
+                  prob = vad_model(tensor, RATE).item()
+              except Exception:
+                  continue
+
+              if prob < ui.vad_threshold:
+                  continue
+
+              # Speech detected — start collecting frames
+              ui.recording = True
+              ui.rec_seconds = 0.0
+              ui.chat_scroll = -1
+              speech_frames = [data]
+              speech_dur = chunk_dur
+              silence_dur = 0.0
+
+              while not ui.listen_stop:
+                  try:
+                      data = stream.read(CHUNK, exception_on_overflow=False)
+                  except Exception:
+                      break
+
+                  speech_frames.append(data)
+                  speech_dur += chunk_dur
+                  ui.rec_seconds = speech_dur
+
+                  audio_np = np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0
+                  try:
+                      tensor = torch.from_numpy(audio_np)
+                      prob = vad_model(tensor, RATE).item()
+                  except Exception:
+                      prob = 0.0
+
+                  if prob < ui.vad_threshold:
+                      silence_dur += chunk_dur
+                  else:
+                      silence_dur = 0.0
+
+                  if silence_dur >= ui.silence_timeout:
+                      break
+
+                  # Safety: max 60 seconds
+                  if speech_dur > 60.0:
+                      break
+
+              ui.recording = False
+
+              # Only process if enough speech
+              if speech_dur - silence_dur < ui.min_speech:
+                  continue
+
+              # Transcribe
+              ui.transcribing = True
+              audio_path = save_frames_to_wav(speech_frames, sw)
+              text = transcribe_audio(audio_path)
+              ui.transcribing = False
+
+              if text and text.strip():
+                  ui.chat_log.append(('info', f'Heard: "{text}"'))
+                  ui.chat_scroll = -1
+                  send_message(text)
+
+          # Cleanup
+          try:
+              stream.stop_stream()
+              stream.close()
+              p.terminate()
+          except Exception:
+              pass
+
+      # ================================================================
+      #  Chat send
+      # ================================================================
+      def send_message(text):
+          ui.chat_log.append(('user', text))
+          ui.thinking = True
+          ui.chat_scroll = -1
+
+          def worker():
+              try:
+                  current_prompt = text
+                  if loaded_chunks:
+                      ctx_content = ""
+                      for fn, chunks in loaded_chunks.items():
+                          full = "\n".join(chunks)
+                          ret = rag_search(text, full, similarity_threshold=0.3)
+                          if ret:
+                              ctx_content += f"\n{ret}\n"
+                      if ctx_content:
+                          current_prompt += f"\n\nContext:{ctx_content}"
+
+                  resp = get_llm_response(
+                      current_prompt, model=model, provider=provider,
+                      messages=messages, stream=False, npc=npc
+                  )
+                  messages[:] = resp.get('messages', messages)
+                  response_text = str(resp.get('response', ''))
+                  if response_text:
+                      ui.chat_log.append(('assistant', response_text))
+                      if ui.auto_speak and ui.tts_enabled:
+                          speak_text(response_text)
+              except Exception as e:
+                  ui.chat_log.append(('error', str(e)))
+              ui.thinking = False
+
+          threading.Thread(target=worker, daemon=True).start()
+
+      # ================================================================
+      #  Rendering
+      # ================================================================
+      def render():
+          w, h = sz()
+          buf = ['\033[H']
+
+          # Tab bar
+          tabs = ''
+          for i, name in enumerate(ui.TAB_NAMES):
+              if i == ui.tab:
+                  tabs += f' {REV}{BOLD} {name} {RST} '
+              else:
+                  tabs += f' {DIM} {name} {RST} '
+
+          mic = ''
+          if ui.recording:
+              mic = f'{RED}● REC {ui.rec_seconds:.1f}s{RST}'
+          elif ui.transcribing:
+              mic = f'{ORANGE}● transcribing...{RST}'
+          elif ui.speaking:
+              mic = f'{GREEN}● speaking...{RST}'
+          elif ui.thinking:
+              sp = SPINNERS[ui.spinner_frame % len(SPINNERS)]
+              mic = f'{ORANGE}{sp} thinking...{RST}'
+          elif ui.listening:
+              mic = f'{TURQ}● listening{RST}'
+
+          audio_st = '🎤' if ui.listening else ('🔇' if not AUDIO_AVAILABLE else '⏸')
+          right = f'{npc_name} | {audio_st} | {model or "?"}@{provider or "?"}'
+          pad = w - 12 - len(right) - 20
+          header = f'{PURPLE}YAP{RST} {tabs}{" " * max(0, pad)}{mic}  {DIM}{right}{RST}'
+          buf.append(f'\033[1;1H{REV} {header[:w-2].ljust(w-2)} {RST}')
+
+          if ui.tab == 0:
+              render_chat(buf, w, h)
+          elif ui.tab == 1:
+              render_settings(buf, w, h)
+
+          sys.stdout.write(''.join(buf))
+          sys.stdout.flush()
+
+      def render_chat(buf, w, h):
+          input_h = 3
+          chat_h = h - 2 - input_h
+
+          all_lines = []
+          _asst_pw = len(npc_name) + 2  # "name: "
+          _cont_pw = _asst_pw  # continuation indent matches
+          for role, text in ui.chat_log:
+              if role == 'user':
+                  tw = w - 6
+                  wrapped = wrap_text(text, tw)
+                  for i, l in enumerate(wrapped):
+                      prefix = f'{BOLD}you:{RST} ' if i == 0 else '     '
+                      all_lines.append(f'{prefix}{l}')
+              elif role == 'assistant':
+                  tw = w - _asst_pw - 1
+                  wrapped = wrap_text(text, tw)
+                  pad = ' ' * _asst_pw
+                  for i, l in enumerate(wrapped):
+                      prefix = f'{PURPLE}{BOLD}{npc_name}:{RST} ' if i == 0 else pad
+                      all_lines.append(f'{prefix}{l}')
+              elif role == 'info':
+                  tw = w - 5
+                  wrapped = wrap_text(text, tw)
+                  for i, l in enumerate(wrapped):
+                      prefix = f'  {TURQ}ℹ ' if i == 0 else '    '
+                      all_lines.append(f'{prefix}{l}{RST}' if i == 0 else f'    {l}')
+              elif role == 'error':
+                  tw = w - 5
+                  wrapped = wrap_text(text, tw)
+                  for i, l in enumerate(wrapped):
+                      prefix = f'  {RED}✗ ' if i == 0 else '    '
+                      all_lines.append(f'{prefix}{l}{RST}' if i == 0 else f'    {l}')
+
+          if ui.recording:
+              secs = ui.rec_seconds
+              all_lines.append(f'  {RED}🎙 Recording... {secs:.1f}s{RST}')
+          elif ui.transcribing:
+              sp = SPINNERS[ui.spinner_frame % len(SPINNERS)]
+              all_lines.append(f'  {ORANGE}{sp} Transcribing...{RST}')
+          elif ui.thinking:
+              sp = SPINNERS[ui.spinner_frame % len(SPINNERS)]
+              all_lines.append(f'  {ORANGE}{sp} thinking...{RST}')
+          elif ui.speaking:
+              all_lines.append(f'  {GREEN}🔊 Speaking...{RST}')
+
+          # Scrolling
+          if ui.chat_scroll == -1:
+              scroll = max(0, len(all_lines) - chat_h)
+          else:
+              scroll = ui.chat_scroll
+
+          for i in range(chat_h):
+              y = 2 + i
+              li = scroll + i
+              buf.append(f'\033[{y};1H\033[K')
+              if li < len(all_lines):
+                  buf.append(all_lines[li])
+
+          # Input area
+          div_y = 2 + chat_h
+          buf.append(f'\033[{div_y};1H\033[K{DIM}{"─" * w}{RST}')
+          input_y = div_y + 1
+          visible = ui.input_buf[-(w-4):] if len(ui.input_buf) > w - 4 else ui.input_buf
+          buf.append(f'\033[{input_y};1H\033[K {BOLD}>{RST} {visible}\033[?25h')
+
+          # Status bar
+          if AUDIO_AVAILABLE:
+              ltog = 'Ctrl+L:Pause' if ui.listening else 'Ctrl+L:Listen'
+              hints = f'Enter:Send  {ltog}  PgUp/PgDn:Scroll  Tab:Settings  Ctrl+Q:Quit'
+          else:
+              hints = 'Enter:Send  PgUp/PgDn:Scroll  Tab:Settings  Ctrl+Q:Quit'
+          buf.append(f'\033[{h};1H\033[K{REV} {hints[:w-2].ljust(w-2)} {RST}')
+
+      def render_settings(buf, w, h):
+          settings = [
+              ('tts_enabled', 'TTS Enabled', 'On' if ui.tts_enabled else 'Off'),
+              ('auto_speak', 'Auto-Speak', 'On' if ui.auto_speak else 'Off'),
+              ('listening', 'Auto-Listen', 'On' if ui.listening else 'Off'),
+              ('silence_timeout', 'Silence Timeout', f'{ui.silence_timeout}s'),
+              ('vad_threshold', 'VAD Sensitivity', f'{ui.vad_threshold:.1f}'),
+          ]
+
+          buf.append(f'\033[3;3H{BOLD}Voice Settings{RST}')
+          buf.append(f'\033[4;3H{DIM}{"─" * (w - 6)}{RST}')
+
+          y = 6
+          for i, (key, label, val) in enumerate(settings):
+              if ui.editing and ui.edit_key == key:
+                  buf.append(f'\033[{y};3H{ORANGE}{label}:{RST} {REV} {ui.edit_buf}_ {RST}')
+              elif i == ui.set_sel:
+                  buf.append(f'\033[{y};3H{REV} {label}: {val} {RST}')
+              else:
+                  buf.append(f'\033[{y};3H {BOLD}{label}:{RST} {val}')
+              y += 2
+
+          y += 1
+          buf.append(f'\033[{y};3H{DIM}Audio: {"Available" if AUDIO_AVAILABLE else "Not available"}{RST}')
+          y += 1
+          if loaded_chunks:
+              buf.append(f'\033[{y};3H{DIM}Files loaded: {len(loaded_chunks)}{RST}')
+          y += 1
+          buf.append(f'\033[{y};3H{DIM}Whisper: {"Loaded" if whisper_model else "Not loaded"}{RST}')
+
+          for cy in range(y + 1, h - 1):
+              buf.append(f'\033[{cy};1H\033[K')
+
+          if ui.editing:
+              buf.append(f'\033[{h};1H\033[K{REV} Enter:Save  Esc:Cancel {RST}')
+          else:
+              buf.append(f'\033[{h};1H\033[K{REV} j/k:Navigate  Space:Toggle  e:Edit  Tab:Chat  Ctrl+Q:Quit {RST}')
+
+      # ================================================================
+      #  Input handling
+      # ================================================================
+      def handle_key(c, fd):
+          if c == '\t':
+              if not ui.editing:
+                  ui.tab = (ui.tab + 1) % 2
+              return True
+          if c == '\x11':  # Ctrl+Q
+              return False
+          if c == '\x03':  # Ctrl+C
+              return True
+
+          # Escape sequences
+          if c == '\x1b':
+              if _sel.select([fd], [], [], 0.05)[0]:
+                  c2 = os.read(fd, 1).decode('latin-1')
+                  if c2 == '[':
+                      c3 = os.read(fd, 1).decode('latin-1')
+                      if c3 == 'A':  # Up
+                          if ui.tab == 0: _chat_scroll_up()
+                          elif ui.tab == 1 and not ui.editing and ui.set_sel > 0: ui.set_sel -= 1
+                      elif c3 == 'B':  # Down
+                          if ui.tab == 0: _chat_scroll_down()
+                          elif ui.tab == 1 and not ui.editing and ui.set_sel < 4: ui.set_sel += 1
+                      elif c3 == '5':  # PgUp
+                          os.read(fd, 1)
+                          if ui.tab == 0: _chat_page_up()
+                      elif c3 == '6':  # PgDn
+                          os.read(fd, 1)
+                          if ui.tab == 0: _chat_page_down()
+                  elif c2 == 'O':
+                      c3 = os.read(fd, 1).decode('latin-1')
+                      if c3 == 'P': ui.tab = 0  # F1
+                      elif c3 == 'Q': ui.tab = 1  # F2
+                  else:
+                      # bare Esc
+                      if ui.tab == 1 and ui.editing:
+                          ui.editing = False
+                          ui.edit_buf = ""
+              else:
+                  if ui.tab == 1 and ui.editing:
+                      ui.editing = False
+                      ui.edit_buf = ""
+              return True
+
+          if ui.tab == 0:
+              return handle_chat(c, fd)
+          elif ui.tab == 1:
+              return handle_settings(c, fd)
+          return True
+
+      def _chat_scroll_up():
+          _, h = sz()
+          chat_h = h - 5
+          if ui.chat_scroll == -1:
+              ui.chat_scroll = max(0, len(ui.chat_log) * 2 - chat_h - 1)
+          ui.chat_scroll = max(0, ui.chat_scroll - 1)
+
+      def _chat_scroll_down():
+          ui.chat_scroll = -1 if ui.chat_scroll == -1 else ui.chat_scroll + 1
+
+      def _chat_page_up():
+          _, h = sz()
+          chat_h = h - 5
+          if ui.chat_scroll == -1:
+              ui.chat_scroll = max(0, len(ui.chat_log) * 2 - chat_h - chat_h)
+          else:
+              ui.chat_scroll = max(0, ui.chat_scroll - chat_h)
+
+      def _chat_page_down():
+          ui.chat_scroll = -1
+
+      def handle_chat(c, fd):
+          # Ctrl+L = toggle listening
+          if c == '\x0c':  # Ctrl+L
+              if AUDIO_AVAILABLE:
+                  ui.listening = not ui.listening
+                  st = 'on' if ui.listening else 'off'
+                  ui.chat_log.append(('info', f'Listening {st}.'))
+              return True
+
+          if ui.recording or ui.transcribing:
+              return True
+
+          if ui.thinking:
+              return True
+
+          if c in ('\r', '\n'):
+              text = ui.input_buf.strip()
+              ui.input_buf = ""
+              if text:
+                  send_message(text)
+              return True
+
+          if c == '\x7f' or c == '\x08':
+              ui.input_buf = ui.input_buf[:-1]
+              return True
+
+          if c >= ' ' and c <= '~':
+              ui.input_buf += c
+              ui.chat_scroll = -1
+              return True
+
+          return True
+
+      def handle_settings(c, fd):
+          SETTINGS_KEYS = ['tts_enabled', 'auto_speak', 'listening', 'silence_timeout', 'vad_threshold']
+
+          if ui.editing:
+              if c in ('\r', '\n'):
+                  val = ui.edit_buf.strip()
+                  if ui.edit_key == 'silence_timeout':
+                      try: ui.silence_timeout = max(0.3, min(10.0, float(val)))
+                      except: pass
+                  elif ui.edit_key == 'vad_threshold':
+                      try: ui.vad_threshold = max(0.1, min(0.9, float(val)))
+                      except: pass
+                  ui.editing = False
+                  ui.edit_buf = ""
+              elif c == '\x7f' or c == '\x08':
+                  ui.edit_buf = ui.edit_buf[:-1]
+              elif c >= ' ' and c <= '~':
+                  ui.edit_buf += c
+              return True
+
+          if c == 'j' and ui.set_sel < len(SETTINGS_KEYS) - 1:
+              ui.set_sel += 1
+          elif c == 'k' and ui.set_sel > 0:
+              ui.set_sel -= 1
+          elif c == ' ':
+              key = SETTINGS_KEYS[ui.set_sel]
+              if key == 'tts_enabled':
+                  ui.tts_enabled = not ui.tts_enabled
+              elif key == 'auto_speak':
+                  ui.auto_speak = not ui.auto_speak
+              elif key == 'listening':
+                  ui.listening = not ui.listening
+                  st = 'on' if ui.listening else 'off'
+                  ui.chat_log.append(('info', f'Listening {st}.'))
+          elif c == 'e':
+              key = SETTINGS_KEYS[ui.set_sel]
+              if key in ('silence_timeout', 'vad_threshold'):
+                  ui.editing = True
+                  ui.edit_key = key
+                  ui.edit_buf = str(ui.silence_timeout if key == 'silence_timeout' else ui.vad_threshold)
+          return True
+
+      # ================================================================
+      #  Welcome
+      # ================================================================
+      ui.chat_log.append(('info', f'YAP voice chat. NPC: {npc_name}.'))
+      if AUDIO_AVAILABLE:
+          ui.chat_log.append(('info', 'Listening for speech. Just start talking, or type text.'))
+          ui.chat_log.append(('info', 'Ctrl+L to pause/resume listening.'))
+      else:
+          ui.chat_log.append(('info', 'Audio not available. Text mode only.'))
+      if loaded_chunks:
+          ui.chat_log.append(('info', f'{len(loaded_chunks)} files loaded for context.'))
+
+      # Start VAD listener thread
+      _listener_thread = None
+      if AUDIO_AVAILABLE and vad_model is not None:
+          _listener_thread = threading.Thread(target=vad_listener_loop, daemon=True)
+          _listener_thread.start()
+
+      # ================================================================
+      #  Main loop
+      # ================================================================
+      fd = sys.stdin.fileno()
+      old_settings = termios.tcgetattr(fd)
+      try:
+          tty.setcbreak(fd)
+          sys.stdout.write('\033[?25l\033[2J')
+          running = True
+          while running:
+              render()
+              if ui.thinking or ui.recording or ui.transcribing or ui.speaking or ui.listening:
+                  ui.spinner_frame += 1
+              if _sel.select([fd], [], [], 0.15)[0]:
+                  c = os.read(fd, 1).decode('latin-1')
+                  running = handle_key(c, fd)
+      finally:
+          ui.listen_stop = True
+          termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+          sys.stdout.write('\033[?25h\033[2J\033[H')
+          sys.stdout.flush()
+
+      context['output'] = "Exited yap mode."
+      context['messages'] = messages
