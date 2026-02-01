@@ -1,0 +1,243 @@
+Metadata-Version: 2.4
+Name: xeno-sdk
+Version: 0.1.0
+Summary: Official Python SDK for Xeno API - Access 100+ AI models for image, video, music, and text generation
+Author-email: Xeno Studio <support@xeno-studio.com>
+License: MIT
+Project-URL: Homepage, https://xeno-studio.com
+Project-URL: Documentation, https://xeno-studio.com/docs
+Project-URL: Repository, https://github.com/xeno-studio/xeno-python
+Keywords: ai,api,image-generation,video-generation,music-generation,llm,flux,openai,anthropic
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Scientific/Engineering :: Artificial Intelligence
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+Requires-Dist: httpx>=0.24.0
+Requires-Dist: pydantic>=2.0.0
+Requires-Dist: typing-extensions>=4.0.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0.0; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.21.0; extra == "dev"
+Requires-Dist: black>=23.0.0; extra == "dev"
+Requires-Dist: mypy>=1.0.0; extra == "dev"
+Requires-Dist: ruff>=0.1.0; extra == "dev"
+
+# Xeno AI Python SDK
+
+The official Python SDK for [Xeno API](https://xeno-studio.com) - access 100+ AI models for image, video, music, and text generation with a single API.
+
+## Installation
+
+```bash
+pip install xeno-ai
+```
+
+## Quick Start
+
+```python
+import xeno
+
+# Initialize client
+client = xeno.Client(api_key="your-api-key")
+
+# Or use environment variable: export XENO_API_KEY="your-api-key"
+client = xeno.Client()
+```
+
+## Image Generation
+
+```python
+# Generate an image
+image = client.image.generate(
+    model="flux-pro-1.1",
+    prompt="A futuristic cityscape at sunset",
+    width=1024,
+    height=1024
+)
+print(image.url)
+
+# Edit an image
+edited = client.image.edit(
+    model="flux-kontext",
+    image="https://example.com/image.jpg",
+    prompt="Add a rainbow in the sky"
+)
+print(edited.url)
+```
+
+### Available Image Models
+- `flux-pro-1.1` - High quality, fast generation
+- `flux-kontext` - Image editing and variations
+- `dall-e-3` - OpenAI's DALL-E 3
+- `4o-image` - GPT-4o image generation
+- `stable-diffusion-xl` - Stability AI SDXL
+
+## Video Generation
+
+```python
+# Generate a video
+video = client.video.generate(
+    model="veo-3.1",
+    prompt="A drone shot flying over mountains at sunrise",
+    duration=5,
+    resolution="1080p"
+)
+print(video.url)
+
+# Image to video
+video = client.video.generate(
+    model="runway-aleph",
+    prompt="Make the water flow",
+    image="https://example.com/landscape.jpg"
+)
+```
+
+### Available Video Models
+- `veo-3.1` - Google's latest video model
+- `runway-aleph` - Runway's multi-task video model
+- `runway-gen-3` - Runway Gen-3
+- `minimax-video-01` - Minimax video generation
+- `kling-v2.1` - Kling video model
+
+## Music Generation
+
+```python
+# Generate a music track
+music = client.music.generate(
+    model="suno-v4",
+    prompt="An upbeat electronic track with synths and drums",
+    duration=120,
+    genre="electronic"
+)
+print(music.url)
+
+# With custom lyrics
+music = client.music.generate(
+    model="suno-v4",
+    prompt="A pop ballad about summer love",
+    lyrics="Walking on the beach, sun shining bright...",
+    duration=180
+)
+```
+
+### Available Music Models
+- `suno-v4` - Latest Suno model
+- `suno-v3.5` - Suno v3.5
+- `udio` - Udio music generation
+
+## Chat Completions (LLM)
+
+```python
+# Chat completion
+response = client.chat.completions.create(
+    model="gpt-4o",
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "Explain quantum computing in simple terms."}
+    ]
+)
+print(response.choices[0].message.content)
+
+# Streaming
+for chunk in client.chat.completions.create(
+    model="claude-3.5-sonnet",
+    messages=[{"role": "user", "content": "Write a poem about AI"}],
+    stream=True
+):
+    print(chunk.choices[0].delta.content or "", end="")
+```
+
+### Available LLM Models
+- `gpt-4o` - OpenAI GPT-4o
+- `claude-3.5-sonnet` - Anthropic Claude 3.5 Sonnet
+- `claude-3-opus` - Anthropic Claude 3 Opus
+- `gemini-pro` - Google Gemini Pro
+- `llama-3.1-405b` - Meta Llama 3.1 405B
+
+## Async Usage
+
+```python
+import asyncio
+import xeno
+
+async def main():
+    async with xeno.AsyncClient(api_key="your-api-key") as client:
+        # Generate image
+        image = await client.image.generate(
+            model="flux-pro-1.1",
+            prompt="A beautiful sunset"
+        )
+        print(image.url)
+
+        # Chat completion
+        response = await client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": "Hello!"}]
+        )
+        print(response.choices[0].message.content)
+
+asyncio.run(main())
+```
+
+## Error Handling
+
+```python
+from xeno import (
+    XenoError,
+    AuthenticationError,
+    RateLimitError,
+    InsufficientCreditsError
+)
+
+try:
+    image = client.image.generate(model="flux-pro-1.1", prompt="...")
+except AuthenticationError:
+    print("Invalid API key")
+except RateLimitError as e:
+    print(f"Rate limited. Retry after {e.retry_after} seconds")
+except InsufficientCreditsError:
+    print("Not enough credits. Please top up.")
+except XenoError as e:
+    print(f"API error: {e.message}")
+```
+
+## Configuration
+
+```python
+client = xeno.Client(
+    api_key="your-api-key",
+    base_url="https://api.xeno-studio.com/v1",  # Custom endpoint
+    timeout=60.0,  # Request timeout in seconds
+    max_retries=2,  # Number of retries on failure
+)
+```
+
+## Using with OpenAI SDK
+
+The Xeno API is OpenAI-compatible, so you can also use the OpenAI SDK:
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    api_key="your-xeno-api-key",
+    base_url="https://api.xeno-studio.com/v1"
+)
+
+response = client.chat.completions.create(
+    model="gpt-4o",
+    messages=[{"role": "user", "content": "Hello!"}]
+)
+```
+
+## License
+
+MIT
