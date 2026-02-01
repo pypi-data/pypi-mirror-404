@@ -1,0 +1,171 @@
+Metadata-Version: 2.4
+Name: qwlcrapstar
+Version: 0.1.10
+Summary: Universal AI-Powered Web Scraper Library
+Author: QwlCrapstar Team
+License: MIT
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: langchain>=0.1.0
+Requires-Dist: langchain-community
+Requires-Dist: langchain-openai
+Requires-Dist: langchain-anthropic
+Requires-Dist: langchain-groq
+Requires-Dist: playwright>=1.40.0
+Requires-Dist: pydantic>=2.0.0
+Requires-Dist: python-dotenv>=1.0.0
+Requires-Dist: pandas>=2.0.0
+Requires-Dist: beautifulsoup4>=4.12.0
+Requires-Dist: requests>=2.31.0
+Requires-Dist: pyyaml>=6.0.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0.0; extra == "dev"
+Requires-Dist: pytest-asyncio; extra == "dev"
+Requires-Dist: pytest-cov; extra == "dev"
+Requires-Dist: black; extra == "dev"
+Requires-Dist: isort; extra == "dev"
+Requires-Dist: mypy; extra == "dev"
+Provides-Extra: db
+Requires-Dist: pymongo; extra == "db"
+Requires-Dist: psycopg2-binary; extra == "db"
+Dynamic: license-file
+
+# QwlCrapstar: Autonomous AI Data Extraction Agent
+
+QwlCrapstar is a high-performance, agentic web scraping library designed for professional data extraction. It leverages Large Language Models (LLMs) to transform unstructured web content into validated, structured data without the need for brittle CSS selectors or XPaths.
+
+## The Core Concept (The "What")
+
+Traditional web scraping relies on identifying specific HTML tags and classes. When a website's layout changes, the scraper breaks. QwlCrapstar operates on **Semantic Intent**. By providing a natural language "Mission" and a target data structure (Schema), the library uses AI to understand the context of the page, navigate its structure, and extract exactly what is requested, regardless of underlying code changes.
+
+## Why QwlCrapstar? (The "Why")
+
+1.  **Resilience**: Scrapers do not break when a website shifts from a "table" layout to a "flexbox" layout.
+2.  **Reduced Development Time**: No need to spend hours inspecting DOM structures. If a human can read the data, QwlCrapstar can extract it.
+3.  **Complex Logic Handling**: Built-in support for semantic filtering and data normalization (e.g., converting "2 hours ago" into a standardized ISO date).
+4.  **Local & Cloud Flexibility**: Support for elite cloud models (Perplexity, OpenAI) and private local models (Ollama).
+
+---
+
+## Installation
+
+```bash
+pip install qwlcrapstar
+playwright install chromium
+```
+
+---
+
+## Getting Started (The "How")
+
+### Level 1: Basic Mission
+The most direct way to use the library is to provide a URL and a natural language instruction. QwlCrapstar will automatically infer the appropriate schema and execute the mission.
+
+```python
+import asyncio
+from qwl_crapstar import QwlCrapstar
+
+async def main():
+    # Automatically detects API keys in environment variables
+    scraper = QwlCrapstar() 
+    
+    # Mission: Extract the latest 10 technology news items
+    results = await scraper.scrape(
+        url="https://news.ycombinator.com",
+        prompt="Find 10 interesting technology stories"
+    )
+    print(results)
+
+asyncio.run(main())
+```
+
+---
+
+## Professional Developer Guide
+
+### 1. Advanced Schema Definition
+For production applications, explicitly defining your data structure is recommended for consistency. QwlCrapstar supports class-based schemas using a specialized Field system.
+
+```python
+from qwl_crapstar import QwlCrapstar, Schema, Field
+
+class ProductSchema(Schema):
+    name = Field("Exact product name", required=True)
+    price = Field("Selling price", type=float, hint="Look for currency symbols")
+    description = Field("Short item summary")
+    specs = Field("Technical specifications", type=dict)
+
+scraper = QwlCrapstar()
+results = await scraper.scrape(
+    url="https://example-shop.com/product/1",
+    schema=ProductSchema
+)
+```
+
+### 2. The Semantic Logic Engine
+You can enforce strict extraction constraints using programmatic rules. This acts as a filter on the LLM's interpretation.
+
+```python
+results = await scraper.scrape(
+    url="https://linkedin.com/jobs",
+    prompt="Senior Data Scientist roles",
+    rules=[
+        "Filter: Only include postings from the last 7 days",
+        "Normalize: All salaries must be expressed as annual USD",
+        "Constraint: Employer must be a Fintech company"
+    ]
+)
+```
+
+### 3. Complexity & Resource Management
+The `complexity_level` parameter controls the depth of analysis and the resources allocated to the mission.
+
+| Level | Use Case | Rationale |
+|-------|----------|-----------|
+| **basic** | Simple static pages | Minimal latency, lower token consumption. |
+| **standard** | Most content websites | Balanced rendering wait and context window. |
+| **advanced** | Dynamic JS-heavy sites | Increased rendering wait and deeper context analysis. |
+| **elite** | Critical/Protected apps | Maximum token window and rigorous structural analysis. |
+
+### 4. Enterprise Processing Pipeline
+Post-extraction, you can route data through a series of processors for cleaning and deduplication.
+
+```python
+from qwl_crapstar.core.processors import Pipeline, DataValidator, Deduplicator
+
+# Build the pipeline
+pipeline = Pipeline([
+    DataValidator(schema=ProductSchema),
+    Deduplicator(fields=["name", "price"])
+])
+
+# Process raw results
+sanitized_data = await pipeline.run(raw_results)
+```
+
+---
+
+## Configuration & Credentials
+
+QwlCrapstar features **Auto-Discovery**. It scans the following environment variables automatically:
+`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GROQ_API_KEY`, `DEEPSEEK_API_KEY`, `PERPLEXITY_API_KEY`.
+
+| LLM Provider | Implementation Note |
+|--------------|---------------------|
+| **Perplexity** | Best for real-time web content and citation-accuracy. |
+| **OpenAI** | Industry standard for high-fidelity structured output. |
+| **Groq** | Exceptional speed for high-volume scraping tasks. |
+| **Ollama** | Entirely local; ensures zero data leaves your infrastructure. |
+
+---
+
+## Technical Architecture
+
+The library operates through a three-stage pipeline:
+1.  **Browser Execution**: A Playwright-based engine navigates to the target, handles rendering, and extracts a sanitized version of the DOM.
+2.  **Semantic Mapping**: The LLM analyzes the content window based on the provided Mission, Schema, and Complexity level.
+3.  **Serialization**: The LLM returns a validated JSON object that matches the requested schema constraints.
+
+## License
+MIT License.
