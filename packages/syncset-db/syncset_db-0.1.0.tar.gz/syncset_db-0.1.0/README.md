@@ -1,0 +1,127 @@
+# Database Sync Service
+
+A high-performance, resilient PostgreSQL data replication service designed for selective column synchronization and automated schema evolution.
+
+## Overview
+
+This service facilitates the replication of specific tables and columns from a primary PostgreSQL database to one or more replica databases. It is built for scenarios where you need to maintain specialized read replicas or sync data across microservices while maintaining strictly controlled schemas.
+
+## Configuration
+
+The service is configured via `config/sync.yaml`.
+
+```yaml
+primary_db:
+  url: postgresql://user:pass@localhost:5432/primary_db?sslmode=disable
+
+replica_dbs:
+  - name: replica_1
+    url: postgresql://user:pass@localhost:5433/replica_db?sslmode=disable
+
+tables:
+  users:
+    primary_key: id
+    mode: upsert        # Options: insert | upsert
+    batch_size: 10000
+    
+    # Columns to extract and maintain
+    columns_to_sync:
+      - user_name
+      - email
+      - metadata
+      - updated_at
+
+    # Define if primary and replica column names differ
+    column_mapping:
+      # primary_col: replica_col
+      user_name: username
+
+    # Columns to update on conflict (if mode is upsert)
+    conflict_resolution:
+      update_columns:
+        - username
+        - email
+        - updated_at
+
+    checksum:
+      enabled: true
+      columns:
+        - email
+        - username
+
+  orders:
+    primary_key: order_id
+    mode: insert
+    batch_size: 5000
+    columns_to_sync:
+      - customer_id
+      - total_amount
+      - status
+```
+
+## Getting Started
+
+### Prerequisites
+- Python 3.10+
+- PostgreSQL instances (Primary and Replica)
+
+### Installation
+1. Clone the repository and navigate to the directory.
+2. Create and activate a virtual environment:
+   ```bash
+   python3 -m venv venv
+   source venv/bin/activate
+   ```
+3. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+### Running the Service
+
+You can run the service using the globally installed `syncset` command or directly via the script.
+
+**Using the CLI tool:**
+```bash
+# Dry Run with default config (config/sync.yaml)
+syncset --dry-run
+
+# Run with custom config file
+syncset --file=sync.yaml
+```
+
+**Using Python directly:**
+```bash
+# Dry Run
+python3 cli.py --dry-run
+# Start Sync
+python3 cli.py
+```
+
+## Key Features
+
+- **Selective Replication**: Sync only the tables and columns you need.
+- **Incremental Sync**: Tracks synchronization state via high-watermark primary keys to ensure only new or modified data is processed.
+- **Data Integrity**: Optional checksum-based validation to ensure rows are truly identical before skipping them.
+- **Multi-Replica Support**: Synchronize the same primary data to multiple independent targets in parallel.
+
+## Architecture
+
+The synchronization follows a batched extraction and load pattern:
+1. **Validate**: Perform checksum comparisons (if enabled) against existing replica data to minimize redundant writes.
+4. **Load**: Execute bulk upserts or inserts into the replica database.
+5. **State Update**: Persist the highest processed primary key to `.sync_state.json`.
+
+## State Management
+Replication progress is stored in `.sync_state.json`. To re-trigger a full synchronization for a specific table, simply remove its entry from this file or delete the file entirely.
+
+## Future Plans
+
+- **CDC Support**: Implement logical decoding to enable near real-time synchronization.
+- **Monitoring**: Integration with Prometheus and Grafana for health and performance monitoring.
+- **Web Dashboard**: A lightweight management UI to monitor sync progress and adjust configuration visually.
+- **Multi-Database Support**: Extend beyond PostgreSQL to support MySQL, SQLite, and MongoDB as targets.
+- **Compression**: Add support for data compression during transit for high-latency connections.
+
+## License
+MIT
