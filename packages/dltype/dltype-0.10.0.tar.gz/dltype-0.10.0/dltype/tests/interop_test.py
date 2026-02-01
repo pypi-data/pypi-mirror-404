@@ -1,0 +1,115 @@
+"""Test that dltype can operate with either numpy or torch installed."""
+
+from __future__ import annotations
+
+import sys
+from importlib import reload
+from typing import TYPE_CHECKING
+from unittest.mock import patch
+
+import numpy as np
+import pytest
+import torch
+
+import dltype
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+
+@pytest.fixture(autouse=True)
+def clear_cached_available_fns() -> None:
+    """Clear cached functions to ensure fresh imports."""
+    # Clear the cache for the dependency utilities
+    from dltype._lib._dependency_utilities import is_jax_available, is_numpy_available, is_torch_available
+
+    is_torch_available.cache_clear()
+    is_numpy_available.cache_clear()
+    is_jax_available.cache_clear()
+
+
+@pytest.fixture(autouse=True)
+def reset_modules() -> Iterator[None]:
+    # Store a copy of the initial sys.modules state
+    initial_modules = sys.modules.copy()
+    yield
+    # Restore sys.modules to its initial state after the test
+    sys.modules.clear()
+    sys.modules.update(initial_modules)
+
+
+@pytest.fixture
+def mock_missing_numpy() -> Iterator[None]:
+    """Mock numpy as missing."""
+    with patch("dltype._lib._dependency_utilities.np", None):
+        yield
+
+
+@pytest.fixture
+def mock_missing_torch() -> Iterator[None]:
+    """Mock torch as missing."""
+    with patch("dltype._lib._dependency_utilities.torch", None):
+        yield
+
+
+@pytest.fixture
+def mock_missing_jax() -> Iterator[None]:
+    """Mock jax as missing."""
+    with patch("dltype._lib._dependency_utilities.jax", None):
+        yield
+
+
+def test_dltype_imports_without_torch(mock_missing_torch: None) -> None:
+    """Test that dltype can be imported without torch."""
+    del sys.modules["torch"]
+
+    with pytest.raises(ImportError):
+        reload(torch)
+
+    reloaded_dltype = reload(dltype)
+
+    assert (np.bool_,) == reloaded_dltype.BoolTensor.DTYPES
+
+
+def test_dltype_imports_without_numpy(mock_missing_numpy: None) -> None:
+    """Test that dltype can be imported without numpy."""
+    del sys.modules["numpy"]
+
+    with pytest.raises(ImportError):
+        reload(np)
+
+    reloaded_dltype = reload(dltype)
+
+    assert (torch.bool,) == reloaded_dltype.BoolTensor.DTYPES
+
+
+def test_dltype_imports_without_torch_with_jax(mock_missing_torch: None) -> None:
+    """Test dltype works without jax and numpy."""
+    del sys.modules["torch"]
+
+    with pytest.raises(ImportError):
+        reload(torch)
+
+    reloaded_dltype = reload(dltype)
+
+    assert (np.bool,) == reloaded_dltype.BoolTensor.DTYPES
+
+
+def test_dltype_imports_with_both() -> None:
+    """Test that dltype can be imported with both torch and numpy."""
+    reloaded_dltype = reload(dltype)
+    assert (
+        torch.bool,
+        np.bool_,
+    ) == reloaded_dltype.BoolTensor.DTYPES
+
+
+def test_dltype_asserts_import_error_with_neither(
+    mock_missing_numpy: None,
+    mock_missing_torch: None,
+    mock_missing_jax: None,
+) -> None:
+    """Test that dltype raises ImportError if neither torch nor numpy is available."""
+
+    with pytest.raises(ImportError, match="Neither torch nor numpy is available"):
+        reload(dltype)
