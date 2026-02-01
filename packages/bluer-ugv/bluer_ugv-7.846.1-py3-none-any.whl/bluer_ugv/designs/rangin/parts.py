@@ -1,0 +1,15 @@
+dict_of_parts = {
+    "ac-volt-meter": "220 V, 5 A",
+    "dc-circuit-breaker": "40 A",
+    "dsn-vc288": "with 50 A shunt",
+    "hdmi-cable": "",
+    "mcb": "2 - 3 A @ 220 V AC",
+    "micro-hdmi-adapter": "",
+    "power-adapter": "12V DC, 10 A",
+    "power-inverter": "continuous output ≥ 400-500 W, surge output ≥ 800 W",
+    "relay": "12 V DC, 25 A",
+    "safety-fuse": "30 mA trip",
+    "SLA-Battery": "12 V, 42 Ah, 185 mm x 150 mm x 175 mm",
+    "TV-bracket": "2 x",
+    "TV": "2 x 40 inch",
+}
