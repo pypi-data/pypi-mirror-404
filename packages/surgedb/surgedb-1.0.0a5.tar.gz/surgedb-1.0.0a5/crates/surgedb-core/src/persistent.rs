@@ -1,0 +1,352 @@
+//! Persistent vector database with WAL and snapshots
+//!
+//! Provides ACID-compliant persistence with crash recovery.
+
+use crate::distance::DistanceMetric;
+use crate::error::{Error, Result};
+use crate::hnsw::{HnswConfig, HnswIndex};
+use crate::snapshot::{Snapshot, SnapshotManager};
+use crate::storage::{VectorStorage, VectorStorageTrait};
+use crate::types::VectorId;
+use crate::wal::{Wal, WalEntry};
+use serde_json::Value;
+use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
+use tracing::{debug, info};
+
+/// Configuration for persistent database
+#[derive(Debug, Clone)]
+pub struct PersistentConfig {
+    /// Dimensionality of vectors
+    pub dimensions: usize,
+    /// Distance metric to use
+    pub distance_metric: DistanceMetric,
+    /// HNSW configuration
+    pub hnsw: HnswConfig,
+    /// Sync WAL after every write (safer but slower)
+    pub sync_writes: bool,
+    /// Auto-checkpoint when WAL exceeds this size (bytes)
+    pub checkpoint_threshold: u64,
+    /// Number of snapshots to retain
+    pub snapshot_retain_count: usize,
+}
+
+impl Default for PersistentConfig {
+    fn default() -> Self {
+        Self {
+            dimensions: 384,
+            distance_metric: DistanceMetric::Cosine,
+            hnsw: HnswConfig::default(),
+            sync_writes: false,
+            checkpoint_threshold: 64 * 1024 * 1024, // 64MB
+            snapshot_retain_count: 3,
+        }
+    }
+}
+
+/// Persistent vector database with ACID guarantees
+pub struct PersistentVectorDb {
+    config: PersistentConfig,
+    storage: VectorStorage,
+    index: HnswIndex,
+    wal: Wal,
+    snapshot_manager: SnapshotManager,
+    data_dir: PathBuf,
+}
+
+impl PersistentVectorDb {
+    /// Open or create a persistent database at the given path
+    pub fn open(path: impl AsRef<Path>, config: PersistentConfig) -> Result<Self> {
+        let data_dir = path.as_ref().to_path_buf();
+        std::fs::create_dir_all(&data_dir)?;
+
+        let wal_dir = data_dir.join("wal");
+        let snapshot_dir = data_dir.join("snapshots");
+
+        let mut wal = Wal::open(&wal_dir)?;
+        wal.set_max_size(config.checkpoint_threshold);
+
+        let mut snapshot_manager = SnapshotManager::new(&snapshot_dir)?;
+        snapshot_manager.set_retain_count(config.snapshot_retain_count);
+
+        let storage = VectorStorage::new(config.dimensions);
+        let index = HnswIndex::new(config.hnsw.clone(), config.distance_metric);
+
+        let mut db = Self {
+            config,
+            storage,
+            index,
+            wal,
+            snapshot_manager,
+            data_dir,
+        };
+
+        // Recover from snapshot and WAL
+        db.recover()?;
+
+        Ok(db)
+    }
+
+    /// Recover database state from snapshot and WAL
+    fn recover(&mut self) -> Result<()> {
+        let mut last_wal_seq = 0u64;
+
+        // 1. Load latest snapshot if available
+        if let Some(snapshot) = self.snapshot_manager.load_latest()? {
+            debug!("Loading snapshot for recovery...");
+            last_wal_seq = snapshot.wal_seq;
+
+            // Verify dimensions match
+            if snapshot.dimensions != self.config.dimensions {
+                return Err(Error::InvalidConfig(format!(
+                    "Snapshot dimensions ({}) don't match config ({})",
+                    snapshot.dimensions, self.config.dimensions
+                )));
+            }
+
+            // Restore vectors from snapshot
+            for stored in snapshot.vectors {
+                self.storage
+                    .insert(stored.id, &stored.vector, stored.metadata)?;
+            }
+
+            // Restore HNSW state if available
+            if let Some(state) = snapshot.hnsw_state {
+                self.index.load_state(state);
+            } else {
+                // Fallback: rebuild index if state is missing
+                for internal_id in self.storage.all_internal_ids() {
+                    if let Some(vector) = self.storage.get_vector_data(internal_id) {
+                        self.index.insert(internal_id, &vector, &self.storage)?;
+                    }
+                }
+            }
+        }
+
+        // 2. Replay WAL entries after snapshot
+        let entries = self.wal.read_after(last_wal_seq)?;
+        let total = entries.len();
+        if total > 0 {
+            info!("Replaying {} WAL entries...", total);
+        }
+
+        for (i, entry) in entries.into_iter().enumerate() {
+            if i > 0 && i % 5000 == 0 {
+                info!("Progress: {}/{} entries replayed...", i, total);
+            }
+            match entry {
+                WalEntry::Insert {
+                    id,
+                    vector,
+                    metadata,
+                } => {
+                    // Skip if already in storage (duplicate)
+                    if self.storage.get_internal_id(&id).is_none() {
+                        let internal_id = self.storage.insert(id, &vector, metadata)?;
+                        self.index.insert(internal_id, &vector, &self.storage)?;
+                    }
+                }
+                WalEntry::Delete { id } => {
+                    let _ = self.storage.delete(&id);
+                }
+                WalEntry::Checkpoint { .. } => {}
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Delete a vector by ID
+    pub fn delete(&mut self, id: impl Into<VectorId>) -> Result<bool> {
+        let id = id.into();
+
+        // Write to WAL
+        self.wal.append(WalEntry::Delete { id: id.clone() })?;
+
+        if self.config.sync_writes {
+            self.wal.sync()?;
+        }
+
+        // Apply to storage
+        let deleted = self.storage.delete(&id)?;
+
+        // Checkpoint if needed
+        if self.wal.needs_checkpoint() {
+            self.checkpoint()?;
+        }
+
+        Ok(deleted)
+    }
+
+    /// Insert a vector with the given ID and optional metadata
+    pub fn insert(
+        &mut self,
+        id: impl Into<VectorId>,
+        vector: &[f32],
+        metadata: Option<Value>,
+    ) -> Result<()> {
+        let id = id.into();
+
+        if vector.len() != self.config.dimensions {
+            return Err(Error::DimensionMismatch {
+                expected: self.config.dimensions,
+                got: vector.len(),
+            });
+        }
+
+        // Write to WAL first (durability)
+        self.wal.append(WalEntry::Insert {
+            id: id.clone(),
+            vector: vector.to_vec(),
+            metadata: metadata.clone(),
+        })?;
+
+        if self.config.sync_writes {
+            self.wal.sync()?;
+        }
+
+        // Then apply to in-memory structures
+        let internal_id = self.storage.insert(id, vector, metadata)?;
+        self.index.insert(internal_id, vector, &self.storage)?;
+
+        // Check if we need to checkpoint
+        if self.wal.needs_checkpoint() {
+            self.checkpoint()?;
+        }
+
+        Ok(())
+    }
+
+    /// Search for the k nearest neighbors
+    pub fn search(
+        &self,
+        query: &[f32],
+        k: usize,
+        filter: Option<&crate::filter::Filter>,
+    ) -> Result<Vec<(VectorId, f32, Option<Value>)>> {
+        if query.len() != self.config.dimensions {
+            return Err(Error::DimensionMismatch {
+                expected: self.config.dimensions,
+                got: query.len(),
+            });
+        }
+
+        let results = self.index.search(query, k, &self.storage, filter)?;
+
+        let mapped: Vec<(VectorId, f32, Option<Value>)> = results
+            .into_iter()
+            .filter_map(|(internal_id, distance)| {
+                self.storage.get_external_id(internal_id).map(|ext_id| {
+                    let metadata = self.storage.get_metadata(internal_id);
+                    (ext_id, distance, metadata)
+                })
+            })
+            .collect();
+
+        Ok(mapped)
+    }
+
+    /// Create a checkpoint (snapshot + clear WAL)
+    pub fn checkpoint(&mut self) -> Result<()> {
+        let snapshot_id = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+
+        let wal_seq = self.wal.seq();
+
+        let mut snapshot = Snapshot::new(snapshot_id, wal_seq, self.config.dimensions);
+
+        // Add all vectors to snapshot
+        for internal_id in self.storage.all_internal_ids() {
+            // Skip deleted vectors
+            if self.storage.is_deleted(internal_id) {
+                continue;
+            }
+
+            if let Some(ext_id) = self.storage.get_external_id(internal_id) {
+                if let Some(vector) = self.storage.get(internal_id) {
+                    let metadata = self.storage.get_metadata(internal_id);
+                    snapshot.add_vector(ext_id, vector, metadata);
+                }
+            }
+        }
+
+        // Add index state to snapshot
+        snapshot.set_hnsw_state(self.index.get_state());
+
+        // Save snapshot
+        self.snapshot_manager.save(&snapshot)?;
+
+        // Clear WAL
+        self.wal.clear()?;
+
+        // Log checkpoint in new WAL
+        self.wal.append(WalEntry::Checkpoint { snapshot_id })?;
+
+        Ok(())
+    }
+
+    /// Force sync WAL to disk
+    pub fn sync(&mut self) -> Result<()> {
+        self.wal.sync()
+    }
+
+    /// Get the number of vectors in the database
+    pub fn len(&self) -> usize {
+        self.storage.len()
+    }
+
+    /// Retrieve a vector by its external ID
+    pub fn get(&self, id: &str) -> Result<Option<(Vec<f32>, Option<Value>)>> {
+        let id = VectorId::from(id);
+        if let Some(internal_id) = self.storage.get_internal_id(&id) {
+            let vector = self
+                .storage
+                .get(internal_id)
+                .ok_or(Error::VectorNotFound(id.to_string()))?;
+            let metadata = self.storage.get_metadata(internal_id);
+            Ok(Some((vector, metadata)))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// List all vector IDs and metadata (pagination)
+    pub fn list(&self, offset: usize, limit: usize) -> Vec<(VectorId, Option<Value>)> {
+        let ids = self.storage.all_internal_ids();
+        ids.iter()
+            .filter_map(|&internal_id| {
+                let ext_id = self.storage.get_external_id(internal_id)?;
+                // Check if deleted
+                if self.storage.is_deleted(internal_id) {
+                    return None;
+                }
+                // Check if stale
+                let current_internal = self.storage.get_internal_id(&ext_id)?;
+                if current_internal != internal_id {
+                    return None;
+                }
+                let metadata = self.storage.get_metadata(internal_id);
+                Some((ext_id, metadata))
+            })
+            .skip(offset)
+            .take(limit)
+            .collect()
+    }
+
+    /// Check if the database is empty
+    pub fn is_empty(&self) -> bool {
+        self.storage.is_empty()
+    }
+
+    /// Get configuration
+    pub fn config(&self) -> &PersistentConfig {
+        &self.config
+    }
+
+    /// Get data directory
+    pub fn data_dir(&self) -> &Path {
+        &self.data_dir
+    }
+}

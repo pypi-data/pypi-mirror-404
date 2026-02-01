@@ -1,0 +1,57 @@
+[package]
+name = "surgedb-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Core vector indexing engine for SurgeDB"
+
+[dependencies]
+thiserror.workspace = true
+rand.workspace = true
+tracing = "0.1"
+serde = { workspace = true }
+serde_json = { workspace = true }
+bincode.workspace = true
+roaring = "0.10"
+
+# Conditional dependencies
+parking_lot = { workspace = true, optional = true }
+rayon = { version = "1.11.0", optional = true }
+getrandom = { version = "0.2", features = ["js"], optional = true }
+
+[target.'cfg(unix)'.dependencies]
+libc = { version = "0.2", optional = true }
+
+[dev-dependencies]
+criterion.workspace = true
+tempfile = "3.10"
+proptest = "1.4"
+loom = "0.7"
+
+[[bench]]
+name = "distance"
+harness = false
+
+[features]
+default = ["simd", "persistence", "parallel"]
+simd = []
+# Persistence features (filesystem-based) - excluded from WASM
+persistence = ["dep:libc"]
+# Parallel processing with rayon - excluded from WASM
+parallel = ["dep:rayon", "dep:parking_lot"]
+# WASM target support
+wasm = ["getrandom", "dep:js-sys", "dep:wasm-bindgen", "dep:web-sys"]
+
+[dependencies.js-sys]
+version = "0.3"
+optional = true
+
+[dependencies.wasm-bindgen]
+version = "0.2"
+optional = true
+
+[dependencies.web-sys]
+version = "0.3"
+features = ["console"]
+optional = true
