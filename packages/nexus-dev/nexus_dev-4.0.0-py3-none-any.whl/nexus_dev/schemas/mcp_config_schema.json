@@ -1,0 +1,177 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "Nexus-Dev MCP Configuration",
+    "type": "object",
+    "properties": {
+        "version": {
+            "type": "string",
+            "description": "Schema version",
+            "const": "1.0"
+        },
+        "servers": {
+            "type": "object",
+            "description": "MCP server configurations",
+            "additionalProperties": {
+                "type": "object",
+                "properties": {
+                    "enabled": {
+                        "type": "boolean",
+                        "default": true
+                    },
+                    "transport": {
+                        "type": "string",
+                        "enum": [
+                            "stdio",
+                            "sse",
+                            "http"
+                        ],
+                        "default": "stdio",
+                        "description": "Transport type: stdio (local process) or sse (HTTP remote)"
+                    },
+                    "command": {
+                        "type": "string",
+                        "description": "Command to start the MCP server (required for stdio)"
+                    },
+                    "args": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "default": []
+                    },
+                    "env": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "string"
+                        },
+                        "default": {}
+                    },
+                    "url": {
+                        "type": "string",
+                        "format": "uri",
+                        "description": "Server URL (required for sse)"
+                    },
+                    "headers": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "string"
+                        },
+                        "default": {},
+                        "description": "HTTP headers for SSE connection"
+                    },
+                    "timeout": {
+                        "type": "number",
+                        "description": "Tool execution timeout in seconds",
+                        "default": 30,
+                        "minimum": 1
+                    },
+                    "connect_timeout": {
+                        "type": "number",
+                        "description": "Connection timeout in seconds",
+                        "default": 10,
+                        "minimum": 1
+                    },
+                    "max_concurrent": {
+                        "type": "integer",
+                        "description": "Maximum concurrent invocations for this server (overrides gateway default)",
+                        "minimum": 1
+                    }
+                },
+                "allOf": [
+                    {
+                        "if": {
+                            "properties": {
+                                "transport": {
+                                    "const": "stdio"
+                                }
+                            }
+                        },
+                        "then": {
+                            "required": [
+                                "command"
+                            ]
+                        }
+                    },
+                    {
+                        "if": {
+                            "properties": {
+                                "transport": {
+                                    "const": "sse"
+                                }
+                            },
+                            "required": [
+                                "transport"
+                            ]
+                        },
+                        "then": {
+                            "required": [
+                                "url"
+                            ]
+                        }
+                    },
+                    {
+                        "if": {
+                            "properties": {
+                                "transport": {
+                                    "const": "http"
+                                }
+                            },
+                            "required": [
+                                "transport"
+                            ]
+                        },
+                        "then": {
+                            "required": [
+                                "url"
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "profiles": {
+            "type": "object",
+            "description": "Named profiles mapping to server lists",
+            "additionalProperties": {
+                "type": "array",
+                "items": {
+                    "type": "string"
+                }
+            },
+            "default": {}
+        },
+        "gateway": {
+            "type": "object",
+            "description": "Global gateway settings",
+            "properties": {
+                "default_timeout": {
+                    "type": "number",
+                    "description": "Default tool execution timeout",
+                    "default": 30,
+                    "minimum": 1
+                },
+                "max_concurrent_connections": {
+                    "type": "integer",
+                    "description": "Maximum concurrent connections to backend servers",
+                    "default": 5,
+                    "minimum": 1
+                },
+                "shutdown_timeout": {
+                    "type": "number",
+                    "description": "Graceful shutdown timeout in seconds",
+                    "default": 5,
+                    "minimum": 0
+                }
+            }
+        },
+        "active_profile": {
+            "type": "string",
+            "description": "The currently active profile",
+            "default": "default"
+        }
+    },
+    "required": [
+        "version",
+        "servers"
+    ]
+}
