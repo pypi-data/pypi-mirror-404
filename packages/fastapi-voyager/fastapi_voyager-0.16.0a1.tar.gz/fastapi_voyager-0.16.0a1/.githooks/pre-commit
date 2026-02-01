@@ -1,0 +1,29 @@
+#!/bin/sh
+# Git pre-commit hook to run Prettier on staged files
+
+# Get the project root directory using Git command (works in all shells)
+PROJECT_ROOT="$(git rev-parse --show-toplevel)"
+cd "$PROJECT_ROOT" || exit 1
+
+# Check if npx is available
+if ! command -v npx >/dev/null 2>&1; then
+  echo "Warning: npx not found. Skipping Prettier formatting."
+  echo "Please install Node.js and npm to use pre-commit formatting."
+  exit 0
+fi
+
+echo "Running Prettier on staged files..."
+
+# Check if .prettierignore exists and run prettier
+if [ -f "$PROJECT_ROOT/.prettierignore" ]; then
+  echo "Found .prettierignore, applying rules..."
+  npx prettier --write . --log-level=warn --ignore-path="$PROJECT_ROOT/.prettierignore"
+else
+  echo "No .prettierignore found, formatting all files..."
+  npx prettier --write . --log-level=warn
+fi
+
+# Add any newly formatted files to the staging area
+git add .
+
+echo "Prettier formatting complete."
