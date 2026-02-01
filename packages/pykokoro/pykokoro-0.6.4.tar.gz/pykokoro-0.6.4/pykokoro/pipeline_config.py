@@ -1,0 +1,51 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Literal
+
+from .generation_config import GenerationConfig
+from .onnx_backend import (
+    DEFAULT_MODEL_SOURCE,
+    DEFAULT_MODEL_VARIANT,
+    ModelQuality,
+    ModelSource,
+    ModelVariant,
+    ProviderType,
+    VoiceBlend,
+)
+from .short_sentence_handler import ShortSentenceConfig
+from .tokenizer import EspeakConfig, TokenizerConfig
+
+
+@dataclass(frozen=True)
+class PipelineConfig:
+    """User-facing configuration for the end-to-end pipeline."""
+
+    voice: str | VoiceBlend = "af"
+    generation: GenerationConfig = field(default_factory=GenerationConfig)
+
+    # Model + provider configuration
+    model_quality: ModelQuality | None = None
+    model_source: ModelSource = DEFAULT_MODEL_SOURCE
+    model_variant: ModelVariant = DEFAULT_MODEL_VARIANT
+    model_path: Path | str | None = None
+    voices_path: Path | str | None = None
+    provider: ProviderType | None = None
+    provider_options: dict[str, Any] | None = None
+    session_options: Any | None = None
+
+    # Tokenizer configuration
+    tokenizer_config: TokenizerConfig | None = None
+    espeak_config: EspeakConfig | None = None
+    short_sentence_config: ShortSentenceConfig | None = None
+
+    # Span slicing
+    overlap_mode: Literal["snap", "strict"] = "snap"
+
+    # Behavior toggles
+    return_trace: bool = False
+    enable_deprecation_warnings: bool = False
+
+    # Caching
+    cache_dir: str | None = None
