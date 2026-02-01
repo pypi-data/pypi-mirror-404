@@ -1,0 +1,218 @@
+import logging
+
+from django.db import models
+
+from rest_framework.reverse import reverse
+
+from access.managers.tenancy import TenancyManager
+from access.models.tenant import Tenant
+
+from core import exceptions as centurion_exceptions
+from core.mixins.history_save import SaveHistory
+
+
+
+class TenancyObject(SaveHistory):
+    """ Tenancy Model Abstrct class.
+
+    This class is for inclusion wihtin **every** model within Centurion ERP.
+    Provides the required fields, functions and methods for multi tennant objects.
+    Unless otherwise stated, **no** object within this class may be overridden.
+
+    Raises:
+        ValidationError: User failed to supply organization
+    """
+
+    objects = TenancyManager()
+    """ Multi-Tenanant Objects """
+
+    class Meta:
+        abstract = True
+
+
+    def validatate_organization_exists(self):
+        """Ensure that the user did provide an organization
+
+        Raises:
+            ValidationError: User failed to supply organization.
+        """
+
+        if not self:
+            raise centurion_exceptions.ValidationError('You must provide an organization')
+
+
+    id = models.AutoField(
+        blank=False,
+        help_text = 'ID of the item',
+        primary_key=True,
+        unique=True,
+        verbose_name = 'ID'
+    )
+
+    organization = models.ForeignKey(
+        Tenant,
+        blank = False,
+        help_text = 'Tenancy this belongs to',
+        null = False,
+        on_delete = models.CASCADE,
+        related_name = '+',
+        validators = [validatate_organization_exists],
+        verbose_name = 'Tenant'
+    )
+
+    is_global = models.BooleanField(
+        blank = False,
+        default = False,
+        help_text = 'Is this a global object?',
+        verbose_name = 'Global Object'
+    )
+
+    model_notes = models.TextField(
+        blank = True,
+        default = None,
+        help_text = 'Tid bits of information',
+        null = True,
+        verbose_name = 'Notes',
+    )
+
+    def get_organization(self) -> Tenant:
+        return self.organization
+
+    app_namespace: str = None
+    """Application namespace.
+
+    Specify the applications namespace i.e. `devops`, without including
+    the API version, i.e. `v2:devops`.
+    """
+
+    history_app_label: str = None
+    """History Model Application Label
+
+    This value is derived from `<model>._meta.app_label`. This value should
+    only be used when there is model inheritence.
+    """
+
+    history_model_name: str = None
+    """History Model Model Name
+
+    This value is derived from `<model>._meta.model_name`. This value should
+    only be used when there is model inheritence.
+    """
+
+    kb_model_name: str = None
+    """Model name to use for KB article linking
+    
+    This value is derived from `<model>._meta.model_name`. This value should
+    only be used when there is model inheritence.
+    """
+
+    _log: logging.Logger = None
+
+    def get_log(self):
+
+        if self._log is None:
+
+            self._log = logging.getLogger('centurion.' + self._meta.app_label)
+
+        return self._log
+
+    page_layout: list = None
+
+    note_basename: str = None
+    """URL BaseName for the notes endpoint.
+
+    Don't specify the `app_namespace`, use property `app_namespace` above.
+    """
+
+
+    def get_page_layout(self):
+        """ FEtch the page layout"""
+
+        return self.page_layout
+
+
+    def get_app_namespace(self) -> str:
+        """Fetch the Application namespace if specified.
+
+        Returns:
+            str: Application namespace suffixed with colin `:`
+            None: No application namespace found.
+        """
+
+        app_namespace = ''
+
+        if self.app_namespace:
+
+            app_namespace = self.app_namespace
+
+        return str(app_namespace)
+
+
+    def get_url( self, request = None ) -> str:
+        """Fetch the models URL
+
+        If URL kwargs are required to generate the URL, define a `get_url_kwargs` that returns them.
+
+        Args:
+            request (object, optional): The request object that was made by the end user. Defaults to None.
+
+        Returns:
+            str: Canonical URL of the model if the `request` object was provided. Otherwise the relative URL. 
+        """
+
+        model_name = str(self._meta.verbose_name.lower()).replace(' ', '_')
+
+        namespace = f'v2'
+
+        if self.get_app_namespace():
+            namespace = namespace + ':' + self.get_app_namespace()
+
+
+        if request:
+
+            return reverse(f"{namespace}:_api_v2_{model_name}-detail", request=request, kwargs = self.get_url_kwargs() )
+
+        return reverse(f"{namespace}:_api_v2_{model_name}-detail", kwargs = self.get_url_kwargs() )
+
+
+    def get_url_kwargs(self) -> dict:
+        """Fetch the URL kwargs
+
+        Returns:
+            dict: kwargs required for generating the URL with `reverse`
+        """
+
+        return {
+            'pk': self.id
+        }
+
+
+    def get_url_kwargs_notes(self) -> dict:
+        """Fetch the URL kwargs for model notes
+
+        Returns:
+            dict: notes kwargs required for generating the URL with `reverse`
+        """
+
+        return {
+            'model_id': self.id
+        }
+
+
+    def save(self, force_insert=False, force_update=False, using=None, update_fields=None):
+
+        self.clean()
+
+        if(
+            not getattr(self, 'organization', None)
+            and self._meta.model_name !='appsettingshistory'    # App Settings for
+        ):
+
+            raise centurion_exceptions.ValidationError(
+                detail = {
+                    'organization': 'Tenant is required'
+                },
+                code = 'required'
+            )
+
+        super().save(force_insert=force_insert, force_update=force_update, using=using, update_fields=update_fields)

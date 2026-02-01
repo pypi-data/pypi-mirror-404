@@ -1,0 +1,48 @@
+from django.apps import apps
+
+from centurion_feature_flag.urls.routers import APIRootView, DefaultRouter
+
+from accounting.viewsets import (
+    asset,
+)
+
+
+
+class RootView(APIRootView):
+
+    def get_view_name(self):
+
+        return 'Accounting'
+
+
+
+app_name = "accounting"
+
+router = DefaultRouter(trailing_slash=False)
+
+router.APIRootView = RootView
+
+
+asset_type_names = ''
+
+
+for model in apps.get_models():
+
+    if issubclass(model, asset.AssetBase):
+        
+        if model._meta.sub_model_type == 'asset':
+            continue
+
+        asset_type_names += model._meta.model_name + '|'
+
+
+
+asset_type_names = str(asset_type_names)[:-1]
+
+if not asset_type_names:
+    asset_type_names = 'none'
+
+router.register(f'/asset/(?P<model_name>[{asset_type_names}]+)?', asset.ViewSet, feature_flag = '2025-00004', basename='_api_asset_sub')
+router.register('/asset', asset.NoDocsViewSet, feature_flag = '2025-00004', basename='_api_asset')
+
+urlpatterns = router.urls

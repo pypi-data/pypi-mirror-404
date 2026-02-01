@@ -1,0 +1,196 @@
+from django.conf import settings
+from django.contrib.auth.models import Group
+from django.db import models
+
+from access.fields import *
+
+from assistance.models.knowledge_base_category import KnowledgeBaseCategory
+
+from core.models.centurion import CenturionModel
+
+
+
+class KnowledgeBase(
+    CenturionModel
+):
+
+    model_tag = 'kb'
+
+
+    class Meta:
+
+        ordering = [
+            'title',
+        ]
+
+        verbose_name = "Knowledge Base"
+
+        verbose_name_plural = "Knowledge Base Articles"
+
+
+    title = models.CharField(
+        blank = False,
+        help_text = 'Title of the article',
+        max_length = 50,
+        unique = False,
+        verbose_name = 'Title',
+    )
+
+
+    summary = models.TextField(
+        blank = True,
+        help_text = 'Short Summary of the article',
+        null = True,
+        verbose_name = 'Summary',
+    )
+
+
+    content = models.TextField(
+        blank = True,
+        help_text = 'Content of the article. Markdown is supported',
+        null = True,
+        verbose_name = 'Article Content',
+    )
+
+
+    category = models.ForeignKey(
+        KnowledgeBaseCategory,
+        blank = False,
+        help_text = 'Article Category',
+        max_length = 50,
+        null = True,
+        on_delete = models.PROTECT,
+        unique = False,
+        verbose_name = 'Category',
+    )
+
+
+    release_date = models.DateTimeField(
+        blank = True,
+        help_text = 'Date the article will be published',
+        null = True,
+        verbose_name = 'Publish Date',
+    )
+
+
+    expiry_date = models.DateTimeField(
+        blank = True,
+        help_text = 'Date the article will be removed from published articles',
+        null = True,
+        verbose_name = 'End Date',
+    )
+
+
+    target_team = models.ManyToManyField(
+        Group,
+        blank = True,
+        help_text = 'Group(s) to grant access to the article',
+        related_name = '+',
+        verbose_name = 'Target Group(s)',
+    )
+
+
+    target_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        blank = True,
+        help_text = 'User(s) to grant access to the article',
+        null = True,
+        on_delete = models.PROTECT,
+        verbose_name = 'Target Users(s)',
+    )
+
+
+    responsible_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        blank = True,
+        help_text = 'User(s) whom is considered the articles owner.',
+        null = True,
+        on_delete = models.PROTECT,
+        related_name = '+',
+        verbose_name = 'Responsible User',
+    )
+
+
+    responsible_teams = models.ManyToManyField(
+        Group,
+        blank = True,
+        help_text = 'Group(s) whom is considered the articles owner.',
+        related_name = '+',
+        verbose_name = 'Responsible Group(s)',
+    )
+
+
+    public = models.BooleanField(
+        blank = False,
+        default = False,
+        help_text = 'Is this article to be made available publically',
+        verbose_name = 'Public Article',
+    )
+
+
+    modified = AutoLastModifiedField()
+
+
+    page_layout: dict = [
+        {
+            "name": "Content",
+            "slug": "content",
+            "sections": [
+                {
+                    "layout": "single",
+                    "fields": [
+                        'summary',
+                    ]
+                },
+                {
+                    "layout": "single",
+                    "fields": [
+                        'content',
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "Details",
+            "slug": "details",
+            "sections": [
+                {
+                    "layout": "double",
+                    "left": [
+                        'organization',
+                        'title',
+                        'category',
+                        'responsible_user',
+                        'responsible_teams',
+                        'created',
+                        'modified',
+                    ],
+                    "right": [
+                        'model_notes',
+                        'release_date',
+                        'expiry_date',
+                        'target_user',
+                        'target_team',
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "Notes",
+            "slug": "notes",
+            "sections": []
+        },
+    ]
+
+    table_fields: list = [
+        'title',
+        'category',
+        'organization',
+        'created',
+        'modified'
+    ]
+
+
+    def __str__(self):
+
+        return self.title
