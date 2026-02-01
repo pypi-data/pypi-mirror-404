@@ -1,0 +1,297 @@
+#!/usr/bin/env python3
+# This file is placed in the Public Domain.
+
+
+"main program"
+
+
+import logging
+import os
+import sys
+import time
+
+
+sys.path.insert(0, os.getcwd())
+
+
+from bigtalk.defines import Commands, Console, Log, Message, Methods, Mods
+from bigtalk.defines import Utils, Workdir
+from bigtalk.modules import Cfg
+
+
+from bigtalk import modules as MODS
+
+
+"config"
+
+
+Cfg.ignore = "rst,udp,web"
+Cfg.level = "info"
+Cfg.name = Utils.pkgname(Commands)
+Cfg.txt = " ".join(sys.argv[1:])
+Cfg.version = 5
+Cfg.wdr = os.path.expanduser(f"~/.{Cfg.name}")
+
+
+"clients"
+
+
+class Line(Console):
+
+    def __init__(self):
+        super().__init__()
+        self.register("command", Commands.command)
+
+    def raw(self, text):
+        "write to console."
+        print(text.encode('utf-8', 'replace').decode("utf-8"))
+
+
+class Term(Line):
+
+    def callback(self, event):
+        "wait for callback result."
+        if not event.text:
+            event.ready()
+            return
+        super().callback(event)
+        event.wait()
+
+    def poll(self):
+        "poll for an event."
+        evt = Message()
+        evt.text = input("> ")
+        evt.kind = "command"
+        return evt
+
+
+"scripts"
+
+
+class Scripts:
+
+    @staticmethod
+    def background():
+        "background script."
+        Runtime.daemon()
+        Runtime.privileges()
+        Runtime.boot()
+        Workdir.pidfile(Cfg.name)
+        Mods.scanner(Mods.list(), Cfg.ignore)
+        Commands.add(Cmd.cmd, Cmd.mod, Cmd.ver)
+        Mods.inits(Cfg.default or "irc,mdl,rss,wsd", Cfg.ignore)
+        Runtime.forever()
+
+    @staticmethod
+    def console():
+        "console script."
+        import readline
+        readline.redisplay()
+        Runtime.boot()
+        Mods.scanner(Mods.list(), Cfg.ignore)
+        Commands.add(Cmd.cmd, Cmd.mod, Cmd.ver)
+        Commands.cmd(Cfg.txt)
+        Mods.inits(Cfg.init, Cfg.ignore, "w" in Cfg.opts)
+        csl = Term()
+        csl.start()
+        Runtime.forever()
+
+    @staticmethod
+    def control():
+        "cli script."
+        if len(sys.argv) == 1:
+            return
+        Runtime.boot()
+        Mods.scanner(Mods.list(), Cfg.ignore)
+        Commands.add(Cmd.cmd, Cmd.mod, Cmd.srv, Cmd.ver)
+        evt = Commands.cmd(Cfg.txt)
+        for line in evt.result.values():
+            print(line)
+
+    @staticmethod
+    def service():
+        "service script."
+        Runtime.privileges()
+        Runtime.banner()
+        Runtime.boot()
+        Workdir.pidfile(Cfg.name)
+        Mods.scanner(Mods.list())
+        Commands.add(Cmd.cmd, Cmd.mod, Cmd.ver)
+        Mods.inits(Cfg.default or "irc,mdl,rss,wsd", Cfg.ignore)
+        Runtime.forever()
+
+
+"commands"
+
+
+class Cmd:
+
+    @staticmethod
+    def cmd(event):
+        "list available commands."
+        event.reply(",".join(sorted(Commands.names or Commands.cmds)))
+
+    @staticmethod
+    def mod(event):
+        "list available commands."
+        mods = Mods.list(Cfg.ignore)
+        if not mods:
+            event.reply("no modules available")
+            return
+        event.reply(mods)
+
+    @staticmethod
+    def srv(event):
+        "generate systemd service file."
+        import getpass
+        name = getpass.getuser()
+        event.reply(SYSTEMD % (Cfg.name.upper(), name, name, name, Cfg.name))
+
+    @staticmethod
+    def ver(event):
+        "show verson."
+        event.reply(f"{Cfg.name.upper()} {Cfg.version}")
+
+
+"runtime"
+
+
+class Runtime:
+    
+    @staticmethod
+    def banner():
+        "hello."
+        tme = time.ctime(time.time()).replace("  ", " ")
+        print("%s %s since %s (%s)" % (
+            Cfg.name.upper(),
+            Cfg.version,
+            tme,
+            Cfg.level.upper(),
+        ))
+        sys.stdout.flush()
+
+    @staticmethod
+    def boot(inits=""):
+        "in the beginning."
+        Methods.parse(Cfg, Cfg.txt)
+        Cfg.ignore = Cfg.sets.ignore or Cfg.ignore or ""
+        Cfg.init = Cfg.sets.init or Cfg.init or ""
+        Cfg.level = Cfg.sets.level or Cfg.level or "info"
+        Cfg.wdr = Cfg.sets.wdr or Cfg.wdr or os.path.expanduser(f"~/.{Utils.pkgname(Cfg)}")
+        Log.level(Cfg.level)
+        Workdir.setwd(Cfg.wdr)
+        if Cfg.wdr:
+            Mods.init("modules", os.path.join(Workdir.workdir(), "mods"))
+        if MODS:
+            Mods.init(MODS.__name__, MODS.__path__[0])
+        if "m" in Cfg.opts and os.path.exists("mods"):
+            Mods.init("mods", "mods")
+        if "v" in Cfg.opts:
+            Runtime.banner()
+        if 'a' in Cfg.opts:
+            Cfg.init = Mods.list(Cfg.ignore)
+
+    @staticmethod
+    def check(text):
+        "check for options."
+        for arg in Cfg.txt.split():
+            if not arg.startswith("-"):
+                continue
+            for char in text:
+               if char in arg:
+                   return True
+            return False
+
+    @staticmethod
+    def daemon(verbose=False, nochdir=False):
+        "run in the background."
+        pid = os.fork()
+        if pid != 0:
+            os._exit(0)
+        os.setsid()
+        pid2 = os.fork()
+        if pid2 != 0:
+            os._exit(0)
+        with open('/dev/null', 'r', encoding="utf-8") as sis:
+            os.dup2(sis.fileno(), sys.stdin.fileno())
+        with open('/dev/null', 'a+', encoding="utf-8") as sos:
+            os.dup2(sos.fileno(), sys.stdout.fileno())
+        with open('/dev/null', 'a+', encoding="utf-8") as ses:
+            os.dup2(ses.fileno(), sys.stderr.fileno())
+        os.umask(0)
+        os.chdir("/")
+        os.nice(10)
+
+    @staticmethod
+    def forever():
+        "run forever until ctrl-c."
+        while True:
+            try:
+                time.sleep(0.1)
+            except (KeyboardInterrupt, EOFError):
+                break
+
+    @staticmethod
+    def privileges():
+        "drop privileges."
+        import getpass
+        import pwd
+        pwnam2 = pwd.getpwnam(getpass.getuser())
+        os.setgid(pwnam2.pw_gid)
+        os.setuid(pwnam2.pw_uid)
+
+    @staticmethod
+    def wrap(func):
+        "restore console."
+        import termios
+        old = None
+        try:
+            old = termios.tcgetattr(sys.stdin.fileno())
+        except termios.error:
+            pass
+        try:
+            func()
+        except (KeyboardInterrupt, EOFError):
+            pass
+        except Exception as ex:
+            logging.exception(ex)
+        if old:
+            termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, old)
+
+
+"data"
+
+
+SYSTEMD = """[Unit]
+Description=%s
+After=multi-user.target
+
+[Service]
+Type=simple
+User=%s
+Group=%s
+ExecStart=/home/%s/.local/bin/%s -s
+
+[Install]
+WantedBy=multi-user.target"""
+
+
+"runtime"
+
+
+def main():
+    "main"
+    check = Runtime.check
+    if check("d"):
+        Scripts.background()
+    elif check("c"):
+        Runtime.wrap(Scripts.console)
+    elif check("s"):
+        Runtime.wrap(Scripts.service)
+    else:
+        Runtime.wrap(Scripts.control)
+
+
+if __name__ == "__main__":
+    main()
+
