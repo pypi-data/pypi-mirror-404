@@ -1,0 +1,342 @@
+# semantic-kernel-builtsimple
+
+Semantic Kernel plugins for [Built-Simple](https://built-simple.ai) research APIs, providing easy access to PubMed, ArXiv, and Wikipedia for AI-powered research assistants.
+
+[![PyPI version](https://badge.fury.io/py/semantic-kernel-builtsimple.svg)](https://pypi.org/project/semantic-kernel-builtsimple/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+## Features
+
+- **PubMed Plugin** - Search 4.5M+ peer-reviewed biomedical articles with full text support
+- **ArXiv Plugin** - Search 2.7M+ preprints in physics, math, CS, ML, and AI
+- **Wikipedia Plugin** - Semantic search over Wikipedia for general knowledge
+- **Combined Research Plugin** - All sources in one plugin for comprehensive research
+- **Async-first** - Built with async/await for optimal performance
+- **Function calling ready** - Works with OpenAI, Azure OpenAI, and other LLM providers
+
+## What Data is Included
+
+### PubMed Results
+- Title, abstract, and **full article text** when available
+- Journal name and publication year
+- PMID and DOI identifiers
+- Direct links to PubMed and DOI URLs
+- Author information
+
+### ArXiv Results
+- Paper title and abstract
+- Author list with affiliations
+- ArXiv ID with links to abstract and PDF
+- Publication year and categories (cs.AI, physics, math, etc.)
+
+### Wikipedia Results
+- Article title and content summary
+- Direct Wikipedia URLs
+- Category information
+
+## Installation
+
+```bash
+pip install semantic-kernel-builtsimple
+```
+
+## Quick Start
+
+### Basic Plugin Usage
+
+```python
+import asyncio
+from semantic_kernel import Kernel
+from semantic_kernel_builtsimple import (
+    BuiltSimplePubMedPlugin,
+    BuiltSimpleArxivPlugin,
+    BuiltSimpleWikipediaPlugin,
+)
+
+async def main():
+    kernel = Kernel()
+    
+    # Add plugins
+    kernel.add_plugin(BuiltSimplePubMedPlugin(), plugin_name="pubmed")
+    kernel.add_plugin(BuiltSimpleArxivPlugin(), plugin_name="arxiv")
+    kernel.add_plugin(BuiltSimpleWikipediaPlugin(), plugin_name="wikipedia")
+    
+    # Invoke a function directly
+    result = await kernel.invoke(
+        plugin_name="pubmed",
+        function_name="search_pubmed",
+        query="CRISPR gene therapy clinical trials",
+        limit=3,
+    )
+    print(result)
+
+asyncio.run(main())
+```
+
+### With OpenAI Function Calling
+
+```python
+import asyncio
+from semantic_kernel import Kernel
+from semantic_kernel.connectors.ai.open_ai import OpenAIChatCompletion
+from semantic_kernel.connectors.ai.function_choice_behavior import FunctionChoiceBehavior
+from semantic_kernel.contents.chat_history import ChatHistory
+from semantic_kernel_builtsimple import BuiltSimpleResearchPlugin
+
+async def main():
+    kernel = Kernel()
+    
+    # Add AI service
+    kernel.add_service(OpenAIChatCompletion(
+        service_id="chat",
+        ai_model_id="gpt-4o",
+    ))
+    
+    # Add research plugin (includes PubMed, ArXiv, Wikipedia)
+    kernel.add_plugin(BuiltSimpleResearchPlugin(), plugin_name="research")
+    
+    # Get execution settings with function calling enabled
+    settings = kernel.get_prompt_execution_settings_from_service_id("chat")
+    settings.function_choice_behavior = FunctionChoiceBehavior.Auto(
+        filters={"included_plugins": ["research"]}
+    )
+    
+    # Ask a research question - the AI will automatically use the plugins
+    result = await kernel.invoke_prompt(
+        prompt="What are the latest advances in transformer architectures for natural language processing? Search both ArXiv for recent papers and PubMed for any clinical applications.",
+        settings=settings,
+    )
+    print(result)
+
+asyncio.run(main())
+```
+
+### Using the Combined Research Plugin
+
+```python
+import asyncio
+from semantic_kernel import Kernel
+from semantic_kernel_builtsimple import BuiltSimpleResearchPlugin
+
+async def main():
+    kernel = Kernel()
+    
+    # Single plugin provides access to all sources
+    kernel.add_plugin(BuiltSimpleResearchPlugin(), plugin_name="research")
+    
+    # Search all sources at once
+    result = await kernel.invoke(
+        plugin_name="research",
+        function_name="search_all_sources",
+        query="artificial intelligence in drug discovery",
+        limit_per_source=3,
+    )
+    print(result)
+
+asyncio.run(main())
+```
+
+### With Azure OpenAI
+
+```python
+import asyncio
+from semantic_kernel import Kernel
+from semantic_kernel.connectors.ai.open_ai import AzureChatCompletion
+from semantic_kernel.connectors.ai.function_choice_behavior import FunctionChoiceBehavior
+from semantic_kernel_builtsimple import BuiltSimplePubMedPlugin, BuiltSimpleArxivPlugin
+
+async def main():
+    kernel = Kernel()
+    
+    # Add Azure OpenAI service
+    kernel.add_service(AzureChatCompletion(
+        service_id="azure_chat",
+        deployment_name="gpt-4o",
+        endpoint="https://your-resource.openai.azure.com/",
+        api_key="your-api-key",
+    ))
+    
+    # Add research plugins
+    kernel.add_plugin(BuiltSimplePubMedPlugin(), plugin_name="pubmed")
+    kernel.add_plugin(BuiltSimpleArxivPlugin(), plugin_name="arxiv")
+    
+    # Enable function calling
+    settings = kernel.get_prompt_execution_settings_from_service_id("azure_chat")
+    settings.function_choice_behavior = FunctionChoiceBehavior.Auto()
+    
+    result = await kernel.invoke_prompt(
+        prompt="Find recent research on mRNA vaccines for cancer treatment",
+        settings=settings,
+    )
+    print(result)
+
+asyncio.run(main())
+```
+
+## Plugin Reference
+
+### BuiltSimplePubMedPlugin
+
+Searches PubMed biomedical literature database.
+
+**Functions:**
+- `search_pubmed(query, limit=5)` - Search for papers
+- `get_pubmed_full_text(pmid)` - Get full article text by PMID
+
+```python
+plugin = BuiltSimplePubMedPlugin(
+    base_url="https://pubmed.built-simple.ai",  # optional override
+    api_key=None,  # optional for higher rate limits
+    timeout=30.0,  # request timeout in seconds
+)
+```
+
+### BuiltSimpleArxivPlugin
+
+Searches ArXiv preprint server.
+
+**Functions:**
+- `search_arxiv(query, limit=5)` - Search for preprints
+
+```python
+plugin = BuiltSimpleArxivPlugin(
+    base_url="https://arxiv.built-simple.ai",
+    api_key=None,
+    timeout=30.0,
+)
+```
+
+### BuiltSimpleWikipediaPlugin
+
+Searches Wikipedia articles semantically.
+
+**Functions:**
+- `search_wikipedia(query, limit=5)` - Search for articles
+
+```python
+plugin = BuiltSimpleWikipediaPlugin(
+    base_url="https://wikipedia.built-simple.ai",
+    api_key=None,
+    timeout=30.0,
+)
+```
+
+### BuiltSimpleResearchPlugin
+
+Combined plugin with access to all sources.
+
+**Functions:**
+- `search_pubmed(query, limit=5)` - Search PubMed
+- `search_arxiv(query, limit=5)` - Search ArXiv
+- `search_wikipedia(query, limit=5)` - Search Wikipedia
+- `search_all_sources(query, limit_per_source=3)` - Search all simultaneously
+
+```python
+plugin = BuiltSimpleResearchPlugin(
+    pubmed_url=None,  # optional overrides
+    arxiv_url=None,
+    wikipedia_url=None,
+    api_key=None,
+    timeout=30.0,
+)
+```
+
+## When to Use Each Source
+
+| Source | Best For |
+|--------|----------|
+| **PubMed** | Medical research, clinical studies, drug development, genomics, biology, healthcare |
+| **ArXiv** | AI/ML papers, physics, mathematics, computer science, cutting-edge preprints |
+| **Wikipedia** | General knowledge, definitions, historical facts, biographies, concepts |
+
+## Example Use Cases
+
+### Research Assistant
+
+Build an AI research assistant that can answer questions using scientific literature:
+
+```python
+system_prompt = """You are a research assistant with access to:
+- PubMed for biomedical literature
+- ArXiv for physics/math/CS preprints  
+- Wikipedia for general knowledge
+
+When answering questions:
+1. Search relevant sources based on the topic
+2. Synthesize information from multiple papers
+3. Always cite your sources with titles and IDs
+"""
+```
+
+### Literature Review
+
+Help researchers quickly survey a topic:
+
+```python
+result = await kernel.invoke(
+    plugin_name="research",
+    function_name="search_all_sources",
+    query="attention mechanisms in neural networks",
+    limit_per_source=10,
+)
+```
+
+### Fact-Checking
+
+Verify claims with authoritative sources:
+
+```python
+# Check Wikipedia for general facts
+wiki = await kernel.invoke(
+    plugin_name="wikipedia",
+    function_name="search_wikipedia",
+    query="discovery of penicillin",
+)
+
+# Verify with primary sources
+pubmed = await kernel.invoke(
+    plugin_name="pubmed", 
+    function_name="search_pubmed",
+    query="penicillin discovery Alexander Fleming",
+)
+```
+
+## Error Handling
+
+The plugins handle errors gracefully and return descriptive messages:
+
+```python
+# If API is unavailable or query fails
+result = await kernel.invoke(
+    plugin_name="pubmed",
+    function_name="search_pubmed",
+    query="test query",
+)
+# Returns: "Error searching PubMed: <error details>" instead of raising
+```
+
+For programmatic error handling, import the exception:
+
+```python
+from semantic_kernel_builtsimple import BuiltSimpleAPIError
+
+try:
+    # Direct client usage
+    async with BuiltSimpleClient("https://pubmed.built-simple.ai") as client:
+        result = await client.post("/hybrid-search", data={"query": "test"})
+except BuiltSimpleAPIError as e:
+    print(f"API error: {e.message}, status: {e.status_code}")
+```
+
+## License
+
+MIT License - see [LICENSE](LICENSE) for details.
+
+## Links
+
+- [Built-Simple](https://built-simple.ai)
+- [PubMed API](https://pubmed.built-simple.ai)
+- [ArXiv API](https://arxiv.built-simple.ai)
+- [Wikipedia API](https://wikipedia.built-simple.ai)
+- [Semantic Kernel](https://github.com/microsoft/semantic-kernel)
+- [Semantic Kernel Documentation](https://learn.microsoft.com/semantic-kernel/)
