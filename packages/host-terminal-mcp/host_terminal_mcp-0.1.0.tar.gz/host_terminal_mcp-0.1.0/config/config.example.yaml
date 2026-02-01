@@ -1,0 +1,315 @@
+# Host Terminal MCP Configuration
+# Copy this to ~/.config/host-terminal-mcp/config.yaml and customize
+
+# Permission mode controls how unlisted commands are handled:
+# - allowlist: Only commands matching allowed_commands patterns are permitted (default)
+# - ask: Commands not in the allow list will prompt for approval
+# - allow_all: All commands are allowed (DANGEROUS - use with caution!)
+permission_mode: allowlist
+
+# Maximum execution time for commands (in seconds)
+timeout_seconds: 300
+
+# Maximum output size in characters (prevents memory issues with large outputs)
+max_output_size: 100000
+
+# Shell to use for command execution
+shell: /bin/bash
+
+# Environment variables to pass through to commands
+environment_passthrough:
+  - PATH
+  - HOME
+  - USER
+  - LANG
+  - LC_ALL
+  - TERM
+  - EDITOR
+  - VISUAL
+
+# Directories where commands can be executed
+# Commands cannot run outside these directories
+allowed_directories:
+  - "~"  # User home directory (expands to /Users/username or /home/username)
+  # Add more directories as needed:
+  # - "/opt/projects"
+  # - "/var/log"
+
+# Blocked command patterns (take precedence over allowed_commands)
+# These are ALWAYS blocked regardless of permission_mode
+blocked_commands:
+  # Dangerous system commands
+  - pattern: "^rm\\s+-rf\\s+/"
+    description: "Recursive delete from root"
+    is_regex: true
+  - pattern: "^rm\\s+-rf\\s+~"
+    description: "Recursive delete home directory"
+    is_regex: true
+  - pattern: "^rm\\s+-rf\\s+\\*"
+    description: "Recursive delete all"
+    is_regex: true
+  - pattern: "mkfs"
+    description: "Format filesystem"
+  - pattern: "dd if="
+    description: "Disk destroyer"
+  - pattern: ":(){"
+    description: "Fork bomb"
+  - pattern: "> /dev/sd"
+    description: "Overwrite disk"
+  - pattern: "chmod -R 777 /"
+    description: "Dangerous permissions"
+
+  # Privilege escalation
+  - pattern: "sudo "
+    description: "Superuser commands"
+  - pattern: "su "
+    description: "Switch user"
+  - pattern: "doas "
+    description: "OpenBSD sudo alternative"
+
+  # Credential access
+  - pattern: "cat /etc/shadow"
+    description: "Password file"
+
+# Allowed command patterns
+# Commands matching these patterns are allowed without prompting
+allowed_commands:
+  # ============================================
+  # File listing and navigation
+  # ============================================
+  - pattern: "ls"
+    description: "List directory contents"
+  - pattern: "ll"
+    description: "List directory contents (long format alias)"
+  - pattern: "la"
+    description: "List all files including hidden"
+  - pattern: "pwd"
+    description: "Print working directory"
+  - pattern: "tree"
+    description: "Display directory tree"
+  - pattern: "find "
+    description: "Find files"
+  - pattern: "locate "
+    description: "Locate files"
+  - pattern: "which "
+    description: "Locate a command"
+  - pattern: "whereis "
+    description: "Locate binary, source, and manual"
+  - pattern: "file "
+    description: "Determine file type"
+
+  # ============================================
+  # File content viewing (read-only)
+  # ============================================
+  - pattern: "cat "
+    description: "Display file contents"
+  - pattern: "head "
+    description: "Display first lines of file"
+  - pattern: "tail "
+    description: "Display last lines of file"
+  - pattern: "less "
+    description: "View file with pagination"
+  - pattern: "more "
+    description: "View file with pagination"
+  - pattern: "bat "
+    description: "Cat with syntax highlighting"
+  - pattern: "wc "
+    description: "Word, line, character count"
+
+  # ============================================
+  # Search and grep
+  # ============================================
+  - pattern: "grep "
+    description: "Search text patterns"
+  - pattern: "rg "
+    description: "Ripgrep - fast search"
+  - pattern: "ag "
+    description: "Silver searcher"
+  - pattern: "ack "
+    description: "Ack search tool"
+  - pattern: "fzf"
+    description: "Fuzzy finder"
+
+  # ============================================
+  # Git read operations
+  # ============================================
+  - pattern: "git status"
+    description: "Git status"
+  - pattern: "git log"
+    description: "Git log"
+  - pattern: "git diff"
+    description: "Git diff"
+  - pattern: "git show"
+    description: "Git show"
+  - pattern: "git branch"
+    description: "Git branches"
+  - pattern: "git remote"
+    description: "Git remotes"
+  - pattern: "git tag"
+    description: "Git tags"
+  - pattern: "git stash list"
+    description: "Git stash list"
+  - pattern: "git rev-parse"
+    description: "Git rev-parse"
+  - pattern: "git config --get"
+    description: "Git config read"
+  - pattern: "git config --list"
+    description: "Git config list"
+  - pattern: "git blame"
+    description: "Git blame"
+  - pattern: "git shortlog"
+    description: "Git shortlog"
+  - pattern: "git describe"
+    description: "Git describe"
+
+  # ============================================
+  # System information (read-only)
+  # ============================================
+  - pattern: "uname"
+    description: "System info"
+  - pattern: "hostname"
+    description: "System hostname"
+  - pattern: "whoami"
+    description: "Current user"
+  - pattern: "id"
+    description: "User/group IDs"
+  - pattern: "date"
+    description: "Current date/time"
+  - pattern: "uptime"
+    description: "System uptime"
+  - pattern: "df"
+    description: "Disk space usage"
+  - pattern: "du "
+    description: "Directory space usage"
+  - pattern: "free"
+    description: "Memory usage"
+  - pattern: "ps"
+    description: "Process status"
+  - pattern: "top -l 1"
+    description: "Process info (macOS, single iteration)"
+  - pattern: "env"
+    description: "Environment variables"
+  - pattern: "printenv"
+    description: "Print environment"
+  - pattern: "echo $"
+    description: "Echo env variable"
+
+  # ============================================
+  # Network info (read-only)
+  # ============================================
+  - pattern: "ping -c"
+    description: "Ping with count"
+  - pattern: "curl -I"
+    description: "HTTP headers only"
+  - pattern: "curl --head"
+    description: "HTTP headers only"
+  - pattern: "dig "
+    description: "DNS lookup"
+  - pattern: "nslookup "
+    description: "DNS lookup"
+  - pattern: "host "
+    description: "DNS lookup"
+  - pattern: "ifconfig"
+    description: "Network interfaces"
+  - pattern: "ip addr"
+    description: "IP addresses"
+  - pattern: "netstat"
+    description: "Network stats"
+
+  # ============================================
+  # Package managers (info/list only)
+  # ============================================
+  - pattern: "npm list"
+    description: "NPM list packages"
+  - pattern: "npm ls"
+    description: "NPM list packages"
+  - pattern: "npm view"
+    description: "NPM view package"
+  - pattern: "npm show"
+    description: "NPM show package"
+  - pattern: "npm outdated"
+    description: "NPM outdated packages"
+  - pattern: "pip list"
+    description: "Pip list packages"
+  - pattern: "pip show"
+    description: "Pip show package"
+  - pattern: "pip freeze"
+    description: "Pip freeze"
+  - pattern: "brew list"
+    description: "Homebrew list"
+  - pattern: "brew info"
+    description: "Homebrew info"
+  - pattern: "apt list"
+    description: "APT list packages"
+  - pattern: "dpkg -l"
+    description: "DPKG list packages"
+
+  # ============================================
+  # Development tools (version/info)
+  # ============================================
+  - pattern: "python --version"
+    description: "Python version"
+  - pattern: "python3 --version"
+    description: "Python3 version"
+  - pattern: "node --version"
+    description: "Node version"
+  - pattern: "npm --version"
+    description: "NPM version"
+  - pattern: "cargo --version"
+    description: "Cargo version"
+  - pattern: "rustc --version"
+    description: "Rust version"
+  - pattern: "go version"
+    description: "Go version"
+  - pattern: "java --version"
+    description: "Java version"
+  - pattern: "ruby --version"
+    description: "Ruby version"
+  - pattern: "docker --version"
+    description: "Docker version"
+  - pattern: "docker ps"
+    description: "Docker containers"
+  - pattern: "docker images"
+    description: "Docker images"
+  - pattern: "docker logs"
+    description: "Docker logs"
+
+  # ============================================
+  # JSON/YAML processing
+  # ============================================
+  - pattern: "jq "
+    description: "JSON processor"
+  - pattern: "yq "
+    description: "YAML processor"
+
+  # ============================================
+  # Misc read operations
+  # ============================================
+  - pattern: "man "
+    description: "Manual pages"
+  - pattern: "stat "
+    description: "File statistics"
+  - pattern: "md5sum "
+    description: "MD5 checksum"
+  - pattern: "sha256sum "
+    description: "SHA256 checksum"
+  - pattern: "shasum "
+    description: "SHA checksum"
+
+# ============================================
+# Adding custom commands
+# ============================================
+# To allow additional commands, add them to allowed_commands:
+#
+# For simple prefix matching:
+#   - pattern: "my-custom-tool "
+#     description: "My custom tool"
+#
+# For regex matching:
+#   - pattern: "^kubectl get"
+#     description: "Kubectl get operations"
+#     is_regex: true
+#
+# For exact command matching:
+#   - pattern: "make test"
+#     description: "Run tests"
