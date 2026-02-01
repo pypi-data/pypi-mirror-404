@@ -1,0 +1,216 @@
+[project]
+name = "unifex"
+version = "0.1.0"
+description = ""
+authors = [{ name = "SL team", email = "alex.ptakhin@prestatech.com" }]
+license = { text = "BSD-3-Clause" }
+readme = "README.md"
+requires-python = ">=3.11,<4"
+
+dependencies = [
+    "pydantic>=1.0",
+    "Pillow>=9.0",
+    "numpy>=1.21",
+]
+
+[project.optional-dependencies]
+pdf = ["pypdfium2>=4.0"]
+tables = ["tabula-py>=2.0"]
+easyocr = ["easyocr>=1.4"]
+tesseract = ["pytesseract>=0.3.8"]
+paddle = ["paddleocr>=2.9", "paddlepaddle>=2.6"]
+azure = ["azure-ai-documentintelligence>=1.0"]
+google = ["google-cloud-documentai>=3.0"]
+llm-openai = ["instructor>=1.0", "openai>=1.0"]
+llm-anthropic = ["instructor>=1.0", "anthropic>=0.20"]
+llm-google = ["instructor>=1.0", "google-genai>=1.0", "jsonref>=1.1.0"]
+llm-all = ["instructor>=1.0", "openai>=1.0", "anthropic>=0.20", "google-genai>=1.0", "jsonref>=1.1.0"]
+all = [
+    "pypdfium2>=4.0",
+    "tabula-py>=2.0",
+    "easyocr>=1.4",
+    "pytesseract>=0.3.8",
+    "paddleocr>=2.9",
+    "paddlepaddle>=2.6",
+    "azure-ai-documentintelligence>=1.0",
+    "google-cloud-documentai>=3.0",
+    "instructor>=1.0",
+    "openai>=1.0",
+    "anthropic>=0.20",
+    "google-genai>=1.0",
+    "jsonref>=1.1.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "pytest-cov>=7.0.0",
+    "pytest-asyncio>=1.0.0",
+    "pytest-vcr>=1.0",
+    "pytest-timeout>=2.0",
+    "vcrpy>=7.0",
+    "ruff>=0.14.11",
+    "ty>=0.0.11",
+    "pre-commit>=4.0",
+    "reportlab>=4.4.7",
+    "google-api-core>=2.29.0",
+    "grpcio>=1.76.0",
+    "import-linter>=2.0",
+    # Documentation
+    "mkdocs>=1.6",
+    "mkdocs-material>=9.5",
+    "mkdocstrings[python]>=0.27",
+    "sybil>=8.0",
+]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint.pycodestyle]
+max-line-length = 100
+
+[tool.ruff.lint]
+select = [
+   # pycodestyle
+   "E4",
+   "E5",
+   "E7",
+   "E9",
+   # Pyflakes
+   "F",
+   # flake8-logging
+   "LOG",
+   # Pylint
+   "PL",
+   # flake8-bandit (security)
+   "S",
+   # flake8-quotes
+   "Q",
+   # pep8-naming
+   "N",
+   # mccabe complexity
+   "C90",
+   # eradicate (commented-out code)
+   "ERA",
+   # flake8-bugbear (common bugs)
+   "B",
+   # flake8-builtins (shadowing built-ins)
+   "A",
+   # flake8-debugger (no debugger statements)
+   "T10",
+   # Ruff-specific rules
+   "RUF",
+   # flake8-pie (misc lints)
+   "PIE",
+   # flake8-raise (raise statement checks)
+   "RSE",
+   # pyupgrade (modernize syntax)
+   "UP",
+   # isort (import sorting)
+   "I",
+   # flake8-type-checking (proper import organization)
+   "TC",
+]
+ignore = [
+   # TC003 is too aggressive - Path and Sequence are often used at runtime
+   "TC003",
+   # PLC0415: Import not at top-level - valid pattern for lazy loading optional deps
+   "PLC0415",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"**/test_*.py" = [
+   "S101", # Use of `assert` detected
+   "S108", # Probable insecure usage of temporary file or directory
+   "PLR2004", # Magic value used in comparison
+   "B011", # Do not assert False (tests use this intentionally)
+   "B905", # zip without strict (test code)
+   "RUF059", # Unused unpacked variable (test fixtures)
+]
+"**/cli.py" = [
+   "C901",    # Function complexity (CLI main function)
+   "PLR0912", # Too many branches (CLI main function)
+   "S101",    # Use of `assert` for type narrowing after validation
+   "E402",    # Module level import not at top (warnings filter must come first)
+]
+"**/azure_di.py" = [
+   "PLR2004", # Magic value for polygon length
+]
+"**/google_docai.py" = [
+   "PLR2004", # Magic value for polygon length
+   "ERA001",  # Format documentation in docstrings
+]
+"**/__init__.py" = [
+   "RUF022", # __all__ organized by category, not alphabetically
+]
+"**/text_factory.py" = [
+   "TC001",   # BaseExtractor used at runtime (returned from factory)
+]
+
+[tool.ruff.lint.mccabe]
+# Flag errors (`C901`) whenever the complexity level exceeds max-complexity.
+max-complexity = 10
+
+[tool.ty.environment]
+python-version = "3.11"
+
+[tool.pytest.ini_options]
+# NOTE: Do not add pytest markers to skip tests without explicit user request.
+# All tests should run by default to ensure full coverage.
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.coverage.run]
+omit = [
+    "unifex/cli.py",
+    # VCR tests pending - need working API keys to record cassettes
+    "unifex/llm/extractors/openai.py",
+    "unifex/llm/extractors/anthropic.py",
+    "unifex/llm/extractors/google.py",
+]
+
+# Architecture rules - enforced by `lint-imports`
+[tool.importlinter]
+root_package = "unifex"
+
+[[tool.importlinter.contracts]]
+name = "OCR and LLM modules are independent"
+type = "independence"
+modules = ["unifex.ocr", "unifex.llm"]
+
+[[tool.importlinter.contracts]]
+name = "Core layered architecture"
+type = "layers"
+layers = [
+    "unifex.cli",
+    "unifex.text_factory",
+    "unifex.pdf",
+    "unifex.base",
+]
+
+[[tool.importlinter.contracts]]
+name = "Base module has no upward dependencies"
+type = "forbidden"
+source_modules = ["unifex.base"]
+forbidden_modules = [
+    "unifex.pdf",
+    "unifex.text_factory",
+    "unifex.ocr",
+    "unifex.llm",
+    "unifex.cli",
+]
+
+[[tool.importlinter.contracts]]
+name = "OCR extractors are independent of each other"
+type = "independence"
+modules = [
+    "unifex.ocr.extractors.easy_ocr",
+    "unifex.ocr.extractors.tesseract_ocr",
+    "unifex.ocr.extractors.paddle_ocr",
+    "unifex.ocr.extractors.azure_di",
+    "unifex.ocr.extractors.google_docai",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
