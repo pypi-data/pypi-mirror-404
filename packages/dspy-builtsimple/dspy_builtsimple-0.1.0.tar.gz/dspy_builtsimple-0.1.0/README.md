@@ -1,0 +1,278 @@
+# dspy-builtsimple
+
+[![PyPI version](https://badge.fury.io/py/dspy-builtsimple.svg)](https://badge.fury.io/py/dspy-builtsimple)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+
+DSPy retriever modules for [Built-Simple](https://built-simple.ai) research APIs. Search millions of scientific papers from PubMed, ArXiv, and Wikipedia using GPU-accelerated semantic search.
+
+## Features
+
+- 🔬 **PubMed**: 4.5M+ biomedical articles with hybrid semantic + keyword search
+- 📚 **ArXiv**: 2.7M+ preprints in physics, math, CS, and ML  
+- 📖 **Wikipedia**: 4.8M+ articles with GPU-accelerated embeddings
+- ⚡ **Fast**: Sub-second search powered by FAISS on GPU
+- 🔌 **Native DSPy**: Drop-in retriever modules for RAG pipelines
+
+## Installation
+
+```bash
+pip install dspy-builtsimple
+```
+
+## Quick Start
+
+### Basic Usage
+
+```python
+import dspy
+from dspy_builtsimple import PubMedRM, ArxivRM, WikipediaRM
+
+# Configure your LM
+lm = dspy.LM("openai/gpt-4o-mini")
+dspy.settings.configure(lm=lm)
+
+# Use PubMed retriever
+rm = PubMedRM(k=5)
+results = rm("CRISPR gene editing mechanisms")
+
+for passage in results.passages:
+    print(f"[{passage.metadata['pmid']}] {passage.metadata['title']}")
+    print(passage.long_text[:200])
+    print()
+```
+
+### Configure as Default RM
+
+```python
+import dspy
+from dspy_builtsimple import ArxivRM
+
+# Set as the default retriever
+rm = ArxivRM(k=5)
+dspy.settings.configure(rm=rm)
+
+# Now dspy.Retrieve will use ArXiv
+retrieve = dspy.Retrieve(k=3)
+results = retrieve("transformer attention mechanism")
+
+for passage in results.passages:
+    print(passage.long_text)
+```
+
+### Multi-Source Search
+
+```python
+from dspy_builtsimple import ResearchRM
+
+# Search across all sources
+rm = ResearchRM(k=9, sources=["pubmed", "arxiv", "wikipedia"])
+results = rm("machine learning in drug discovery")
+
+# Results are interleaved from each source
+for passage in results.passages:
+    source = passage.metadata["source"]
+    title = passage.metadata["title"]
+    print(f"[{source}] {title}")
+```
+
+## Building a RAG Pipeline
+
+Here's a complete example of a research Q&A system:
+
+```python
+import dspy
+from dspy_builtsimple import PubMedRM
+
+# Configure DSPy
+lm = dspy.LM("openai/gpt-4o-mini")
+rm = PubMedRM(k=5)
+dspy.settings.configure(lm=lm, rm=rm)
+
+# Define the RAG signature
+class ResearchQA(dspy.Signature):
+    """Answer research questions using scientific literature."""
+    context = dspy.InputField(desc="Retrieved scientific passages")
+    question = dspy.InputField(desc="Research question to answer")
+    answer = dspy.OutputField(desc="Evidence-based answer with citations")
+
+# Build the RAG module
+class ResearchRAG(dspy.Module):
+    def __init__(self, num_passages=5):
+        super().__init__()
+        self.retrieve = dspy.Retrieve(k=num_passages)
+        self.generate = dspy.ChainOfThought(ResearchQA)
+    
+    def forward(self, question):
+        context = self.retrieve(question).passages
+        response = self.generate(context=context, question=question)
+        return dspy.Prediction(
+            context=context,
+            answer=response.answer
+        )
+
+# Use it
+rag = ResearchRAG(num_passages=5)
+result = rag("What are the latest advances in mRNA vaccine technology?")
+print(result.answer)
+```
+
+## Retriever Reference
+
+### PubMedRM
+
+Search PubMed biomedical literature.
+
+```python
+from dspy_builtsimple import PubMedRM
+
+rm = PubMedRM(
+    k=5,                          # Number of passages to retrieve
+    base_url="https://pubmed.built-simple.ai",
+    timeout=30.0,                 # Request timeout in seconds
+    include_full_text=False,      # Fetch full articles (slower)
+)
+```
+
+**Metadata fields:**
+- `pmid`: PubMed ID
+- `title`: Article title
+- `journal`: Journal name
+- `pub_year`: Publication year
+- `doi`: Digital Object Identifier
+- `url`: Link to PubMed
+- `similarity_score`: Semantic similarity score
+
+### ArxivRM
+
+Search ArXiv preprints.
+
+```python
+from dspy_builtsimple import ArxivRM
+
+rm = ArxivRM(
+    k=5,
+    base_url="https://arxiv.built-simple.ai",
+    timeout=30.0,
+)
+```
+
+**Metadata fields:**
+- `arxiv_id`: ArXiv paper ID (e.g., "2301.12345")
+- `title`: Paper title
+- `authors`: Author names
+- `year`: Publication year
+- `url`: Link to abstract
+- `pdf_url`: Direct PDF link
+- `similarity_score`: Semantic similarity score
+
+### WikipediaRM
+
+Search Wikipedia articles.
+
+```python
+from dspy_builtsimple import WikipediaRM
+
+rm = WikipediaRM(
+    k=5,
+    base_url="https://wikipedia.built-simple.ai",
+    timeout=30.0,
+)
+```
+
+**Metadata fields:**
+- `id`: Internal article ID
+- `title`: Article title
+- `category`: Article category
+- `url`: Wikipedia link
+- `similarity_score`: Semantic similarity score
+
+### ResearchRM
+
+Search multiple sources simultaneously.
+
+```python
+from dspy_builtsimple import ResearchRM
+
+rm = ResearchRM(
+    k=9,                                      # Total passages to retrieve
+    sources=["pubmed", "arxiv", "wikipedia"], # Sources to search
+    timeout=30.0,
+)
+```
+
+## Advanced Usage
+
+### Full-Text Retrieval (PubMed)
+
+For deeper context, fetch full article text instead of abstracts:
+
+```python
+from dspy_builtsimple import PubMedRM
+
+rm = PubMedRM(k=3, include_full_text=True)
+results = rm("COVID-19 vaccine efficacy trials")
+
+# Full article text is now in the passages
+for passage in results.passages:
+    print(f"Content length: {len(passage.long_text)} chars")
+    print(f"Has full text: {passage.metadata.get('has_full_text', False)}")
+```
+
+### Batch Queries
+
+All retrievers support batch queries:
+
+```python
+from dspy_builtsimple import ArxivRM
+
+rm = ArxivRM(k=3)
+queries = [
+    "large language models",
+    "diffusion models",
+    "reinforcement learning",
+]
+results = rm(queries)  # Returns combined results
+```
+
+### Custom Timeouts
+
+For large result sets or slow connections:
+
+```python
+from dspy_builtsimple import PubMedRM
+
+rm = PubMedRM(k=50, timeout=60.0)  # 60 second timeout
+```
+
+## API Information
+
+These retrievers use the Built-Simple research APIs:
+
+| API | Endpoint | Documents | Features |
+|-----|----------|-----------|----------|
+| PubMed | pubmed.built-simple.ai | 4.5M+ | Hybrid search, full text |
+| ArXiv | arxiv.built-simple.ai | 2.7M+ | GPU semantic search |
+| Wikipedia | wikipedia.built-simple.ai | 4.8M+ | Hybrid + Elasticsearch |
+
+All APIs are free to use with reasonable rate limits.
+
+## Requirements
+
+- Python 3.9+
+- dspy >= 2.4.0
+- httpx >= 0.25.0
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## License
+
+MIT License - see [LICENSE](LICENSE) for details.
+
+## Links
+
+- [DSPy Documentation](https://dspy.ai/)
+- [Built-Simple](https://built-simple.ai)
+- [Issue Tracker](https://github.com/built-simple/dspy-builtsimple/issues)
