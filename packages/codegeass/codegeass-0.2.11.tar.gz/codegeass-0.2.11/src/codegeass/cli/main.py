@@ -1,0 +1,578 @@
+"""Main CLI entry point for CodeGeass."""
+
+import hashlib
+from pathlib import Path
+
+import click
+from rich.console import Console
+
+from codegeass import __version__
+
+# Global console for rich output
+console = Console()
+
+# Global data directory - all execution data stored here
+GLOBAL_DATA_DIR = Path.home() / ".codegeass" / "data"
+
+
+def _detect_project_dir() -> Path:
+    """Detect project directory from current working directory or package location."""
+    cwd = Path.cwd()
+
+    # Check if current directory has CodeGeass structure
+    if (cwd / "config" / "schedules.yaml").exists():
+        return cwd
+    if (cwd / ".claude" / "skills").exists() and (cwd / "config").exists():
+        return cwd
+
+    # Fall back to package location (development mode)
+    pkg_dir = Path(__file__).parent.parent.parent.parent
+    if (pkg_dir / "config" / "schedules.yaml").exists():
+        return pkg_dir
+
+    # Default to current working directory
+    return cwd
+
+
+def _get_data_dir_for_path(project_path: Path, project_id: str | None = None) -> Path:
+    """Get the global data directory for a project.
+
+    Data is stored in ~/.codegeass/data/{project-id}/ to avoid polluting
+    project directories.
+
+    Args:
+        project_path: Path to the project
+        project_id: Optional project ID from registry (uses hash if not provided)
+
+    Returns:
+        Path to the project's data directory
+    """
+    if project_id:
+        return GLOBAL_DATA_DIR / project_id
+    # Use hash for unregistered projects
+    path_hash = hashlib.md5(str(project_path.resolve()).encode()).hexdigest()[:8]
+    return GLOBAL_DATA_DIR / path_hash
+
+
+DEFAULT_PROJECT_DIR = _detect_project_dir()
+DEFAULT_CONFIG_DIR = DEFAULT_PROJECT_DIR / "config"
+DEFAULT_DATA_DIR = _get_data_dir_for_path(DEFAULT_PROJECT_DIR)
+DEFAULT_SKILLS_DIR = DEFAULT_PROJECT_DIR / ".claude" / "skills"
+
+
+class Context:
+    """CLI context object holding shared state."""
+
+    def __init__(self) -> None:
+        self.project_dir = DEFAULT_PROJECT_DIR
+        self.config_dir = DEFAULT_CONFIG_DIR
+        self.data_dir = DEFAULT_DATA_DIR
+        self.skills_dir = DEFAULT_SKILLS_DIR
+        self.verbose = False
+
+        # Current project (for multi-project support)
+        self._current_project = None
+        self._project_repo = None
+
+        # Lazy-loaded components
+        self._task_repo = None
+        self._log_repo = None
+        self._skill_registry = None
+        self._session_manager = None
+        self._scheduler = None
+        self._channel_repo = None
+        self._approval_repo = None
+        self._notification_service = None
+
+    @property
+    def project_repo(self):
+        """Get or create ProjectRepository singleton."""
+        if self._project_repo is None:
+            from codegeass.storage.project_repository import ProjectRepository
+
+            self._project_repo = ProjectRepository()
+        return self._project_repo
+
+    @property
+    def current_project(self):
+        """Get the current project (if in multi-project mode)."""
+        return self._current_project
+
+    def set_project(self, project) -> None:
+        """Set the current project and update paths.
+
+        Args:
+            project: A Project entity or None for single-project mode
+        """
+        self._current_project = project
+        if project:
+            self.project_dir = project.path
+            self.config_dir = project.config_dir
+            # Data is stored globally at ~/.codegeass/data/{project-id}/
+            self.data_dir = project.data_dir
+            self.skills_dir = project.skills_dir
+
+            # Reset lazy-loaded components so they use new paths
+            self._task_repo = None
+            self._log_repo = None
+            self._skill_registry = None
+            self._session_manager = None
+            self._scheduler = None
+            self._approval_repo = None
+
+    def detect_project_from_cwd(self) -> bool:
+        """Try to detect and set current project from cwd.
+
+        Returns True if a project was found and set.
+        """
+        cwd = Path.cwd()
+
+        # Check if cwd is within a registered project
+        project = self.project_repo.find_by_path(cwd)
+        if project:
+            self.set_project(project)
+            return True
+
+        # Check if cwd is a subdirectory of a registered project
+        for project in self.project_repo.find_all():
+            try:
+                cwd.relative_to(project.path)
+                self.set_project(project)
+                return True
+            except ValueError:
+                continue
+
+        return False
+
+    @property
+    def schedules_file(self) -> Path:
+        return self.config_dir / "schedules.yaml"
+
+    @property
+    def settings_file(self) -> Path:
+        return self.config_dir / "settings.yaml"
+
+    @property
+    def logs_dir(self) -> Path:
+        return self.data_dir / "logs"
+
+    @property
+    def sessions_dir(self) -> Path:
+        return self.data_dir / "sessions"
+
+    @property
+    def task_repo(self):
+        if self._task_repo is None:
+            from codegeass.storage.task_repository import TaskRepository
+
+            self._task_repo = TaskRepository(self.schedules_file)
+        return self._task_repo
+
+    @property
+    def log_repo(self):
+        if self._log_repo is None:
+            from codegeass.storage.log_repository import LogRepository
+
+            self._log_repo = LogRepository(self.logs_dir)
+        return self._log_repo
+
+    @property
+    def skill_registry(self):
+        if self._skill_registry is None:
+            # Use ChainedSkillRegistry with multi-platform support
+            from codegeass.factory.skill_resolver import ChainedSkillRegistry, Platform
+
+            # Get enabled platforms from project repository
+            enabled_platform_names = self.project_repo.get_enabled_platforms()
+            platforms = []
+            for name in enabled_platform_names:
+                try:
+                    platforms.append(Platform(name.lower()))
+                except ValueError:
+                    # Skip invalid platform names
+                    pass
+
+            # Default to Claude if no valid platforms
+            if not platforms:
+                platforms = [Platform.CLAUDE]
+
+            if self._current_project:
+                # Multi-platform mode with project
+                self._skill_registry = ChainedSkillRegistry(
+                    project_dir=self._current_project.path,
+                    platforms=platforms,
+                    include_global=self._current_project.use_shared_skills,
+                )
+            else:
+                # Multi-platform mode without specific project (use cwd)
+                self._skill_registry = ChainedSkillRegistry(
+                    project_dir=self.project_dir,
+                    platforms=platforms,
+                    include_global=True,
+                )
+        return self._skill_registry
+
+    @property
+    def session_manager(self):
+        if self._session_manager is None:
+            from codegeass.execution.session import SessionManager
+
+            self._session_manager = SessionManager(self.sessions_dir)
+        return self._session_manager
+
+    @property
+    def channel_repo(self):
+        if self._channel_repo is None:
+            from codegeass.storage.channel_repository import ChannelRepository
+
+            notifications_file = self.config_dir / "notifications.yaml"
+            if notifications_file.exists():
+                self._channel_repo = ChannelRepository(notifications_file)
+        return self._channel_repo
+
+    @property
+    def approval_repo(self):
+        if self._approval_repo is None:
+            from codegeass.storage.approval_repository import PendingApprovalRepository
+
+            approvals_file = self.data_dir / "approvals.yaml"
+            self._approval_repo = PendingApprovalRepository(approvals_file)
+        return self._approval_repo
+
+    @property
+    def notification_service(self):
+        if self._notification_service is None and self.channel_repo is not None:
+            from codegeass.notifications.service import NotificationService
+
+            self._notification_service = NotificationService(self.channel_repo)
+        return self._notification_service
+
+    @property
+    def scheduler(self):
+        if self._scheduler is None:
+            from codegeass.scheduling.scheduler import Scheduler
+
+            self._scheduler = Scheduler(
+                task_repository=self.task_repo,
+                skill_registry=self.skill_registry,
+                session_manager=self.session_manager,
+                log_repository=self.log_repo,
+            )
+
+            # Register notification handler if notifications are configured
+            self._setup_notification_handler(self._scheduler)
+
+        return self._scheduler
+
+    def _setup_notification_handler(self, scheduler) -> None:
+        """Setup notification handler for the scheduler."""
+        try:
+            from codegeass.notifications.handler import NotificationHandler
+
+            # Use singleton notification_service to preserve message_ids state
+            if self.notification_service is not None:
+                handler = NotificationHandler(
+                    service=self.notification_service,
+                    approval_repo=self.approval_repo,
+                    channel_repo=self.channel_repo,
+                )
+                handler.register_with_scheduler(scheduler)
+        except Exception as e:
+            # Don't fail if notifications can't be set up
+            if self.verbose:
+                console.print(f"[yellow]Warning: Could not setup notifications: {e}[/yellow]")
+
+
+pass_context = click.make_pass_decorator(Context, ensure=True)
+
+
+@click.group()
+@click.version_option(version=__version__, prog_name="codegeass")
+@click.option("-v", "--verbose", is_flag=True, help="Enable verbose output")
+@click.option(
+    "--project-dir",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    help="Project directory (default: detected from CLI location)",
+)
+@click.option(
+    "--project",
+    "-p",
+    "project_name",
+    help="Project name or ID (for multi-project mode)",
+)
+@click.pass_context
+def cli(
+    ctx: click.Context, verbose: bool, project_dir: Path | None, project_name: str | None
+) -> None:
+    """CodeGeass - Task orchestration for AI coding agents.
+
+    Schedule tasks, manage projects, use reusable skills, and monitor execution.
+    """
+    context = Context()
+    context.verbose = verbose
+
+    # Handle project selection (multi-project mode)
+    if project_name:
+        # Explicit project selection via --project flag
+        project = context.project_repo.find_by_id_or_name(project_name)
+        if project:
+            context.set_project(project)
+            if verbose:
+                console.print(f"[cyan]Using project: {project.name}[/cyan]")
+        else:
+            console.print(f"[red]Project not found: {project_name}[/red]")
+            console.print("Use 'codegeass project list' to see registered projects")
+            raise SystemExit(1)
+    elif project_dir:
+        # Explicit project directory via --project-dir flag
+        context.project_dir = project_dir
+        context.config_dir = project_dir / "config"
+        # Data is stored globally - use hash for unregistered projects
+        context.data_dir = _get_data_dir_for_path(project_dir)
+        context.skills_dir = project_dir / ".claude" / "skills"
+    else:
+        # Try to auto-detect project from cwd
+        if context.project_repo.exists() and not context.project_repo.is_empty():
+            if not context.detect_project_from_cwd():
+                # Fall back to default project if set
+                default = context.project_repo.get_default_project()
+                if default:
+                    context.set_project(default)
+                    if verbose:
+                        console.print(f"[cyan]Using default project: {default.name}[/cyan]")
+
+    ctx.obj = context
+
+
+# Import and register command groups
+from codegeass.cli.commands import (  # noqa: E402
+    approval,
+    cron,
+    dashboard,
+    data,
+    execution,
+    logs,
+    notification,
+    project,
+    provider,
+    scheduler,
+    setup,
+    skill,
+    task,
+)
+
+cli.add_command(task.task)
+cli.add_command(skill.skill)
+cli.add_command(scheduler.scheduler)
+cli.add_command(logs.logs)
+cli.add_command(notification.notification)
+cli.add_command(approval.approval)
+cli.add_command(cron.cron)
+cli.add_command(data.data)
+cli.add_command(execution.execution)
+cli.add_command(project.project)
+cli.add_command(provider.provider)
+cli.add_command(dashboard.dashboard)
+cli.add_command(setup.setup)
+cli.add_command(setup.uninstall_scheduler)
+cli.add_command(setup.uninstall)
+
+
+def _get_git_remote(path: Path) -> str | None:
+    """Try to get git remote URL from project."""
+    git_config = path / ".git" / "config"
+    if not git_config.exists():
+        return None
+
+    try:
+        import configparser
+
+        config = configparser.ConfigParser()
+        config.read(git_config)
+        if 'remote "origin"' in config:
+            return config['remote "origin"'].get("url")
+    except Exception:
+        pass
+
+    return None
+
+
+@cli.command()
+@click.argument("path", type=click.Path(path_type=Path), default=".")
+@click.option("--name", "-n", help="Project name (defaults to directory name)")
+@click.option("--description", "-d", default="", help="Project description")
+@click.option("--model", "-m", default="sonnet", help="Default model (haiku, sonnet, opus)")
+@click.option("--timeout", "-t", default=300, type=int, help="Default timeout in seconds")
+@click.option("--autonomous", is_flag=True, help="Enable autonomous mode by default")
+@click.option("--no-shared-skills", is_flag=True, help="Disable shared skills for this project")
+@click.option("--set-default", is_flag=True, help="Set as default project")
+@click.option("--force", "-f", is_flag=True, help="Reinitialize existing project")
+@pass_context
+def init(
+    ctx: Context,
+    path: Path,
+    name: str | None,
+    description: str,
+    model: str,
+    timeout: int,
+    autonomous: bool,
+    no_shared_skills: bool,
+    set_default: bool,
+    force: bool,
+) -> None:
+    """Initialize and register a CodeGeass project.
+
+    Creates directory structure (config/, .claude/skills/) and config files,
+    then automatically registers the project in the dashboard.
+
+    Examples:
+
+        codegeass init                    # Initialize current directory
+
+        codegeass init /path/to/project   # Initialize specific path
+
+        codegeass init --name my-project  # Custom project name
+
+        codegeass init --autonomous       # Enable autonomous mode
+    """
+    from rich.panel import Panel
+
+    from codegeass.core.entities import Project
+
+    path = path.resolve()
+    repo = ctx.project_repo
+
+    # Check if already registered
+    existing = repo.find_by_path(path)
+    if existing and not force:
+        console.print(f"[yellow]Project already registered: {existing.name}[/yellow]")
+        console.print(f"ID: {existing.id}")
+        console.print(f"Path: {existing.path}")
+        console.print("\nUse --force to reinitialize")
+        return
+
+    # Create project directory if it doesn't exist
+    if not path.exists():
+        path.mkdir(parents=True, exist_ok=True)
+
+    # Create project-local directories (config, skills)
+    config_dir = path / "config"
+    skills_dir = path / ".claude" / "skills"
+
+    project_dirs = [config_dir, skills_dir]
+
+    for dir_path in project_dirs:
+        dir_path.mkdir(parents=True, exist_ok=True)
+        if ctx.verbose:
+            console.print(f"Created: {dir_path}")
+
+    # Create default config files if they don't exist (or force is set)
+    settings_file = config_dir / "settings.yaml"
+    if not settings_file.exists() or force:
+        default_settings = f"""# CodeGeass Settings
+claude:
+  default_model: {model}
+  default_timeout: {timeout}
+  unset_api_key: true
+
+paths:
+  skills: .claude/skills/
+
+scheduler:
+  check_interval: 60
+  max_concurrent: 1
+"""
+        settings_file.write_text(default_settings)
+        console.print(f"Created: {settings_file}")
+
+    schedules_file = config_dir / "schedules.yaml"
+    if not schedules_file.exists() or force:
+        default_schedules = """# CodeGeass Scheduled Tasks
+# Add your tasks here
+
+tasks: []
+"""
+        schedules_file.write_text(default_schedules)
+        console.print(f"Created: {schedules_file}")
+
+    # Register project in ~/.codegeass/projects.yaml
+    project_name = name or path.name
+
+    # Check for name conflict (only if not already registered at this path)
+    if not existing:
+        existing_name = repo.find_by_name(project_name)
+        if existing_name:
+            console.print(f"[red]Error: Project with name '{project_name}' already exists[/red]")
+            console.print("Use --name to specify a different name")
+            raise SystemExit(1)
+
+    git_remote = _get_git_remote(path)
+
+    if existing:
+        # Update existing project settings (but keep the existing name)
+        project_name = existing.name  # Use existing name, not directory name
+        existing.description = description or existing.description
+        existing.default_model = model
+        existing.default_timeout = timeout
+        existing.default_autonomous = autonomous
+        existing.use_shared_skills = not no_shared_skills
+        if git_remote:
+            existing.git_remote = git_remote
+        repo.save(existing)
+        project_id = existing.id
+        console.print(f"[cyan]Updated existing project: {project_name}[/cyan]")
+    else:
+        # Create and register new project
+        new_project = Project.create(
+            name=project_name,
+            path=path,
+            description=description,
+            default_model=model,
+            default_timeout=timeout,
+            default_autonomous=autonomous,
+            git_remote=git_remote,
+            use_shared_skills=not no_shared_skills,
+        )
+        repo.save(new_project)
+        project_id = new_project.id
+        console.print(f"[green]Registered project: {project_name}[/green]")
+
+    # Set as default if requested or if it's the only project
+    all_projects = repo.find_all()
+    if set_default or len(all_projects) == 1:
+        repo.set_default_project(project_id)
+        console.print("[cyan]Set as default project[/cyan]")
+
+    # Create global data directories at ~/.codegeass/data/{project-id}/
+    data_dir = GLOBAL_DATA_DIR / project_id
+    data_dirs = [
+        data_dir / "logs",
+        data_dir / "sessions",
+    ]
+
+    for dir_path in data_dirs:
+        dir_path.mkdir(parents=True, exist_ok=True)
+        if ctx.verbose:
+            console.print(f"Created: {dir_path}")
+
+    console.print(
+        Panel.fit(
+            "[green]CodeGeass initialized successfully![/green]\n\n"
+            f"Project: {project_name}\n"
+            f"ID: {project_id}\n"
+            f"Path: {path}\n"
+            f"Config: {config_dir}\n"
+            f"Skills: {skills_dir}\n"
+            f"Data: {data_dir}\n\n"
+            "Next steps:\n"
+            "1. Create skills in .claude/skills/\n"
+            "2. Add tasks with: codegeass task create\n"
+            "3. Run scheduler: codegeass scheduler run\n"
+            "4. Open dashboard: codegeass dashboard",
+            title="Initialized",
+        )
+    )
+
+
+if __name__ == "__main__":
+    cli()
