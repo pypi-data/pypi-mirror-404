@@ -1,0 +1,622 @@
+import typer
+import os
+from rich import print
+from typing import Annotated, Optional
+from meshagent.cli.common_options import ProjectIdOption, RoomOption
+from meshagent.api import RoomClient, WebSocketClientProtocol, RoomException
+from meshagent.api.helpers import meshagent_base_url, websocket_room_url
+from meshagent.cli import async_typer
+from meshagent.api import ParticipantToken, ApiScope, RemoteParticipant
+from meshagent.cli.helper import (
+    get_client,
+    resolve_project_id,
+    resolve_room,
+    resolve_key,
+    cleanup_args,
+)
+from typing import List
+from meshagent.api import RequiredToolkit, RequiredSchema
+from pathlib import Path
+from meshagent.agents.config import RulesConfig
+import logging
+
+from meshagent.cli.host import get_service, run_services, get_deferred, service_specs
+from meshagent.api.specs.service import AgentSpec, ANNOTATION_AGENT_TYPE
+
+import yaml
+
+import shlex
+import sys
+
+from meshagent.api.client import ConflictError
+
+app = async_typer.AsyncTyper(help="Join a voicebot to a room")
+
+logger = logging.getLogger("voicebot")
+
+
+def build_voicebot(
+    *,
+    rules: list[str],
+    rules_file: Optional[str] = None,
+    toolkits: list[str],
+    schemas: list[str],
+    auto_greet_message: Optional[str] = None,
+    auto_greet_prompt: Optional[str] = None,
+    room_rules_paths: list[str],
+):
+    requirements = []
+
+    for t in toolkits:
+        requirements.append(RequiredToolkit(name=t))
+
+    for t in schemas:
+        requirements.append(RequiredSchema(name=t))
+
+    if rules_file is not None:
+        try:
+            with open(Path(rules_file).resolve(), "r") as f:
+                rules.extend(f.read().splitlines())
+        except FileNotFoundError:
+            print(f"[yellow]rules file not found at {rules_file}[/yellow]")
+
+    try:
+        from meshagent.livekit.agents.voice import VoiceBot
+    except ImportError:
+
+        class VoiceBot:
+            def __init__(self, **kwargs):
+                raise RoomException(
+                    "meshagent.livekit module not found, voicebots are not available"
+                )
+
+    class CustomVoiceBot(VoiceBot):
+        def __init__(self):
+            super().__init__(
+                auto_greet_message=auto_greet_message,
+                auto_greet_prompt=auto_greet_prompt,
+                requires=requirements,
+                rules=rules if len(rules) > 0 else None,
+            )
+
+        async def init_chat_context(self):
+            from meshagent.cli.helper import init_context_from_spec
+
+            context = await super().init_chat_context()
+            await init_context_from_spec(context)
+
+            return context
+
+        async def start(self, *, room: RoomClient):
+            await super().start(room=room)
+
+            if room_rules_paths is not None:
+                for p in room_rules_paths:
+                    await self._load_room_rules(path=p)
+
+        async def _load_room_rules(
+            self,
+            *,
+            path: str,
+            participant: Optional[RemoteParticipant] = None,
+        ):
+            rules = []
+            try:
+                room_rules = await self.room.storage.download(path=path)
+
+                rules_txt = room_rules.data.decode()
+
+                rules_config = RulesConfig.parse(rules_txt)
+
+                if rules_config.rules is not None:
+                    rules.extend(rules_config.rules)
+
+                if participant is not None:
+                    client = participant.get_attribute("client")
+
+                    if rules_config.client_rules is not None and client is not None:
+                        cr = rules_config.client_rules.get(client)
+                        if cr is not None:
+                            rules.extend(cr)
+
+            except RoomException:
+                try:
+                    logger.info("attempting to initialize rules file")
+                    handle = await self.room.storage.open(path=path, overwrite=False)
+                    await self.room.storage.write(
+                        handle=handle,
+                        data="# Add rules to this file to customize your agent's behavior, lines starting with # will be ignored.\n\n".encode(),
+                    )
+                    await self.room.storage.close(handle=handle)
+
+                except RoomException:
+                    pass
+                logger.info(
+                    f"unable to load rules from {path}, continuing with default rules"
+                )
+                pass
+
+            return rules
+
+        async def get_rules(self, *, participant: RemoteParticipant):
+            rules = [*self.rules] if self.rules is not None else []
+            if room_rules_paths is not None:
+                for p in room_rules_paths:
+                    rules.extend(
+                        await self._load_room_rules(participant=participant, path=p)
+                    )
+
+            logger.info(f"voicebot using rules {rules}")
+
+            return rules
+
+    return CustomVoiceBot
+
+
+@app.async_command("join")
+async def join(
+    *,
+    project_id: ProjectIdOption,
+    room: RoomOption,
+    agent_name: Annotated[
+        Optional[str], typer.Option(..., help="Name of the agent to call")
+    ] = None,
+    rule: Annotated[List[str], typer.Option("--rule", "-r", help="a system rule")] = [],
+    rules_file: Optional[str] = None,
+    require_toolkit: Annotated[
+        List[str],
+        typer.Option(
+            "--require-toolkit", "-rt", help="the name or url of a required toolkit"
+        ),
+    ] = [],
+    require_schema: Annotated[
+        List[str],
+        typer.Option(
+            "--require-schema", "-rs", help="the name or url of a required schema"
+        ),
+    ] = [],
+    toolkit: Annotated[
+        List[str],
+        typer.Option(
+            "--toolkit", "-t", help="the name or url of a required toolkit", hidden=True
+        ),
+    ] = [],
+    schema: Annotated[
+        List[str],
+        typer.Option(
+            "--schema", "-s", help="the name or url of a required schema", hidden=True
+        ),
+    ] = [],
+    auto_greet_message: Annotated[
+        Optional[str],
+        typer.Option(help="Message to send automatically when the bot joins"),
+    ] = None,
+    auto_greet_prompt: Annotated[
+        Optional[str],
+        typer.Option(help="Prompt to generate an auto-greet message"),
+    ] = None,
+    key: Annotated[
+        str,
+        typer.Option("--key", help="an api key to sign the token with"),
+    ] = None,
+    room_rules: Annotated[
+        List[str],
+        typer.Option(
+            "--room-rules",
+            "-rr",
+            help="a path to a rules file within the room that can be used to customize the agent's behavior",
+        ),
+    ] = [],
+):
+    key = await resolve_key(project_id=project_id, key=key)
+
+    account_client = await get_client()
+    try:
+        project_id = await resolve_project_id(project_id=project_id)
+        room = resolve_room(room)
+
+        jwt = os.getenv("MESHAGENT_TOKEN")
+        if jwt is None:
+            if agent_name is None:
+                print(
+                    "[bold red]--agent-name must be specified when the MESHAGENT_TOKEN environment variable is not set[/bold red]"
+                )
+                raise typer.Exit(1)
+
+            token = ParticipantToken(
+                name=agent_name,
+            )
+
+            token.add_api_grant(ApiScope.agent_default())
+
+            token.add_role_grant(role="agent")
+            token.add_room_grant(room)
+
+            jwt = token.to_jwt(api_key=key)
+
+        CustomVoiceBot = build_voicebot(
+            rules=rule,
+            rules_file=rules_file,
+            toolkits=require_toolkit + toolkit,
+            schemas=require_schema + schema,
+            auto_greet_message=auto_greet_message,
+            auto_greet_prompt=auto_greet_prompt,
+            room_rules_paths=room_rules,
+        )
+
+        bot = CustomVoiceBot()
+
+        print("[bold green]Connecting to room...[/bold green]", flush=True)
+        if get_deferred():
+            from meshagent.cli.host import agents
+
+            agents.append((bot, jwt))
+        else:
+            async with RoomClient(
+                protocol=WebSocketClientProtocol(
+                    url=websocket_room_url(room_name=room),
+                    token=jwt,
+                )
+            ) as client:
+                await bot.start(room=client)
+
+                try:
+                    print(
+                        f"[bold green]Open the studio to interact with your agent: {meshagent_base_url().replace('api.', 'studio.')}/projects/{project_id}/rooms/{client.room_name}[/bold green]",
+                        flush=True,
+                    )
+                    await client.protocol.wait_for_close()
+                except KeyboardInterrupt:
+                    await bot.stop()
+
+    finally:
+        await account_client.close()
+
+
+@app.async_command("service")
+async def service(
+    *,
+    agent_name: Annotated[str, typer.Option(..., help="Name of the agent to call")],
+    rule: Annotated[List[str], typer.Option("--rule", "-r", help="a system rule")] = [],
+    rules_file: Optional[str] = None,
+    require_toolkit: Annotated[
+        List[str],
+        typer.Option(
+            "--require-toolkit", "-rt", help="the name or url of a required toolkit"
+        ),
+    ] = [],
+    require_schema: Annotated[
+        List[str],
+        typer.Option(
+            "--require-schema", "-rs", help="the name or url of a required schema"
+        ),
+    ] = [],
+    toolkit: Annotated[
+        List[str],
+        typer.Option(
+            "--toolkit", "-t", help="the name or url of a required toolkit", hidden=True
+        ),
+    ] = [],
+    schema: Annotated[
+        List[str],
+        typer.Option(
+            "--schema", "-s", help="the name or url of a required schema", hidden=True
+        ),
+    ] = [],
+    auto_greet_message: Annotated[
+        Optional[str],
+        typer.Option(help="Message to send automatically when the bot joins"),
+    ] = None,
+    auto_greet_prompt: Annotated[
+        Optional[str],
+        typer.Option(help="Prompt to generate an auto-greet message"),
+    ] = None,
+    host: Annotated[
+        Optional[str], typer.Option(help="Host to bind the service on")
+    ] = None,
+    port: Annotated[
+        Optional[int], typer.Option(help="Port to bind the service on")
+    ] = None,
+    path: Annotated[
+        Optional[str], typer.Option(help="HTTP path to mount the service at")
+    ] = None,
+    room_rules: Annotated[
+        List[str],
+        typer.Option(
+            "--room-rules",
+            "-rr",
+            help="a path to a rules file within the room that can be used to customize the agent's behavior",
+        ),
+    ] = [],
+):
+    CustomVoiceBot = build_voicebot(
+        rules=rule,
+        rules_file=rules_file,
+        toolkits=require_toolkit + toolkit,
+        schemas=require_schema + schema,
+        auto_greet_message=auto_greet_message,
+        auto_greet_prompt=auto_greet_prompt,
+        room_rules_paths=room_rules,
+    )
+
+    service = get_service(host=host, port=port)
+
+    service.agents.append(
+        AgentSpec(name=agent_name, annotations={ANNOTATION_AGENT_TYPE: "VoiceBot"})
+    )
+
+    if path is None:
+        path = "/agent"
+        i = 0
+        while service.has_path(path):
+            i += 1
+            path = f"/agent{i}"
+
+    service.add_path(identity=agent_name, path=path, cls=CustomVoiceBot)
+
+    if not get_deferred():
+        await run_services()
+
+
+@app.async_command("spec")
+async def spec(
+    *,
+    service_name: Annotated[str, typer.Option("--service-name", help="service name")],
+    service_description: Annotated[
+        Optional[str], typer.Option("--service-description", help="service description")
+    ] = None,
+    service_title: Annotated[
+        Optional[str],
+        typer.Option("--service-title", help="a display name for the service"),
+    ] = None,
+    agent_name: Annotated[str, typer.Option(..., help="Name of the agent to call")],
+    rule: Annotated[List[str], typer.Option("--rule", "-r", help="a system rule")] = [],
+    rules_file: Optional[str] = None,
+    require_toolkit: Annotated[
+        List[str],
+        typer.Option(
+            "--require-toolkit", "-rt", help="the name or url of a required toolkit"
+        ),
+    ] = [],
+    require_schema: Annotated[
+        List[str],
+        typer.Option(
+            "--require-schema", "-rs", help="the name or url of a required schema"
+        ),
+    ] = [],
+    toolkit: Annotated[
+        List[str],
+        typer.Option(
+            "--toolkit", "-t", help="the name or url of a required toolkit", hidden=True
+        ),
+    ] = [],
+    schema: Annotated[
+        List[str],
+        typer.Option(
+            "--schema", "-s", help="the name or url of a required schema", hidden=True
+        ),
+    ] = [],
+    auto_greet_message: Annotated[
+        Optional[str],
+        typer.Option(help="Message to send automatically when the bot joins"),
+    ] = None,
+    auto_greet_prompt: Annotated[
+        Optional[str],
+        typer.Option(help="Prompt to generate an auto-greet message"),
+    ] = None,
+    host: Annotated[
+        Optional[str], typer.Option(help="Host to bind the service on")
+    ] = None,
+    port: Annotated[
+        Optional[int], typer.Option(help="Port to bind the service on")
+    ] = None,
+    path: Annotated[
+        Optional[str], typer.Option(help="HTTP path to mount the service at")
+    ] = None,
+    room_rules: Annotated[
+        List[str],
+        typer.Option(
+            "--room-rules",
+            "-rr",
+            help="a path to a rules file within the room that can be used to customize the agent's behavior",
+        ),
+    ] = [],
+):
+    CustomVoiceBot = build_voicebot(
+        rules=rule,
+        rules_file=rules_file,
+        toolkits=require_toolkit + toolkit,
+        schemas=require_schema + schema,
+        auto_greet_message=auto_greet_message,
+        auto_greet_prompt=auto_greet_prompt,
+        room_rules_paths=room_rules,
+    )
+
+    service = get_service(host=host, port=port)
+
+    service.agents.append(
+        AgentSpec(name=agent_name, annotations={ANNOTATION_AGENT_TYPE: "VoiceBot"})
+    )
+
+    if path is None:
+        path = "/agent"
+        i = 0
+        while service.has_path(path):
+            i += 1
+            path = f"/agent{i}"
+
+    service.add_path(identity=agent_name, path=path, cls=CustomVoiceBot)
+
+    spec = service_specs()[0]
+    spec.metadata.annotations = {
+        "meshagent.service.id": service_name,
+    }
+    spec.metadata.name = service_name
+    spec.metadata.description = service_description
+    spec.container.image = (
+        "us-central1-docker.pkg.dev/meshagent-public/images/cli:{SERVER_VERSION}-esgz"
+    )
+    spec.container.command = shlex.join(
+        ["meshagent", "voicebot", "service", *cleanup_args(sys.argv[2:])]
+    )
+
+    print(yaml.dump(spec.model_dump(mode="json", exclude_none=True), sort_keys=False))
+
+
+@app.async_command("deploy")
+async def deploy(
+    *,
+    service_name: Annotated[str, typer.Option("--service-name", help="service name")],
+    service_description: Annotated[
+        Optional[str], typer.Option("--service-description", help="service description")
+    ] = None,
+    service_title: Annotated[
+        Optional[str],
+        typer.Option("--service-title", help="a display name for the service"),
+    ] = None,
+    agent_name: Annotated[str, typer.Option(..., help="Name of the agent to call")],
+    rule: Annotated[List[str], typer.Option("--rule", "-r", help="a system rule")] = [],
+    rules_file: Optional[str] = None,
+    require_toolkit: Annotated[
+        List[str],
+        typer.Option(
+            "--require-toolkit", "-rt", help="the name or url of a required toolkit"
+        ),
+    ] = [],
+    require_schema: Annotated[
+        List[str],
+        typer.Option(
+            "--require-schema", "-rs", help="the name or url of a required schema"
+        ),
+    ] = [],
+    toolkit: Annotated[
+        List[str],
+        typer.Option(
+            "--toolkit", "-t", help="the name or url of a required toolkit", hidden=True
+        ),
+    ] = [],
+    schema: Annotated[
+        List[str],
+        typer.Option(
+            "--schema", "-s", help="the name or url of a required schema", hidden=True
+        ),
+    ] = [],
+    auto_greet_message: Annotated[
+        Optional[str],
+        typer.Option(help="Message to send automatically when the bot joins"),
+    ] = None,
+    auto_greet_prompt: Annotated[
+        Optional[str],
+        typer.Option(help="Prompt to generate an auto-greet message"),
+    ] = None,
+    host: Annotated[
+        Optional[str], typer.Option(help="Host to bind the service on")
+    ] = None,
+    port: Annotated[
+        Optional[int], typer.Option(help="Port to bind the service on")
+    ] = None,
+    path: Annotated[
+        Optional[str], typer.Option(help="HTTP path to mount the service at")
+    ] = None,
+    room_rules: Annotated[
+        List[str],
+        typer.Option(
+            "--room-rules",
+            "-rr",
+            help="a path to a rules file within the room that can be used to customize the agent's behavior",
+        ),
+    ] = [],
+    project_id: ProjectIdOption,
+    room: Annotated[
+        Optional[str],
+        typer.Option("--room", help="The name of a room to create the service for"),
+    ] = os.getenv("MESHAGENT_ROOM"),
+):
+    project_id = await resolve_project_id(project_id=project_id)
+
+    CustomVoiceBot = build_voicebot(
+        rules=rule,
+        rules_file=rules_file,
+        toolkits=require_toolkit + toolkit,
+        schemas=require_schema + schema,
+        auto_greet_message=auto_greet_message,
+        auto_greet_prompt=auto_greet_prompt,
+        room_rules_paths=room_rules,
+    )
+
+    service = get_service(host=host, port=port)
+
+    service.agents.append(
+        AgentSpec(name=agent_name, annotations={ANNOTATION_AGENT_TYPE: "VoiceBot"})
+    )
+
+    if path is None:
+        path = "/agent"
+        i = 0
+        while service.has_path(path):
+            i += 1
+            path = f"/agent{i}"
+
+    service.add_path(identity=agent_name, path=path, cls=CustomVoiceBot)
+
+    spec = service_specs()[0]
+    spec.metadata.annotations = {
+        "meshagent.service.id": service_name,
+    }
+    spec.metadata.name = service_name
+    spec.metadata.description = service_description
+    spec.container.image = (
+        "us-central1-docker.pkg.dev/meshagent-public/images/cli:{SERVER_VERSION}-esgz"
+    )
+    spec.container.command = shlex.join(
+        ["meshagent", "voicebot", "service", *cleanup_args(sys.argv[2:])]
+    )
+
+    client = await get_client()
+    try:
+        id = None
+        try:
+            if id is None:
+                if room is None:
+                    services = await client.list_services(project_id=project_id)
+                else:
+                    services = await client.list_room_services(
+                        project_id=project_id, room_name=room
+                    )
+
+                for s in services:
+                    if s.metadata.name == spec.metadata.name:
+                        id = s.id
+
+            if id is None:
+                if room is None:
+                    id = await client.create_service(
+                        project_id=project_id, service=spec
+                    )
+                else:
+                    id = await client.create_room_service(
+                        project_id=project_id, service=spec, room_name=room
+                    )
+
+            else:
+                spec.id = id
+                if room is None:
+                    await client.update_service(
+                        project_id=project_id, service_id=id, service=spec
+                    )
+                else:
+                    await client.update_room_service(
+                        project_id=project_id,
+                        service_id=id,
+                        service=spec,
+                        room_name=room,
+                    )
+
+        except ConflictError:
+            print(f"[red]Service name already in use: {spec.metadata.name}[/red]")
+            raise typer.Exit(code=1)
+        else:
+            print(f"[green]Deployed service:[/] {id}")
+
+    finally:
+        await client.close()
