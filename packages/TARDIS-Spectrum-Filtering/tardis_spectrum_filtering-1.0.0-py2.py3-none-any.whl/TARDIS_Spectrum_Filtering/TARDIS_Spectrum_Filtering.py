@@ -1,0 +1,134 @@
+"""Main module."""
+import os
+import xml.etree.ElementTree as et
+import matplotlib.pyplot as plt
+import numpy as np
+import requests
+import yaml
+from astropy import units as u
+
+# Function to get Filter URL from TARDIS config file
+def get_url_from_config(config_file_path):
+    
+    with open(config_file_path, 'r') as f:
+        config = yaml.safe_load(f)
+        telescope = config['filter']['Telescope_Name']
+        instrument = config['filter']['Instrument']
+        filter_id = config['filter']['Filter_ID']
+
+
+    name = f"{telescope}/{instrument}.{filter_id}"
+    safe_name = name.replace('/', '.')
+    url = f"https://svo2.cab.inta-csic.es/theory/fps/fps.php?ID={name}"
+
+    return url, safe_name
+
+
+# Function to check if the filter file is valid
+def check_filter(filter_name):
+    
+    root = et.parse(f"Filters/{filter_name}.xml")
+    
+    info = root.find('INFO')
+
+    check = info.get('value')
+
+    if check == 'ERROR':
+        return False
+    elif info is None:
+        return False
+    else:
+        return True
+
+
+# Function to download the filter file
+def download_filter(url, filename):
+    req = requests.get(url, timeout = 10)
+
+    with open((f'Filters/{filename}.xml'), 'wb') as f:
+            
+        # Chunking to avoid large memory consumption
+        for chunk in req.iter_content(chunk_size=8192):
+            if chunk:
+                f.write(chunk)
+    
+    if check_filter(filename) == True:
+        print("Filter URL is valid.")
+        return filename
+    elif check_filter(filename) == False:
+        print("Filter URL is not valid. Removing invalid filter file.")
+        os.remove(f'Filters/{filename}.xml')
+        raise ValueError("Invalid Filter URL. The filter file has been removed.")
+
+
+# Function to get wavelength and transmission values from filter file
+def get_filter(filter_name):
+    
+    # Parse XML File from Filters Directory 
+    root = et.parse(f"Filters/{filter_name}.xml")
+    
+    # Get wavelength and transmission values in one array (Will be in aleternating order)
+    all_vals = np.array([float(x.text) for x in root.findall('.//TD')])
+
+    # Separate wavelength and transmission values
+    wl = all_vals[0::2] * u.AA
+    tr = all_vals[1::2]
+    return wl, tr
+
+
+# Function to interpolate filter to match TARDIS Spectrum
+def interp_filter(spectrum_to_filter, filter_name):
+    #Interpolate filter transmission values to match TARDIS Spectrum
+    wl, tr = get_filter(filter_name)
+    return np.interp(spectrum_to_filter, wl, tr)
+
+# Function to apply filter to TARDIS Spectrum
+def apply_filter(spectrum, spectrum_virtual, spectrum_integrated, chosen_filter):
+    
+    # Interpolate filter transmission values to match TARDIS Spectrum
+    prepared_filter = interp_filter(spectrum.wavelength, chosen_filter)
+    
+    # Apply filter to TARDIS Spectrum
+    filtered_spectrum = spectrum.luminosity_density_lambda * prepared_filter
+    filtered_spectrum_virt = spectrum_virtual.luminosity_density_lambda * prepared_filter
+    filtered_spec_integ = spectrum_integrated.luminosity_density_lambda * prepared_filter
+    return filtered_spectrum, filtered_spectrum_virt, filtered_spec_integ
+
+
+# Function to plot original TARDIS Spectrum
+def plot_original_spectrum(spectrum, spectrum_virtual, spectrum_integrated):
+    # Plot TARDIS Spectrum before filtering
+    plt.figure()
+    plt.plot(spectrum.wavelength, spectrum.luminosity_density_lambda)
+    plt.plot(spectrum.wavelength, spectrum_virtual.luminosity_density_lambda)
+    plt.plot(spectrum.wavelength, spectrum_integrated.luminosity_density_lambda)
+    plt.xlabel("Wavelength (Angstrom)")
+    plt.ylabel("Luminosity Density (erg/s/Angstrom)")
+    plt.title("Unfiltered TARDIS Spectrum")
+
+
+# Function to plot filter transmission curve
+def plot_filter(spectrum, chosen_filter):
+    
+    # Interpolate filter transmission values to match TARDIS Spectrum
+    prepared_filter = interp_filter(spectrum.wavelength, chosen_filter)
+    
+    # Plot the filter transmission curve
+    plt.figure()
+    plt.plot(spectrum.wavelength, prepared_filter)
+    plt.title("Filter Transmission Curve")
+    plt.xlabel("Wavelength (Angstrom)")
+    plt.ylabel("Transmission")
+
+
+# Function to plot the filtered spectrum
+def plot_filtered_spectrum(spectrum, spectrum_virtual, spectrum_integrated, chosen_filter):
+
+    plt.figure()
+    plt.plot(spectrum.wavelength, apply_filter(spectrum, spectrum_virtual, spectrum_integrated, chosen_filter)[0])
+    plt.plot(spectrum.wavelength, apply_filter(spectrum, spectrum_virtual, spectrum_integrated, chosen_filter)[1])
+    plt.plot(spectrum.wavelength, apply_filter(spectrum, spectrum_virtual, spectrum_integrated, chosen_filter)[2])
+    plt.xlabel("Wavelength (Angstrom)")
+    plt.ylabel("Luminosity Density (erg/s/Angstrom)")
+    plt.title("Filtered TARDIS Example Model Spectrum")
+    plt.show()
