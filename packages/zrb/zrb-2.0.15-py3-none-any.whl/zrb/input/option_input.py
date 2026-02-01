@@ -1,0 +1,95 @@
+from typing import TYPE_CHECKING
+
+from zrb.attr.type import StrAttr, StrListAttr
+from zrb.context.any_shared_context import AnySharedContext
+from zrb.input.base_input import BaseInput
+from zrb.util.attr import get_str_list_attr
+from zrb.util.match import fuzzy_match
+
+if TYPE_CHECKING:
+    from prompt_toolkit.completion import Completer
+
+
+class OptionInput(BaseInput):
+    def __init__(
+        self,
+        name: str,
+        description: str | None = None,
+        prompt: str | None = None,
+        options: StrListAttr = [],
+        default: StrAttr = "",
+        auto_render: bool = True,
+        allow_empty: bool = False,
+        allow_positional_parsing: bool = True,
+        always_prompt: bool = True,
+    ):
+        super().__init__(
+            name=name,
+            description=description,
+            prompt=prompt,
+            default=default,
+            auto_render=auto_render,
+            allow_empty=allow_empty,
+            allow_positional_parsing=allow_positional_parsing,
+            always_prompt=always_prompt,
+        )
+        self._options = options
+
+    def to_html(self, shared_ctx: AnySharedContext) -> str:
+        name = self.name
+        description = self.description
+        default = self.get_default_str(shared_ctx)
+        html = [f'<select name="{name}" placeholder="{description}">']
+        for value in get_str_list_attr(shared_ctx, self._options, self._auto_render):
+            selected = "selected" if value == default else ""
+            html.append(f'<option value="{value}" {selected}>{value}</option>')
+        html.append("</select>")
+        return "\n".join(html)
+
+    def _prompt_cli_str(self, shared_ctx: AnySharedContext) -> str:
+        prompt_message = self.prompt_message
+        default_value = self.get_default_str(shared_ctx)
+        options = get_str_list_attr(shared_ctx, self._options, self._auto_render)
+        option_str = ", ".join(options)
+        if default_value != "":
+            prompt_message = f"{prompt_message} ({option_str}) [{default_value}]"
+        value = self._get_value_from_user_input(shared_ctx, prompt_message, options)
+        if value.strip() != "" and value.strip() not in options:
+            value = self._prompt_cli_str(shared_ctx)
+        if value.strip() == "":
+            value = default_value
+        return value
+
+    def _get_value_from_user_input(
+        self, shared_ctx: AnySharedContext, prompt_message: str, options: list[str]
+    ) -> str:
+        from prompt_toolkit import PromptSession
+
+        if shared_ctx.is_tty:
+            reader = PromptSession()
+            option_completer = self._get_option_completer(options)
+            return reader.prompt(f"{prompt_message}: ", completer=option_completer)
+        return input(f"{prompt_message}: ")
+
+    def _get_option_completer(self, options: list[str]) -> "Completer":
+        from prompt_toolkit.completion import CompleteEvent, Completer, Completion
+        from prompt_toolkit.document import Document
+
+        class OptionCompleter(Completer):
+            def __init__(self, options: list[str]):
+                self._options = options
+
+            def get_completions(
+                self, document: Document, complete_event: CompleteEvent
+            ):
+                search_pattern = document.get_word_before_cursor(WORD=True)
+                candidates = []
+                for option in self._options:
+                    matched, score = fuzzy_match(option, search_pattern)
+                    if matched:
+                        candidates.append((score, option))
+                candidates.sort(key=lambda x: (x[0], x[1]))
+                for _, option in candidates:
+                    yield Completion(option, start_position=-len(search_pattern))
+
+        return OptionCompleter(options)
