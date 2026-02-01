@@ -1,0 +1,137 @@
+Metadata-Version: 2.4
+Name: clanker
+Version: 1.0.0
+Summary: LLM shell helper that pastes commands into your terminal
+Project-URL: Homepage, https://github.com/redtachyon/clanker
+Project-URL: Repository, https://github.com/redtachyon/clanker
+Project-URL: Issues, https://github.com/redtachyon/clanker/issues
+Author-email: Ariel Kwiatkowski <ariel.j.kwiatkowski@gmail.com>
+License: MIT License
+        
+        Copyright (c) 2026 Ariel Kwiatkowski
+        
+        Permission is hereby granted, free of charge, to any person obtaining a copy
+        of this software and associated documentation files (the "Software"), to deal
+        in the Software without restriction, including without limitation the rights
+        to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+        copies of the Software, and to permit persons to whom the Software is
+        furnished to do so, subject to the following conditions:
+        
+        The above copyright notice and this permission notice shall be included in all
+        copies or substantial portions of the Software.
+        
+        THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+        IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+        FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+        AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+        LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+        OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+        SOFTWARE.
+License-File: LICENSE
+Keywords: assistant,cli,llm,shell
+Classifier: Development Status :: 3 - Alpha
+Classifier: Environment :: Console
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3 :: Only
+Classifier: Topic :: Utilities
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+
+# clanker
+
+LLM-powered shell helper that generates a command and pastes it into your terminal input so you can edit or run it.
+
+## Install
+
+Use uv:
+
+```bash
+uv tool install clanker
+```
+
+## Quick start
+
+Configure the endpoint, model, and API key once:
+
+```bash
+clanker config
+```
+
+Then ask for a command:
+
+```bash
+clanker do "List all the files with the extension .pyc in this directory recursively and sum up their sizes"
+```
+
+Ask a question (no command insertion):
+
+```bash
+clanker ask "What does the -print0 flag do in find?"
+```
+
+By default, clanker will attempt to paste the generated command into your active terminal input (no auto-enter). If pasting fails, the command is printed so you can copy it manually.
+
+You can also omit the `do` subcommand; `clanker "..."` is treated as `clanker do "..."`.
+Prompts should be provided as a single quoted string.
+
+Verbose mode (prints request payload, response, and step logs to stderr). Use `-v` or `--verbose`, and it can appear anywhere in the command:
+
+```bash
+clanker -v do "List all .py files"
+```
+
+## Fish integration (recommended)
+
+Many Linux distros disable tty injection. If you use fish, the best UX is to install the fish wrapper so the command is inserted via `commandline -i`:
+
+```bash
+clanker init fish
+```
+
+If you want the script printed instead of written, run `clanker init fish --print`.
+
+Restart fish (or run the `source ...` command that `clanker init` prints) and then run `clanker "..."` as usual.
+
+## Configuration
+
+Interactive wizard:
+
+```bash
+clanker config
+```
+
+Show config:
+
+```bash
+clanker config show
+```
+
+Set values directly:
+
+```bash
+clanker config set --endpoint https://api.openai.com/v1 --model gpt-4o-mini --api-key sk-...
+```
+
+Config file location:
+
+```bash
+clanker config path
+```
+
+Environment overrides:
+
+- `CLANKER_ENDPOINT`
+- `CLANKER_MODEL`
+- `CLANKER_API_KEY`
+- `CLANKER_SHELL`
+- `CLANKER_CONFIG` (full path to config file)
+
+## Notes on pasting
+
+Clanker uses a Linux tty injection (`TIOCSTI`) to paste the command into the current terminal input buffer. Some systems disable this for security (for example `dev.tty.legacy_tiocsti=0`). If it is blocked, clanker prints the command instead. You can also force printing with:
+
+```bash
+clanker --print "..."
+```
