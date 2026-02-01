@@ -1,0 +1,128 @@
+edition = "2023";
+
+package market;
+
+import "google/protobuf/timestamp.proto";
+
+enum Source {
+  UnknwonSource = 0;
+  YFinance = 1;
+  Binance = 2;
+}
+
+message HLOCV {
+  // High represent highest price in one term of timeframe.
+  double High = 1 [ json_name = "high" ];
+  // Low represent lowest price in one term of timeframe.
+  double Low = 2 [ json_name = "low" ];
+  // Close represent closing price in one term of timeframe.
+  double Close = 3 [ json_name = "close" ];
+  // Open represent opening price in one term of timeframe.
+  double Open = 4 [ json_name = "open" ];
+  // Volume represent amount of transactions happened in one term of timeframe.
+  double Volume = 5 [ json_name = "volume" ];
+}
+
+message ProductInfo {
+  // Price represents exact price at the exact time.
+  HLOCV Price = 1 [ json_name = "price" ];
+}
+
+message GetProductInfoRequest {
+  // Ticker represents the particular product code.
+  // ex: BBCA, BMRI
+  string Ticker = 1 [ json_name = "ticker" ];
+  // Range represents the term count.
+  string Range = 2 [ json_name = "range" ];
+  // Interval represents the time period between terms.
+  string Interval = 3 [ json_name = "interval" ];
+  // Indicator represents a trend or fact that indicates the state or level of
+  // price.
+  string Indicator = 4 [ json_name = "indicator" ];
+  // Source is a data provider used for price data.
+  Source Source = 5 [ json_name = "source" ];
+  // Start represents start time of the data.
+  google.protobuf.Timestamp Start = 6 [ json_name = "start" ];
+  // End represents start time of the data.
+  google.protobuf.Timestamp End = 7 [ json_name = "end" ];
+}
+
+message GetProductInfoResponse {
+  // Quote represent one term of data in a timeframe.
+  repeated Quote Quote = 1 [ json_name = "quote" ];
+  // Count represents number of returned terms.
+  int32 Count = 2 [ json_name = "count" ];
+}
+
+message SearchTickerRequest {
+  // Query represents the symbol or keyword to search for.
+  string Query = 1 [ json_name = "query" ];
+  // Source represents the data source of the symbol or keyword to search for.
+  Source Source = 2 [ json_name = "source" ];
+}
+
+message SearchTickerResponse {
+  // Query represents the symbol or keyword to search for.
+  repeated Ticker Tickers = 1 [ json_name = "tickers" ];
+}
+
+message Ticker {
+  // Symbol represents the symbol used as ticker.
+  string Symbol = 1 [ json_name = "symbol" ];
+  // Name represents the long name of the product.
+  string Name = 2 [ json_name = "name" ];
+}
+
+enum Equation {
+  MoreThan = 0;
+  LessThan = 1;
+}
+
+enum AlertStatus {
+  Pending = 0;
+  OK = 1;
+}
+
+message Quote {
+  // Timestamp is a closing time recorded for the term.
+  google.protobuf.Timestamp Timestamp = 1 [ json_name = "timestamp" ];
+  // ProductInfo represent HLOCV.
+  ProductInfo ProductInfo = 2 [ json_name = "product_info" ];
+}
+
+message Monitor {
+  // Id is monitor identifier.
+  string Id = 1 [ json_name = "id" ];
+  // Price represent monitored price.
+  double Price = 2 [ json_name = "price" ];
+  // Price is a mathematical operation.
+  // ex: MoreThan, LessThan
+  Equation Compare = 3 [ json_name = "compare" ];
+  // Alert status is the latest status of the price compared with operation.
+  // ex: Pending, OK
+  AlertStatus Status = 4 [ json_name = "alert_status" ];
+}
+
+message Monitors {
+  // Monitor represent list of monitor.
+  repeated Monitor Monitor = 1 [ json_name = "monitor" ];
+}
+
+message GetMonitorStatusRequest {
+  // List represent mapped list of a latest monitoring status of a ticker.
+  map<string, Monitors> List = 1 [ json_name = "list" ];
+}
+
+message GetMonitorStatusResponse {
+  // List represent mapped list of a latest monitoring status of a ticker.
+  map<string, Monitors> List = 1 [ json_name = "list" ];
+  // Timestamp represent data fetching time.
+  google.protobuf.Timestamp Timestamp = 2 [ json_name = "timestamp" ];
+}
+
+service MarketService {
+  rpc GetProductInfo(GetProductInfoRequest) returns (GetProductInfoResponse) {}
+  rpc SearchTicker(SearchTickerRequest) returns (SearchTickerResponse) {}
+  rpc GetMonitorStatus(GetMonitorStatusRequest) returns (GetMonitorStatusResponse) {}
+}
+
