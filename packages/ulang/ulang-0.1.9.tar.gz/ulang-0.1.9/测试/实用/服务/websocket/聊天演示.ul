@@ -1,0 +1,124 @@
+/*
+#!/usr/bin/env python
+#
+# Copyright 2009 Facebook
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may
+# not use this file except in compliance with the License. You may obtain
+# a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+"""Simplified chat demo for websockets.
+
+Authentication, error handling, etc are left as an exercise for the reader :)
+"""
+
+在原始 tornado 源码库例程基础上改为木兰实现
+*/
+
+using logging
+using tornado.escape
+using tornado.ioloop
+using tornado.options
+using tornado.web
+using tornado.websocket
+using os.path
+using uuid
+
+using define, options in tornado.options
+
+// type 为语言关键词, 因而不可以作为函数形参的关键词
+func 定义(名称 : str, 默认=nil, 类型=nil, 帮助=nil) {
+  define(名称, 默认, 类型, 帮助)
+}
+定义("port", 默认=8888, 帮助="在此端口运行服务", 类型=int)
+
+
+type 应用 : tornado.web.Application {
+  func $应用 {
+    相应处置 = [tuple("/", 主页面),
+        tuple("/chatsocket", 聊天渠道)]
+    // 不支持 **
+    super.__init__(相应处置,
+        cookie_secret="__TODO: 生成随机内容",
+        template_path=os.path.join(os.path.dirname(__file__), "templates"),
+        static_path=os.path.join(os.path.dirname(__file__), "static"),
+        xsrf_cookies=true
+    )
+  }
+}
+
+type 主页面 : tornado.web.RequestHandler {
+  func $get {
+    $render("index.html", messages=聊天渠道.历史)
+  }
+}
+
+type 聊天渠道 : tornado.websocket.WebSocketHandler {
+  {
+    接收端 = set()
+    历史 = []
+    历史长度 = 200
+  }
+
+  func $get_compression_options {
+    // Non-None enables compression with default options.
+    return {:}
+  }
+
+  func $open {
+    聊天渠道.接收端.add($)
+  }
+
+  func $on_close {
+    聊天渠道.接收端.remove($)
+  }
+
+  func 更新历史(消息) {
+    // 必须指定类
+    聊天渠道.历史.append(消息)
+    if len(聊天渠道.历史) > 聊天渠道.历史长度 {
+      聊天渠道.历史 = 聊天渠道.历史[-聊天渠道.历史长度 :]
+    }
+  }
+
+  func 广播(消息) {
+    logging.info("发到%d个接收端", len(聊天渠道.接收端))
+    for 某接收端 in 聊天渠道.接收端 {
+      try {
+        某接收端.write_message(消息)
+      } catch e {
+        logging.error("发送消息出错", exc_info=True)
+      }
+    }
+  }
+
+  func $on_message(内容) {
+    logging.info("收到消息: %r", 内容)
+    parsed = tornado.escape.json_decode(内容)
+    消息 = {"id": str(uuid.uuid4()), "body": parsed["body"]}
+    消息["html"] = tornado.escape.to_basestring(
+      $render_string("message.html", message=消息)
+    )
+
+    聊天渠道.更新历史(消息)
+    聊天渠道.广播(消息)
+  }
+}
+
+func 中 {
+  tornado.options.parse_command_line()
+  app = 应用()
+  app.listen(options.port)
+  tornado.ioloop.IOLoop.current().start()
+}
+
+if __name__ == "__main__" {
+  中()
+}
