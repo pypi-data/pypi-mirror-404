@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="zh">
+  <head>
+    <meta charset="utf-8" />
+    <title>TikLocal</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <link rel="stylesheet" type="text/css" href="{{url_for('static', filename='output.css')}}">
+    <script src="{{url_for('static', filename='feather.min.js')}}"></script>
+    <style>
+      /* Unified Floating Dock Styles */
+      :root {
+        --dock-bg: rgba(20, 20, 20, 0.7);
+        --dock-border: rgba(255, 255, 255, 0.12);
+        --dock-active: #fff;
+        --dock-inactive: rgba(255, 255, 255, 0.5);
+      }
+
+      [data-theme="light"] {
+        --dock-bg: rgba(255, 255, 255, 0.8);
+        --dock-border: rgba(0, 0, 0, 0.08);
+        --dock-active: #000;
+        --dock-inactive: rgba(0, 0, 0, 0.4);
+      }
+
+      .floating-dock {
+        position: fixed;
+        bottom: max(env(safe-area-inset-bottom), 24px);
+        left: 50%;
+        transform: translateX(-50%);
+        width: calc(100% - 32px);
+        max-width: 400px;
+        height: 64px;
+        background: var(--dock-bg);
+        backdrop-filter: blur(24px) saturate(180%);
+        -webkit-backdrop-filter: blur(24px) saturate(180%);
+        border: 1px solid var(--dock-border);
+        border-radius: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: space-evenly;
+        z-index: 100;
+        box-shadow: 0 10px 40px -10px rgba(0,0,0,0.3);
+        padding: 0 12px;
+        transition: transform 0.3s ease;
+      }
+
+      .dock-item {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        width: 48px;
+        height: 48px;
+        color: var(--dock-inactive);
+        transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        text-decoration: none;
+      }
+
+      .dock-item svg {
+        width: 22px;
+        height: 22px;
+        stroke-width: 2;
+        transition: all 0.3s ease;
+      }
+
+      .dock-item.active {
+        color: var(--dock-active);
+      }
+      .dock-item.active svg {
+        transform: translateY(-2px);
+        stroke-width: 2.5;
+      }
+      .dock-item.active::after {
+        content: '';
+        position: absolute;
+        bottom: 6px;
+        width: 4px;
+        height: 4px;
+        background: currentColor;
+        border-radius: 50%;
+      }
+
+      .dock-divider {
+        width: 1px;
+        height: 20px;
+        background: var(--dock-border);
+      }
+
+      /* Base layout adjustments */
+      body {
+        padding-bottom: 110px !important; /* Space for dock */
+      }
+      /* Special case for TikTok page which handles its own padding */
+      body.immersive {
+        padding-bottom: 0 !important;
+      }
+    </style>
+    {% block extra_head %}{% endblock %}
+  </head>
+  <body data-theme="{{ theme if theme else 'light' }}" class="bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white min-h-screen transition-colors duration-300">
+    
+    <!-- Quick Theme Toggle (Optional, can be moved to settings) -->
+    <button id="quick-theme-toggle" class="fixed top-4 right-4 z-40 w-10 h-10 rounded-full bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border border-gray-200 dark:border-gray-700 shadow-md hover:shadow-lg transition-all duration-200 flex items-center justify-center group" aria-label="切换主题">
+      <i data-feather="sun" class="w-5 h-5 text-gray-600 dark:text-gray-300 block dark:hidden transition-transform"></i>
+      <i data-feather="moon" class="w-5 h-5 text-gray-600 dark:text-gray-300 hidden dark:block transition-transform"></i>
+    </button>
+
+    {% block content %}{% endblock %}
+    
+    <!-- Unified Floating Dock -->
+    <nav class="floating-dock">
+      <a href="/" class="dock-item {% if menu == 'index' %}active{% endif %}" aria-label="Feed">
+        <i data-feather="film"></i>
+      </a>
+      
+      <a href="/gallery" class="dock-item {% if menu == 'gallery' %}active{% endif %}" aria-label="Discover">
+        <i data-feather="grid"></i>
+      </a>
+
+      <a href="/browse" class="dock-item {% if menu == 'browse' %}active{% endif %}" aria-label="Library">
+        <i data-feather="folder"></i>
+      </a>
+
+      <a href="/settings" class="dock-item {% if menu == 'settings' %}active{% endif %}" aria-label="Settings">
+        <i data-feather="settings"></i>
+      </a>
+    </nav>
+    
+    {% block extra_body %}{% endblock %}
+    <script>
+      // Theme Manager
+      class ThemeManager {
+        constructor() {
+          this.init();
+          this.bindEvents();
+        }
+        init() {
+          const savedTheme = localStorage.getItem('theme');
+          const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+          const initialTheme = savedTheme || systemTheme;
+          this.setTheme(initialTheme, false);
+          feather.replace();
+        }
+        setTheme(theme, animate = true) {
+          const body = document.body;
+          body.setAttribute('data-theme', theme);
+          localStorage.setItem('theme', theme);
+          this.updateToggleButtons();
+        }
+        toggleTheme() {
+          const currentTheme = document.body.getAttribute('data-theme');
+          this.setTheme(currentTheme === 'dark' ? 'light' : 'dark');
+        }
+        updateToggleButtons() {
+          const isDark = document.body.getAttribute('data-theme') === 'dark';
+          const quickToggle = document.getElementById('quick-theme-toggle');
+          if (quickToggle) {
+            quickToggle.querySelector('.feather-sun')?.classList.toggle('hidden', isDark);
+            quickToggle.querySelector('.feather-moon')?.classList.toggle('hidden', !isDark);
+          }
+        }
+        bindEvents() {
+          document.getElementById('quick-theme-toggle')?.addEventListener('click', () => this.toggleTheme());
+        }
+      }
+
+      document.addEventListener('DOMContentLoaded', () => {
+        new ThemeManager();
+      });
+    </script>
+  </body>
+</html>
