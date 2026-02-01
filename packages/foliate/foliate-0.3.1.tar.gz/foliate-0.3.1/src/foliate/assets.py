@@ -1,0 +1,108 @@
+"""Asset handling for foliate."""
+
+import shutil
+from pathlib import Path
+
+# Supported asset file extensions
+SUPPORTED_ASSET_EXTENSIONS = {
+    # Images
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".svg",
+    ".webp",
+    ".bmp",
+    ".ico",
+    # Documents
+    ".pdf",
+    ".doc",
+    ".docx",
+    ".txt",
+    # Media
+    ".mp4",
+    ".mp3",
+    ".wav",
+    ".avi",
+    ".mov",
+    # Other
+    ".zip",
+    ".tar",
+    ".gz",
+}
+
+
+def copy_directory_incremental(
+    src_dir: Path,
+    target_dir: Path,
+    force_rebuild: bool,
+    filter_extensions: set | None = None,
+) -> None:
+    """Copy a directory to build output with incremental update support.
+
+    Args:
+        src_dir: Source directory to copy from
+        target_dir: Target directory to copy to
+        force_rebuild: If True, always copy everything
+        filter_extensions: Optional set of file extensions to include
+    """
+    if force_rebuild or not target_dir.exists():
+        if target_dir.exists():
+            shutil.rmtree(target_dir)
+        shutil.copytree(src_dir, target_dir)
+    else:
+        for src_file in src_dir.glob("**/*"):
+            if not src_file.is_file():
+                continue
+            if filter_extensions and src_file.suffix.lower() not in filter_extensions:
+                continue
+            target_file = target_dir / src_file.relative_to(src_dir)
+            if (
+                not target_file.exists()
+                or src_file.stat().st_mtime > target_file.stat().st_mtime
+            ):
+                shutil.rmtree(target_dir)
+                shutil.copytree(src_dir, target_dir)
+                break
+
+
+def copy_static_assets(vault_path: Path, build_dir: Path, force_rebuild: bool) -> None:
+    """Copy static assets from bundled defaults and user overrides.
+
+    Args:
+        vault_path: Path to the vault directory
+        build_dir: Path to the build output directory
+        force_rebuild: If True, always copy everything
+    """
+    from .resources import copy_package_files
+
+    # Copy bundled static files first
+    bundled_static = build_dir / "static"
+    copy_package_files("foliate.defaults.static", bundled_static, force=force_rebuild)
+
+    # Override with user static files if present
+    user_static = vault_path / ".foliate" / "static"
+    if user_static.exists():
+        copy_directory_incremental(
+            user_static,
+            build_dir / "static",
+            force_rebuild,
+        )
+
+
+def copy_user_assets(vault_path: Path, build_dir: Path, force_rebuild: bool) -> None:
+    """Copy user assets from vault to build directory.
+
+    Args:
+        vault_path: Path to the vault directory
+        build_dir: Path to the build output directory
+        force_rebuild: If True, always copy everything
+    """
+    assets_src = vault_path / "assets"
+    if assets_src.exists():
+        copy_directory_incremental(
+            assets_src,
+            build_dir / "assets",
+            force_rebuild,
+            filter_extensions=SUPPORTED_ASSET_EXTENSIONS,
+        )
