@@ -1,0 +1,160 @@
+---
+description: Run your first Empathy Framework AI workflow in 5 minutes. Security audit, bug prediction, and code review with CLI or Python. See immediate results.
+---
+
+# First Steps
+
+Run your first AI workflow and see results in under 5 minutes.
+
+---
+
+## Your First Workflow
+
+Let's run a **security audit** on some code. This workflow scans for vulnerabilities and provides actionable recommendations.
+
+### Option 1: CLI (Fastest)
+
+```bash
+# Scan your source directory
+empathy workflow run security-audit --path ./src
+
+# Or scan current directory
+empathy workflow run security-audit --path .
+```
+
+**Example output:**
+```
+Security Audit Results
+======================
+Status: completed
+Findings: 3
+
+[HIGH] SQL query vulnerable to injection
+  File: src/database.py:45
+  Fix: Use parameterized queries
+
+[MEDIUM] Hardcoded API key in config
+  File: src/config.py:12
+  Fix: Move to environment variable
+
+[LOW] Missing input validation
+  File: src/handlers/user.py:28
+  Fix: Validate user input before processing
+
+Cost: $0.0850
+```
+
+### Option 2: Python
+
+```python
+from empathy_os.workflows import SecurityAuditWorkflow
+import asyncio
+
+async def audit():
+    workflow = SecurityAuditWorkflow(enable_cache=True)
+    result = await workflow.execute(target_path="./src")
+
+    print(f"Status: {result.status}")
+    print(f"Found {len(result.findings)} issues:")
+
+    for finding in result.findings:
+        print(f"  [{finding.severity}] {finding.description}")
+
+    print(f"\nCost: ${result.cost_report.total_cost:.4f}")
+
+asyncio.run(audit())
+```
+
+---
+
+## Try More Workflows
+
+Empathy Framework includes 10+ built-in workflows:
+
+| Workflow | Command | What It Does |
+|----------|---------|--------------|
+| Security Audit | `empathy workflow run security-audit` | Find vulnerabilities |
+| Bug Prediction | `empathy workflow run bug-predict` | Predict likely bugs |
+| Test Coverage | `empathy workflow run test-coverage` | Generate missing tests |
+| Release Prep | `empathy workflow run release-prep` | Pre-release checklist |
+| Dependency Check | `empathy workflow run dependency-check` | Find outdated deps |
+
+```bash
+# List all available workflows
+empathy workflow list
+
+# Get help for a specific workflow
+empathy workflow run security-audit --help
+```
+
+---
+
+## Understanding the Output
+
+Every workflow returns:
+
+| Field | Description |
+|-------|-------------|
+| `status` | `success`, `partial`, or `failed` |
+| `findings` | List of issues found (for analysis workflows) |
+| `cost_report` | API costs and cache hit rate |
+| `metadata` | Timing, model used, etc. |
+
+### Cost Tracking
+
+```bash
+# See your usage
+empathy telemetry show
+
+# See cost breakdown
+empathy telemetry savings --days 7
+```
+
+All telemetry data stays local in `~/.empathy/telemetry/`.
+
+---
+
+## What Just Happened?
+
+When you ran the security audit:
+
+1. **File scanning** - The workflow read your source files
+2. **Tiered analysis** - Simple files used a cheap model, complex ones used a capable model
+3. **Pattern matching** - Known vulnerability patterns were detected
+4. **Report generation** - Results were formatted and returned
+
+This is the **tiered model** approach - automatically routing to the right model based on task complexity.
+
+---
+
+## Next Step
+
+Now that you've run a workflow, it's time to [Choose Your Path](choose-your-path.md) based on how you want to use the framework.
+
+---
+
+## See Also
+
+- [Choose Your Path](choose-your-path.md) - Decide between Quick Start, Tutorial, or Deep Dive
+- [Installation Guide](installation.md) - Package options and configuration
+- [MCP Integration](mcp-integration.md) - Connect to Claude Code for IDE integration
+- [Multi-Agent Coordination](../reference/multi-agent.md) - Build agent teams
+- [Configuration Reference](../reference/config.md) - Customize framework behavior
+
+---
+
+## Quick Reference
+
+```bash
+# Run workflows
+empathy workflow run <name> --path <path>
+empathy workflow list
+
+# Check status
+empathy telemetry show
+empathy telemetry savings
+
+# Get help
+empathy --help
+empathy workflow --help
+```
