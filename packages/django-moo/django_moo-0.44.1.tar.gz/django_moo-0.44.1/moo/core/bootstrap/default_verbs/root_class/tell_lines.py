@@ -1,0 +1,13 @@
+#!moo verb tell_lines --on $root_class
+
+# pylint: disable=return-outside-function,undefined-variable
+
+"""
+This outputs out the list of strings strings to the object, using the tell verb for this object. Each string in strings
+is output on a separate line.
+"""
+
+strings = args[0]
+
+for arg in strings:
+    this.tell(arg)
