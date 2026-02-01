@@ -1,0 +1,167 @@
+Metadata-Version: 2.4
+Name: ieeA
+Version: 0.9.0
+Summary: arXiv 论文翻译工具 - 将英文 LaTeX 论文翻译成中文，保留数学公式和文档结构
+Author: ieeA Team
+License: GPL-3.0-or-later
+Project-URL: Homepage, https://github.com/ieeA/ieeA
+Project-URL: Repository, https://github.com/ieeA/ieeA
+Keywords: arxiv,latex,translation,chinese,llm,academic,paper
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Science/Research
+Classifier: License :: OSI Approved :: GNU General Public License v3 (GPLv3)
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Text Processing :: Markup :: LaTeX
+Classifier: Topic :: Scientific/Engineering
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: pylatexenc
+Requires-Dist: typer
+Requires-Dist: rich
+Requires-Dist: pyyaml
+Requires-Dist: pydantic
+Requires-Dist: requests
+Requires-Dist: openai>=1.0.0
+Provides-Extra: dev
+Requires-Dist: pytest; extra == "dev"
+Requires-Dist: ruff; extra == "dev"
+Requires-Dist: mypy; extra == "dev"
+Requires-Dist: build; extra == "dev"
+Requires-Dist: twine; extra == "dev"
+Dynamic: license-file
+
+# ieeA - arXiv 论文翻译工具
+
+将英文 arXiv 论文翻译成中文，保留数学公式、引用和文档结构。
+
+## 快速开始
+
+```bash
+# 安装
+pip install -e .
+
+# 翻译 arXiv 论文
+ieet translate https://arxiv.org/abs/2301.07041 --output-dir output/
+```
+
+## 翻译流程 (Pipeline)
+
+```
+┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
+│  1. 下载    │ -> │  2. 解析    │ -> │  3. 翻译    │ -> │  4. 重组    │ -> │  5. 编译    │
+│  arXiv源码  │    │  LaTeX结构  │    │  文本块     │    │  LaTeX文档  │    │  生成PDF   │
+└─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘
+```
+
+### 1. 下载 (Downloader)
+从 arXiv 下载论文源码压缩包，自动解压并定位主 `.tex` 文件。
+
+### 2. 解析 (Parser)
+将 LaTeX 文档解析为可翻译的文本块 (Chunk)，同时保护不应翻译的元素。
+
+#### Chunk 划分依据
+
+| 类型 | 处理方式 | 示例 |
+|------|----------|------|
+| **保护环境** | 替换为占位符，不翻译 | `equation`, `align`, `tikzpicture`, `verbatim` |
+| **可翻译环境** | 整体提取为一个 Chunk | `abstract`, `itemize`, `enumerate` |
+| **结构命令** | 提取参数内容为 Chunk | `\title{}`, `\section{}`, `\caption{}` |
+| **保护命令** | 替换为占位符，不翻译 | `\cite{}`, `\ref{}`, `\label{}`, `$...$` |
+| **段落文本** | 按空行分割，长度>20字符的段落作为 Chunk | 正文段落 |
+
+#### 处理顺序
+```
+原文 -> 提取标题 -> 提取caption -> 保护数学环境 -> 保护行内公式 
+     -> 保护命令(\cite等) -> 提取可翻译环境 -> 分割段落 -> Chunks
+```
+
+### 3. 翻译 (Translator)
+- 并发调用 LLM API 翻译各 Chunk
+- 支持术语表 (Glossary) 保持术语一致性
+- 自动重试和断点续传
+
+### 4. 重组 (Reconstructor)
+将翻译后的文本替换回占位符位置，还原完整 LaTeX 文档。
+
+### 5. 编译 (Compiler)
+使用 XeLaTeX 编译生成中文 PDF，自动注入中文字体支持。
+
+## 配置
+
+配置文件位置：`~/.ieet/config.yaml`
+
+```yaml
+# LLM 配置
+llm:
+  provider: openai
+  model: gpt-4o-mini
+  api_key: your-api-key          # 或使用 api_key_env 指定环境变量
+  base_url: https://api.openai.com/v1  # 可选，用于 OpenRouter 等代理
+  temperature: 0.1
+  max_tokens: 4000
+
+# 编译配置
+compilation:
+  engine: xelatex
+  timeout: 300
+
+# 自定义翻译提示词（可选）
+translation:
+  custom_system_prompt: "你是专业的学术翻译专家..."
+```
+
+### 术语表
+
+术语表位置：`~/.ieet/glossary.yaml`
+
+```yaml
+# 保持原文不翻译
+"MMLU": "MMLU"
+"LLaMA": "LLaMA"
+
+# 指定翻译
+"Attention": "注意力机制"
+"Transformer":
+  target: "Transformer"
+  context: "Deep Learning"
+```
+
+## 支持的 LLM
+
+| 提供商 | 模型示例 | 环境变量 |
+|--------|----------|----------|
+| OpenAI | gpt-4o, gpt-4o-mini | `OPENAI_API_KEY` |
+| Claude | claude-3-opus, claude-3-sonnet | `ANTHROPIC_API_KEY` |
+| Qwen | qwen-turbo, qwen-max | `DASHSCOPE_API_KEY` |
+| Doubao | doubao-pro-* | `VOLCENGINE_API_KEY` |
+
+**提示**：可通过 `base_url` 配置使用 OpenRouter 等代理服务。
+
+## 项目结构
+
+```
+src/ieet/
+├── cli.py              # 命令行入口
+├── downloader/         # arXiv 下载器
+├── parser/             # LaTeX 解析与分块
+│   ├── latex_parser.py # 核心解析逻辑
+│   └── structure.py    # Chunk 数据结构
+├── translator/         # 翻译流水线
+├── compiler/           # PDF 编译
+├── validator/          # 翻译质量验证
+└── rules/              # 配置与术语表
+```
+
+## 依赖
+
+- Python 3.10+
+- XeLaTeX（用于 PDF 编译）
+- 中文字体（macOS 自动检测 Songti SC / PingFang SC）
+
+## License
+
+GPL-3.0
