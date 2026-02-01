@@ -1,0 +1,924 @@
+"""Miscellaneous spatial and statistical transforms."""
+
+import copy
+import logging
+import os
+import os.path as op
+import warnings
+
+import nibabel as nib
+import numpy as np
+import pandas as pd
+from nilearn.reporting import get_clusters_table
+from scipy import stats
+
+from nimare.base import NiMAREBase
+from nimare.utils import (
+    DEFAULT_FLOAT_DTYPE,
+    _dict_to_coordinates,
+    _dict_to_df,
+    _listify,
+    get_masker,
+)
+
+LGR = logging.getLogger(__name__)
+
+
+class ImageTransformer(NiMAREBase):
+    """A class to create new images from existing ones within a Dataset.
+
+    This class is a light wrapper around :func:`~nimare.transforms.transform_images`.
+
+    .. versionadded:: 0.0.9
+
+    Parameters
+    ----------
+    target : {'z', 'p', 'beta', 'varcope'} or list
+        Target image type. Multiple target types may be specified as a list.
+    overwrite : :obj:`bool`, optional
+        Whether to overwrite existing files or not. Default is False.
+
+    See Also
+    --------
+    nimare.transforms.transform_images : The function called by this class.
+    """
+
+    def __init__(self, target, overwrite=False):
+        self.target = _listify(target)
+        self.overwrite = overwrite
+
+    def transform(self, dataset):
+        """Generate images of the target type from other image types in a Dataset.
+
+        Parameters
+        ----------
+        dataset : :obj:`~nimare.dataset.Dataset`
+            A Dataset containing images and relevant metadata.
+
+        Returns
+        -------
+        new_dataset : :obj:`~nimare.dataset.Dataset`
+            A copy of the input Dataset, with new images added to its images attribute.
+        """
+        # Using attribute check instead of type check to allow fake Datasets for testing.
+        if not hasattr(dataset, "slice"):
+            raise ValueError(
+                f"Argument 'dataset' must be a valid Dataset object, not a {type(dataset)}."
+            )
+
+        new_dataset = dataset.copy()
+        temp_images = dataset.images
+
+        for target_type in self.target:
+            temp_images = transform_images(
+                temp_images,
+                target=target_type,
+                masker=dataset.masker,
+                metadata_df=dataset.metadata,
+                out_dir=dataset.basepath,
+                overwrite=self.overwrite,
+            )
+        new_dataset.images = temp_images
+        return new_dataset
+
+
+def transform_images(images_df, target, masker, metadata_df=None, out_dir=None, overwrite=False):
+    """Generate images of a given type from other image types and write out to files.
+
+    .. versionchanged:: 0.0.9
+
+        * [ENH] Add overwrite option to transform_images
+
+    .. versionadded:: 0.0.4
+
+    Parameters
+    ----------
+    images_df : :class:`pandas.DataFrame`
+        DataFrame with paths to images for studies in Dataset.
+    target : {'z', 'p', 'beta', 'varcope'}
+        Target data type.
+    masker : :class:`~nilearn.maskers.NiftiMasker` or similar
+        Masker used to define orientation and resolution of images.
+        Specific voxels defined in mask will not be used, and a new masker
+        with _all_ voxels in acquisition matrix selected will be created.
+    metadata_df : :class:`pandas.DataFrame` or :obj:`None`, optional
+        DataFrame with metadata. Rows in this DataFrame must match those in
+        ``images_df``, including the ``'id'`` column.
+    out_dir : :obj:`str` or :obj:`None`, optional
+        Path to output directory. If None, use folder containing first image
+        for each study in ``images_df``.
+    overwrite : :obj:`bool`, optional
+        Whether to overwrite existing files or not. Default is False.
+
+    Returns
+    -------
+    images_df : :class:`pandas.DataFrame`
+        DataFrame with paths to new images added.
+    """
+    new_images_df = images_df.copy()  # Work on a copy of the images_df
+
+    valid_targets = {"t", "z", "p", "beta", "varcope"}
+    if target not in valid_targets:
+        raise ValueError(
+            f"Target type {target} not supported. Must be one of: {', '.join(valid_targets)}"
+        )
+
+    mask_img = masker.mask_img
+    new_mask = np.ones(mask_img.shape, int)
+    new_mask = nib.Nifti1Image(new_mask, mask_img.affine, header=mask_img.header)
+    new_masker = get_masker(new_mask)
+    res = masker.mask_img.header.get_zooms()
+    res = "x".join([str(r) for r in res])
+    if target not in images_df.columns:
+        target_ids = images_df["id"].values
+    else:
+        target_ids = images_df.loc[images_df[target].isnull(), "id"]
+
+    for id_ in target_ids:
+        row = images_df.loc[images_df["id"] == id_].iloc[0]
+
+        # Determine output filename, if file can be generated
+        if out_dir is None:
+            options = [r for r in row.values if isinstance(r, str) and op.isfile(r)]
+            id_out_dir = op.dirname(options[0])
+        else:
+            id_out_dir = out_dir
+        new_file = op.join(id_out_dir, f"{id_}_{res}_{target}.nii.gz")
+
+        # Grab columns with actual values
+        available_data = row[~row.isnull()].to_dict()
+        if metadata_df is not None:
+            metadata_row = metadata_df.loc[metadata_df["id"] == id_].iloc[0]
+            metadata = metadata_row[~metadata_row.isnull()].to_dict()
+            for k, v in metadata.items():
+                if k not in available_data.keys():
+                    available_data[k] = v
+
+        # Get converted data
+        img = resolve_transforms(target, available_data, new_masker)
+        if img is not None:
+            if overwrite or not op.isfile(new_file):
+                img.to_filename(new_file)
+            else:
+                LGR.debug("Image already exists. Not overwriting.")
+
+            new_images_df.loc[new_images_df["id"] == id_, target] = new_file
+        else:
+            new_images_df.loc[new_images_df["id"] == id_, target] = None
+    return new_images_df
+
+
+def resolve_transforms(target, available_data, masker):
+    """Determine and apply the appropriate transforms to a target image type from available data.
+
+    .. versionchanged:: 0.0.8
+
+        * [FIX] Remove unnecessary dimensions from output image object *img_like*. \
+                Now, the image object only has 3 dimensions.
+
+    .. versionadded:: 0.0.4
+
+    Parameters
+    ----------
+    target : {'z', 'p', 't', 'beta', 'varcope'}
+        Target image type.
+    available_data : dict
+        Dictionary mapping data types to their values. Images in the dictionary
+        are paths to files.
+    masker : nilearn Masker
+        Masker used to convert images to arrays and back. Preferably, this mask
+        should cover the full acquisition matrix (rather than an ROI), given
+        that the calculated images will be saved and used for the full Dataset.
+
+    Returns
+    -------
+    img_like or None
+        Image object with the desired data type, if it can be generated.
+        Otherwise, None.
+    """
+    if target in available_data.keys():
+        LGR.warning(f"Target '{target}' already available.")
+        return available_data[target]
+
+    if target == "z":
+        if ("t" in available_data.keys()) and ("sample_sizes" in available_data.keys()):
+            dof = sample_sizes_to_dof(available_data["sample_sizes"])
+            t = masker.transform(available_data["t"])
+            z = t_to_z(t, dof)
+        elif "p" in available_data.keys():
+            p = masker.transform(available_data["p"])
+            z = p_to_z(p)
+        else:
+            return None
+        z = masker.inverse_transform(z.squeeze())
+        return z
+    elif target == "t":
+        # will return none given no transform/target exists
+        temp = resolve_transforms("z", available_data, masker)
+        if temp is not None:
+            available_data["z"] = temp
+
+        if ("z" in available_data.keys()) and ("sample_sizes" in available_data.keys()):
+            dof = sample_sizes_to_dof(available_data["sample_sizes"])
+            z = masker.transform(available_data["z"])
+            t = z_to_t(z, dof)
+            t = masker.inverse_transform(t.squeeze())
+            return t
+        else:
+            return None
+    elif target == "beta":
+        if "t" not in available_data.keys():
+            # will return none given no transform/target exists
+            temp = resolve_transforms("t", available_data, masker)
+            if temp is not None:
+                available_data["t"] = temp
+
+        if "varcope" not in available_data.keys():
+            temp = resolve_transforms("varcope", available_data, masker)
+            if temp is not None:
+                available_data["varcope"] = temp
+
+        if ("t" in available_data.keys()) and ("varcope" in available_data.keys()):
+            t = masker.transform(available_data["t"])
+            varcope = masker.transform(available_data["varcope"])
+            beta = t_and_varcope_to_beta(t, varcope)
+            beta = masker.inverse_transform(beta.squeeze())
+            return beta
+        else:
+            return None
+    elif target == "varcope":
+        if "se" in available_data.keys():
+            se = masker.transform(available_data["se"])
+            varcope = se_to_varcope(se)
+        elif ("samplevar_dataset" in available_data.keys()) and (
+            "sample_sizes" in available_data.keys()
+        ):
+            sample_size = sample_sizes_to_sample_size(available_data["sample_sizes"])
+            samplevar_dataset = masker.transform(available_data["samplevar_dataset"])
+            varcope = samplevar_dataset_to_varcope(samplevar_dataset, sample_size)
+        elif ("sd" in available_data.keys()) and ("sample_sizes" in available_data.keys()):
+            sample_size = sample_sizes_to_sample_size(available_data["sample_sizes"])
+            sd = masker.transform(available_data["sd"])
+            varcope = sd_to_varcope(sd, sample_size)
+            varcope = masker.inverse_transform(varcope)
+        elif ("t" in available_data.keys()) and ("beta" in available_data.keys()):
+            t = masker.transform(available_data["t"])
+            beta = masker.transform(available_data["beta"])
+            varcope = t_and_beta_to_varcope(t, beta)
+        else:
+            return None
+        varcope = masker.inverse_transform(varcope.squeeze())
+        return varcope
+    elif target == "p":
+        if ("t" in available_data.keys()) and ("sample_sizes" in available_data.keys()):
+            dof = sample_sizes_to_dof(available_data["sample_sizes"])
+            t = masker.transform(available_data["t"])
+            z = t_to_z(t, dof)
+            p = z_to_p(z)
+        elif "z" in available_data.keys():
+            z = masker.transform(available_data["z"])
+            p = z_to_p(z)
+        else:
+            return None
+        p = masker.inverse_transform(p.squeeze())
+        return p
+    else:
+        return None
+
+
+class ImagesToCoordinates(NiMAREBase):
+    """Transformer from images to coordinates.
+
+    .. versionadded:: 0.0.8
+
+    Parameters
+    ----------
+    merge_strategy : {"fill", "replace", "demolish"}, optional
+        Strategy for how to incorporate the generated coordinates with possible pre-existing
+        coordinates. The available options are
+
+        ================ =========================================================================
+        "fill" (default) Only add coordinates to study contrasts that do not have coordinates.
+                         If a study contrast has both image and coordinate data, the original
+                         coordinate data will be kept.
+        "replace"        Replace existing coordinates with coordinates generated by this function.
+                         If a study contrast only has coordinate data and no images or if the
+                         statistical threshold is too high for nimare to detect any peaks the
+                         original coordinates will be kept.
+        "demolish"       Only keep generated coordinates and discard any study contrasts with
+                         coordinate data, but no images.
+        ================ =========================================================================
+
+    cluster_threshold : :obj:`int` or `None`, optional
+        Cluster size threshold, in voxels. Default=None.
+    remove_subpeaks : :obj:`bool`, optional
+        If True, removes subpeaks from the cluster results. Default=False.
+    two_sided : :obj:`bool`, optional
+        Whether to employ two-sided thresholding or to evaluate positive values only.
+        Default=False.
+    min_distance : :obj:`float`, optional
+        Minimum distance between subpeaks in mm. Default=8mm.
+    z_threshold : :obj:`float`
+        Cluster forming z-scale threshold. Default=3.1.
+
+    Notes
+    -----
+    The raw Z and/or P maps are not corrected for multiple comparisons. Uncorrected z-values and/or
+    p-values are used for thresholding.
+    """
+
+    def __init__(
+        self,
+        merge_strategy="fill",
+        cluster_threshold=None,
+        remove_subpeaks=False,
+        two_sided=False,
+        min_distance=8.0,
+        z_threshold=3.1,
+    ):
+        self.merge_strategy = merge_strategy
+        self.cluster_threshold = cluster_threshold
+        self.remove_subpeaks = remove_subpeaks
+        self.min_distance = min_distance
+        self.two_sided = two_sided
+        self.z_threshold = z_threshold
+
+    def transform(self, dataset):
+        """Create coordinate peaks from statistical images.
+
+        Parameters
+        ----------
+        dataset : :obj:`~nimare.dataset.Dataset`
+            Dataset with z maps and/or p maps
+            that can be converted to coordinates.
+
+        Returns
+        -------
+        dataset : :obj:`~nimare.dataset.Dataset`
+            Dataset with coordinates generated from
+            images and metadata indicating origin
+            of coordinates ('original' or 'nimare').
+        """
+        # relevant variables from dataset
+        space = dataset.space
+        images_df = dataset.images
+        metadata = dataset.metadata.copy()
+
+        # conform space specification
+        if "mni" in space.lower() or "ale" in space.lower():
+            coordinate_space = "MNI"
+        elif "tal" in space.lower():
+            coordinate_space = "TAL"
+        else:
+            coordinate_space = None
+
+        coordinates_dict = {}
+        cluster_threshold = 0 if self.cluster_threshold is None else self.cluster_threshold
+        for _, row in images_df.iterrows():
+            if row["id"] in list(dataset.coordinates["id"]) and self.merge_strategy == "fill":
+                continue
+
+            z_path = row.get("z")
+            p_path = row.get("p")
+            has_z = isinstance(z_path, (str, os.PathLike)) and str(z_path).strip() != ""
+            has_p = isinstance(p_path, (str, os.PathLike)) and str(p_path).strip() != ""
+
+            if has_z:
+                clusters = get_clusters_table(
+                    nib.funcs.squeeze_image(nib.load(z_path)),
+                    self.z_threshold,
+                    cluster_threshold,
+                    two_sided=self.two_sided,
+                    min_distance=self.min_distance,
+                )
+            elif has_p:
+                LGR.info(
+                    f"No Z map for {row['id']}, using p map "
+                    "(p-values will be treated as positive z-values)"
+                )
+                if self.two_sided:
+                    LGR.warning(f"Cannot use two_sided threshold using a p map for {row['id']}")
+
+                p_threshold = 1 - z_to_p(self.z_threshold)
+                nimg = nib.funcs.squeeze_image(nib.load(p_path))
+                inv_nimg = nib.Nifti1Image(
+                    1 - nimg.get_fdata(dtype=DEFAULT_FLOAT_DTYPE),
+                    nimg.affine,
+                    nimg.header,
+                )
+                clusters = get_clusters_table(
+                    inv_nimg,
+                    p_threshold,
+                    cluster_threshold,
+                    two_sided=False,
+                    min_distance=self.min_distance,
+                )
+                # Peak stat p-values are reported as 1 - p in get_clusters_table
+                clusters["Peak Stat"] = p_to_z(1 - clusters["Peak Stat"])
+            else:
+                LGR.warning(f"No Z or p map for {row['id']}, skipping...")
+                continue
+
+            # skip entry if no clusters are found
+            if clusters.empty:
+                LGR.warning(
+                    f"No clusters were found for {row['id']} at a threshold of {self.z_threshold}"
+                )
+                continue
+
+            if self.remove_subpeaks:
+                # subpeaks are identified as 1a, 1b, etc
+                # while peaks are kept as 1, 2, 3, etc,
+                # so removing all non-int rows will
+                # keep main peaks while removing subpeaks
+                clusters = clusters[clusters["Cluster ID"].apply(lambda x: isinstance(x, int))]
+
+            coordinates_dict[row["study_id"]] = {
+                "contrasts": {
+                    row["contrast_id"]: {
+                        "coords": {
+                            "space": coordinate_space,
+                            "x": list(clusters["X"]),
+                            "y": list(clusters["Y"]),
+                            "z": list(clusters["Z"]),
+                            "z_stat": list(clusters["Peak Stat"]),
+                        },
+                        "metadata": {"coordinate_source": "nimare"},
+                    }
+                }
+            }
+
+        # only the generated coordinates ('demolish')
+        coordinates_df = _dict_to_coordinates(coordinates_dict, space)
+        meta_df = _dict_to_df(
+            pd.DataFrame(dataset._ids),
+            coordinates_dict,
+            "metadata",
+        )
+
+        if "coordinate_source" in meta_df.columns:
+            metadata["coordinate_source"] = meta_df["coordinate_source"]
+        else:
+            # nimare did not overwrite any coordinates
+            metadata["coordinate_source"] = ["original"] * metadata.shape[0]
+
+        if self.merge_strategy != "demolish":
+            original_idxs = ~dataset.coordinates["id"].isin(coordinates_df["id"])
+            old_coordinates_df = dataset.coordinates[original_idxs]
+            coordinates_df = pd.concat([coordinates_df, old_coordinates_df], ignore_index=True)
+
+            # specify original coordinates
+            original_ids = set(old_coordinates_df["id"])
+            metadata.loc[metadata["id"].isin(original_ids), "coordinate_source"] = "original"
+
+        if "z_stat" in coordinates_df.columns:
+            # ensure z_stat is treated as float
+            coordinates_df["z_stat"] = coordinates_df["z_stat"].astype(float)
+
+            # Raise warning if coordinates dataset contains both positive and negative z_stats
+            if ((coordinates_df["z_stat"].values >= 0).any()) and (
+                (coordinates_df["z_stat"].values < 0).any()
+            ):
+                warnings.warn(
+                    "Coordinates dataset contains both positive and negative z_stats. "
+                    "The algorithms currently implemented in NiMARE are designed for "
+                    "one-sided tests. This might lead to unexpected results."
+                )
+
+        new_dataset = copy.deepcopy(dataset)
+        new_dataset.coordinates = coordinates_df
+        new_dataset.metadata = metadata
+
+        return new_dataset
+
+
+class StandardizeField(NiMAREBase):
+    """Standardize metadata fields."""
+
+    def __init__(self, fields):
+        self.fields = fields  # the fields to be standardized
+
+    def transform(self, dataset):
+        """Standardize metadata fields."""
+        # update a copy of the dataset
+        dataset = dataset.copy()
+
+        categorical_metadata, numerical_metadata = [], []
+        for metadata_name in self.fields:
+            if np.array_equal(
+                dataset.annotations[metadata_name], dataset.annotations[metadata_name].astype(str)
+            ):
+                categorical_metadata.append(metadata_name)
+            elif np.array_equal(
+                dataset.annotations[metadata_name],
+                dataset.annotations[metadata_name].astype(float),
+            ):
+                numerical_metadata.append(metadata_name)
+        if len(categorical_metadata) > 0:
+            LGR.warning(f"Categorical metadata {categorical_metadata} can't be standardized.")
+        if len(numerical_metadata) == 0:
+            raise ValueError("No numerical metadata found.")
+
+        moderators = dataset.annotations[numerical_metadata]
+        standardize_moderators = moderators - np.mean(moderators, axis=0)
+        standardize_moderators /= np.std(standardize_moderators, axis=0)
+        if isinstance(self.fields, str):
+            column_name = "standardized_" + self.fields
+        elif isinstance(self.fields, list):
+            column_name = ["standardized_" + moderator for moderator in numerical_metadata]
+        dataset.annotations[column_name] = standardize_moderators
+
+        return dataset
+
+
+def sample_sizes_to_dof(sample_sizes):
+    """Calculate degrees of freedom from a list of sample sizes using a simple heuristic.
+
+    .. versionadded:: 0.0.4
+
+    Parameters
+    ----------
+    sample_sizes : array_like
+        A list of sample sizes for different groups in the study.
+
+    Returns
+    -------
+    dof : int
+        An estimate of degrees of freedom. Number of participants minus number
+        of groups.
+    """
+    dof = np.sum(sample_sizes) - len(sample_sizes)
+    return dof
+
+
+def sample_sizes_to_sample_size(sample_sizes):
+    """Calculate appropriate sample size from a list of sample sizes using a simple heuristic.
+
+    .. versionadded:: 0.0.4
+
+    Parameters
+    ----------
+    sample_sizes : array_like
+        A list of sample sizes for different groups in the study.
+
+    Returns
+    -------
+    sample_size : int
+        Total (sum) sample size.
+    """
+    sample_size = np.sum(sample_sizes)
+    return sample_size
+
+
+def sd_to_varcope(sd, sample_size):
+    """Convert standard deviation to sampling variance.
+
+    .. versionadded:: 0.0.3
+
+    Parameters
+    ----------
+    sd : array_like
+        Standard deviation of the sample
+    sample_size : int
+        Sample size
+
+    Returns
+    -------
+    varcope : array_like
+        Sampling variance of the parameter
+    """
+    se = sd / np.sqrt(sample_size)
+    varcope = se_to_varcope(se)
+    return varcope
+
+
+def se_to_varcope(se):
+    """Convert standard error values to sampling variance.
+
+    .. versionadded:: 0.0.3
+
+    Parameters
+    ----------
+    se : array_like
+        Standard error of the sample parameter
+
+    Returns
+    -------
+    varcope : array_like
+        Sampling variance of the parameter
+
+    Notes
+    -----
+    Sampling variance is standard error squared.
+    """
+    varcope = se**2
+    return varcope
+
+
+def samplevar_dataset_to_varcope(samplevar_dataset, sample_size):
+    """Convert "sample variance of the dataset" to "sampling variance".
+
+    .. versionadded:: 0.0.3
+
+    Parameters
+    ----------
+    samplevar_dataset : array_like
+        Sample variance of the dataset (i.e., variance of the individual observations in a single
+        sample). Can be calculated with ``np.var``.
+    sample_size : int
+        Sample size
+
+    Returns
+    -------
+    varcope : array_like
+        Sampling variance of the parameter (i.e., variance of sampling distribution for the
+        parameter).
+
+    Notes
+    -----
+    Sampling variance is sample variance divided by sample size.
+    """
+    varcope = samplevar_dataset / sample_size
+    return varcope
+
+
+def t_and_varcope_to_beta(t, varcope):
+    """Convert t-statistic to parameter estimate using sampling variance.
+
+    .. versionadded:: 0.0.3
+
+    Parameters
+    ----------
+    t : array_like
+        T-statistics of the parameter
+    varcope : array_like
+        Sampling variance of the parameter
+
+    Returns
+    -------
+    beta : array_like
+        Parameter estimates
+    """
+    beta = t * np.sqrt(varcope)
+    return beta
+
+
+def t_and_beta_to_varcope(t, beta):
+    """Convert t-statistic to sampling variance using parameter estimate.
+
+    .. versionadded:: 0.0.4
+
+    Parameters
+    ----------
+    t : array_like
+        T-statistics of the parameter
+    beta : array_like
+        Parameter estimates
+
+    Returns
+    -------
+    varcope : array_like
+        Sampling variance of the parameter
+    """
+    varcope = (beta / t) ** 2
+    return varcope
+
+
+def z_to_p(z, tail="two"):
+    """Convert z-values to p-values.
+
+    .. versionadded:: 0.0.8
+
+    Parameters
+    ----------
+    z : array_like
+        Z-statistics
+    tail : {'one', 'two'}, optional
+        Whether p-values come from one-tailed or two-tailed test. Default is
+        'two'.
+
+    Returns
+    -------
+    p : array_like
+        P-values
+    """
+    z = np.array(z)
+    if tail == "two":
+        p = stats.norm.sf(abs(z)) * 2
+    elif tail == "one":
+        p = stats.norm.sf(z)
+    else:
+        raise ValueError('Argument "tail" must be one of ["one", "two"]')
+
+    if p.shape == ():
+        p = p[()]
+    return p
+
+
+def p_to_z(p, tail="two"):
+    """Convert p-values to (unsigned) z-values.
+
+    .. versionadded:: 0.0.3
+
+    Parameters
+    ----------
+    p : array_like
+        P-values
+    tail : {'one', 'two'}, optional
+        Whether p-values come from one-tailed or two-tailed test. Default is
+        'two'.
+
+    Returns
+    -------
+    z : array_like
+        Z-statistics (unsigned)
+    """
+    p = np.array(p)
+    if tail == "two":
+        z = stats.norm.isf(p / 2)
+    elif tail == "one":
+        z = stats.norm.isf(p)
+        z = np.array(z)
+        z[z < 0] = 0
+    else:
+        raise ValueError('Argument "tail" must be one of ["one", "two"]')
+
+    if z.shape == ():
+        z = z[()]
+    return z
+
+
+def t_to_z(t_values, dof):
+    """Convert t-statistics to z-statistics.
+
+    .. versionadded:: 0.0.3
+
+    An implementation of :footcite:t:`hughett2008accurate` from Vanessa Sochat's TtoZ package
+    :footcite:p:`sochat2015ttoz`.
+
+    Parameters
+    ----------
+    t_values : array_like
+        T-statistics
+    dof : int
+        Degrees of freedom
+
+    Returns
+    -------
+    z_values : array_like
+        Z-statistics
+
+    License
+    -------
+    The MIT License (MIT)
+    Copyright (c) 2015 Vanessa Sochat
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy of this software
+    and associated documentation files (the "Software"), to deal in the Software without
+    restriction, including without limitation the rights to use, copy, modify, merge, publish,
+    distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the
+    Software is furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all copies or
+    substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+    INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
+    PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+    FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+    ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.
+
+    References
+    ----------
+    .. footbibliography::
+    """
+    # Select just the nonzero voxels
+    nonzero = t_values[t_values != 0]
+
+    # We will store our results here
+    z_values_nonzero = np.zeros(len(nonzero))
+
+    # Select values less than or == 0, and greater than zero
+    c = np.zeros(len(nonzero))
+    k1 = nonzero <= c
+    k2 = nonzero > c
+
+    # Subset the data into two sets
+    t1 = nonzero[k1]
+    t2 = nonzero[k2]
+
+    # Calculate p values for <=0
+    p_values_t1 = stats.t.cdf(t1, df=dof)
+    p_values_t1[p_values_t1 < np.finfo(p_values_t1.dtype).eps] = np.finfo(p_values_t1.dtype).eps
+    z_values_t1 = stats.norm.ppf(p_values_t1)
+
+    # Calculate p values for > 0
+    p_values_t2 = stats.t.cdf(-t2, df=dof)
+    p_values_t2[p_values_t2 < np.finfo(p_values_t2.dtype).eps] = np.finfo(p_values_t2.dtype).eps
+    z_values_t2 = -stats.norm.ppf(p_values_t2)
+    z_values_nonzero[k1] = z_values_t1
+    z_values_nonzero[k2] = z_values_t2
+
+    z_values = np.zeros(t_values.shape)
+    z_values[t_values != 0] = z_values_nonzero
+    return z_values
+
+
+def z_to_t(z_values, dof):
+    """Convert z-statistics to t-statistics.
+
+    .. versionadded:: 0.0.3
+
+    An inversion of the t_to_z implementation of :footcite:t:`hughett2008accurate` from
+    Vanessa Sochat's TtoZ package :footcite:p:`sochat2015ttoz`.
+
+    Parameters
+    ----------
+    z_values : array_like
+        Z-statistics
+    dof : int
+        Degrees of freedom
+
+    Returns
+    -------
+    t_values : array_like
+        T-statistics
+
+    References
+    ----------
+    .. footbibliography::
+    """
+    # Select just the nonzero voxels
+    nonzero = z_values[z_values != 0]
+
+    # We will store our results here
+    t_values_nonzero = np.zeros(len(nonzero))
+
+    # Select values less than or == 0, and greater than zero
+    c = np.zeros(len(nonzero))
+    k1 = nonzero <= c
+    k2 = nonzero > c
+
+    # Subset the data into two sets
+    z1 = nonzero[k1]
+    z2 = nonzero[k2]
+
+    # Calculate p values for <=0
+    p_values_z1 = stats.norm.cdf(z1)
+    t_values_z1 = stats.t.ppf(p_values_z1, df=dof)
+
+    # Calculate p values for > 0
+    p_values_z2 = stats.norm.cdf(-z2)
+    t_values_z2 = -stats.t.ppf(p_values_z2, df=dof)
+    t_values_nonzero[k1] = t_values_z1
+    t_values_nonzero[k2] = t_values_z2
+
+    t_values = np.zeros(z_values.shape)
+    t_values[z_values != 0] = t_values_nonzero
+    return t_values
+
+
+def t_to_d(t_values, sample_sizes):
+    """Convert t-statistics to Cohen's d.
+
+    Parameters
+    ----------
+    t_values : array_like
+        T-statistics
+    sample_sizes : array_like
+        Sample sizes
+
+    Returns
+    -------
+    d_values : array_like
+        Cohen's d
+    """
+    d_values = t_values / np.sqrt(sample_sizes)
+    return d_values
+
+
+def d_to_g(d, N, return_variance=False):
+    """Convert Cohen's d to Hedges' g.
+
+    Parameters
+    ----------
+    d : array_like
+        Cohen's d
+    N : array_like
+        Sample sizes
+    return_variance : bool, optional
+        Whether to return the variance of Hedges' g. Default is False.
+
+    Returns
+    -------
+    g_values : array_like
+        Hedges' g
+    """
+    # Calculate bias correction h(N)
+    h = 1 - (3 / (4 * (N - 1) - 1))
+
+    if return_variance:
+        return d * h, ((N - 1) * (1 + N * d**2) * (h**2) / (N * (N - 3))) - d**2
+
+    return d * h
