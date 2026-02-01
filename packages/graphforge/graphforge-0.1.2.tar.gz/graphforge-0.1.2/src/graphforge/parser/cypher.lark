@@ -1,0 +1,144 @@
+// openCypher Grammar (v1 Subset)
+// Supports: MATCH, CREATE, SET, DELETE, MERGE, WHERE, RETURN, ORDER BY, LIMIT, SKIP, WITH
+
+?start: query
+
+query: single_part_query | multi_part_query
+
+// Multi-part queries with WITH clause
+multi_part_query: reading_clause+ with_clause+ final_query_part
+
+// Single-part queries (without WITH)
+single_part_query: read_query | write_query | update_query
+
+// Final part of multi-part query (allows RETURN without MATCH)
+final_query_part: read_query
+                | return_only_query
+                | write_query
+                | update_query
+
+return_only_query: return_clause order_by_clause? skip_clause? limit_clause?
+
+read_query: match_clause where_clause? return_clause order_by_clause? skip_clause? limit_clause?
+
+write_query: create_clause return_clause?
+           | merge_clause return_clause?
+
+update_query: match_clause where_clause? set_clause? delete_clause? return_clause?
+
+// Reading clauses that can precede WITH
+reading_clause: match_clause where_clause?
+
+// WITH clause
+with_clause: "WITH"i return_item ("," return_item)* where_clause? order_by_clause? skip_clause? limit_clause?
+
+// MATCH clause
+match_clause: "MATCH"i pattern ("," pattern)*
+
+// CREATE clause
+create_clause: "CREATE"i pattern ("," pattern)*
+
+// SET clause
+set_clause: "SET"i set_item ("," set_item)*
+
+set_item: property_access "=" expression
+
+// DELETE clause
+delete_clause: "DELETE"i variable ("," variable)*
+
+// MERGE clause
+merge_clause: "MERGE"i pattern ("," pattern)*
+
+pattern: node_pattern (relationship_pattern node_pattern)*
+
+node_pattern: "(" variable? labels? properties? ")"
+
+relationship_pattern: undirected_rel
+                    | left_arrow_rel
+                    | right_arrow_rel
+
+undirected_rel: "-" "[" variable? rel_types? properties? "]" "-"
+left_arrow_rel: "<-" "[" variable? rel_types? properties? "]" "-"
+right_arrow_rel: "-" "[" variable? rel_types? properties? "]" "->"
+
+// WHERE clause
+where_clause: "WHERE"i expression
+
+// RETURN clause
+return_clause: "RETURN"i return_item ("," return_item)*
+
+return_item: expression ("AS"i IDENTIFIER)?
+
+// ORDER BY clause
+order_by_clause: "ORDER"i "BY"i order_by_item ("," order_by_item)*
+
+order_by_item: expression DIRECTION?
+
+DIRECTION: /ASC/i | /DESC/i
+
+// LIMIT and SKIP
+limit_clause: "LIMIT"i INT
+skip_clause: "SKIP"i INT
+
+// Expressions
+?expression: or_expr
+
+or_expr: and_expr ("OR"i and_expr)*
+and_expr: comparison_expr ("AND"i comparison_expr)*
+
+comparison_expr: primary_expr (COMP_OP primary_expr)?
+
+COMP_OP: "=" | "<>" | "<" | ">" | "<=" | ">="
+
+?primary_expr: function_call
+             | property_access
+             | variable
+             | literal
+             | "(" expression ")"
+
+function_call: FUNCTION_NAME "(" function_args? ")"
+
+function_args: "*"                              -> count_star
+             | "DISTINCT"i expression           -> distinct_arg
+             | expression ("," expression)*     -> regular_args
+
+FUNCTION_NAME: /COUNT|SUM|AVG|MIN|MAX/i
+
+property_access: variable "." IDENTIFIER
+
+// Labels and types
+labels: label+
+label: ":" IDENTIFIER
+
+rel_types: rel_type ("|" rel_type)*
+rel_type: ":" IDENTIFIER
+
+// Properties
+properties: "{" property ("," property)* "}"
+property: IDENTIFIER ":" literal
+
+// Literals
+?literal: INT           -> int_literal
+        | FLOAT         -> float_literal
+        | STRING        -> string_literal
+        | "true"i       -> true_literal
+        | "false"i      -> false_literal
+        | "null"i       -> null_literal
+
+// Variables and identifiers
+variable: IDENTIFIER
+
+IDENTIFIER: /[a-zA-Z_][a-zA-Z0-9_]*/
+
+// Terminals
+INT: /[0-9]+/
+FLOAT: /[0-9]+\.[0-9]+/
+STRING: /"([^"\\]|\\.)*"/ | /'([^'\\]|\\.)*'/
+
+// Whitespace
+%import common.WS
+%ignore WS
+
+// Comments (optional, for future)
+COMMENT: "//" /[^\n]*/
+%ignore COMMENT
