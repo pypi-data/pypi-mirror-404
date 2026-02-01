@@ -1,0 +1,103 @@
+# S&P Global API Package (Non-official)
+
+A powerful Python package for accessing S&P Global (formerly IHS Markit) energy and climate data services. Specifically designed for CCUS (Carbon Capture, Utilization, and Storage), Upstream, and Climate Scenario analytics.
+
+Disclaimer: This is **NOT** an official API package provided by S&P Global. It is a community-driven project created by analysts to simplify access to S&P Global data.
+Please reach out to <support.energy@spglobal.com> for official support, and more information on the use of S&P Global data.
+
+## Description
+
+This package provides a unified, high-level interface for interacting with various S&P Global API products. It abstracts the complexity of different API architectures (OData vs. standard REST) and provides automated tools for data retrieval, mapping, and standardized styling.
+
+## Key Features
+
+- **Unified API Client**: A single `SPGlobalAPIClient` class that handles authentication and URL construction for multiple data clusters.
+- **Auto-Pagination**: Large datasets (1M+ rows) are automatically fetched in chunks using the `fetch_all` method.
+- **Smart Filtering**: Supports complex dictionary-based filters and raw OData query strings.
+- **Mapping Utilities**: Specialized tools for creating interactive geospatial visualizations with Folium and GeoPandas.
+- **S&P Global Styling**: Apply consistent, publication-ready visualization styles for charts and presentations.
+- **Metadata Discovery**: Built-in support for retrieving dataset schemas and view definitions.
+
+## Installation
+
+### Requirements
+- Python >= 3.12
+- Dependencies: `pandas`, `requests`, `matplotlib`, `geopandas`, `folium`, `python-dotenv`
+
+### Install from PyPI
+```bash
+pip install spg_api
+```
+
+## Configuration
+
+### Option 1: .env File
+Create a `.env` file in your project root:
+```env
+CONNECT_KEY=your_api_key
+CONNECT_PW=your_api_password
+```
+
+### Option 2: Manual Configuration
+You can also set credentials directly in your code:
+```python
+import spg_api
+spg_api.username = "your_api_key"
+spg_api.password = "your_api_password"
+```
+
+## Usage
+
+### 1. Unified API Client
+The `SPGlobalAPIClient` is the primary entry point for all data retrieval.
+
+```python
+import spg_api
+
+# Initialize for Energy/Climate Scenarios
+client = spg_api.SPGlobalAPIClient("energyandclimatescenarios")
+
+# Fetch data
+df = client.retrieve_data(
+    view_name="coal_markets",
+    filters={"Country": "China"},
+    select=["Year", "Value"]
+)
+```
+
+### 2. Publication-Ready Styling
+Apply standardized S&P Global styling to your Matplotlib charts.
+
+```python
+import matplotlib.pyplot as plt
+import spg_api.spg_style as spg_style
+
+style = spg_style.SpglobalStyle(theme='light')
+fig, ax = plt.subplots(figsize=spg_style.get_edp_figsize())
+
+# ... plotting logic ...
+
+style.add_footnotes(fig, source="S&P Global Market Intelligence")
+```
+
+## Project Structure
+
+```
+spg_api/
+├── spg_api/
+│   ├── url_generator.py    # Core Unified Client (SPGlobalAPIClient)
+│   ├── analysis.py         # Specialized scenario analysis classes
+│   ├── spg_style.py        # S&P Global visualization styling
+│   ├── map.py              # Geospatial mapping utilities
+│   ├── utils.py            # API request and response helpers
+│   └── const.py            # Constants and styling tokens
+├── README.md               # Documentation
+└── pyproject.toml          # Build configuration
+```
+
+## Contact
+
+For questions or support, contact the maintainer at **kovkov@163.com**.
+
+---
+*Proprietary to S&P Global. Reproduction without permission is prohibited.*
