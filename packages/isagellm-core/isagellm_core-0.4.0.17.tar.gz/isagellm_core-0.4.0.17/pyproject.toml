@@ -1,0 +1,78 @@
+[build-system]
+requires = ["setuptools>=64", "wheel", "packaging>=24.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "isagellm-core"
+version = "0.4.0.17"
+description = "sageLLM core runtime with PD separation (MVP)"
+readme = "README.md"
+requires-python = "==3.11.*"
+authors = [{ name = "IntelliStream Team" }]
+license = { text = "Proprietary - IntelliStream" }
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+  "pydantic>=2.0.0",
+  "pyyaml>=6.0.0",
+  "isagellm-protocol>=0.4.0.0,<0.5.0",
+  "isagellm-backend>=0.4.0.0,<0.5.0",
+  "isagellm-comm>=0.4.0.0,<0.5.0",
+  "isagellm-kv-cache>=0.4.0.0,<0.5.0",
+  "fastapi>=0.100.0",
+  "uvicorn>=0.22.0",
+  "torch>=2.0.0",
+  "transformers>=4.35.0",
+  "accelerate>=0.26.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=7.0.0",
+  "pytest-cov>=4.0.0",
+  "pytest-timeout>=2.0.0",
+  "ruff>=0.8.0",
+  "mypy>=1.0.0",
+  "types-PyYAML>=6.0.0",
+  "pre-commit>=3.0.0",
+  "isage-pypi-publisher>=0.2.0",
+]
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+sagellm_core = ["py.typed"]
+"*" = ["*.pyc", "*.pyo", "__pycache__/*", "*.so", "*.pyd", "*.dylib"]
+
+[tool.ruff]
+line-length = 100
+
+[project.scripts]
+sage-engine = "sagellm_core.engine_server:main"
+
+# DEPRECATED: Old hardware-specific engines have been removed
+# Use LLMEngine with BackendProvider instead:
+#   from sagellm_core import LLMEngine, LLMEngineConfig
+#   engine = LLMEngine(LLMEngineConfig(model="...", backend="cpu"))
+#
+# The entry-points system is being phased out in favor of the unified
+# LLMEngine + BackendProvider architecture (vLLM v1 style).
+# [project.entry-points."sagellm.engines"]
+# cpu = "sagellm_core.engines.cpu:create_cpu_engine"
+# hf-cuda = "sagellm_core.engines.hf_cuda:create_hf_cuda_engine"
+# pytorch = "sagellm_core.engines.pytorch:create_pytorch_engine"
+# ascend = "sagellm_core.engines.ascend:create_ascend_engine"
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
