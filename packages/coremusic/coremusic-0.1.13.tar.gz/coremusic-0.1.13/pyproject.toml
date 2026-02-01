@@ -1,0 +1,147 @@
+[project]
+name = "coremusic"
+version = "0.1.13"
+authors = [
+    { name = "Shakeeb Alireza", email = "shakfu@users.noreply.github.com" }
+]
+description = "Python bindings for Apple CoreAudio"
+readme = "README.md"
+requires-python = ">=3.11"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Operating System :: MacOS :: MacOS X",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Cython",
+    "Topic :: Multimedia :: Sound/Audio",
+    "Topic :: Multimedia :: Sound/Audio :: Analysis",
+    "Topic :: Multimedia :: Sound/Audio :: Capture/Recording",
+    "Topic :: Multimedia :: Sound/Audio :: MIDI",
+    "Topic :: Multimedia :: Sound/Audio :: Players",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
+license = "MIT"
+license-files = ["LICENSE"]
+dependencies = []
+
+[project.optional-dependencies]
+# Audio analysis features (beat detection, pitch detection, etc.)
+analysis = ["numpy>=2.0", "scipy>=1.10"]
+# Visualization features (waveform plots, spectrograms)
+visualization = ["matplotlib>=3.8"]
+# All optional features
+all = ["numpy>=2.0", "scipy>=1.10", "matplotlib>=3.8"]
+
+[project.urls]
+Homepage = "https://github.com/shakfu/coremusic"
+Issues = "https://github.com/shakfu/coremusic/issues"
+
+[project.scripts]
+coremusic = "coremusic.cli:main"
+
+[dependency-groups]
+dev = [
+    "numpy>=2.3.4",
+    "scipy>=1.16.2",
+    "sphinx>=8.2.3",
+    "pytest>=8.4.2",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=6.0.0",
+    "twine>=6.2.0",
+    "mypy>=1.13.0",
+    "matplotlib>=3.10.7",
+    "ruff>=0.14.8",
+    "isort>=7.0.0",
+]
+
+[build-system]
+requires = ["scikit-build-core>=0.8", "cython"]
+build-backend = "scikit_build_core.build"
+
+[tool.scikit-build]
+wheel.packages = ["src/coremusic"]
+cmake.build-type = "Release"
+sdist.include = [
+    "thirdparty",
+    "src/coremusic/*.pyi", 
+    "src/coremusic/*.pxd", 
+    "src/coremusic/*.pyx", 
+    "src/coremusic/*.c", 
+    "src/coremusic/*.cpp", 
+    "src/coremusic/py.typed",
+
+    # Thirdparty: Ableton Link headers
+    "thirdparty/link/include/**/*.hpp",
+    "thirdparty/link/include/**/*.ipp",
+    "thirdparty/link/modules/asio-standalone/asio/include/**/*.hpp",
+    "thirdparty/link/modules/asio-standalone/asio/include/**/*.ipp",
+]
+
+sdist.exclude = [".git/", "*.egg-info/"]
+wheel.exclude = ["**.pyx", "**.pxd", "**.pxi", "**.c", "**.cpp", "**.h", "**.hpp"]
+
+
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]
+
+[tool.coverage.run]
+source = ["src/coremusic"]
+omit = [
+    "*/tests/*",
+    "*/__pycache__/*",
+    "*/site-packages/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]
+
+[tool.coverage.html]
+directory = "htmlcov"
+
+[tool.mypy]
+strict = true
+show_error_codes = true
+mypy_path = "src"
+packages = ["coremusic"]
+namespace_packages = true
+
+[[tool.mypy.overrides]]
+module = "coremusic.capi"
+ignore_missing_imports = false
+follow_imports = "skip"
+
+[[tool.mypy.overrides]]
+module = [
+    "scipy.*",
+    "numpy.*",
+]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "coremusic.async_io"
+# Stub file inconsistencies - actual code has proper type hints
+warn_unused_ignores = false
+disable_error_code = ["arg-type", "attr-defined"]
