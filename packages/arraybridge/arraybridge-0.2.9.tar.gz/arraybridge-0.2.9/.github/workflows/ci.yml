@@ -1,0 +1,158 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  # Test across Python versions with CPU-compatible frameworks (no torch)
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install base dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run tests with coverage
+        run: |
+          pytest --cov=arraybridge --cov-report=xml --cov-report=html --cov-report=term-missing -v
+
+      - name: Upload coverage to Codecov
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.xml
+          fail_ci_if_error: false
+
+  # GPU tests - includes framework testing
+  # Note: GitHub Actions ubuntu-latest doesn't have physical GPU,
+  # but tests will run the "unavailable GPU" code paths and mock GPU tests
+  gpu-test:
+    runs-on: ubuntu-latest
+    continue-on-error: true  # Don't block PR merges if GPU not available
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install base dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Install GPU frameworks (will use CPU versions in CI)
+        run: |
+          # PyTorch - CPU version will be installed in CI (no GPU available)
+          pip install torch torchvision torchaudio 2>&1 || echo "PyTorch install attempted"
+          
+          # JAX - CPU version
+          pip install jax jaxlib 2>&1 || echo "JAX install skipped (optional)"
+          
+          # CuPy - will fail without CUDA, that's ok
+          pip install cupy-cuda12x 2>&1 || echo "CuPy skipped (requires actual CUDA)"
+
+      - name: Check framework availability
+        run: |
+          python -c "
+          print('=== Framework Availability Check ===')
+          try:
+              import torch
+              print(f'✓ PyTorch available')
+              print(f'  CUDA available: {torch.cuda.is_available()}')
+              print(f'  (This is normal - GitHub Actions has no physical GPU)')
+          except ImportError:
+              print('✗ PyTorch not available')
+          
+          try:
+              import jax
+              print(f'✓ JAX available')
+          except ImportError:
+              print('✗ JAX not available')
+          
+          try:
+              import cupy
+              print(f'✓ CuPy available')
+          except ImportError:
+              print('✗ CuPy not available (normal - requires CUDA)')
+          " || true
+
+      - name: Run GPU cleanup tests
+        run: |
+          # Tests include:
+          # 1. Framework unavailable tests (always run)
+          # 2. GPU unavailable fallback paths (will run in CI)
+          # 3. Mocked GPU tests (test cleanup code with mocked GPU state)
+          pytest -v tests/test_gpu_cleanup.py \
+            --cov=arraybridge \
+            --cov-report=term-missing \
+            --cov-report=html \
+            --cov-report=xml \
+            -ra
+
+      - name: Upload GPU test coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.xml
+          flags: gpu-tests
+          fail_ci_if_error: false
+
+      - name: Upload HTML coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gpu-test-coverage-report
+          path: htmlcov/
+
+  # Code quality checks
+  code-quality:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff black mypy
+
+      - name: Run ruff (linting)
+        run: |
+          ruff check src/ --output-format=github
+
+      - name: Run black (formatting check)
+        run: |
+          black --check src/
+
+      - name: Run mypy (type checking)
+        continue-on-error: true  # Scientific code often has complex types
+        run: |
+          mypy src/ --ignore-missing-imports
