@@ -1,0 +1,147 @@
+# AICoevolution SDK (Thin Client)
+
+The `aicoevolution` PyPI package ships a **thin HTTP client** for the AICoevolution SDK Service.
+All computation happens on the hosted service (or your self-hosted deployment).
+
+This README is the **public contract**: if it isn’t described here, it won’t be part of the published client API.
+
+---
+
+## Install
+
+```bash
+pip install aicoevolution
+```
+
+---
+
+## What you get (Paper 03 release)
+
+### Real-time semantic telemetry (`/v0/ingest`)
+- **SGI (Semantic Grounding Index)**: grounding quality of assistant replies relative to the user's query + context
+- **Angular velocity**: semantic movement per turn (degrees/turn)
+- **Context phase**: `stable` / `protostar` / `split` — topic coherence state
+- **Context mass**: accumulated turns in current topic
+- **Attractor count**: number of competing topic centers
+- Designed for **live feedback** (sub-second latency)
+
+### Batch runs (`/v1/runs`) (internal / platform)
+- Platform-oriented batch analysis with snapshot persistence (used by backend workflows)
+- Requires an internal service key (`X-SDK-API-Key`)
+
+---
+
+## Authentication
+
+The SDK Service supports two auth modes:
+
+- **External users**: `Authorization: Bearer aic_...`
+- **Internal service-to-service**: `X-SDK-API-Key: <SDK_SERVICE_API_KEY>`
+
+Get a user API key from your AICoevolution profile (Profile → API Keys).
+
+---
+
+## Quickstart (Python)
+
+```python
+from aicoevolution_sdk import AICoevolutionClient
+import time
+
+sdk = AICoevolutionClient(
+    base_url="https://sdk.aicoevolution.com",
+)
+
+# Option A: set env var AIC_SDK_API_KEY=aic_...
+# Option B: pass it in code:
+sdk.auth = sdk.auth.__class__(user_api_key="aic_your_key_here")
+
+conversation_id = "conv_demo_001"
+
+sdk.ingest(
+    conversation_id=conversation_id,
+    role="user",
+    text="I keep repeating the same patterns and I don't know why.",
+    timestamp_ms=int(time.time() * 1000),
+)
+
+resp = sdk.ingest(
+    conversation_id=conversation_id,
+    role="assistant",
+    text="Let’s slow down and find the smallest concrete example of the pattern.",
+    timestamp_ms=int(time.time() * 1000),
+)
+
+print("SGI mean:", resp.get("sgi_mean"))
+print("Velocity mean:", resp.get("angular_velocity_mean"))
+print("Context phase:", resp.get("context_phase"))
+print("Context mass:", resp.get("context_mass"))
+```
+
+---
+
+## API (Thin Client)
+
+### Configure via environment
+
+```bash
+# SDK service base URL
+AIC_SDK_URL=https://sdk.aicoevolution.com
+
+# External user key (recommended for scripts / apps)
+AIC_SDK_API_KEY=aic_...
+
+# Internal-only (platform backend) key for /v1/runs
+SDK_SERVICE_API_KEY=...
+```
+
+### `POST /v0/ingest` (real-time metrics)
+
+```python
+sdk.ingest(
+    conversation_id="conv_123",
+    role="user|assistant",
+    text="...",
+    timestamp_ms=1705234567890,
+)
+```
+
+### `GET /v0/snapshot/{conversation_id}`
+
+```python
+sdk.snapshot(conversation_id="conv_123")
+```
+
+### `POST /v1/runs` (internal / platform)
+
+```python
+sdk.create_run(body={
+    "journey_spec_id": "diagnostic_pulse_v1",
+    "messages": [
+        {
+            "role": "user",
+            "text": "...",
+            "macro_topic_id": "perception",
+            "session_idx": 1,
+            "timestamp": "2025-12-29T12:34:56Z",
+        },
+    ],
+})
+```
+
+---
+
+## Service architecture (high-level)
+
+The SDK Service is part of a small ecosystem:
+
+- **SDK Service (FastAPI)**: telemetry + batch runs
+- **Embedding Sidecar**: embedding generation via HTTP (`POST /embed`)
+- **Platform backend**: user keys, quotas, tier enforcement, hosted workflows
+
+---
+
+## Support
+
+- **Docs**: `https://docs.aicoevolution.com`
+- **Email**: research@aicoevolution.com
