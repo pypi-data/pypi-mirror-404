@@ -1,0 +1,164 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+## [Unreleased]
+- No unreleased changes so far
+
+## [0.10.3] - 2026-01-31
+### Added
+- Added support for fetching charging station information based on latitude and longitude
+
+## [0.10.2] - 2026-01-23
+### Fixed
+- Improves handling of token refresh (thanks to user @mikrohard)
+- Vehicle images will not be downloaded more often than every 24h
+
+## [0.10.1] - 2026-01-11
+### Fixed
+- Fixes online state calculation
+- Fixes compatibility with CarConnectivity version 0.11.5
+
+## [0.10] - 2026-01-04
+### Added
+- Support for initializing attributes on startup form static entries in the configuration
+- Guessing of vehicle online state based on last successful data fetch time and configured interval
+
+Note: This connector is required for compatibility with CarConnectivity version 0.11 and higher.
+
+## [0.9.3] - 2025-11-29
+### Added
+- Added config option 'force_enable_access' for cars that do not report the 'access' capability but have door/window functionality in the app. Setting this to true may bring back door and window status.
+
+## [0.9.2] - 2025-11-25
+### Fixed
+- Fixes the failing login after the login procedure on server side was changed (a very big thank you to user @bragra)
+
+## [0.9.1] - 2025-11-02
+### Changed
+- Updated some dependencies
+
+## [0.9] - 2025-10-04
+### Added
+- Support for ranges and levels of engines for vehicles that do not have the 'fuelStatus' capability, but provides the data through 'measurements' capability
+### Fixed
+- Problem where connector did not call transaction_end() after updating vehicles, causing problems with other plugins (thanks to @michaelarnauts for finding this issue)
+
+## [0.8.2] - 2025-07-22
+### Fixed
+- Fixes attribute for estimated time reached for charging
+
+## [0.8.1] - 2025-06-27
+### Added
+- Fix support for adblue range
+
+## [0.8] - 2025-06-26
+### Added
+- Support for adblue range
+
+## [0.7.3] - 2025-06-20
+### Fixed
+- Fixes bug that registers hooks several times, causing multiple calls to the servers
+
+### Changed
+- Updated dependencies
+
+## [0.7.2] - 2025-04-19
+### Fixed
+- Fix for problems introduced with PyJWT
+
+## [0.7.1] - 2025-04-19
+### Changed
+- Use PyJWT instead of jwt
+
+## [0.7] - 2025-04-17
+### Changed
+- Updated dependencies
+- stripping of leading and trailing spaces in commands
+
+### Added
+- Precision for all attributes is now used when displaying values
+
+## [0.6] - 2025-04-02
+### Fixed
+- Made changes to charging settings for older electric vehicles
+- Allowes to have multiple instances of this connector running
+
+### Changed
+- Updated dependencies
+
+## [0.5] - 2025-03-20
+### Added
+- Support for window heating attributes
+- Support for window heating command
+- SUpport for changing charging settings
+
+## [0.4.2] - 2025-03-11
+### Fixed
+- Fixes bug where no data was shown anymore if the vehicle did not have access capability
+
+## [0.4.1] - 2025-03-04
+### Fixed
+- Fixed http error when parking position was fetched but due to error not available
+
+## [0.4] - 2025-03-02
+### Added
+- Added hint to do consent when login is not possible
+- Make connection_state public accessible
+- Make health state public accessible
+- Make interval online changeable
+- Threads are now named
+- vehcile state is calculated from various states
+- Added support for battery temperature
+- Check for value range in attributes
+- Added support for maintenance attributes
+- Added support for plug states
+- Added support for connectivity status
+- Added position type
+- Added better error handling in commands
+
+### Fixed
+- Images and capabilities are now only fetched once
+- Fix for fetching charging state
+- Fix for total range if not a vehicle property
+- Fix for older python versions
+- Fix for rear seat heating settings
+
+## [0.3] - 2025-02-19
+### Added
+- Added support for images
+- Added tags to attributes
+- Added support for webui via carconnectivity-plugin-webui
+
+## [0.2] - 2025-02-02
+### Added
+- Adds several commands to control the vehicle and charging attributes
+
+## [0.1] - 2025-01-25
+Initial release, let's go and give this to the public to try out...
+The API is not yet implemented completely! There is no way to control something in the car yet
+
+[unreleased]: https://github.com/tillsteinbach/CarConnectivity-connector-volkswagen/compare/v0.10.3...HEAD
+[0.10.3]: https://github.com/tillsteinbach/CarConnectivity-connector-volkswagen/releases/tag/v0.10.3
+[0.10.2]: https://github.com/tillsteinbach/CarConnectivity-connector-volkswagen/releases/tag/v0.10.2
+[0.10.1]: https://github.com/tillsteinbach/CarConnectivity-connector-volkswagen/releases/tag/v0.10.1
+[0.10]: https://github.com/tillsteinbach/CarConnectivity-connector-volkswagen/releases/tag/v0.10
+[0.9.3]: https://github.com/tillsteinbach/CarConnectivity-connector-volkswagen/releases/tag/v0.9.3
+[0.9.2]: https://github.com/tillsteinbach/CarConnectivity-connector-volkswagen/releases/tag/v0.9.2
+[0.9.1]: https://github.com/tillsteinbach/CarConnectivity-connector-volkswagen/releases/tag/v0.9.1
+[0.9]: https://github.com/tillsteinbach/CarConnectivity-connector-volkswagen/releases/tag/v0.9
+[0.8.2]: https://github.com/tillsteinbach/CarConnectivity-connector-volkswagen/releases/tag/v0.8.2
+[0.8.1]: https://github.com/tillsteinbach/CarConnectivity-connector-volkswagen/releases/tag/v0.8.1
+[0.8]: https://github.com/tillsteinbach/CarConnectivity-connector-volkswagen/releases/tag/v0.8
+[0.7.3]: https://github.com/tillsteinbach/CarConnectivity-connector-volkswagen/releases/tag/v0.7.3
+[0.7.2]: https://github.com/tillsteinbach/CarConnectivity-connector-volkswagen/releases/tag/v0.7.2
+[0.7.1]: https://github.com/tillsteinbach/CarConnectivity-connector-volkswagen/releases/tag/v0.7.1
+[0.7]: https://github.com/tillsteinbach/CarConnectivity-connector-volkswagen/releases/tag/v0.7
+[0.6]: https://github.com/tillsteinbach/CarConnectivity-connector-volkswagen/releases/tag/v0.6
+[0.5]: https://github.com/tillsteinbach/CarConnectivity-connector-volkswagen/releases/tag/v0.5
+[0.4.2]: https://github.com/tillsteinbach/CarConnectivity-connector-volkswagen/releases/tag/v0.4.2
+[0.4.1]: https://github.com/tillsteinbach/CarConnectivity-connector-volkswagen/releases/tag/v0.4.1
+[0.4]: https://github.com/tillsteinbach/CarConnectivity-connector-volkswagen/releases/tag/v0.4
+[0.3]: https://github.com/tillsteinbach/CarConnectivity-connector-volkswagen/releases/tag/v0.3
+[0.2]: https://github.com/tillsteinbach/CarConnectivity-connector-volkswagen/releases/tag/v0.2
+[0.1]: https://github.com/tillsteinbach/CarConnectivity-connector-volkswagen/releases/tag/v0.1
