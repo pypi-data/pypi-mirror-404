@@ -1,0 +1,186 @@
+Metadata-Version: 2.4
+Name: hyrrokkin
+Version: 0.1.5
+Summary: A lightweight asynchronous DAG execution engine for Python and other languages
+Author-email: Visual Topology <dev@visualtopology.com>
+License-Expression: MIT
+Project-URL: Homepage, https://hyrrokk.in
+Project-URL: Documentation, https://hyrrokk.in
+Project-URL: Repository, https://codeberg.org/visual-topology/hyrrokkin
+Project-URL: Issues, https://codeberg.org/visual-topology/hyrrokkin/issues
+Project-URL: Changelog, https://codeberg.org/visual-topology/hyrrokkin/src/branch/main/CHANGELOG.md
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: JavaScript
+Classifier: Operating System :: POSIX :: Linux
+Classifier: Topic :: Software Development :: Libraries :: Application Frameworks
+Classifier: Development Status :: 3 - Alpha
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Provides-Extra: yaml
+Requires-Dist: pyyaml; extra == "yaml"
+Provides-Extra: validation
+Requires-Dist: jsonschema; extra == "validation"
+Provides-Extra: webapps
+Requires-Dist: moonlette; extra == "webapps"
+Provides-Extra: all
+Requires-Dist: pyyaml; extra == "all"
+Requires-Dist: jsonschema; extra == "all"
+Requires-Dist: moonlette; extra == "all"
+Dynamic: license-file
+
+# hyrrokkin
+
+```
+ _                               _     _     _
+| |__   _   _  _ __  _ __  ___  | | __| | __(_) _ __
+| '_ \ | | | || '__|| '__|/ _ \ | |/ /| |/ /| || '_ \
+| | | || |_| || |   | |  | (_) ||   < |   < | || | | |
+|_| |_| \__, ||_|   |_|   \___/ |_|\_\|_|\_\|_||_| |_|
+        |___/
+```
+
+A lightweight directed acyclic graph (DAG) framework for Python (CPython) and Javascript (Deno or in-browser)
+
+In hyrrokkin, a directed acyclic graph is termed a `topology` and is composed of nodes and links.
+
+## Topology Python API
+
+Use a python API to construct and run topologies (DAG)
+
+```python
+
+from hyrrokkin.api import Topology
+
+# create a topology, stored in my_topology sub-folder 
+t = Topology(topology_folder='my_topology',package_list=["hyrrokkin.example_packages.textgraph"])
+
+# define the topology to analyse word frequencies with 3 nodes and 2 links
+
+t.add_node("n0", "textgraph:text_input_node", data={"value":b"This is some simple text"})
+t.add_node("n1", "textgraph:word_frequency_node", properties={"threshold":1})
+t.add_node("n2", "textgraph:table_display_node")
+
+t.add_link("l0", "n0", "data_out", "n1", "data_in")
+t.add_link("l1", "n1", "data_out", "n2", "data_in")
+
+# intercept output from the word frequency node and print it
+t.add_output_listener("n1","data_out", lambda v:print(v))
+
+# run the topology and wait for all nodes to complete, check no errors were returned
+assert(t.run() == {}) 
+```
+
+## Topology Designer UI
+
+The same topology can be created and run within the designer user interface (web-based tooling)
+
+![Topology Desinger](docs/src/images/topology.png)
+
+
+## Hyrrokkin - Main Features
+
+Hyrrokkin provides a framework enabling a user to:
+
+* define packages of nodes using the python or javascript Package API
+* create topologies which link nodes from these packages together:
+  * using a text editor to create a YAML file
+  * using the python API
+  * using a graphical design tool
+  * using both the python API and graphical design tool running within a jupyter notebook
+* run topologies using the design tool, python topology API or from the command line
+* build web applications based on a topology
+
+Hyrrokkin is licensed under the (MIT open source license)[LICENSE.txt].
+
+> NOTE: This repo provides a very simple [textgraph example package](src/hyrrokkin/example_packages/textgraph) with implementations in python and javascript.  Hyrrokkin is designed to support packages created for specific domains and does not try to provide general purpose package for working with any kind of data out of the box.  Instead, packages should be developed separately and can be `pip` installed into the environment where hyrrokkin is installed.
+
+## Installation Options
+
+### Installing Hyrrokkin
+
+Hyrrokkin is tested on linux and requires python >= 3.11
+
+Installation without dependencies (no support for YAML import/export, JSON schema checking):
+
+```
+pip install hyrrokkin
+```
+
+Installation with optional dependencies for YAML import/export:
+
+```
+pip install hyrrokkin[YAML]
+```
+
+Installation with optional dependencies for JSON schema validation:
+
+```
+pip install hyrrokkin[VALIDATION]
+```
+
+Installation with optional dependencies for UI webapps (designer, directory, applications):
+
+```
+pip install hyrrokkin[WEBAPPS]
+```
+
+Installation with all optional dependencies
+
+```
+pip install hyrrokkin[ALL]
+```
+
+To run topologies using the javascript-based packages on the server, install deno - https://deno.com/
+
+### Installing Hyrrokkin-lite
+
+The lite version of hyrrokkin runs javascript packages entirely within a web-browser.  Deploy it using the files from (ui/dist)[ui/dist].
+
+## Documentation
+
+For documentation see https://hyrrokk.in/docs/hyrrokkin
+
+## Unit tests:
+
+### Python unit tests
+
+These cover the hyrrokkin CLI and API, the python engine API, and the execution of textgraph topologies in various python and javascript engine configurations
+
+Deno needs to be installed (see https://deno.com/).
+
+Create a fresh python environment (using python 3.11 or later), then... 
+
+```
+git clone https://codeberg.org/visual-topology/hyrrokkin.git
+cd hyrrokkin
+pip install -e .
+pip install pyyaml jsonschema
+export PYTHONPATH=$PYTHONPATH:test
+python -m unittest
+```
+
+### Building Documentation
+
+Documentation is built using mkdocs which can be installed using:
+
+```
+pip install mkdocs
+python -m pip install "mkdocstrings[python]"
+python -m pip install mkdocs-material
+```
+
+Additional documentation for javascript APIs is buit using JSDoc - https://github.com/jsdoc/jsdoc
+
+To build documentation:
+
+```
+git clone https://codeberg.org/visual-topology/hyrrokkin.git
+cd hyrrokkin
+pip install -e .
+cd docs
+./build.sh
+```
+
+
+
