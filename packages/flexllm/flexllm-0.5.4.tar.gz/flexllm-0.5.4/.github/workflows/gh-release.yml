@@ -1,0 +1,36 @@
+on:
+  push:
+    tags:
+      - 'v*'
+
+name: Create Release
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate changelog
+        uses: orhun/git-cliff-action@v4
+        id: git-cliff
+        with:
+          config: cliff.toml
+          args: --latest --strip header
+        env:
+          GITHUB_REPO: ${{ github.repository }}
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          body: ${{ steps.git-cliff.outputs.content }}
+          draft: false
+          prerelease: false
