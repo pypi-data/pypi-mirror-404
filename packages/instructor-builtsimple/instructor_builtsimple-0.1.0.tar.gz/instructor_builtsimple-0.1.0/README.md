@@ -1,0 +1,271 @@
+# instructor-builtsimple
+
+[![PyPI version](https://badge.fury.io/py/instructor-builtsimple.svg)](https://badge.fury.io/py/instructor-builtsimple)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+**Structured research extraction from PubMed, ArXiv, and Wikipedia using [Instructor](https://github.com/jxnl/instructor) and Pydantic.**
+
+Extract structured, validated data from research APIs using LLMs. Define your schema with Pydantic, and let Instructor handle the extraction.
+
+## Features
+
+- 🔬 **Multi-source search**: Query PubMed, ArXiv, and Wikipedia simultaneously
+- 📊 **Structured output**: Extract data into validated Pydantic models
+- 🧠 **Research synthesis**: Combine sources into comprehensive summaries
+- 📚 **Topic analysis**: Deep-dive into research topics with citations
+- ⚖️ **Comparisons**: Compare technologies, methods, or concepts
+- 🎯 **Custom schemas**: Define any Pydantic model for extraction
+
+## Installation
+
+```bash
+pip install instructor-builtsimple
+```
+
+For Anthropic Claude support:
+```bash
+pip install instructor-builtsimple[anthropic]
+```
+
+## Quick Start
+
+```python
+from instructor_builtsimple import ResearchClient
+
+# Initialize client (uses OPENAI_API_KEY env var)
+client = ResearchClient()
+
+# Search PubMed and extract structured articles
+articles = client.pubmed("CRISPR gene therapy", limit=5)
+for article in articles:
+    print(f"{article.title}")
+    print(f"  Summary: {article.abstract_summary}")
+    print(f"  Key findings: {article.key_findings}")
+
+# Search ArXiv for ML papers
+papers = client.arxiv("transformer attention mechanisms", limit=5)
+for paper in papers:
+    print(f"{paper.title} by {', '.join(paper.authors[:3])}")
+    print(f"  Contribution: {paper.main_contribution}")
+
+# Synthesize research from all sources
+summary = client.synthesize("mRNA vaccine technology")
+print(summary.executive_summary)
+for finding in summary.key_findings:
+    print(f"- {finding.finding} (confidence: {finding.confidence:.0%})")
+```
+
+## Custom Extraction Schemas
+
+Define your own Pydantic models to extract exactly what you need:
+
+```python
+from pydantic import BaseModel, Field
+from instructor_builtsimple import ResearchClient
+
+class DrugInfo(BaseModel):
+    """Custom schema for drug information extraction."""
+    drug_names: list[str] = Field(description="Names of drugs mentioned")
+    mechanisms: list[str] = Field(description="Mechanisms of action")
+    conditions: list[str] = Field(description="Target medical conditions")
+    side_effects: list[str] = Field(default_factory=list)
+
+client = ResearchClient()
+
+# Extract custom structured data
+drug_data = client.extract(
+    query="Parkinson's disease treatments",
+    response_model=DrugInfo,
+    sources=["pubmed"],
+    limit=10,
+)
+
+print(f"Drugs: {drug_data.drug_names}")
+print(f"Mechanisms: {drug_data.mechanisms}")
+```
+
+## Research Synthesis
+
+Combine multiple sources into comprehensive research summaries:
+
+```python
+from instructor_builtsimple import ResearchClient
+
+client = ResearchClient()
+
+# Synthesize from all sources
+summary = client.synthesize(
+    query="quantum machine learning",
+    limit=5,
+    sources=["pubmed", "arxiv", "wikipedia"]
+)
+
+print(f"Executive Summary: {summary.executive_summary}")
+print(f"\nKey Findings:")
+for finding in summary.key_findings:
+    print(f"  • {finding.finding}")
+    print(f"    Confidence: {finding.confidence:.0%}")
+    print(f"    Sources: {[s.identifier for s in finding.sources]}")
+
+print(f"\nKnowledge Gaps: {summary.knowledge_gaps}")
+print(f"Applications: {summary.practical_applications}")
+```
+
+## Topic Analysis
+
+Get deep analysis of research topics:
+
+```python
+analysis = client.analyze("neural network interpretability")
+
+print(f"Definition: {analysis.definition}")
+print(f"Current State: {analysis.current_state}")
+print(f"\nOpen Questions:")
+for q in analysis.open_questions:
+    print(f"  • {q}")
+print(f"\nFuture Directions: {analysis.future_directions}")
+```
+
+## Comparison Analysis
+
+Compare technologies, methods, or concepts:
+
+```python
+comparison = client.compare(
+    items=["BERT", "GPT-4", "T5"],
+    context_query="language model performance"
+)
+
+print(f"Similarities: {comparison.similarities}")
+print(f"Differences: {comparison.differences}")
+for item, strengths in comparison.strengths.items():
+    print(f"{item} strengths: {strengths}")
+```
+
+## Built-in Models
+
+The package includes pre-built Pydantic models for common extraction patterns:
+
+| Model | Description |
+|-------|-------------|
+| `PubMedArticle` | Structured PubMed article with summary, findings, methodology |
+| `ArxivPaper` | ArXiv paper with authors, contribution, categories |
+| `WikipediaArticle` | Wikipedia article with summary, key facts, related topics |
+| `ResearchSummary` | Multi-source synthesis with key findings and citations |
+| `TopicAnalysis` | Deep topic analysis with history, current state, future directions |
+| `ComparisonAnalysis` | Structured comparison of multiple items |
+| `Citation` | Citation reference with source, identifier, URL |
+| `KeyFinding` | Research finding with confidence and supporting citations |
+
+## API Reference
+
+### ResearchClient
+
+The main entry point for all operations:
+
+```python
+from instructor_builtsimple import ResearchClient
+
+client = ResearchClient(
+    openai_client=None,      # Optional: provide your own OpenAI client
+    api_config=None,         # Optional: custom API endpoints
+    model="gpt-4o-mini",     # Model for extraction
+)
+
+# Source-specific searches
+articles = client.pubmed(query, limit=5, response_model=None)
+papers = client.arxiv(query, limit=5, response_model=None)
+wiki = client.wikipedia(query, limit=5, category=None, response_model=None)
+
+# Multi-source operations
+summary = client.synthesize(query, limit=5, sources=None)
+analysis = client.analyze(topic, limit=10, sources=None)
+comparison = client.compare(items, context_query=None, limit=5)
+
+# Custom extraction
+result = client.extract(query, response_model, sources=None, limit=5)
+```
+
+### Low-level API Access
+
+For raw API access without LLM extraction:
+
+```python
+from instructor_builtsimple.api import BuiltSimpleAPI
+
+api = BuiltSimpleAPI()
+
+# Raw API calls
+pubmed_data = api.search_pubmed("cancer treatment", limit=10)
+arxiv_data = api.search_arxiv("machine learning", limit=10)
+wiki_data = api.search_wikipedia("artificial intelligence", limit=10)
+
+# Search all sources
+all_data = api.search_all("CRISPR", limit=5, sources=["pubmed", "arxiv"])
+```
+
+## Configuration
+
+### Custom API Endpoints
+
+```python
+from instructor_builtsimple.api import APIConfig
+from instructor_builtsimple import ResearchClient
+
+config = APIConfig(
+    pubmed_url="https://pubmed.built-simple.ai",
+    arxiv_url="https://arxiv.built-simple.ai",
+    wikipedia_url="https://wikipedia.built-simple.ai",
+    timeout=30.0,
+)
+
+client = ResearchClient(api_config=config)
+```
+
+### Using Different Models
+
+```python
+# Use GPT-4 for better extraction quality
+client = ResearchClient(model="gpt-4o")
+
+# Use a specific OpenAI client
+from openai import OpenAI
+custom_client = OpenAI(api_key="...", base_url="...")
+client = ResearchClient(openai_client=custom_client)
+```
+
+## Examples
+
+See the [examples/](examples/) directory for complete working examples:
+
+- `basic_extraction.py` - Simple extraction from each source
+- `custom_extraction.py` - Define custom Pydantic models
+- `research_synthesis.py` - Multi-source synthesis and analysis
+
+## Requirements
+
+- Python 3.9+
+- OpenAI API key (set `OPENAI_API_KEY` environment variable)
+
+## Built-Simple Research APIs
+
+This package uses the free Built-Simple research APIs:
+
+- **PubMed**: Biomedical and life sciences literature
+- **ArXiv**: Physics, mathematics, computer science preprints
+- **Wikipedia**: General knowledge encyclopedia
+
+No API keys required for the research APIs - just your OpenAI key for the LLM extraction.
+
+## License
+
+MIT License - see [LICENSE](LICENSE) for details.
+
+## Links
+
+- [Instructor](https://github.com/jxnl/instructor) - The underlying structured extraction library
+- [Built-Simple](https://built-simple.ai) - Research API provider
+- [PubMed API](https://pubmed.built-simple.ai) - Biomedical literature search
+- [ArXiv API](https://arxiv.built-simple.ai) - Preprint search
+- [Wikipedia API](https://wikipedia.built-simple.ai) - Encyclopedia search
