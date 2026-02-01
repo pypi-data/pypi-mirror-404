@@ -1,0 +1,109 @@
+name: CI
+
+on:
+  push:
+    branches: [Main, main]
+  pull_request:
+    branches: [Main, main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # Install runtime first (local development)
+          pip install -e runtime/
+          # Install tools with dev dependencies
+          pip install -e ".[dev]"
+          pip install crosshair-tool  # Required for full verification
+
+      - name: Run runtime tests
+        run: |
+          pytest --doctest-modules runtime/src/invar_runtime/ -v
+
+      - name: Run tools tests
+        run: |
+          pytest --doctest-modules src/invar/ -v
+
+      # DX-19: Default runs full verification (static + doctests + CrossHair + Hypothesis)
+      # continue-on-error because CrossHair finds different edge cases
+      # across Python versions. Failures are informational.
+      - name: Run Invar Guard
+        run: |
+          invar guard
+        continue-on-error: true
+
+      - name: Check types with mypy
+        run: |
+          # Type check critical modules (MCP handlers, doc tools)
+          # Using --follow-imports=silent to check only specified files, not transitive deps
+          # Gradually expanding coverage. Templates excluded as example code.
+          mypy src/invar/mcp/handlers.py \
+               src/invar/core/doc_parser.py \
+               src/invar/core/doc_edit.py \
+               src/invar/shell/doc_tools.py \
+               --ignore-missing-imports \
+               --follow-imports=silent
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Run ruff on tools
+        run: ruff check src/invar/
+
+      - name: Run ruff on runtime
+        run: ruff check runtime/src/invar_runtime/
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build tools
+        run: pip install build
+
+      - name: Build invar-runtime package
+        run: python -m build runtime/
+
+      - name: Build invar-tools package
+        run: python -m build
+
+      - name: Upload runtime artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-runtime
+          path: runtime/dist/
+
+      - name: Upload tools artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-tools
+          path: dist/

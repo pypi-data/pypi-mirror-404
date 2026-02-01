@@ -1,0 +1,253 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/invar"]
+# Disable VCS ignore to include gitignored node_tools (eslint-plugin)
+ignore-vcs = true
+
+[tool.hatch.build.targets.sdist]
+# Also disable VCS ignore for sdist (needed for complete wheel build from sdist)
+ignore-vcs = true
+
+# Note: templates are included via packages = ["src/invar"]
+
+[project]
+name = "invar-tools"
+version = "1.17.22"
+description = "AI-native software engineering tools with design-by-contract verification"
+readme = "README.md"
+license = "GPL-3.0-or-later"
+requires-python = ">=3.11"
+authors = [
+    { name = "Invar Team" }
+]
+keywords = ["ai", "contracts", "design-by-contract", "code-quality", "static-analysis"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Quality Assurance",
+    "Typing :: Typed",
+]
+
+dependencies = [
+    # Runtime contracts (DX-21: Package split)
+    "invar-runtime>=1.3.0",
+    # CLI and output
+    "typer>=0.9",
+    "rich>=13.0",
+    "questionary>=2.0",  # DX-70: Interactive prompts with cursor selection
+    # Core functionality
+    "pydantic>=2.0",
+    "returns>=0.20",
+    "pre-commit>=3.0",
+    "markdown-it-py>=3.0",  # DX-76: Markdown document parsing
+    # Verification (DX-12: Hypothesis as CrossHair fallback)
+    "pytest>=7.0",
+    "hypothesis>=6.0",
+    "crosshair-tool>=0.0.60",
+    # MCP server (DX-16: Agent tool enforcement)
+    "mcp>=1.0",
+    # Template engine (DX-49: Protocol Distribution Unification)
+    "jinja2>=3.0",
+    # Python reference finding (DX-78: invar refs command)
+    "jedi>=0.19",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest-cov>=4.0",
+    "mypy>=1.0",
+    "ruff>=0.1",
+    "coverage[toml]>=7.0",  # DX-37: Branch coverage for guard --coverage
+]
+
+[project.scripts]
+invar = "invar.shell.commands.guard:app"
+invar-tools = "invar.shell.commands.guard:app"
+
+[project.urls]
+Homepage = "https://github.com/tefx/invar"
+Documentation = "https://github.com/tefx/invar#readme"
+Repository = "https://github.com/tefx/invar"
+Issues = "https://github.com/tefx/invar/issues"
+
+# =============================================================================
+# Tool Configuration
+# =============================================================================
+
+[tool.invar.guard]
+# Directory classification
+core_paths = ["src/invar/core"]
+shell_paths = ["src/invar/shell"]
+
+# Size limits
+max_file_lines = 500
+max_function_lines = 50
+
+# Required for Core
+require_contracts = true
+require_doctests = true
+
+# I/O modules forbidden in Core (static import check only)
+forbidden_imports = [
+    "os", "sys", "socket", "requests", "urllib",
+    "subprocess", "shutil", "io", "pathlib"
+]
+
+# Paths to exclude from checking
+exclude_paths = ["tests", "scripts", ".venv", "__pycache__", "templates", ".invar/examples", "node_tools"]
+
+# Phase 3: Guard Enhancement
+strict_pure = true          # Detect internal imports and impure calls in Core
+
+# Function size counting options (mutually exclusive, pick ONE):
+# - use_code_lines=true: Excludes entire docstring from count (focus on logic size)
+# - exclude_doctest_lines=true: Subtracts doctest lines only (reward good examples)
+# - Both false (default): Counts all lines
+# WARNING: Don't enable both - doctests are inside docstrings, would double-exclude
+use_code_lines = false
+exclude_doctest_lines = true  # DX-15: Reward good doctests, don't penalize documentation
+
+# Severity overrides - turn off noisy rules
+[tool.invar.guard.severity_overrides]
+partial_contract = "off"  # Often intentional: methods don't check self, config is Pydantic-validated
+
+# Rule exclusions for specific patterns
+[[tool.invar.guard.rule_exclusions]]
+pattern = "**/hypothesis_strategies.py"
+rules = ["internal_import"]  # Intentional lazy imports for optional hypothesis/numpy deps
+
+[[tool.invar.guard.rule_exclusions]]
+pattern = "**/property_gen.py"
+rules = ["internal_import"]  # Lazy imports: circular dep avoidance + optional hypothesis
+
+[[tool.invar.guard.rule_exclusions]]
+pattern = "**/shell/**"
+rules = ["shell_result", "function_size", "file_size", "file_size_warning"]  # Shell: relaxed size limits
+
+# Large core files that are approaching limits but well-organized
+[[tool.invar.guard.rule_exclusions]]
+pattern = "**/hypothesis_strategies.py"
+rules = ["file_size_warning"]  # Complex strategy inference, hard to split
+
+[[tool.invar.guard.rule_exclusions]]
+pattern = "**/rules.py"
+rules = ["file_size_warning"]  # All rule checks in one place for discoverability
+
+[[tool.invar.guard.rule_exclusions]]
+pattern = ".invar/examples/**"
+rules = ["*"]  # Examples intentionally show "bad" patterns without contracts
+
+[[tool.invar.guard.rule_exclusions]]
+pattern = "**/examples/functional.py"
+rules = ["*"]  # Fallback: Examples intentionally show "bad" patterns
+
+[[tool.invar.guard.rule_exclusions]]
+pattern = "**/templates/examples/**"
+rules = ["*"]  # LX-05: Template source files (language-specific examples)
+
+[tool.invar]
+# Protocol governance
+protocol_version = "5.0"
+protocol_evolution = "human-approved"  # locked | human-approved | open
+
+# Test style: "inline" or "separate"
+test_style = "inline"
+
+# =============================================================================
+# Pytest Configuration
+# =============================================================================
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "src"]
+python_files = ["test_*.py", "*.py"]
+python_functions = ["test_*"]
+norecursedirs = ["templates", ".invar", "experiments"]  # Avoid module collision
+addopts = [
+    "--doctest-modules",
+    "-v",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
+
+# =============================================================================
+# Mypy Configuration
+# =============================================================================
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_return_any = true
+warn_unused_ignores = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_any_generics = true
+no_implicit_reexport = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+
+# =============================================================================
+# Ruff Configuration
+# =============================================================================
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # Pyflakes
+    "I",      # isort
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "UP",     # pyupgrade
+    "ARG",    # flake8-unused-arguments
+    "SIM",    # flake8-simplify
+    "TCH",    # flake8-type-checking
+    "PTH",    # flake8-use-pathlib
+    "ERA",    # eradicate (commented code)
+    "RUF",    # Ruff-specific
+]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+    "ARG001", # unused function argument (needed for interface consistency)
+    "ARG005", # unused lambda argument (needed for interface consistency)
+    "E402",   # imports not at top (cli.py uses lazy loading pattern)
+    "B008",   # typer.Argument in defaults (Typer pattern)
+    "B904",   # raise from clause (typer.Exit doesn't chain)
+    "B005",   # strip with multi-char (intentional for path patterns)
+    "SIM102", # nested if statements (improves readability in some cases)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["invar"]
+
+# =============================================================================
+# Coverage Configuration
+# =============================================================================
+
+[tool.coverage.run]
+source = ["src/invar"]
+branch = true
+omit = ["*/tests/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "if __debug__:",
+]

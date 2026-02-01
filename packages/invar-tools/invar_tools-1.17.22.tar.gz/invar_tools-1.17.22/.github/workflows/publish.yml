@@ -1,0 +1,79 @@
+name: Publish to PyPI
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish-runtime:
+    name: Publish invar-runtime
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write  # Required for trusted publishing
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build tools
+        run: pip install build
+
+      - name: Build invar-runtime package
+        run: python -m build runtime/
+
+      - name: Publish invar-runtime to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: runtime/dist/
+          skip-existing: true
+        # Uses trusted publishing - configure at pypi.org/manage/project/invar-runtime/settings/publishing/
+
+  publish-tools:
+    name: Publish invar-tools
+    runs-on: ubuntu-latest
+    needs: publish-runtime  # Tools depend on runtime
+    permissions:
+      id-token: write  # Required for trusted publishing
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+
+      - name: Install eslint-plugin dependencies (standalone)
+        run: |
+          # Use npm in clean directory to get full, non-symlinked installation
+          # (pnpm workspace creates symlinks that break when copied to site-packages)
+          mkdir -p /tmp/eslint-standalone
+          cp typescript/packages/eslint-plugin/package.json /tmp/eslint-standalone/
+          cd /tmp/eslint-standalone
+          npm install --production
+
+      - name: Copy node_modules to embedded location
+        run: |
+          cp -r /tmp/eslint-standalone/node_modules src/invar/node_tools/eslint-plugin/
+
+      - name: Install build tools
+        run: pip install build
+
+      - name: Build invar-tools package
+        run: python -m build
+
+      - name: Publish invar-tools to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
+        # Uses trusted publishing - configure at pypi.org/manage/project/invar-tools/settings/publishing/
+
