@@ -1,0 +1,234 @@
+// Copyright 2024 zhlinh and linthis Project Authors. All rights reserved.
+// Use of this source code is governed by a MIT-style
+// license that can be found at
+//
+// https://opensource.org/license/MIT
+//
+// The above copyright notice and this permission
+// notice shall be included in all copies or
+// substantial portions of the Software.
+
+//! TypeScript/JavaScript language checker using eslint.
+
+use crate::checkers::Checker;
+use crate::utils::types::{LintIssue, Severity};
+use crate::{Language, Result};
+use std::path::Path;
+use std::process::Command;
+
+/// TypeScript/JavaScript checker using eslint.
+pub struct TypeScriptChecker;
+
+impl TypeScriptChecker {
+    pub fn new() -> Self {
+        Self
+    }
+
+    /// Find ESLint configuration file
+    fn find_eslint_config(path: &Path) -> Option<std::path::PathBuf> {
+        let mut current = if path.is_file() {
+            path.parent()?.to_path_buf()
+        } else {
+            path.to_path_buf()
+        };
+
+        let config_names = [
+            ".linthis/configs/javascript/.eslintrc.js",  // Plugin config (highest priority)
+            ".linthis/configs/javascript/.eslintrc.json",
+            ".linthis/configs/typescript/.eslintrc.js",
+            ".linthis/configs/typescript/.eslintrc.json",
+            ".eslintrc.js",
+            ".eslintrc.json",
+            ".eslintrc.yml",
+            ".eslintrc.yaml",
+            ".eslintrc",
+        ];
+
+        loop {
+            for config_name in &config_names {
+                let config_path = current.join(config_name);
+                if config_path.exists() {
+                    return Some(config_path);
+                }
+            }
+
+            if !current.pop() {
+                break;
+            }
+        }
+
+        None
+    }
+
+    /// Parse eslint JSON output and extract issues.
+    fn parse_eslint_output(&self, output: &str, file_path: &Path) -> Vec<LintIssue> {
+        let mut issues = Vec::new();
+
+        // Try to parse as JSON
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(output) {
+            if let Some(files) = json.as_array() {
+                for file_result in files {
+                    let messages = file_result.get("messages").and_then(|m| m.as_array());
+                    let file = file_result
+                        .get("filePath")
+                        .and_then(|f| f.as_str())
+                        .map(std::path::PathBuf::from)
+                        .unwrap_or_else(|| file_path.to_path_buf());
+
+                    if let Some(msgs) = messages {
+                        for msg in msgs {
+                            if let Some(issue) = self.parse_eslint_message(msg, &file) {
+                                issues.push(issue);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        issues
+    }
+
+    fn parse_eslint_message(&self, msg: &serde_json::Value, file_path: &Path) -> Option<LintIssue> {
+        let line = msg.get("line").and_then(|l| l.as_u64()).unwrap_or(1) as usize;
+        let column = msg
+            .get("column")
+            .and_then(|c| c.as_u64())
+            .map(|c| c as usize);
+        let message = msg.get("message").and_then(|m| m.as_str()).unwrap_or("");
+        let rule_id = msg.get("ruleId").and_then(|r| r.as_str()).unwrap_or("");
+        let severity_num = msg.get("severity").and_then(|s| s.as_u64()).unwrap_or(1);
+
+        // Filter out ESLint's own limitation/config messages - these are not actionable code issues
+        if message.contains("File ignored because no matching configuration was supplied")
+            || message.contains("File ignored because of a matching ignore pattern")
+        {
+            return None;
+        }
+
+        let severity = match severity_num {
+            2 => Severity::Error,
+            1 => Severity::Warning,
+            _ => Severity::Info,
+        };
+
+        let mut issue =
+            LintIssue::new(file_path.to_path_buf(), line, message.to_string(), severity)
+                .with_source("eslint".to_string());
+
+        if !rule_id.is_empty() {
+            issue = issue.with_code(rule_id.to_string());
+        }
+
+        if let Some(c) = column {
+            issue = issue.with_column(c);
+        }
+
+        Some(issue)
+    }
+}
+
+impl Default for TypeScriptChecker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Checker for TypeScriptChecker {
+    fn name(&self) -> &str {
+        "eslint"
+    }
+
+    fn supported_languages(&self) -> &[Language] {
+        &[Language::TypeScript, Language::JavaScript]
+    }
+
+    fn check(&self, path: &Path) -> Result<Vec<LintIssue>> {
+        let mut cmd = Command::new("eslint");
+        cmd.args(["--format", "json", "--no-error-on-unmatched-pattern"]);
+
+        // Try to find eslint config
+        if let Some(config_path) = Self::find_eslint_config(path) {
+            cmd.arg("-c").arg(config_path);
+        }
+
+        let output = cmd
+            .arg(path)
+            .output()
+            .map_err(|e| {
+                crate::LintisError::checker("eslint", path, format!("Failed to run: {}", e))
+            })?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let issues = self.parse_eslint_output(&stdout, path);
+
+        Ok(issues)
+    }
+
+    fn is_available(&self) -> bool {
+        Command::new("eslint")
+            .arg("--version")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_eslint_file_ignored_filtered() {
+        let checker = TypeScriptChecker::new();
+
+        // ESLint returns this when no config matches the file
+        let msg = serde_json::json!({
+            "line": 0,
+            "column": 0,
+            "message": "File ignored because no matching configuration was supplied.",
+            "severity": 1,
+            "ruleId": null
+        });
+
+        let result = checker.parse_eslint_message(&msg, Path::new("test.js"));
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_eslint_file_ignored_pattern_filtered() {
+        let checker = TypeScriptChecker::new();
+
+        // ESLint returns this when file matches ignore pattern
+        let msg = serde_json::json!({
+            "line": 0,
+            "column": 0,
+            "message": "File ignored because of a matching ignore pattern. Use \"--no-ignore\" to override.",
+            "severity": 1,
+            "ruleId": null
+        });
+
+        let result = checker.parse_eslint_message(&msg, Path::new("test.js"));
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_eslint_real_issue_not_filtered() {
+        let checker = TypeScriptChecker::new();
+
+        // Real ESLint issue should not be filtered
+        let msg = serde_json::json!({
+            "line": 10,
+            "column": 5,
+            "message": "Unexpected console statement.",
+            "severity": 1,
+            "ruleId": "no-console"
+        });
+
+        let result = checker.parse_eslint_message(&msg, Path::new("test.js"));
+        assert!(result.is_some());
+        let issue = result.unwrap();
+        assert_eq!(issue.line, 10);
+        assert_eq!(issue.code, Some("no-console".to_string()));
+    }
+}
