@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+<meta charset="utf-8" />
+<title>kcwebps</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+<meta name="HandheldFriendly" content="true"/>
+<meta name="MobileOptimized" content="320"/>
+<%include file="/app/common/html/include/static.html"/>
+<style>
+*{padding:0px;margin:0px}
+.el-header, .el-footer {background-color: #B3C0D1;line-height: 60px;padding:0px;}
+.kcws-side-scroll::-webkit-scrollbar{width:0px}
+</style>
+</head>
+<body>
+<div id="app">
+    <div style="height:38px;padding-top:0px;background:#FFF;padding-top:5px;margin:4px auto;width:100%">
+        &nbsp&nbsp
+        <el-button-group>
+            <el-button size="mini" type="primary" v-if="pid" @click="pid=0;admin.pid=0;getlist()">返回顶级</el-button>
+            <el-button size="mini" type="success"  @click="admindialog={status:true,title:'添加菜单'};admin.id='';admin.pid=pid">添加菜单</el-button>
+        </el-button-group>
+    </div>
+    <div style="margin:0 auto;width:100%">
+            <el-table :data="data.lists" :height="winheight-100" @selection-change="handleSelectionChange">
+                <el-table-column type="selection" width="55"></el-table-column>
+                <el-table-column prop="id" label="id" width="80px"></el-table-column>
+                <el-table-column prop="pid" label="pid" width="80px"></el-table-column>
+                <el-table-column prop="" label="" width="40px">
+                    <template slot-scope="scope">
+                        <img :src="scope.row.icon" style="height:26px;float:left">
+                    </template>
+                </el-table-column>
+                <el-table-column prop="title" label="显示名字" width="120"></el-table-column>
+                
+                <el-table-column prop="types" label="" width="280">
+                    <template slot-scope="scope">
+                        <el-button-group >
+                            <el-button size="mini" @click="admindialog={status:true,title:'添加子菜单'};pid=scope.row.id;admin={pid:scope.row.id,icon:scope.row.icon,title:scope.row.title+',子标题',url:scope.row.url,types:scope.row.types}" size="small">添加子菜单</el-button>
+                            <el-button size="mini" @click="pid=scope.row.id;admin.pid=scope.row.id;getlist()" size="small">显示子菜单</el-button>
+                        </el-button-group>
+                    </template>
+                </el-table-column>
+                <el-table-column prop="sort" label="排序" width="60"></el-table-column>
+                <el-table-column prop="url" label="对应地址"></el-table-column>
+                <el-table-column prop="types" label="位置" width="120">
+                    <template slot-scope="scope">
+                        <el-tag v-if="scope.row.types=='header'">顶部</el-tag>
+                        <el-tag v-else type="info">左边</el-tag>
+                    </template>
+                </el-table-column>
+                <el-table-column fixed="right" label="" width="100">
+                <template slot-scope="scope">
+                    <el-button v-if="scope.row.admin_id" @click="self.admindialog.status=true,self.admin=scope.row" size="mini">编辑</el-button>
+                </template>
+                </el-table-column>
+            </el-table>
+            <div class="block" style="background:#FFF;margin-top:4px;height:36px;padding-top:4px">
+                <span style="float:left;margin-top:2px">&nbsp&nbsp&nbsp<el-button size="mini" type="danger" @click="deletes" icon="el-icon-delete">删除选中</el-button>&nbsp</span>
+                <el-pagination background
+                    @size-change="handleSizeChange" @current-change="handleCurrentChange"
+                    :current-page="5" :page-size="data.pagesize"
+                    layout="total, sizes, prev, pager, next, jumper" :total="data.count">
+                </el-pagination>
+            </div>
+    </div>
+    <el-dialog
+    :title="admindialog.title"
+    :visible.sync="admindialog.status"
+    width="500px">
+    <el-form ref="form" :model="admin" label-width="80px" label-position="left" size="mini">
+    <el-form-item label="图标地址">
+        <el-input placeholder="图标地址" v-model="admin.icon" style="width:70%"></el-input>
+        <el-button @click="openurl('/intapp/imgmt?select=1')" size="mini">选择图片</el-button>
+    </el-form-item>
+    <el-form-item label="排序">
+        <el-input placeholder="数字越大越靠前" v-model="admin.sort"></el-input>
+    </el-form-item>
+    <el-form-item label="显示名字">
+        <el-input placeholder="显示名字" v-model="admin.title"></el-input>
+    </el-form-item>
+    <el-form-item label="对应地址">
+        <el-input placeholder="对应地址" v-model="admin.url"></el-input>
+    </el-form-item>
+    <el-form-item v-if="!admin.pid" label="显示位置">
+        <el-radio-group v-model="admin.types">
+            <el-radio label="left"></el-radio>
+            <el-radio label="header"></el-radio>
+        </el-radio-group>
+    </el-form-item>
+    </el-form>
+    <span slot="footer" class="dialog-footer">
+        <el-button @click="admindialog.status = false">取 消</el-button>
+        <el-button v-if="admin.id" type="primary" @click="update">修改</el-button>
+        <el-button v-else type="primary" @click="insert">添加</el-button>
+    </span>
+    </el-dialog>
+</div>
+</body>
+<script>
+function setimgmt(domain,paths,item){
+    mysetfile(domain,paths,item)
+    layer.closeAll();
+}
+var vm = new Vue({
+    el: '#app',
+    data: {
+        winheight:document.documentElement.clientHeight,winwidth:document.documentElement.clientWidth,
+        admin:{id:'',pid:0,icon:'',title:'',url:'',types:'left',sort:0},admindialog:{status:false,title:'添加管理'},
+        pid:0,
+        data:{
+            'pagesize':20,
+            'count':0,
+            'pagenow':1,
+            'lists':[]
+        },Change:[],
+    },
+    mounted:function(){
+        self=this
+        window.onresize = function(){
+            self.winheight=document.documentElement.clientHeight
+            self.winwidth=document.documentElement.clientWidth
+        }
+        window.mysetfile = this.mysetfile;
+        self.getlist()
+    },
+    methods: {
+        mysetfile:function(domain,paths,item){
+            if (item.suffix=='jpg' || item.suffix=='JPG' || item.suffix=='png' || item.suffix=='PNG' || item.suffix=='gif' || item.suffix=='GIF'){
+                self.admin.icon=domain+paths+item.name
+            }else{
+                self.$message({type: 'error',message: '请选择图片文件'});
+            }
+        },
+        openurl:function(url,width,height){
+            if(!width){
+                width="80%"
+            }if(!height){
+                height="90%"
+            }
+            layer.open({
+                type: 2,title: false,shadeClose: true,shade: 0.8,
+                area: [width, height],content:url
+            }); 
+        },
+        getlist:function(){
+            self=this
+			self.get("/index/index/menu/menulist/"+self.admin.pid,{'kw':self.kw,'pagesize':self.data.pagesize,'pagenow':self.data.pagenow}).then(function(res){
+				if(self.admin.pid && !res.data.count){
+                    self.admin.pid=0;self.pid=0;
+                    self.$message({type: 'success',message: '暂无数据'});
+                }else{
+                    self.data=res.data
+                }
+			})
+        },
+        insert:function(){
+			self=this
+			self.post("/index/index/menu/menuinsert",self.admin,"请稍后...").then(function(res){
+				self.admindialog.status=false
+				self.getlist()
+			}).catch(function(err){
+                self.admindialog.status=false
+            })
+		},
+        deletes:function(){
+			self=this
+			if(!self.Change.length){
+				self.$message.error('您未选择任何内容');
+			}else{
+				self.$confirm('此操作将永久删除该记录, 是否继续?', '删除提醒', {
+				confirmButtonText: '删除',
+				cancelButtonText: '取消',
+				type: 'warning'
+				}).then(function(){
+					id=[]
+					for(var i=0;i<self.Change.length;i++){
+						id.push(self.Change[i].id)
+					}
+					self.post("/index/index/menu/menudelete",id,"正在删除中...").then(function(res){
+						self.data.pagenow=1
+                        self.admin.pid=0;self.pid=0;
+						self.getlist()
+						self.$message({type: 'success',message: '选中记录已删除!'});
+					})
+				}).catch(function(){});
+			}
+		},
+        update:function(){
+			self=this
+			self.post("/index/index/menu/menuupdate",self.admin,"请稍后...").then(function(res){
+				self.admindialog.status=false
+			})
+		},
+        handleSelectionChange:function(val) {
+            self=this
+			self.Change=val
+		},
+        handleSizeChange:function(val) {
+            self=this
+			self.data.pagesize=val
+			self.getlist()
+		},
+        handleCurrentChange:function(val) {
+			self.data.pagenow=val
+			self.getlist()
+		}
+    }
+});
+</script>
+</html>
