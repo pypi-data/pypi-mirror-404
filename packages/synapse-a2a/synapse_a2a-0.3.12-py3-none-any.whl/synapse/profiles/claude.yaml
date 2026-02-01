@@ -1,0 +1,33 @@
+# Claude Code CLI profile
+# Uses Ink-based TUI which requires CR for input submission (Claude Code v2.0.76)
+command: "claude"
+args: []
+# CR required for Claude Code's Ink TUI to process Enter key
+submit_sequence: "\r"
+env:
+  TERM: "xterm-256color"
+
+# Multi-strategy idle detection configuration
+# Claude Code: Hybrid pattern + timeout detection
+# - Pattern: BRACKETED_PASTE_MODE (ESC[?2004h) indicates idle at startup
+# - Timeout: 0.5s fallback for subsequent idles (pattern may not reappear)
+# This hybrid approach gives fast startup detection + reliable ongoing detection
+idle_detection:
+  strategy: "hybrid"                           # Pattern first, then timeout
+  pattern: "BRACKETED_PASTE_MODE"              # ESC[?2004h = ready for input
+  pattern_use: "startup_only"                  # Only check pattern at startup
+  timeout: 0.5                                 # 500ms no output = idle (fallback)
+
+# Input ready detection for initial instructions
+# Disabled: ❯ pattern may not reliably appear in all Claude Code versions
+# Rely on timeout-based idle detection (0.5s) instead
+# input_ready_pattern: "❯"
+
+# WAITING status detection (user input prompts)
+# DISABLED: Current regex-based detection causes false positives
+# where WAITING status gets stuck because patterns remain in output buffer
+# See: https://github.com/s-hiraoku/synapse-a2a/issues/140
+# waiting_detection:
+#   regex: "^❯\\s+.+|^[☐☑]\\s+|\\[[Yy]/[Nn]\\]"
+#   require_idle: true
+#   idle_timeout: 0.3
