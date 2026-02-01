@@ -1,0 +1,154 @@
+Metadata-Version: 2.4
+Name: quicksearch-py
+Version: 1.0.2
+Summary: A high-performance, pluggable prefix search engine for big data.
+Author-email: Poornachandra Hariprasad Kashi <poornakashi@gmail.com>
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: whoosh>=2.7.4
+Requires-Dist: motor>=3.3.0
+Requires-Dist: pydantic>=2.0.0
+Requires-Dist: click>=8.0.0
+Requires-Dist: tqdm>=4.66.0
+Dynamic: license-file
+Dynamic: requires-python
+
+```markdown
+# 🚀 QuickSearch-Py
+
+**QuickSearch-Py** is a high-performance, asynchronous search engine library designed to provide lightning-fast full-text search over massive MongoDB collections (50M+ records). It bridges the gap between MongoDB's storage and Whoosh's indexing power.
+
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Scale: 50M+](https://img.shields.io/badge/Scale-50M%2B%20Records-orange)](#performance)
+
+---
+
+## ✨ Features
+
+* **⚡ Scale-Ready:** Architected specifically for datasets with 50,000,000+ records.
+* **🧠 Adaptive Sync:** Automatically detects the best sync strategy:
+    * **ID-Only:** Fast incremental sync for new records.
+    * **Timestamp (updated_at):** Tracks both new records and modified existing records.
+* **🔍 Hybrid Search:** Switch between Prefix matching (instant) and Levenshtein-based Fuzzy matching (typo-tolerant).
+* **🛡️ Multi-Tenancy:** Built-in "Scoped Search" to filter results by metadata (e.g., `owner_id`) at the index level.
+* **📦 Local-First:** No heavy external clusters like Elasticsearch required; indices are stored in a compact, segmented local format.
+
+---
+
+## 🚀 Quick Start
+
+### 1. Synchronize Data
+
+QuickSearch automatically handles checkpoints. If your documents contain an `updated_at` field, it will automatically track updates.
+
+```python
+import asyncio
+from quicksearch import QuickSearch, MongoAdapter
+
+async def main():
+    # Configure the MongoDB source
+    adapter = MongoAdapter({
+        "uri": "mongodb://localhost:27017",
+        "db": "bot_platform",
+        "collection": "bots",
+        "search_field": "bot_name"
+    })
+
+    # Initialize the orchestrator
+    qs = QuickSearch(
+        adapter=adapter,
+        index_path="./.quicksearch_index",
+        filterable_fields=["owner_id"]
+    )
+
+    print("🔄 Syncing records...")
+    # Supports 5 crore+ records via optimized batching
+    await qs.sync(batch_size=10000)
+    print("✅ Index ready!")
+
+asyncio.run(main())
+
+```
+
+### 2. Search (Exact vs. Fuzzy)
+
+The `fuzzy` parameter allows you to decide between maximum speed or typo-tolerance on the fly.
+
+```python
+from quicksearch import QuickSearch
+
+qs = QuickSearch(index_path="./.quicksearch_index")
+
+# A. Fast Prefix Search (Fastest - recommended for massive datasets)
+results = qs.search("Anu", fuzzy=False, limit=5)
+
+# B. Smart Fuzzy Search (Typo-tolerant - handles "Anpa" -> "Anupa")
+results_fuzzy = qs.search("Anpa", fuzzy=True, limit=5)
+
+for r in results_fuzzy:
+    print(f"Found: {r['text']} (ID: {r['id']})")
+
+```
+
+---
+
+## 🌐 Live Web Demo (FastAPI)
+
+Easily expose your 5-crore record index via a REST API:
+
+```python
+from fastapi import FastAPI, Query
+from quicksearch import QuickSearch
+
+app = FastAPI()
+qs = QuickSearch(index_path="./.quicksearch_index")
+
+@app.get("/search")
+async def api_search(q: str = Query(...), fuzzy: bool = False):
+    # Searches across millions of records in < 10ms
+    results = qs.search(q, fuzzy=fuzzy, limit=10)
+    return {"results": results}
+
+```
+
+---
+
+## 📉 Index Architecture
+
+QuickSearch utilizes a **Segmented Inverted Index** to maintain performance at scale.
+
+* **.seg (Segments):** Small chunks of the index that allow for incremental updates.
+* **.trm (Terms):** An alphabetical dictionary of every unique word in your database.
+* **.pst (Postings):** A map linking words to specific MongoDB ObjectIDs.
+
+---
+
+## ⚙️ Configuration
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `index_path` | `str` | Directory where index files are stored. |
+| `batch_size` | `int` | Docs processed per sync iteration (default: `10000`). |
+| `fuzzy` | `bool` | Toggle Levenshtein distance matching. |
+| `updated_at` | `datetime` | **Auto-detected:** Enables tracking of modified records. |
+| `filterable_fields` | `list` | Fields stored in index for scoped filtering (e.g., `owner_id`). |
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+1. Fork the repository.
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`).
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`).
+4. Push to the branch (`git push origin feature/AmazingFeature`).
+5. Open a Pull Request.
+
+---
+
+## 📄 License
+
+Distributed under the MIT License. See `LICENSE` for more information.
