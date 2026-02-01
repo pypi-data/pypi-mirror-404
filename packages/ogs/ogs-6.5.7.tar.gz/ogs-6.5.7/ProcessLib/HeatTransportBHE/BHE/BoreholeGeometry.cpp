@@ -1,0 +1,26 @@
+// SPDX-FileCopyrightText: Copyright (c) OpenGeoSys Community (opengeosys.org)
+// SPDX-License-Identifier: BSD-3-Clause
+
+#include "BoreholeGeometry.h"
+
+#include "BaseLib/ConfigTree.h"
+
+namespace ProcessLib
+{
+namespace HeatTransportBHE
+{
+namespace BHE
+{
+BoreholeGeometry createBoreholeGeometry(BaseLib::ConfigTree const& config)
+{
+    const auto borehole_length =
+        //! \ogs_file_param{prj__processes__process__HEAT_TRANSPORT_BHE__borehole_heat_exchangers__borehole_heat_exchanger__borehole__length}
+        config.getConfigParameter<double>("length");
+    const auto borehole_diameter =
+        //! \ogs_file_param{prj__processes__process__HEAT_TRANSPORT_BHE__borehole_heat_exchangers__borehole_heat_exchanger__borehole__diameter}
+        config.getConfigParameter<double>("diameter");
+    return {borehole_length, borehole_diameter};
+}
+}  // namespace BHE
+}  // namespace HeatTransportBHE
+}  // namespace ProcessLib

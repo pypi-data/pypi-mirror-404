@@ -1,0 +1,422 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 21,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "_binary_dir",
+      "hidden": true,
+      "binaryDir": "${sourceParentDir}/build/$penv{CMAKE_PRESET_BUILD_DIR_PREFIX}${presetName}"
+    },
+    {
+      "name": "_release",
+      "hidden": true,
+      "inherits": "_binary_dir",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_CONFIGURATION_TYPES": "Release"
+      }
+    },
+    {
+      "name": "_debug",
+      "hidden": true,
+      "inherits": "_binary_dir",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CONFIGURATION_TYPES": "Debug"
+      }
+    },
+    {
+      "name": "_ninja",
+      "hidden": true,
+      "generator": "Ninja"
+    },
+    {
+      "name": "_msvc",
+      "hidden": true,
+      "generator": "Visual Studio 17 2022",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "_gui",
+      "hidden": true,
+      "cacheVariables": {
+        "OGS_BUILD_CLI": "OFF",
+        "OGS_BUILD_GUI": "ON",
+        "OGS_USE_NETCDF": "ON"
+      }
+    },
+    {
+      "name": "_petsc",
+      "hidden": true,
+      "cacheVariables": {
+        "OGS_USE_PETSC": "ON"
+      },
+      "environment": {
+        "CC": "mpicc",
+        "CXX": "mpic++"
+      },
+      "condition": {
+        "type": "notEquals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "release",
+      "inherits": [
+        "_ninja",
+        "_release"
+      ]
+    },
+    {
+      "name": "debug",
+      "inherits": [
+        "_ninja",
+        "_debug"
+      ]
+    },
+    {
+      "name": "release-gui",
+      "inherits": [
+        "release",
+        "_gui"
+      ]
+    },
+    {
+      "name": "debug-gui",
+      "inherits": [
+        "debug",
+        "_gui"
+      ]
+    },
+    {
+      "name": "release-petsc",
+      "inherits": [
+        "release",
+        "_petsc"
+      ]
+    },
+    {
+      "name": "debug-petsc",
+      "inherits": [
+        "debug",
+        "_petsc"
+      ]
+    },
+    {
+      "name": "msvc-release",
+      "inherits": [
+        "_msvc",
+        "_release"
+      ]
+    },
+    {
+      "name": "msvc-debug",
+      "inherits": [
+        "_msvc",
+        "_debug"
+      ]
+    },
+    {
+      "name": "msvc-release-gui",
+      "inherits": [
+        "msvc-release",
+        "_gui"
+      ]
+    },
+    {
+      "name": "msvc-debug-gui",
+      "inherits": [
+        "msvc-debug",
+        "_gui"
+      ]
+    },
+    {
+      "name": "_all",
+      "hidden": true,
+      "cacheVariables": {
+        "OGS_USE_MFRONT": "ON",
+        "OGS_USE_PIP": "ON"
+      }
+    },
+    {
+      "name": "release-all",
+      "inherits": [
+        "release",
+        "_all"
+      ]
+    },
+    {
+      "name": "debug-all",
+      "inherits": [
+        "debug",
+        "_all"
+      ]
+    },
+    {
+      "name": "coverage",
+      "inherits": [
+        "debug"
+      ],
+      "cacheVariables": {
+        "OGS_COVERAGE": "ON",
+        "OGS_CTEST_MAX_RUNTIME": "5",
+        "OGS_USE_MFRONT": "ON",
+        "OGS_CTEST_LABEL_EXCLUDE": "-LE omp"
+      }
+    },
+    {
+      "name": "ci-no-unity",
+      "inherits": [
+        "release-all",
+        "release-petsc"
+      ],
+      "cacheVariables": {
+        "OGS_USE_UNITY_BUILDS": "OFF"
+      }
+    },
+    {
+      "name": "ci-iwyu",
+      "inherits": "release-all",
+      "cacheVariables": {
+        "OGS_INCLUDE_WHAT_YOU_USE": "ON",
+        "OGS_USE_UNITY_BUILDS": "OFF"
+      },
+      "environment": {
+        "CC": "clang",
+        "CXX": "clang++"
+      }
+    },
+    {
+      "name": "wheel",
+      "inherits": "release",
+      "cacheVariables": {
+        "HDF5_USE_STATIC_LIBRARIES": "ON",
+        "OGS_BUILD_HDF5": "ON",
+        "OGS_BUILD_WHEEL": "ON",
+        "OGS_INSTALL_DEPENDENCIES": "OFF",
+        "OGS_USE_PIP": "OFF",
+        "OGS_USE_MFRONT": "ON"
+      }
+    },
+    {
+      "name": "sanitizer",
+      "inherits": "debug-all",
+      "cacheVariables": {
+        "OGS_CXX_FLAGS": "-O3;-fno-var-tracking",
+        "OGS_EIGEN_DYNAMIC_SHAPE_MATRICES": "OFF",
+        "ENABLE_ASAN": "ON",
+        "ENABLE_UBSAN": "ON",
+        "ENABLE_LSAN": "ON",
+        "OGS_BUILD_TFEL": "ON",
+        "OGS_BUILD_VTK": "ON",
+        "OGS_BUILD_HDF5": "ON"
+      },
+      "environment": {
+        "CC": "clang",
+        "CXX": "clang++",
+        "UBSAN_OPTIONS": "print_stacktrace=1",
+        "LSAN_OPTIONS": "suppressions=${sourceDir}/scripts/test/leak_sanitizer.suppressions"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "_win",
+      "hidden": true,
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "release",
+      "configurePreset": "release"
+    },
+    {
+      "name": "debug",
+      "configurePreset": "debug"
+    },
+    {
+      "name": "release-gui",
+      "configurePreset": "release-gui"
+    },
+    {
+      "name": "debug-gui",
+      "configurePreset": "debug-gui"
+    },
+    {
+      "name": "release-petsc",
+      "configurePreset": "release-petsc"
+    },
+    {
+      "name": "debug-petsc",
+      "configurePreset": "debug-petsc"
+    },
+    {
+      "name": "msvc-release",
+      "inherits": "_win",
+      "configurePreset": "msvc-release",
+      "configuration": "Release"
+    },
+    {
+      "name": "msvc-debug",
+      "inherits": "_win",
+      "configurePreset": "msvc-debug",
+      "configuration": "Debug"
+    },
+    {
+      "name": "msvc-release-gui",
+      "inherits": "_win",
+      "configurePreset": "msvc-release-gui",
+      "configuration": "Release",
+      "targets": [
+        "DataExplorer"
+      ]
+    },
+    {
+      "name": "msvc-debug-gui",
+      "inherits": "_win",
+      "configurePreset": "msvc-debug-gui",
+      "configuration": "Debug",
+      "targets": [
+        "DataExplorer"
+      ]
+    },
+    {
+      "name": "release-all",
+      "configurePreset": "release-all"
+    },
+    {
+      "name": "debug-all",
+      "configurePreset": "release-all"
+    },
+    {
+      "name": "coverage",
+      "configurePreset": "coverage"
+    },
+    {
+      "name": "ci-no-unity",
+      "configurePreset": "ci-no-unity"
+    },
+    {
+      "name": "ci-iwyu",
+      "configurePreset": "ci-iwyu"
+    },
+    {
+      "name": "wheel",
+      "configurePreset": "wheel"
+    },
+    {
+      "name": "sanitizer",
+      "configurePreset": "sanitizer"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "release",
+      "configurePreset": "release",
+      "filter": {
+        "include": {
+          "label": "default"
+        }
+      },
+      "execution": {
+        "repeat": {
+          "mode": "until-pass",
+          "count": 2
+        }
+      }
+    },
+    {
+      "name": "release-large",
+      "inherits": [
+        "release"
+      ],
+      "filter": {
+        "include": {
+          "label": "default|large"
+        }
+      }
+    },
+    {
+      "name": "debug",
+      "configurePreset": "debug",
+      "inherits": [
+        "release"
+      ]
+    },
+    {
+      "name": "release-all-large",
+      "configurePreset": "release-all",
+      "inherits": [
+        "release-large"
+      ]
+    },
+    {
+      "name": "release-petsc",
+      "configurePreset": "release-petsc",
+      "inherits": [
+        "release"
+      ]
+    },
+    {
+      "name": "release-petsc-large",
+      "configurePreset": "release-petsc",
+      "inherits": [
+        "release-large"
+      ]
+    },
+    {
+      "name": "msvc-release",
+      "configurePreset": "msvc-release",
+      "configuration": "Release",
+      "inherits": [
+        "release"
+      ]
+    },
+    {
+      "name": "msvc-release-large",
+      "configurePreset": "msvc-release",
+      "configuration": "Release",
+      "inherits": [
+        "release-large"
+      ]
+    },
+    {
+      "name": "release-gui",
+      "configurePreset": "release-gui",
+      "inherits": [
+        "release"
+      ]
+    },
+    {
+      "name": "release-all",
+      "configurePreset": "release-all",
+      "inherits": [
+        "release"
+      ]
+    },
+    {
+      "name": "sanitizer",
+      "configurePreset": "sanitizer",
+      "inherits": [
+        "release"
+      ],
+      "filter": {
+        "exclude": {
+          "name": "nb-"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,133 @@
+.template-build-linux:
+  stage: build
+  retry:
+    max: 2
+    when: runner_system_failure
+
+  script:
+    - |
+      if [[ -n "$OGSTOOLS_REF" ]]; then
+        cd Tests/Data
+        sed -i "s|\"ogstools==.*\"|\"$OGSTOOLS_REF\"|" pyproject.toml
+        uv lock
+        cd -
+      fi
+    - build_dir_full=../build/${CMAKE_PRESET}
+    - log_file=$build_dir_full/make.txt
+    - rm -rf $build_dir_full
+    - mkdir -p $build_dir_full build
+    - if [[ "$OSTYPE" == "darwin"* ]] ; then readlink_cmd=greadlink; else readlink_cmd=readlink; fi
+    - ln -s `$readlink_cmd -f $build_dir_full` build/${CMAKE_PRESET}-${CI_JOB_NAME_SLUG}-${CI_JOB_ID}
+    - ([[ $BUILD_CTEST_LARGE_ON_MASTER && "${CI_COMMIT_BRANCH}" == "master" ]]) && export BUILD_CTEST_LARGE=true
+    - echo "########################" + `date` + "########################"
+    - cmake --preset=$CMAKE_PRESET --log-level=VERBOSE -Wno-dev $CMAKE_ARGS
+    # Activate .venv via .envrc
+    - test -f $build_dir_full/.venv/bin/activate && source $build_dir_full/.envrc
+    - |
+      if [[ -z "$TARGETS" ]]; then
+
+        if [ "$BUILD_PACKAGE" = true ]; then
+          build_package="--target package"
+        fi
+
+        $BUILD_CMD_PREFIX cmake --build --preset=$CMAKE_PRESET ${build_package} > >(tee $log_file)
+
+        echo "########################" + `date` + "########################"
+        if [ "$BUILD_TESTS" = true ]; then $BUILD_CMD_PREFIX cmake --build --preset=$CMAKE_PRESET --target tests ; fi
+
+        if [ "$BUILD_CTEST" = true ]; then
+          ctest_timeout=60
+          preset_postfix=""
+          if [[ "$CI_MERGE_REQUEST_LABELS" =~ .*ci_large.* && "$CI_JOB_NAME" =~ build.[linux|mac].* && ! "$CI_JOB_NAME" =~ .*sanitizer ]]; then
+            export BUILD_CTEST_LARGE=true
+          fi
+          if [ "$BUILD_CTEST_LARGE" = true ]; then
+            ctest_timeout=90
+            preset_postfix="-large"
+          fi
+
+          if [[ "$OSTYPE" == "darwin"* ]]; then
+            alias date=gdate
+          fi
+
+          ctest_arguments=""
+          if [[ ! -z "$CTEST_ARGS" ]]; then
+            # Remove quotes from CTEST_ARGS
+            ctest_arguments=${CTEST_ARGS#\"}
+            ctest_arguments=${ctest_arguments%\"}
+            ctest_timeout=120 # Assume large
+          else
+            ctest_arguments="--preset=${CMAKE_PRESET}${preset_postfix}"
+          fi
+
+          if [ "$BUILD_CTEST_LARGE" != true ]; then
+            ctest_arguments="${ctest_arguments} -LE large"
+          fi
+
+          if [[ "$CI_MERGE_REQUEST_LABELS" =~ .*web\ only.* ]]; then
+            ctest_arguments="${ctest_arguments} -R nb-"
+          fi
+
+          if [[ ! -z "$CTEST_TIMEOUT" ]]; then
+            ctest_timeout="$CTEST_TIMEOUT"
+          fi
+
+          ctest_group="Experimental"
+          if [ "${CI_COMMIT_BRANCH}" = "master" ]; then
+            ctest_group="master"
+          fi
+
+          # Don't submit on multi-project pipelines, e.g. triggered from ogstools
+          # as they run just a subset of benchmarks and therefore CDash complains
+          # about missing tests.
+          if [ "${CI_PIPELINE_SOURCE}" != "pipeline" ]; then
+            ctest_arguments="${ctest_arguments} -T Submit"
+          fi
+
+          if [[ "$CI_MERGE_REQUEST_LABELS" =~ .*unit_tests.* ]]; then
+            echo "Skipping ctests because of unit_tests-label."
+          else
+            # https://github.com/matplotlib/matplotlib/issues/25306:
+            rm -rf "$(python -c 'import matplotlib as mpl; print(mpl.get_cachedir())')"
+            echo "########################" + `date` + "########################"
+            echo "ctest arguments: ${ctest_arguments}"
+            ctest \
+                -M Experimental --group "${ctest_group}" "${regex_argument}" \
+                --test-dir "${build_dir_full}" -T Start -T Test \
+                --no-tests=error \
+                ${ctest_arguments} \
+                --output-junit Tests/ctest.xml \
+                --stop-time "`date -d "today + ${ctest_timeout} minutes" +'%H:%M:%S'`"
+          fi
+        fi
+
+      else
+
+        echo "########################" + `date` + "########################"
+        $BUILD_CMD_PREFIX cmake --build --preset=$CMAKE_PRESET --target ${TARGETS} > >(tee $log_file)
+
+      fi
+      echo "########################" + `date` + "########################"
+    - |
+      if [[ $CHECK_WARNINGS == true ]]; then
+        warnings=$(grep -i warning "$log_file" | grep -v -e 'was built for newer macOS version' \
+                                                         -e 'WARNING: no license files found' \
+                                                         -e 'WARNING: multiple license files found' \
+                                                         -e 'means the weak symbol cannot be overridden at runtime' \
+                                                         -e 'lto-wrapper: warning:' \
+                                                         -e 'ld: warning:' \
+                                                         -e "warning: 'has_denorm' is deprecated" \
+                                                         -e 'dlmalloc_ext_2_8_6\.c:[0-9:]\+: warning: iteration [0-9]\+ invokes undefined behavior' \
+                                                         -e '1 warning generated' \
+                                                         -e 'CMake.*Warning' \
+                                                         -e 'set the policy and suppress this warning' \
+                                                         -e 'Use -Wno-dev to suppress it' \
+                                                         -e 'Eigen/src/Core/Fill\.h:126' \
+                                                         -e 'Eigen/src/Core/functors/BinaryFunctors\.h:80' \
+                                                         ) || true
+        if [[ -n $warnings ]]; then
+          printf 'There were compiler warnings:\n\n'
+          printf '%s\n' "$warnings"
+          exit 1
+        fi
+      fi

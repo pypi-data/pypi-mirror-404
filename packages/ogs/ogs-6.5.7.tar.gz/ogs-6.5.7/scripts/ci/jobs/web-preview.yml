@@ -1,0 +1,45 @@
+preview web site:
+  stage: build
+  image: $WEB_IMAGE
+  needs:
+    - job: meta
+    - job: "build linux arch"
+      optional: true
+    - job: "build linux petsc"
+      optional: true
+  variables:
+    HUGO_PARAMS_CURRENTVERSION: mr-$CI_MERGE_REQUEST_IID
+    HUGO_BASEURL: $CI_PAGES_URL
+  script:
+    # Symlinks in content not allowed
+    - ! find web/content -type l -print -quit | grep -q . || echo "Symlink(s) in web/content now allowed:" && find web/content -type l
+    - cd web
+    - python scripts/convert_notebooks.py
+    # Copy notebook pages
+    - cp -rl ../build/*/web/content ./ || true
+    # Symlink for prj link checks (data-link shortcode)
+    - ln -s ../Tests .
+    - yarn
+    - yarn build
+    - echo "Website available at $CI_PAGES_URL"
+  rules:
+    - if: $CI_MERGE_REQUEST_LABELS =~ /.*ci::web only.*/
+    - if: $CI_MERGE_REQUEST_ID
+      changes:
+        - web/**/*
+        - scripts/ci/jobs/web.yml
+        - scripts/ci/jobs/web-preview.yml
+        - Tests/Data/**/*.ipynb
+        - Tests/Data/**/*.md
+        - Tests/Data/**/*.py
+        - Tests/Data/Notebooks/testrunner.py
+  pages:
+    publish: web/public
+    path_prefix: 'mr-$CI_MERGE_REQUEST_IID'
+    expire_in: 4 weeks
+  environment:
+    name: web preview $CI_MERGE_REQUEST_IID
+    url: $CI_PAGES_URL
+  cache:
+    paths:
+      - web/node_modules

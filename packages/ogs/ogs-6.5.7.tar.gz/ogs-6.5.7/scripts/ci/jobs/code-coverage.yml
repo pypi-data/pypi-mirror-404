@@ -1,0 +1,30 @@
+code coverage:
+  stage: check
+  tags: [shell, envinf]
+  needs: [meta]
+  variables:
+    CMAKE_PRESET: coverage
+    BUILD_CTEST: false
+    CMAKE_ARGS: >-
+      -DOGS_USE_PIP=ON
+  script:
+    - !reference [.template-build-linux, script]
+    - cmake --build --preset $CMAKE_PRESET -t ctest
+    - cmake --build --preset $CMAKE_PRESET -t process_coverage
+  after_script:
+    - ln -s ../../build/coverage build/coverage
+  coverage: '/lines: \d+\.\d+/'
+  artifacts:
+    when: always
+    paths:
+      - build/coverage/coverage/html
+      - build/coverage/coverage/coverage.xml
+      - build/coverage/logs/*.txt
+    expire_in: 1 week
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: build/coverage/coverage/cobertura.xml
+  environment:
+    name: code coverage $CI_MERGE_REQUEST_IID
+    url: ${ARTIFACTS_PAGES_URL}/build/coverage/coverage/html/index.html
