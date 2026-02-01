@@ -1,0 +1,80 @@
+/**
+ * Detail page for {{ model_name }}.
+ *
+ * ✅ YOUR CODE - Safe to modify, will not be overwritten.
+ * This file was generated once by Prism and is yours to customize.
+ */
+
+import React from 'react';
+import type { JSX } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { use{{ model_name }}{% if has_mutations %}, use{{ model_name }}Mutations{% endif %} } from '../../hooks/use{{ model_name }}';
+import { {{ model_name }}Detail } from '../../components/{{ kebab_name }}/{{ model_name }}Detail';
+
+export default function {{ model_name }}DetailPage(): JSX.Element {
+  const navigate = useNavigate();
+  const { id } = useParams<{ id: string }>();
+  const { data, loading, error } = use{{ model_name }}(id ? parseInt(id, 10) : null);
+{%- if has_mutations %}
+  const { {% if ops_delete %}remove, {% endif %}loading: mutating } = use{{ model_name }}Mutations();
+{%- endif %}
+
+  const handleBack = () => {
+    navigate('/{{ plural_kebab }}');
+  };
+{% if ops_update %}
+  const handleEdit = () => {
+    navigate(`/{{ plural_kebab }}/${id}/edit`);
+  };
+{% endif %}
+{%- if ops_delete %}
+  const handleDelete = async () => {
+    if (!id) return;
+    if (window.confirm('Are you sure you want to delete this {{ model_name_lower }}?')) {
+      const success = await remove(parseInt(id, 10));
+      if (success) {
+        navigate('/{{ plural_kebab }}');
+      }
+    }
+  };
+{% endif %}
+  if (error) {
+    return (
+      <div className="page-container">
+        <div className="alert-error">
+          <p>Error: {error.message}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (loading || !data) {
+    return (
+      <div className="page-container">
+        <div className="card p-12 flex items-center justify-center">
+          <div className="animate-pulse flex items-center gap-3">
+            <div className="w-2 h-2 bg-muted rounded-full animate-bounce" />
+            <div className="w-2 h-2 bg-muted rounded-full animate-bounce [animation-delay:0.1s]" />
+            <div className="w-2 h-2 bg-muted rounded-full animate-bounce [animation-delay:0.2s]" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="page-container">
+      <{{ model_name }}Detail
+        data={data}
+        loading={{ '{mutating}' if has_mutations else '{false}' }}
+        onBack={handleBack}
+{%- if ops_update %}
+        onEdit={handleEdit}
+{%- endif %}
+{%- if ops_delete %}
+        onDelete={handleDelete}
+{%- endif %}
+      />
+    </div>
+  );
+}
