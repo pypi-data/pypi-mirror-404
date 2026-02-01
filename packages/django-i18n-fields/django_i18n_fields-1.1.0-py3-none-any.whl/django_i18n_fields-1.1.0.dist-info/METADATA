@@ -1,0 +1,259 @@
+Metadata-Version: 2.4
+Name: django-i18n-fields
+Version: 1.1.0
+Summary: Structured internationalization fields for Django models.
+Project-URL: Documentation, https://django-i18n-fields.readthedocs.io/
+Project-URL: Homepage, https://github.com/huynguyengl99/django-i18n-fields
+Project-URL: Repository, https://github.com/huynguyengl99/django-i18n-fields
+Author-email: Huy Nguyen <ndhgl99@gmail.com>
+License: MIT License
+        
+        Copyright (c) 2026, Huy Nguyen
+        
+        Permission is hereby granted, free of charge, to any person obtaining a copy
+        of this software and associated documentation files (the "Software"), to deal
+        in the Software without restriction, including without limitation the rights
+        to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+        copies of the Software, and to permit persons to whom the Software is
+        furnished to do so, subject to the following conditions:
+        
+        The above copyright notice and this permission notice shall be included in all
+        copies or substantial portions of the Software.
+        
+        THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+        IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+        FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+        AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+        LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+        OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+        SOFTWARE.
+        
+License-File: AUTHORS.rst
+License-File: LICENSE
+Classifier: Environment :: Web Environment
+Classifier: Intended Audience :: Developers
+Classifier: Intended Audience :: Information Technology
+Classifier: License :: OSI Approved :: BSD License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3 :: Only
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Topic :: Internet :: WWW/HTTP
+Classifier: Topic :: Internet :: WWW/HTTP :: Dynamic Content
+Classifier: Topic :: Software Development
+Classifier: Topic :: Software Development :: Libraries
+Classifier: Topic :: Software Development :: Libraries :: Application Frameworks
+Requires-Python: <4.0,>=3.10
+Requires-Dist: django>=5
+Requires-Dist: typing-extensions
+Description-Content-Type: text/x-rst
+
+DJANGO i18n FIELDS
+==================
+
+.. image:: https://img.shields.io/pypi/v/django-i18n-fields
+   :target: https://pypi.org/project/django-i18n-fields/
+   :alt: PyPI
+
+.. image:: https://codecov.io/gh/huynguyengl99/django-i18n-fields/branch/main/graph/badge.svg
+   :target: https://codecov.io/gh/huynguyengl99/django-i18n-fields
+   :alt: Code Coverage
+
+.. image:: https://github.com/huynguyengl99/django-i18n-fields/actions/workflows/test.yml/badge.svg?branch=main
+   :target: https://github.com/huynguyengl99/django-i18n-fields/actions/workflows/test.yml
+   :alt: Test
+
+.. image:: https://www.mypy-lang.org/static/mypy_badge.svg
+   :target: https://mypy-lang.org/
+   :alt: Checked with mypy
+
+.. image:: https://microsoft.github.io/pyright/img/pyright_badge.svg
+   :target: https://microsoft.github.io/pyright/
+   :alt: Checked with pyright
+
+A modern Django package providing structured internationalization (i18n) for model fields. Store and manage multilingual content directly in your Django models using a clean, database-agnostic approach.
+
+**Improved alternative to django-localized-fields** - Works with all databases, not just PostgreSQL.
+
+Key Features
+------------
+
+🌍 **Comprehensive Field Types**
+   CharField, TextField, IntegerField, FloatField, BooleanField, FileField, and UniqueSlugField with multilingual support
+
+🎯 **Database Agnostic**
+   Works with PostgreSQL, MySQL, SQLite - any database that supports JSONField
+
+📝 **Rich Admin Integration**
+   Beautiful tab and dropdown interfaces for managing translations in Django admin
+
+🔍 **Powerful Querying**
+   Filter, order, and annotate queries with language-specific values using ``L()`` expressions
+
+🚀 **Django REST Framework Support**
+   Automatic serialization with ``LocalizedModelSerializer`` - returns simple values in the active language
+
+🛠️ **Full Type Safety**
+   Complete type hints with mypy and pyright compatibility
+
+Quick Start
+-----------
+
+Installation
+~~~~~~~~~~~~
+
+.. code-block:: bash
+
+    pip install django-i18n-fields
+
+Basic Usage
+~~~~~~~~~~~
+
+.. code-block:: python
+
+    # models.py
+    from django.db import models
+    from i18n_fields import LocalizedCharField, LocalizedTextField
+
+    class Article(models.Model):
+        title = LocalizedCharField(max_length=200, required=['en'])
+        content = LocalizedTextField(blank=True)
+
+    # Create with translations
+    article = Article.objects.create(
+        title={'en': 'Hello World', 'es': 'Hola Mundo'},
+        content={'en': 'Content in English', 'es': 'Contenido en español'}
+    )
+
+    # Access in current language
+    print(article.title)  # Automatically uses active language
+
+    # Query by specific language
+    Article.objects.filter(title__en='Hello World')
+
+    # Order by translated field
+    from i18n_fields import L
+    Article.objects.order_by(L('title'))
+
+Django Admin
+~~~~~~~~~~~~
+
+.. code-block:: python
+
+    # admin.py - Option 1: Using the base class (recommended)
+    from i18n_fields import LocalizedFieldsAdmin
+
+    @admin.register(Article)
+    class ArticleAdmin(LocalizedFieldsAdmin):
+        list_display = ['title', 'created_at']
+        # Automatic tab/dropdown widgets for all localized fields!
+
+    # admin.py - Option 2: Using the mixin with your own base class
+    from django.contrib import admin
+    from i18n_fields import LocalizedFieldsAdminMixin
+
+    @admin.register(Article)
+    class ArticleAdmin(LocalizedFieldsAdminMixin, admin.ModelAdmin):
+        list_display = ['title', 'created_at']
+
+Django REST Framework
+~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+    # serializers.py
+    from i18n_fields.drf import LocalizedModelSerializer
+
+    class ArticleSerializer(LocalizedModelSerializer):
+        class Meta:
+            model = Article
+            fields = ['id', 'title', 'content']
+
+    # Returns: {"id": 1, "title": "Hello World", "content": "..."}
+    # Automatically uses active language!
+
+Configuration
+~~~~~~~~~~~~~
+
+.. code-block:: python
+
+    # settings.py
+    INSTALLED_APPS = [
+        # ...
+        'i18n_fields',
+    ]
+
+    LANGUAGES = [
+        ('en', 'English'),
+        ('es', 'Spanish'),
+        ('fr', 'French'),
+    ]
+
+    I18N_FIELDS = {
+        'DISPLAY': 'tab',  # or 'dropdown' for admin
+        'FALLBACKS': {
+            'en-us': ['en'],
+            'es-mx': ['es'],
+        },
+    }
+
+Why Django i18n Fields?
+-----------------------
+
+**vs django-localized-fields**
+
+- ✅ Works with **all databases** (not just PostgreSQL)
+- ✅ **Actively maintained** with regular updates
+- ✅ **Better type hints** and IDE support
+- ✅ **Built-in DRF support** with automatic serialization
+- ✅ **Enhanced admin UI** with tab/dropdown modes
+- ✅ **Query expressions** (``L()`` and ``LocalizedRef``)
+- ✅ **Comprehensive documentation**
+
+Documentation
+-------------
+
+📚 **Full documentation**: https://django-i18n-fields.readthedocs.io/
+
+**Quick Links:**
+
+- `Installation <https://django-i18n-fields.readthedocs.io/en/latest/installation.html>`_
+- `Getting Started <https://django-i18n-fields.readthedocs.io/en/latest/getting-started.html>`_
+- `User Guides <https://django-i18n-fields.readthedocs.io/en/latest/user-guides/basic-usage.html>`_
+- `API Reference <https://django-i18n-fields.readthedocs.io/en/latest/reference/fields.html>`_
+
+Requirements
+------------
+
+- Python 3.10+
+- Django 5.0+
+- Django REST Framework 3.0+ (optional, for DRF integration)
+
+Contributing
+------------
+
+We welcome contributions! Please see our `Contributing Guide <https://github.com/huynguyengl99/django-i18n-fields/blob/main/CONTRIBUTING.md>`_.
+
+**Development Setup:**
+
+.. code-block:: bash
+
+    git clone https://github.com/huynguyengl99/django-i18n-fields.git
+    cd django-i18n-fields
+    pip install -e ".[dev]"
+    pytest
+
+License
+-------
+
+BSD 3-Clause License - see `LICENSE <https://github.com/huynguyengl99/django-i18n-fields/blob/main/LICENSE>`_ for details.
+
+Support
+-------
+
+- 🐛 **Bug Reports**: `GitHub Issues <https://github.com/huynguyengl99/django-i18n-fields/issues>`_
+- 💬 **Questions**: `GitHub Discussions <https://github.com/huynguyengl99/django-i18n-fields/discussions>`_
+- 📖 **Documentation**: https://django-i18n-fields.readthedocs.io/
