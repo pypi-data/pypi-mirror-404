@@ -1,0 +1,246 @@
+Metadata-Version: 2.4
+Name: servai-model
+Version: 0.1.0
+Summary: Whisper 및 ECAPA-TDNN 기반의 실차 화자 식별 및 노이즈 보정 라이브러리
+Author-email: ServAI-Hub <contact@servai-hub.io>
+License: MIT
+Project-URL: Homepage, https://github.com/ServAI-Hub/servai-model
+Project-URL: Bug Tracker, https://github.com/ServAI-Hub/servai-model/issues
+Keywords: speaker-verification,speaker-diarization,stt,whisper,ecapa-tdnn,noise-compensation
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.11
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Topic :: Scientific/Engineering :: Artificial Intelligence
+Classifier: Topic :: Multimedia :: Sound/Audio :: Analysis
+Requires-Python: <3.12,>=3.11
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: fastapi>=0.100.0
+Requires-Dist: librosa>=0.11.0
+Requires-Dist: ngrok>=1.4.0
+Requires-Dist: noisereduce>=3.0.3
+Requires-Dist: numpy<2,>=1.26
+Requires-Dist: psutil>=7.1.3
+Requires-Dist: pyngrok>=7.4.1
+Requires-Dist: python-multipart>=0.0.20
+Requires-Dist: requests>=2.32.5
+Requires-Dist: scipy>=1.16.3
+Requires-Dist: setuptools>=80.9.0
+Requires-Dist: soundfile>=0.13.1
+Requires-Dist: speechbrain>=1.0.0
+Requires-Dist: torch==2.3.1
+Requires-Dist: torchaudio==2.3.1
+Requires-Dist: huggingface-hub<0.20
+Requires-Dist: uvicorn>=0.38.0
+Requires-Dist: webrtcvad>=2.0.10
+Requires-Dist: whisper-mps>=0.0.10
+Requires-Dist: openai-whisper>=20250625
+Dynamic: license-file
+
+# ServAI Model API
+
+![Python](https://img.shields.io/badge/Python-3.11-blue?style=flat-square&logo=python)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.95%2B-009688?style=flat-square&logo=fastapi)
+![Torch](https://img.shields.io/badge/PyTorch-MPS%20Accelerated-EE4C2C?style=flat-square&logo=pytorch)
+
+**ServAI Model API**는 **화자 인식(Speaker Verification)** 및 **음성 인식(STT, Speech-to-Text)** 기능을 제공하는 고성능 AI 서버 애플리케이션.
+
+사용자의 음성을 분석하여 등록된 화자(Target Speaker)인지 식별하고, Apple Silicon에 최적화된 **Whisper (MPS 가속)** 모델을 사용하여 빠른 속도로 음성을 텍스트로 변환.
+
+---
+
+## 주요 기능 (Key Features)
+
+**1. 화자 식별 (Speaker Verification)**
+* 입력된 음성이 `audio_source`에 등록된 기준 화자와 동일한지 판별
+* 화자 임베딩 추출 및 **코사인 유사도(Cosine Similarity)** 기반 점수 계산
+
+**2. 화자 분리 (Speaker Diarization)**
+* 다자간 대화 오디오에서 각 화자의 발화 구간을 자동으로 분리
+* **Spectral Clustering** 알고리즘을 활용한 화자 수 추정 및 클러스터링
+
+**3. 초고속 음성 인식 (MPS Accelerated STT)**
+* **Whisper** 모델을 사용하여 높은 정확도의 음성-텍스트 변환 수행
+* **Apple Silicon (M1/M2/M3)** 칩의 **MPS (Metal Performance Shaders)** 가속을 활용하여 CPU 대비 비약적인 속도 향상
+* 화자 분리된 세그먼트별 개별 STT 처리
+
+**4. API 서버 & 터널링**
+* **FastAPI** 기반의 비동기 처리로 높은 동시성 보장
+* `ngrok`이 내장되어 있어 로컬 서버를 외부에서 즉시 테스트 가능
+
+---
+---
+
+## 🔧 모델 설정 (Configuration)
+
+이 프로젝트는 `src/core/config.py` 파일 하나로 **화자 인식 모델**과 **Whisper STT 모델**의 동작을 제어합니다.
+
+### 1. 화자 인식 모델 변경 (Speaker Verification)
+사용 목적에 따라 **SpeechBrain 오리지널 모델(Base)**과 **파인튜닝된 모델(Tuned)**을 손쉽게 전환할 수 있습니다.
+
+- **설정 파일**: `src/core/config.py`
+- **사용 방법**: `ACTIVE_MODEL_KEY` 값을 변경하면 즉시 적용됩니다.
+
+| 모델 키(Key) | 설명 | 임계값(Threshold) | 특징 |
+| :--- | :--- | :--- | :--- |
+| `spkrec-ecapa-voxceleb` | SpeechBrain 기본 모델 | 0.40 | 일반적인 범용 화자 인식 |
+| `FT_voxceleb_0104` | 파인튜닝 모델 (v1) | 0.50 | 한국어환경 커스텀 파인튜닝 진행 |
+
+```python
+# [src/core/config.py]
+# 사용할 모델의 키를 입력하세요.
+ACTIVE_MODEL_KEY = "spkrec-ecapa-voxceleb"  # 또는 "FT_voxceleb_0104"
+```
+
+### 2. Whisper 모델 변경 (STT)
+서버 사양이나 요구되는 정확도에 따라 Whisper 모델 크기를 조정할 수 있습니다.
+
+```python
+# [src/core/config.py]
+# 옵션: 'tiny', 'base', 'small', 'medium', 'large', 'large-v3'
+WHISPER_MODEL_NAME = "large"
+```
+
+### 3. 사용자 정의 모델 추가
+새로운 모델을 추가하려면 `MODEL_REGISTRY`에 설정을 추가하면 됩니다.
+- `repo_id`: Hugging Face 저장소 ID
+- `similarity_threshold`: 해당 모델에 최적화된 유사도 판단 기준값
+- `custom`: 커스텀 파이썬 파일(`custom_model.py` 등) 필요 여부
+
+---
+
+## 설치 및 실행 (Installation & Usage)
+
+이 프로젝트는 **macOS (Apple Silicon)** 환경에 최적화됨.
+
+### 1. 시스템 요구사항 (Prerequisites)
+오디오 처리를 위해 `ffmpeg` 설치 필요.
+```bash
+brew install ffmpeg
+```
+
+### 2. 가상환경 설정 및 라이브러리 설치 (uv 사용)
+Python 3.11 환경 권장. `uv` 패키지 매니저를 사용하여 의존성 설치.
+
+```bash
+# 가상환경 생성 및 활성화
+uv venv .venv --python 3.11
+source .venv/bin/activate
+
+# 의존성 추가 및 설치
+uv add fastapi uvicorn numpy scipy librosa torch torchaudio scikit-learn whisper-mps pyngrok soundfile mlx webrtcvad speechbrain
+```
+*(기존 `pyproject.toml`이 있다면 `uv sync`로 한번에 설치 가능)*
+
+### 3. 프로젝트 구조 (Project Structure)
+```
+ServAI-Model
+├── src/                        # 소스 코드 그룹
+│   ├── main.py                 # 메인 실행 파일 (Entry Point)
+│   ├── __init__.py
+│   ├── core/                   # 핵심 로직 모듈
+│   │   ├── __init__.py
+│   │   ├── vad.py              # 음성 활동 감지 (VAD)
+│   │   ├── speaker_analysis.py # 화자 분리 및 식별 로직
+│   │   ├── embedding.py        # 화자 임베딩 추출 (ECAPA-TDNN)
+│   │   ├── similarity.py       # 코사인 유사도 계산
+│   │   └── noise.py            # 노이즈 제거 유틸리티
+│   └── utils/                  # 공통 유틸리티
+│       ├── __init__.py
+│       ├── logger.py           # 로깅 설정
+│       └── utils.py            # 오디오 로딩 및 전처리 헬퍼
+├── resources/                  # 리소스 그룹
+│   ├── audio_source/           # 기준 화자 오디오 파일 (.wav)
+│   └── models/
+│       └── ecapa_model/        # 화자 인식 모델 파일들
+└── pyproject.toml              # 의존성 및 프로젝트 설정
+```
+
+### 4. 기준 화자 등록 (Setup Reference Voice)
+화자 식별을 위해 기준이 되는 목소리 파일 준비 필요.
+
+1. 프로젝트 루트의 `resources/audio_source/` 디렉토리 확인 (없으면 생성)
+2. 기준 화자의 깨끗한 음성 파일(.wav 권장)을 해당 폴더에 저장
+3. API 실행 시 이 폴더의 오디오를 로드하여 임베딩 생성
+
+### 5. 서버 실행
+```bash
+# 모듈 모드로 실행 (권장)
+python -m servai_model.main
+
+# 또는 uvicorn 직접 실행 (src 모듈 경로 주의)
+# PYTHONPATH=. uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
+```
+서버가 시작되면 로그에 출력되는 ngrok URL 또는 `http://localhost:8000/docs` 로 접속하여 API 문서 확인 가능.
+
+## API 명세 (API Specification)
+
+### 1. 화자 검증 및 STT (`POST /verify`)
+업로드된 오디오 파일을 분석하여 화자 분리 -> 식별 -> STT 과정 수행.
+
+* **URL**: `/verify`
+* **Method**: `POST`
+* **Content-Type**: `multipart/form-data`
+
+**Request Example (cURL):**
+```bash
+curl -X 'POST' \
+  'https://endmost-ryder-streamlined.ngrok-free.dev/verify' \
+  -H 'accept: application/json' \
+  -H 'Content-Type: multipart/form-data' \
+  -F 'audio_stream=@/path/to/your/audio.wav'
+```
+*(참고: `<your-ngrok-url>` 부분은 서버 실행 시 출력되는 ngrok 주소로 변경하여 사용)*
+
+**Response Example:**
+```json
+[
+  {
+    "text": "안녕하세요, 이번 프로젝트 일정 체크 부탁드립니다.",
+    "similarity_score": 0.852,
+    "start": 0.0,
+    "end": 3.5
+  },
+  {
+    "text": "네, 확인했습니다. 금요일까지 가능합니다.",
+    "similarity_score": 0.124,
+    "start": 3.8,
+    "end": 6.2
+  }
+]
+```
+> **Note**: `similarity_score`가 높을수록(1.0에 근접) 등록된 화자일 확률이 높음.
+
+### 2. 테스트 (`POST /test`)
+서버 연결 상태 확인을 위한 목업(Mock) 엔드포인트. (모델 추론 X)
+
+**Response Example:**
+```json
+[
+    {
+        "text": "이번 프로젝트 마감 언제였지? 나 금요일로 알고 있는데",
+        "similarity_score": 0.612
+    },
+    {
+        "text": "아니야 다음 주 수요일까지야 아직 시간 좀 있어",
+        "similarity_score": 0.154
+    },
+    {
+        "text": "아 진짜? 다행이다 그럼 우리 다음주 금요일에 회식하는 거 어때?",
+        "similarity_score": 0.589
+    },
+    {
+        "text": "오 좋은데? 강남역 삼겹살집 가자 6시쯤?",
+        "similarity_score": 0.121
+    },
+    {
+        "text": "그래 좋아 안 그래도 고기 먹고 싶었는데",
+        "similarity_score": 0.605
+    },
+    {
+        "text": "다음주 금요일 오후 6시에 강남역 회식 일정 등록해줘",
+        "similarity_score": 0.642
+    }
+]
+```
