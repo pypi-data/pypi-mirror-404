@@ -1,0 +1,488 @@
+"""Core relational operations for the JSONL algebra system.
+
+This module implements the fundamental set and relational operations that form
+the algebra for manipulating collections of JSON objects. All operations are
+designed to work with lists of dictionaries, making them suitable for processing
+JSONL data.
+"""
+
+from collections import defaultdict
+from typing import Any, Dict, List, Optional, Tuple, Union
+import re
+
+import jmespath
+
+from .expr import ExprEval
+
+Row = Dict[str, Any]
+Relation = List[Row]
+
+
+def _row_to_hashable_key(row: Row) -> tuple:
+    """Convert a dictionary row to a canonical hashable representation.
+
+    Creates a tuple of (key, value) pairs, sorted by key, that can be used
+    as a dictionary key or added to a set for operations like distinct.
+    Handles nested dictionaries and lists by converting them to hashable tuples.
+
+    Args:
+        row: A dictionary representing a row of data.
+
+    Returns:
+        A tuple of sorted (key, value) pairs.
+
+    Raises:
+        TypeError: If any value in the row contains an unhashable type like a set.
+    """
+
+    def to_hashable(obj: Any) -> Any:
+        if isinstance(obj, dict):
+            return tuple(sorted((k, to_hashable(v)) for k, v in obj.items()))
+        if isinstance(obj, list):
+            return tuple(to_hashable(v) for v in obj)
+        # Let it fail for unhashable types like sets
+        hash(obj)
+        return obj
+
+    try:
+        # We are converting the whole row dict into a hashable tuple of items.
+        return to_hashable(row)  # type: ignore[no-any-return]
+    except TypeError as e:
+        # Find the problematic item to create a better error message
+        for k, v in row.items():
+            try:
+                to_hashable(v)
+            except TypeError:
+                raise TypeError(
+                    f"Row cannot be converted to a hashable key because it contains an unhashable value. "
+                    f"Problem at key '{k}' with value '{v}' (type: {type(v).__name__}). "
+                    f"Full row: {row}. All cell values must be hashable or be dicts/lists of hashable values."
+                ) from e
+        # Should not be reached if the row has an unhashable value
+        raise e
+
+
+def select(
+    data: Relation, expr: str, use_jmespath: bool = False
+) -> Relation:
+    """Filter rows based on an expression.
+
+    Args:
+        data: List of dictionaries to filter
+        expr: Expression to evaluate (simple expression or JMESPath)
+        use_jmespath: If True, use JMESPath evaluation
+
+    Returns:
+        List of rows where the expression evaluates to true
+    """
+    if use_jmespath:
+        compiled_expr = jmespath.compile(expr)
+        return [row for row in data if compiled_expr.search(row)]
+
+    # Use simple expression parser
+    parser = ExprEval()
+    result = []
+
+    # Handle 'and' at the command level for simplicity
+    if " and " in expr:
+        # Multiple conditions with 'and'
+        conditions = expr.split(" and ")
+        for row in data:
+            if all(parser.evaluate(cond.strip(), row) for cond in conditions):
+                result.append(row)
+    elif " or " in expr:
+        # Multiple conditions with 'or'
+        conditions = expr.split(" or ")
+        for row in data:
+            if any(parser.evaluate(cond.strip(), row) for cond in conditions):
+                result.append(row)
+    else:
+        # Single condition
+        for row in data:
+            if parser.evaluate(expr, row):
+                result.append(row)
+
+    return result
+
+
+def project(
+    data: Relation, fields: Union[List[str], str], use_jmespath: bool = False
+) -> Relation:
+    """Project specific fields from each row.
+
+    Args:
+        data: List of dictionaries to project
+        fields: Comma-separated field names or expressions
+        use_jmespath: If True, use JMESPath for projection
+
+    Returns:
+        List of dictionaries with only the specified fields
+    """
+
+    if use_jmespath:
+        compiled_expr = jmespath.compile(fields)
+        return [compiled_expr.search(row) for row in data]
+
+    # Parse field specifications
+    result = []
+    parser = ExprEval()
+    field_specs = fields if isinstance(fields, list) else fields.split(",")
+
+    for row in data:
+        new_row = {}
+
+        for spec in field_specs:
+            if "=" in spec:
+                # Computed field: "total=amount*1.1" or "is_adult=age>=18"
+                name, expr = spec.split("=", 1)
+                name = name.strip()
+                expr = expr.strip()
+
+                # Check if it's an arithmetic expression
+                arith_result = parser.evaluate_arithmetic(expr, row)
+                if arith_result is not None:
+                    new_row[name] = arith_result
+                else:
+                    # Try as boolean expression
+                    new_row[name] = parser.evaluate(expr, row)
+            else:
+                # Simple field projection
+                value = parser.get_field_value(row, spec)
+                if value is not None:
+                    # Build nested structure
+                    parser.set_field_value(new_row, spec, value)
+
+        result.append(new_row)
+
+    return result
+
+
+# --- join --------------------------------------------------------------------
+def join(left: Relation,
+         right: Relation,
+         on: List[Tuple[str, str]],
+         how: str = "inner") -> Relation:
+    """Join two relations with support for multiple join types.
+
+    Args:
+        left: Left relation (list of dictionaries)
+        right: Right relation (list of dictionaries)
+        on: List of (left_key, right_key) tuples specifying join columns
+        how: Join type - "inner", "left", "right", "outer", or "cross"
+            - inner: Only matching rows from both sides (default)
+            - left: All rows from left, matching rows from right (nulls if no match)
+            - right: All rows from right, matching rows from left (nulls if no match)
+            - outer: All rows from both sides (nulls where no match)
+            - cross: Cartesian product (ignores 'on' parameter)
+
+    Returns:
+        Joined relation as list of dictionaries
+
+    Examples:
+        >>> left = [{"id": 1, "name": "Alice"}, {"id": 2, "name": "Bob"}]
+        >>> right = [{"user_id": 1, "order": "Book"}]
+        >>> join(left, right, [("id", "user_id")], how="left")
+        [{"id": 1, "name": "Alice", "order": "Book"},
+         {"id": 2, "name": "Bob", "order": None}]
+    """
+    how = how.lower()
+    valid_types = {"inner", "left", "right", "outer", "cross"}
+    if how not in valid_types:
+        raise ValueError(f"Invalid join type '{how}'. Must be one of: {', '.join(sorted(valid_types))}")
+
+    # Cross join is special - no key matching
+    if how == "cross":
+        return product(left, right)
+
+    parser = ExprEval()
+
+    # Index right side by join keys
+    right_index: Dict[Tuple[Any, ...], List[Row]] = defaultdict(list)
+    for r in right:
+        key = tuple(parser.get_field_value(r, rk) for _, rk in on)
+        if all(v is not None for v in key):
+            right_index[key].append(r)
+
+    # Roots of every RHS join path (e.g. 'user.id' → 'user')
+    rhs_roots = {re.split(r"[.\[]", rk, 1)[0] for _, rk in on}
+
+    # Get all right-side field names for null placeholders
+    right_fields: set[str] = set()
+    for r in right:
+        right_fields.update(r.keys())
+    # Remove join key roots from right fields
+    right_fields -= rhs_roots
+
+    # Get all left-side field names for null placeholders
+    left_fields: set[str] = set()
+    for left_row in left:
+        left_fields.update(left_row.keys())
+
+    def merge_rows(l_row: Optional[Row], r_row: Optional[Row]) -> Row:
+        """Merge left and right rows, handling nulls."""
+        merged = {}
+
+        if r_row is not None:
+            for k, v in r_row.items():
+                # Skip right-side join key roots
+                root = re.split(r"[.\[]", k, 1)[0]
+                if root not in rhs_roots:
+                    merged[k] = v
+        else:
+            # No right match - add null placeholders for right fields
+            for field in right_fields:
+                merged[field] = None
+
+        if l_row is not None:
+            merged.update(l_row)  # Left wins on collision
+        else:
+            # No left match - add null placeholders for left fields
+            for field in left_fields:
+                merged[field] = None
+
+        return merged
+
+    joined: Relation = []
+    matched_right_keys: set = set()
+
+    # Process left side
+    for left_row in left:
+        l_key = tuple(parser.get_field_value(left_row, lk) for lk, _ in on)
+
+        # Skip rows with null join keys for inner join
+        if not all(v is not None for v in l_key):
+            if how in ("left", "outer"):
+                # Include unmatched left rows for left/outer joins
+                joined.append(merge_rows(left_row, None))
+            continue
+
+        matches = right_index.get(l_key, [])
+
+        if matches:
+            matched_right_keys.add(l_key)
+            for r in matches:
+                joined.append(merge_rows(left_row, r))
+        elif how in ("left", "outer"):
+            # No match but include left row for left/outer joins
+            joined.append(merge_rows(left_row, None))
+
+    # For right and outer joins, add unmatched right rows
+    if how in ("right", "outer"):
+        for r in right:
+            r_key = tuple(parser.get_field_value(r, rk) for _, rk in on)
+            if all(v is not None for v in r_key) and r_key not in matched_right_keys:
+                joined.append(merge_rows(None, r))
+
+    return joined
+
+
+# --- product -----------------------------------------------------------------
+def product(left: Relation, right: Relation) -> Relation:
+    """Cartesian product; colliding keys from *right* are prefixed with ``b_``."""
+    result: Relation = []
+    for left_row in left:
+        for r in right:
+            merged = left_row.copy()
+            for k, v in r.items():
+                if k in merged:
+                    merged[f"b_{k}"] = v
+                else:
+                    merged[k] = v
+            result.append(merged)
+    return result
+
+
+def rename(data: Relation, mapping: Dict[str, str]) -> Relation:
+    """Rename fields in each row.
+
+    Args:
+        data: List of dictionaries
+        mapping: Dictionary mapping old names to new names
+
+    Returns:
+        List with renamed fields
+    """
+    result = []
+    for row in data:
+        new_row = {}
+        for key, value in row.items():
+            new_key = mapping.get(key, key)
+            new_row[new_key] = value
+        result.append(new_row)
+    return result
+
+
+def union(
+    left: Relation, right: Relation
+) -> Relation:
+    """Compute the union of two collections.
+
+    Args:
+        left: First collection
+        right: Second collection
+
+    Returns:
+        Union of the two collections
+    """
+    return left + right
+
+
+def _row_set(data: Relation) -> set:
+    """Convert a relation to a set of hashable row tuples for set operations."""
+    return {tuple(sorted(row.items())) for row in data}
+
+
+def intersection(
+    left: Relation, right: Relation
+) -> Relation:
+    """Compute the intersection of two collections.
+
+    Args:
+        left: First collection
+        right: Second collection
+
+    Returns:
+        Intersection of the two collections
+    """
+    right_set = _row_set(right)
+
+    result = []
+    for row in left:
+        if tuple(sorted(row.items())) in right_set:
+            result.append(row)
+
+    return result
+
+
+def difference(
+    left: Relation, right: Relation
+) -> Relation:
+    """Compute the difference of two collections.
+
+    Args:
+        left: First collection
+        right: Second collection
+
+    Returns:
+        Elements in left but not in right
+    """
+    right_set = _row_set(right)
+
+    result = []
+    for row in left:
+        if tuple(sorted(row.items())) not in right_set:
+            result.append(row)
+
+    return result
+
+
+def distinct(data: Relation) -> Relation:
+    """Remove duplicate rows from a collection.
+
+    Args:
+        data: List of dictionaries
+
+    Returns:
+        List with duplicates removed
+    """
+    seen = set()
+    result = []
+
+    for row in data:
+        # Convert to tuple for hashability
+        row_tuple = tuple(sorted(row.items()))
+        if row_tuple not in seen:
+            seen.add(row_tuple)
+            result.append(row)
+
+    return result
+
+
+# --- sort_by -----------------------------------------------------------------
+def sort_by(data: Relation,
+            keys: Union[str, List[str]],
+            *,
+            descending: bool = False) -> Relation:
+
+    key_list = keys.split(",") if isinstance(keys, str) else keys
+    key_list = [k.strip() for k in key_list]
+
+    parser = ExprEval()
+
+    def sort_val(row: Row, key: str):
+        arith = parser.evaluate_arithmetic(key, row)
+        if arith is not None:
+            return (False, arith)
+        val = parser.get_field_value(row, key)
+        # None values sort first
+        return (val is not None, str(val) if val is not None else "")
+
+    return sorted(
+        data,
+        key=lambda r: tuple(sort_val(r, k) for k in key_list),
+        reverse=descending,
+    )
+
+
+def collect(data: Relation) -> Relation:
+    """Collect metadata-grouped rows into actual groups.
+    
+    This function takes rows with _groups metadata (from groupby operations)
+    and collects them into explicit groups. Each output row represents one
+    group with all its members in a _rows array.
+    
+    Args:
+        data: List of dictionaries with _groups metadata
+        
+    Returns:
+        List where each dict represents a group with _rows array
+        
+    Example:
+        Input:
+        [
+            {"id": 1, "region": "North", "_groups": [{"field": "region", "value": "North"}]},
+            {"id": 2, "region": "North", "_groups": [{"field": "region", "value": "North"}]},
+            {"id": 3, "region": "South", "_groups": [{"field": "region", "value": "South"}]}
+        ]
+        
+        Output:
+        [
+            {"region": "North", "_rows": [{"id": 1, "region": "North"}, {"id": 2, "region": "North"}]},
+            {"region": "South", "_rows": [{"id": 3, "region": "South"}]}
+        ]
+    """
+    if not data:
+        return []
+    
+    # Check if data has grouping metadata
+    if "_groups" not in data[0]:
+        # No grouping metadata - treat entire dataset as one group
+        return [{"_rows": data}]
+    
+    # Collect rows by their group keys
+    groups = defaultdict(list)
+    
+    for row in data:
+        # Build group key from metadata
+        group_key = tuple((g["field"], g["value"]) for g in row["_groups"])
+        
+        # Create clean row without metadata
+        clean_row = {k: v for k, v in row.items() if not k.startswith("_")}
+        
+        groups[group_key].append(clean_row)
+    
+    # Build output with one row per group
+    result = []
+    for group_key, rows in groups.items():
+        group_dict = {}
+        
+        # Add group fields to output
+        for field, value in group_key:
+            group_dict[field] = value
+        
+        # Add collected rows
+        group_dict["_rows"] = rows
+        
+        result.append(group_dict)
+    
+    return result
