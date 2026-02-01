@@ -1,0 +1,423 @@
+# CUFinder Python SDK
+
+[![](https://img.shields.io/badge/repo%20status-Active-28a745)](https://github.com/cufinder/cufinder-py)
+[![License: MIT](https://img.shields.io/badge/License-MIT-514BEE.svg)](https://opensource.org/licenses/MIT)
+[![PyPI version](https://badge.fury.io/py/cufinder-py.svg)](https://badge.fury.io/py/cufinder-py)
+
+A Python SDK for the CUFinder API that provides access to all company and person enrichment services.
+
+## Table of Contents
+
+- [Installation](#installation)
+- [Usage](#usage)
+- [API Reference](#api-reference)
+- [Error Handling](#error-handling)
+- [Types](#types)
+- [Support](#support)
+
+## Installation
+
+```bash
+pip install cufinder-py
+```
+
+## Usage
+
+```python
+from cufinder import Cufinder
+
+# Initialize the client
+client = Cufinder('your-api-key-here')
+
+# Initialize with more options
+client = Cufinder('your-api-key-here', timeout=60)
+```
+
+## API Reference
+
+This SDK covers all 28 Cufinder API (v2) endpoints:
+
+- **CUF** - [Company Name to Domain](https://apidoc.cufinder.io/apis/company-name-to-domain)
+- **LCUF** - [LinkedIn Company URL Finder](https://apidoc.cufinder.io/apis/company-linkedin-url-finder)
+- **DTC** - [Domain to Company Name](https://apidoc.cufinder.io/apis/domain-to-company-name)
+- **DTE** - [Company Email Finder](https://apidoc.cufinder.io/apis/company-email-finder)
+- **NTP** - [Company Phone Finder](https://apidoc.cufinder.io/apis/company-phone-finder)
+- **REL** - [Reverse Email Lookup](https://apidoc.cufinder.io/apis/reverse-email-lookup)
+- **FCL** - [Company Lookalikes Finder](https://apidoc.cufinder.io/apis/company-lookalikes-finder)
+- **ELF** - [Company Fundraising](https://apidoc.cufinder.io/apis/company-fundraising)
+- **CAR** - [Company Revenue Finder](https://apidoc.cufinder.io/apis/company-revenue-finder)
+- **FCC** - [Company Subsidiaries Finder](https://apidoc.cufinder.io/apis/company-subsidiaries-finder)
+- **FTS** - [Company Tech Stack Finder](https://apidoc.cufinder.io/apis/company-tech-stack-finder)
+- **EPP** - [LinkedIn Profile Enrichment](https://apidoc.cufinder.io/apis/linkedin-profile-enrichment)
+- **FWE** - [LinkedIn Profile Email Finder](https://apidoc.cufinder.io/apis/linkedin-profile-email-finder)
+- **TEP** - [Person Enrichment](https://apidoc.cufinder.io/apis/person-enrichment)
+- **ENC** - [Company Enrichment](https://apidoc.cufinder.io/apis/company-enrichment)
+- **CEC** - [Company Employee Count](https://apidoc.cufinder.io/apis/company-employee-count)
+- **CLO** - [Company Locations](https://apidoc.cufinder.io/apis/company-locations)
+- **CSE** - [Company Search](https://apidoc.cufinder.io/apis/company-search)
+- **PSE** - [Person Search](https://apidoc.cufinder.io/apis/person-search)
+- **LBS** - [Local Business Search (Google Maps Search API)](https://apidoc.cufinder.io/apis/local-business-search-google-maps-search-api)
+- **BCD** - [B2B Customers Finder](https://apidoc.cufinder.io/apis/b2b-customers-finder)
+- **CCP** - [Company Career Page Finder](https://apidoc.cufinder.io/apis/company-career-page-finder)
+- **ISC** - [Company Saas Checker](https://apidoc.cufinder.io/apis/company-saas-checker)
+- **CBC** - [Company B2B or B2C Checker](https://apidoc.cufinder.io/apis/company-b2b-or-b2c-checker)
+- **CSC** - [Company Mission Statement](https://apidoc.cufinder.io/apis/company-mission-statement)
+- **CSN** - [Company Snapshot](https://apidoc.cufinder.io/apis/company-snapshot)
+- **NAO** - [Phone Number Normalizer](https://apidoc.cufinder.io/apis/phone-number-normalizer)
+- **NAA** - [Address Normalizer](https://apidoc.cufinder.io/apis/address-normalizer)
+
+
+**CUF - Company Name to Domain**
+
+Returns the official website URL of a company based on its name.
+
+```python
+result = client.cuf('cufinder', 'US')
+print(result)
+```
+
+**LCUF - LinkedIn Company URL Finder**
+
+Finds the official LinkedIn company profile URL from a company name.
+
+```python
+result = client.lcuf('cufinder')
+print(result)
+```
+
+**DTC - Domain to Company Name**
+
+Retrieves the registered company name associated with a given website domain.
+
+```python
+result = client.dtc('cufinder.io')
+print(result)
+```
+
+**DTE - Company Email Finder**
+
+Returns up to five general or role-based business email addresses for a company.
+
+```python
+result = client.dte('cufinder.io')
+print(result)
+```
+
+**NTP - Company Phone Finder**
+
+Returns up to two verified phone numbers for a company.
+
+```python
+result = client.ntp('apple')
+print(result)
+```
+
+**REL - Reverse Email Lookup**
+
+Enriches an email address with detailed person and company information.
+
+```python
+result = client.rel('iain.mckenzie@stripe.com')
+print(result)
+```
+
+**FCL - Company Lookalikes Finder**
+
+Provides a list of similar companies based on an input company's profile.
+
+```python
+result = client.fcl('apple')
+print(result)
+```
+
+**ELF - Company Fundraising**
+
+Returns detailed funding information about a company.
+
+```python
+result = client.elf('cufinder')
+print(result)
+```
+
+**CAR - Company Revenue Finder**
+
+Estimates a company's annual revenue based on name.
+
+```python
+result = client.car('apple')
+print(result)
+```
+
+**FCC - Company Subsidiaries Finder**
+
+Identifies known subsidiaries of a parent company.
+
+```python
+result = client.fcc('amazon')
+print(result)
+```
+
+**FTS - Company Tech Stack Finder**
+
+Detects the technologies a company uses.
+
+```python
+result = client.fts('cufinder')
+print(result)
+```
+
+**EPP - LinkedIn Profile Enrichment**
+
+Takes a LinkedIn profile URL and returns enriched person and company data.
+
+```python
+result = client.epp('linkedin.com/in/iain-mckenzie')
+print(result)
+```
+
+**FWE - LinkedIn Profile Email Finder**
+
+Extracts a verified business email address from a LinkedIn profile URL.
+
+```python
+result = client.fwe('linkedin.com/in/iain-mckenzie')
+print(result)
+```
+
+**TEP - Person Enrichment**
+
+Returns enriched person data based on full name and company name.
+
+```python
+result = client.tep('iain mckenzie', 'stripe')
+print(result)
+```
+
+**ENC - Company Enrichment**
+
+Provides a complete company profile from a company name.
+
+```python
+result = client.enc('cufinder')
+print(result)
+```
+
+**CEC - Company Employee Count**
+
+Returns an estimated number of employees for a company.
+
+```python
+result = client.cec('cufinder')
+print(result)
+```
+
+**CLO - Company Locations**
+
+Returns the known physical office locations of a company.
+
+```python
+result = client.clo('apple')
+print(result)
+```
+
+**CSE - Company Search**
+
+Search for companies by keyword, partial name, industry, location, or other filters.
+
+```python
+result = client.cse(
+    name='cufinder',
+    country='germany',
+    state='hamburg',
+    city='hamburg'
+)
+print(result)
+```
+
+**PSE - Person Search**
+
+Search for people by name, company, job title, location, or other filters.
+
+```python
+result = client.pse(
+    full_name='iain mckenzie',
+    company_name='stripe'
+)
+print(result)
+```
+
+**LBS - Local Business Search (Google Maps Search API)**
+
+Search for local businesses by location, industry, or name.
+
+```python
+result = client.lbs(
+    country='united states',
+    state='california',
+    page=1
+)
+print(result)
+```
+
+**BCD - B2B Customers Finder**
+
+Returns company's careers page
+
+```python
+result = client.bcd('stripe.com')
+print(result)
+```
+
+**CCP - Company Career Page Finder**
+
+Returns is company SaaS or not
+
+```python
+result = client.ccp('stripe.com')
+print(result)
+```
+
+**ISC - Company Saas Checker**
+
+Returns is company SaaS or not
+
+```python
+result = client.isc('stripe.com')
+print(result)
+```
+
+**CBC - Company B2B or B2C Checker**
+
+Returns company's business type
+
+```python
+result = client.cbc('stripe.com')
+print(result)
+```
+
+**CSC - Company Mission Statement**
+
+Returns company's mission statement
+
+```python
+result = client.csc('stripe.com')
+print(result)
+```
+
+**CSN - Company Snapshot**
+
+Returns company's snapshot information
+
+```python
+result = client.csn('stripe.com')
+print(result)
+```
+
+**NAO - Phone Number Normalizer**
+
+Returns normalized phone
+
+```python
+result = client.nao('+18006676389')
+print(result)
+```
+
+**NAA - Address Normalizer**
+
+Returns normalized address
+
+```python
+result = client.naa('1095 avenue of the Americas, 6th Avenue ny 10036')
+print(result)
+```
+
+## Error Handling
+
+The SDK provides comprehensive error handling with custom error types:
+
+```python
+from cufinder import (
+    CufinderError,
+    AuthenticationError,
+    CreditLimitError,
+    NotFoundError,
+    PayloadError,
+    RateLimitError,
+    ServerError,
+    NetworkError
+)
+
+try:
+    result = client.cuf('cufinder', 'US')
+except AuthenticationError as error:
+    # 401 - Invalid API key
+    print('Authentication failed:', error.message)
+except CreditLimitError as error:
+    # 400 - Not enough credit
+    print('Not enough credit:', error.message)
+except NotFoundError as error:
+    # 404 - Not found result
+    print('Not found result:', error.message)
+except PayloadError as error:
+    # 422 - Error in the payload
+    print('Payload error:', error.message, error.details)
+except RateLimitError as error:
+    # 429 - Rate limit exceeded
+    print('Rate limit exceeded. Retry after:', error.details.get('retry_after'))
+except ServerError as error:
+    # 500, 501, ... - Server errors
+    print('Server error:', error.message, 'Status:', error.status_code)
+except NetworkError as error:
+    print('Network error:', error.message)
+except CufinderError as error:
+    print('Unknown error:', error.message)
+```
+
+## Types
+
+The SDK exports comprehensive Python types:
+
+```python
+from cufinder import (
+    # Client types
+    BaseApiClient,
+    CufinderClientConfig,
+    RequestConfig,
+    Response,
+
+    # Request types
+    CseParams,
+    PseParams,
+    LbsParams,
+
+    # Response types
+    BaseResponse,
+    ApiResponse,
+
+    # Model types
+    Company,
+    Person,
+    LookalikeCompany,
+    FundraisingInfo,
+    CompanyLocation,
+    TepPerson,
+    CloCompanyLocation,
+    CompanySearchResult,
+    PersonSearchResult,
+    LocalBusinessResult,
+
+    # Error types
+    CufinderError,
+    AuthenticationError,
+    CreditLimitError,
+    NotFoundError,
+    PayloadError,
+    RateLimitError,
+    ServerError,
+    NetworkError
+)
+```
+
+## Support
+
+For support, please open an issue on the [GitHub repository](https://github.com/cufinder/cufinder-py/issues).
