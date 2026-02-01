@@ -1,0 +1,336 @@
+# DeepAI Chat API Client
+
+[![Python 3.7+](https://img.shields.io/badge/python-3.7+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+A powerful Python client library for interacting with DeepAI's Chat API. Supports multiple AI models, file attachments, session management, and conversation history.
+
+## 🚀 Installation
+
+```bash
+pip install deepai-chat
+```
+
+---
+
+## 📖 Table of Contents
+
+- [Quick Start](#-quick-start)
+- [Features](#-features)
+- [Supported Models](#-supported-models)
+- [Usage Examples](#-usage-examples)
+  - [Guest Mode](#guest-mode-no-login)
+  - [Login Mode](#login-mode-full-features)
+  - [Chat with Files](#chat-with-files)
+  - [Conversation Manager](#conversation-manager)
+  - [Session Management](#session-management)
+- [API Reference](#-api-reference)
+- [Error Handling](#-error-handling)
+
+---
+
+## ⚡ Quick Start
+
+### Guest Mode (No Login Required)
+
+```python
+from deepai_api import DeepAIClient
+
+# Create anonymous client - no account needed!
+client = DeepAIClient.guest()
+
+# Chat with AI
+response = client.chat("Hello, how are you?")
+print(response)
+```
+
+### Login Mode (Full Features)
+
+```python
+from deepai_api import DeepAIClient
+
+# Login with your DeepAI account
+client = DeepAIClient.login(
+    email="your@email.com",
+    password="yourpassword"
+)
+
+# Now you can save chat history
+response = client.chat("Hello!")
+print(f"API Key: {client.api_key}")
+```
+
+---
+
+## ✨ Features
+
+| Feature | Guest Mode | Login Mode |
+|---------|:----------:|:----------:|
+| Chat with AI | ✅ | ✅ |
+| Choose AI model | ✅ | ✅ |
+| Upload file attachments | ✅ | ✅ |
+| Chat with files | ✅ | ✅ |
+| Save chat history | ❌ | ✅ |
+| Load saved sessions | ❌ | ✅ |
+| List all sessions | ❌ | ✅ |
+| Resume conversations | ❌ | ✅ |
+
+---
+
+## 🤖 Supported Models
+
+```python
+from deepai_api import SUPPORTED_MODELS, DEFAULT_MODEL
+
+print(SUPPORTED_MODELS)
+# ['gpt-5-nano', 'gpt-4.1-nano', 'deepseek-v3.2', 
+#  'gemini-2.5-flash-lite', 'llama-4-scout', 'gemma2-9b-it']
+
+print(DEFAULT_MODEL)
+# 'gpt-5-nano'
+```
+
+| Model | Description |
+|-------|-------------|
+| `gpt-5-nano` | Default model, lightweight, supports function calling |
+| `gpt-4.1-nano` | GPT-4.1 nano version |
+| `deepseek-v3.2` | DeepSeek v3.2 |
+| `gemini-2.5-flash-lite` | Google Gemini Flash Lite |
+| `llama-4-scout` | Meta Llama 4 Scout |
+| `gemma2-9b-it` | Google Gemma 2 9B Instruct |
+
+---
+
+## 📚 Usage Examples
+
+### Guest Mode (No Login)
+
+```python
+from deepai_api import DeepAIClient
+
+# Create guest client
+client = DeepAIClient.guest()
+
+# Simple chat
+response = client.chat("What is Python?")
+print(response)
+
+# Chat with specific model
+response = client.chat(
+    message="Explain machine learning",
+    model="deepseek-v3.2"
+)
+print(response)
+```
+
+### Login Mode (Full Features)
+
+```python
+from deepai_api import DeepAIClient
+
+client = DeepAIClient.login(
+    email="your@email.com",
+    password="yourpassword"
+)
+
+print(f"✓ Logged in!")
+print(f"  API Key: {client.api_key}")
+print(f"  Session ID: {client.session_id}")
+```
+
+### Chat with Files
+
+Upload files and ask AI to analyze them:
+
+```python
+# Upload a file
+attachment = client.upload_attachment("document.pdf")
+file_uuid = attachment["attachment"]["uuid"]
+
+print(f"✓ Uploaded: {attachment['attachment']['original_filename']}")
+print(f"  UUID: {file_uuid}")
+print(f"  Size: {attachment['attachment']['file_size']} bytes")
+
+# Chat with the file
+response = client.chat(
+    message="Summarize this document in 3 bullet points",
+    attachment_uuids=[file_uuid]
+)
+print(response)
+```
+
+Upload from bytes:
+
+```python
+# Upload from bytes (e.g., from an API response)
+image_bytes = requests.get("https://example.com/image.png").content
+
+attachment = client.upload_attachment_bytes(
+    file_bytes=image_bytes,
+    filename="downloaded_image.png",
+    content_type="image/png"
+)
+```
+
+### Conversation Manager
+
+For multi-turn conversations with automatic history saving:
+
+```python
+from deepai_api import DeepAIClient, ConversationManager
+
+client = DeepAIClient.login(email="...", password="...")
+
+# Create conversation manager
+manager = ConversationManager(
+    api_key=client.api_key,
+    session_id=client.session_id,
+    csrf_token=client.csrf_token,
+    model="gpt-5-nano"
+)
+
+# First message - introduce yourself
+result = manager.send("Hi! My name is John.")
+print(f"AI: {result['content']}")
+
+# Second message - AI remembers your name!
+result = manager.send("What's my name?")
+print(f"AI: {result['content']}")  # "Your name is John!"
+
+# Check session info
+print(f"Session UUID: {manager.session_uuid}")
+print(f"Messages: {len(manager.messages)}")
+```
+
+### Session Management
+
+List all your chat sessions:
+
+```python
+sessions = client.get_chat_sessions()
+
+print(f"You have {len(sessions['sessions'])} sessions:")
+for s in sessions["sessions"]:
+    print(f"  - {s['title']}")
+    print(f"    UUID: {s['uuid']}")
+    print(f"    Updated: {s['updated_at']}")
+```
+
+Load and resume a session:
+
+```python
+# Load existing session
+session_uuid = "a0e3917d-8f07-4efb-8c99-a0ce9be393bb"
+info = manager.load_session(session_uuid)
+
+print(f"✓ Loaded: {info['title']}")
+print(f"  {info['message_count']} messages")
+
+# Continue the conversation with full context
+result = manager.send("Let's continue our discussion")
+```
+
+Get full session history:
+
+```python
+session = client.get_chat_session("session-uuid-here")
+
+print(f"Title: {session['title']}")
+for msg in session["messages"]:
+    role = msg["role"]
+    content = msg["content"][:50]
+    print(f"[{role}]: {content}...")
+```
+
+---
+
+## 📋 API Reference
+
+### DeepAIClient
+
+#### Class Methods
+
+| Method | Description |
+|--------|-------------|
+| `DeepAIClient.guest()` | Create anonymous client (no login) |
+| `DeepAIClient.login(email, password)` | Login and create authenticated client |
+
+#### Instance Methods
+
+| Method | Parameters | Description |
+|--------|------------|-------------|
+| `chat()` | `message`, `model`, `chat_history`, `attachment_uuids` | Send chat message |
+| `upload_attachment()` | `file_path`, `filename` | Upload file for chat |
+| `upload_attachment_bytes()` | `file_bytes`, `filename`, `content_type` | Upload bytes |
+| `get_attachment()` | `attachment_uuid` | Get attachment info |
+| `get_chat_sessions()` | `known_uuids` | List user's sessions |
+| `get_chat_session()` | `session_uuid` | Get session with history |
+| `save_chat_session()` | `messages`, `session_uuid`, `title` | Save session |
+
+### ConversationManager
+
+| Method | Parameters | Description |
+|--------|------------|-------------|
+| `send()` | `message`, `model`, `attachment_uuids` | Send and auto-save |
+| `load_session()` | `session_uuid` | Load existing session |
+| `new_conversation()` | `title` | Start new conversation |
+| `get_history()` | - | Get current messages |
+| `get_session_info()` | - | Get session metadata |
+
+---
+
+## 🛡️ Error Handling
+
+```python
+from deepai_api import DeepAIClient
+
+client = DeepAIClient.login(email="...", password="...")
+
+try:
+    response = client.chat("Hello")
+except Exception as e:
+    error_msg = str(e)
+    
+    if "Invalid API key" in error_msg:
+        print("❌ Session expired, please login again")
+    
+    elif "Rate limited" in error_msg:
+        print("⏳ Too many requests, please wait")
+    
+    elif "Session not found" in error_msg:
+        print("❌ Chat session doesn't exist")
+    
+    elif "Access denied" in error_msg:
+        print("❌ You don't have access to this session")
+    
+    elif "File not found" in error_msg:
+        print("❌ File path is invalid")
+    
+    else:
+        print(f"❌ Error: {error_msg}")
+```
+
+---
+
+## 📦 Requirements
+
+- Python 3.7+
+- requests >= 2.25.0
+
+---
+
+## 📄 License
+
+MIT License - see [LICENSE](LICENSE) file for details.
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+---
+
+## 📞 Support
+
+If you encounter any issues or have questions, please [open an issue](https://github.com/your-username/deepai-chat/issues).
