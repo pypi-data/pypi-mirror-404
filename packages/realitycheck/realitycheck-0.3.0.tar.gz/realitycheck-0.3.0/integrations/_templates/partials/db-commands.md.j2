@@ -1,0 +1,216 @@
+{#- Database CLI commands reference -#}
+## Database Commands
+
+### Command Availability
+
+Reality Check commands can be invoked in two ways:
+
+1. **`rc-db` / `rc-validate` / etc.** - Works if you pip-installed `realitycheck`
+2. **`uv run python scripts/db.py`** - Works from the framework repo with uv
+
+**Check which is available:**
+
+```bash
+# Test pip-installed version
+which rc-db && rc-db --version
+
+# If not installed, use uv from framework directory
+# (requires being in realitycheck repo or having it as submodule)
+uv run python scripts/db.py --help
+```
+
+**If neither works:**
+- Install: `pip install realitycheck` or `uv pip install realitycheck`
+- Or clone/submodule the framework and use `uv run` from that directory
+
+### Usage Examples
+
+Use installed commands if available, otherwise fall back to uv:
+
+```bash
+# Check database stats
+rc-db stats
+# or: uv run python scripts/db.py stats
+
+# Register source
+rc-db source add \
+  --id "SOURCE_ID" \
+  --title "TITLE" \
+  --type "TYPE" \
+  --author "AUTHOR" \
+  --year YEAR \
+  --url "URL" \
+  --analysis-file "analysis/sources/SOURCE_ID.md" \
+  --topics "tag1,tag2" \
+  --domains "TECH,LABOR"
+
+# Update source metadata later
+rc-db source update "SOURCE_ID" \
+  --analysis-file "analysis/sources/SOURCE_ID.md" \
+  --topics "tag1,tag2" \
+  --domains "TECH,LABOR" \
+  --claims-extracted "DOMAIN-YYYY-NNN,DOMAIN-YYYY-NNN"
+
+# Register claim
+rc-db claim add \
+  --id "CLAIM_ID" \
+  --text "CLAIM_TEXT" \
+  --type "[TYPE]" \
+  --domain "DOMAIN" \
+  --evidence-level "EX" \
+  --credence 0.XX \
+  --source-ids "SOURCE_ID"
+
+# Recommended: import source + claims in one step (format: analysis/sources/<source-id>.yaml)
+rc-db import "analysis/sources/SOURCE_ID.yaml" --type all
+
+# Search claims
+rc-db search "query" --limit 10
+
+# Get specific record
+rc-db claim get CLAIM_ID
+rc-db source get SOURCE_ID
+
+# List records
+rc-db claim list --domain TECH
+rc-db source list --type ARTICLE
+
+# Analysis lifecycle (recommended for accurate token tracking)
+# 1. Start: capture baseline tokens
+ANALYSIS_ID=$(rc-db analysis start \
+  --source-id "SOURCE_ID" \
+  --tool claude-code \
+  --model "claude-sonnet-4")
+
+# 2. (Optional) Mark stage checkpoints
+rc-db analysis mark --id "$ANALYSIS_ID" --stage check_stage1
+rc-db analysis mark --id "$ANALYSIS_ID" --stage check_stage2
+
+# 3. Complete: capture final tokens and compute delta
+rc-db analysis complete \
+  --id "$ANALYSIS_ID" \
+  --analysis-file "analysis/sources/SOURCE_ID.md" \
+  --claims-extracted "DOMAIN-YYYY-001,DOMAIN-YYYY-002" \
+  --estimate-cost \
+  --notes "Initial analysis + registration"
+
+# Session discovery (if auto-detection fails)
+rc-db analysis sessions list --tool claude-code --limit 10
+
+# Alternative: one-shot add (legacy, less accurate for multi-check sessions)
+rc-db analysis add \
+  --source-id "SOURCE_ID" \
+  --tool codex \
+  --cmd check \
+  --analysis-file "analysis/sources/SOURCE_ID.md" \
+  --model "gpt-4o" \
+  --usage-from codex:"/path/to/rollout-*.jsonl" \
+  --estimate-cost \
+  --notes "Initial analysis + registration"
+
+# Query analysis logs
+rc-db analysis list --source-id "SOURCE_ID"
+rc-db analysis get ANALYSIS-YYYY-NNN
+```
+
+### Evidence Links
+
+```bash
+# Add evidence link (connects claim to supporting/contradicting source)
+rc-db evidence add \
+  --claim-id "DOMAIN-YYYY-NNN" \
+  --source-id "source-id" \
+  --direction supports \
+  --strength 0.8 \
+  --location "Table 3, p.15" \
+  --reasoning "Direct measurement supports the claim"
+
+# List evidence for a claim
+rc-db evidence list --claim-id "DOMAIN-YYYY-NNN"
+
+# List evidence from a source
+rc-db evidence list --source-id "source-id"
+
+# Get specific evidence link
+rc-db evidence get EVLINK-2026-001
+
+# Supersede (correct) an evidence link
+rc-db evidence supersede EVLINK-2026-001 \
+  --direction weakens \
+  --reasoning "Re-evaluated: methodology concerns reduce support"
+```
+
+### Reasoning Trails
+
+```bash
+# Add reasoning trail (documents why credence was assigned)
+rc-db reasoning add \
+  --claim-id "DOMAIN-YYYY-NNN" \
+  --credence 0.75 \
+  --evidence-level E2 \
+  --evidence-summary "E2 based on 2 supporting, 1 weak counter" \
+  --supporting-evidence "EVLINK-2026-001,EVLINK-2026-002" \
+  --contradicting-evidence "EVLINK-2026-003" \
+  --reasoning-text "Assigned 0.75 because..."
+
+# Get active reasoning trail for a claim
+rc-db reasoning get --claim-id "DOMAIN-YYYY-NNN"
+
+# List all reasoning trails
+rc-db reasoning list --claim-id "DOMAIN-YYYY-NNN"
+
+# Get full reasoning history (including superseded)
+rc-db reasoning history --claim-id "DOMAIN-YYYY-NNN"
+```
+
+### Validation
+
+```bash
+rc-validate
+# or: uv run python scripts/validate.py
+
+# Strict mode (treat warnings as errors, including missing provenance)
+rc-validate --strict
+```
+
+### Export
+
+```bash
+rc-export yaml claims -o claims.yaml
+rc-export yaml sources -o sources.yaml
+rc-export yaml analysis-logs -o analysis-logs.yaml
+rc-export md summary -o summary.md
+rc-export md analysis-logs -o analysis-logs.md
+
+# Provenance exports
+rc-export md reasoning --id DOMAIN-YYYY-NNN -o analysis/reasoning/DOMAIN-YYYY-NNN.md
+rc-export md reasoning --all --output-dir analysis/reasoning
+rc-export md evidence-by-claim --id DOMAIN-YYYY-NNN -o analysis/evidence/by-claim/DOMAIN-YYYY-NNN.md
+rc-export md evidence-by-source --id source-id -o analysis/evidence/by-source/source-id.md
+rc-export provenance --format yaml -o provenance.yaml
+rc-export provenance --format json -o provenance.json
+```
+
+### Embedding Management
+
+Semantic search requires embeddings. Check and manage embedding status:
+
+```bash
+# Check embedding coverage
+rc-embed status
+# or: uv run python scripts/embed.py status
+
+# Generate missing embeddings (backfill)
+rc-embed generate --verbose
+# or: uv run python scripts/embed.py generate --verbose
+
+# Regenerate all embeddings (after model change)
+rc-embed regenerate --verbose
+# or: uv run python scripts/embed.py regenerate --verbose
+```
+
+**Troubleshooting:**
+- If `rc-embed` not found: `pip install realitycheck` or use `uv run python scripts/embed.py`
+- If embedding generation fails: check `sentence-transformers` is installed
+- Default model: `all-MiniLM-L6-v2` (CPU-based, 384 dimensions)
+- To skip embeddings in CI/tests: `export REALITYCHECK_EMBED_SKIP=1`
