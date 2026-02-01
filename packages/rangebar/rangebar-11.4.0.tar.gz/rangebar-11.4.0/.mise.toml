@@ -1,0 +1,525 @@
+[env]
+# =============================================================================
+# GitHub Account Isolation (CRITICAL for multi-account setups)
+# =============================================================================
+# See: ADR 2025-12-17-github-multi-account-authentication
+#
+# This ensures all gh CLI and git operations use the correct GitHub identity.
+# The git remote MUST use SSH with host alias: git@github.com-terrylica:...
+GH_ACCOUNT = "terrylica"
+GH_CONFIG_DIR = "{{ env.HOME }}/.config/gh/profiles/terrylica"
+
+# GitHub token for gh CLI operations (uses file-based loading to prevent process storms)
+# ADR: 2026-01-15-mise-env-token-loading-patterns.md
+# NOTE: For semantic-release, use `mise run release:version` which fetches
+# the PAT from Doppler dynamically to avoid stale token issues.
+GH_TOKEN = "{{ read_file(path=env.HOME ~ '/.claude/.secrets/gh-token-terrylica') | trim }}"
+GITHUB_TOKEN = "{{ read_file(path=env.HOME ~ '/.claude/.secrets/gh-token-terrylica') | trim }}"
+
+# =============================================================================
+# Doppler Configuration (SSoT for secrets)
+# =============================================================================
+# PyPI: doppler secrets get PYPI_TOKEN --project claude-config --config prd
+# GitHub PAT: doppler secrets get GH_TOKEN_TERRYLICA --project main --config dev
+DOPPLER_PYPI_PROJECT = "claude-config"
+DOPPLER_PYPI_CONFIG = "prd"
+
+# =============================================================================
+# ClickHouse Cache Configuration (SSoT for cache hosts)
+# =============================================================================
+# RANGEBAR_CH_HOSTS: SSH aliases for ClickHouse hosts (comma-separated)
+# RANGEBAR_CH_PRIMARY: Preferred host when multiple available
+# RANGEBAR_MODE: "auto" (default), "local", or "cloud"
+#
+# AUTO mode: Try localhost first, then SSH tunnel to remote hosts
+# LOCAL mode: Only use localhost:8123 (fails if unavailable)
+# CLOUD mode: Only use CLICKHOUSE_HOST env var (for cloud deployments)
+RANGEBAR_CH_HOSTS = "bigblack"
+RANGEBAR_CH_PRIMARY = "bigblack"
+
+# =============================================================================
+# Build Configuration
+# =============================================================================
+BENCH_DATA_DIR = "{{ env.PWD }}/bench-data"
+PROFILE_DATA_DIR = "{{ env.PWD }}/profile-data"
+
+# =============================================================================
+# Linux Build Configuration (SSH-based remote build)
+# =============================================================================
+LINUX_BUILD_HOST = "bigblack"
+LINUX_BUILD_USER = "tca"
+LINUX_BUILD_DIR = "/tmp/rangebar-py-build"
+LINUX_MATURIN_PROFILE = "wheel"
+LINUX_MATURIN_COMPAT = "manylinux_2_17"
+LINUX_MIN_DISK_GB = "5"
+LINUX_MIN_RUST_VERSION = "1.90"
+
+# =============================================================================
+# Tools - managed by mise (NOT separate cargo install)
+# =============================================================================
+
+[tools]
+python = "3.13"
+rust = "1.90"
+node = "22"          # Required for semantic-release
+uv = "latest"        # Required for publish workflow
+# Cargo tools installed as mise plugins
+"cargo:cargo-nextest" = "latest"
+"cargo:cargo-deny" = "latest"
+"cargo:cargo-outdated" = "latest"
+"cargo:flamegraph" = "0.6"
+"cargo:maturin" = "latest"
+
+# =============================================================================
+# Development Tasks (from Makefile)
+# =============================================================================
+
+[tasks.fmt]
+description = "Format code with cargo fmt"
+run = "cargo fmt --all"
+
+[tasks.lint]
+description = "Run clippy linting"
+run = "cargo clippy --all-targets --all-features"
+
+[tasks.test]
+description = "Run Rust tests with cargo nextest (excludes PyO3 root crate)"
+run = "cargo nextest run --workspace --exclude rangebar-py"
+
+[tasks.test-py]
+description = "Run Python tests"
+run = "pytest tests/ -v"
+
+[tasks."test:e2e"]
+description = "Run end-to-end tests (requires ClickHouse)"
+run = "pytest tests/ -v -m 'not slow' --tb=short"
+
+[tasks."test:clickhouse"]
+description = "Run ClickHouse-specific tests"
+run = "pytest tests/ -v -m clickhouse --tb=short"
+
+[tasks."test:all"]
+description = "Run all tests including slow and ClickHouse"
+run = "pytest tests/ -v --tb=short"
+
+[tasks.deny]
+description = "Run cargo deny security checks"
+run = "cargo deny check"
+
+[tasks.check]
+description = "Run all quality checks (fmt + test)"
+depends = ["fmt", "test"]
+
+[tasks.check-full]
+description = "Full quality checks including lint and deny"
+depends = ["fmt", "lint", "test", "deny"]
+
+[tasks.build]
+description = "Build Python extension (development)"
+run = "maturin develop"
+
+[tasks.build-release]
+description = "Build in release mode"
+run = "cargo build --release"
+
+[tasks.clean]
+description = "Clean build artifacts"
+run = "cargo clean && rm -rf dist/ build/ *.egg-info"
+
+[tasks.docs]
+description = "Generate documentation"
+run = "cargo doc --open --all-features"
+
+[tasks.dev]
+description = "Quick development cycle (fmt + test)"
+depends = ["fmt", "test"]
+
+# =============================================================================
+# Benchmarking Tasks (REPLACES benchmark_runner.sh)
+# =============================================================================
+
+[tasks."bench:run"]
+description = "Run performance benchmarks"
+run = "cargo bench --bench rangebar_bench"
+
+[tasks."bench:quick"]
+description = "Run quick benchmarks (reduced iterations)"
+run = "cargo bench --bench rangebar_bench -- --quick"
+
+[tasks."bench:baseline"]
+description = "Create performance baseline"
+run = """
+mkdir -p $BENCH_DATA_DIR
+cargo bench --bench rangebar_bench -- --save-baseline main
+echo "Baseline saved to $BENCH_DATA_DIR/main"
+"""
+
+[tasks."bench:compare"]
+description = "Compare current performance with baseline"
+run = "cargo bench --bench rangebar_bench -- --baseline main"
+
+[tasks."bench:validate"]
+description = "Validate performance targets (1M ticks < 100ms)"
+run = """
+echo "Running performance validation..."
+cargo bench --bench rangebar_bench -- --quick 2>&1 | tee /tmp/bench_output.txt
+if grep -q "1M.*time:.*[0-9][0-9][0-9]\\.[0-9]* ms" /tmp/bench_output.txt; then
+  echo "FAIL: 1M ticks benchmark exceeds 100ms target"
+  exit 1
+fi
+echo "PASS: Performance targets met"
+"""
+
+# =============================================================================
+# Profiling Tasks (REPLACES profiling_tools.sh for simple cases)
+# =============================================================================
+
+[tasks."prof:flamegraph"]
+description = "Generate CPU flamegraph"
+run = """
+mkdir -p $PROFILE_DATA_DIR
+cargo flamegraph --bench rangebar_bench -o $PROFILE_DATA_DIR/flamegraph-$(date +%Y%m%d-%H%M%S).svg
+echo "Flamegraph saved to $PROFILE_DATA_DIR/"
+"""
+
+[tasks."prof:build-release"]
+description = "Build with profiling symbols"
+run = "CARGO_PROFILE_RELEASE_DEBUG=true cargo build --release"
+
+# Complex profiling (platform-specific) kept in script
+[tasks."prof:full"]
+description = "Comprehensive profiling suite (uses script for platform detection)"
+run = "./scripts/profiling_tools.sh full"
+
+# =============================================================================
+# Dependency Management Tasks (PARTIAL - complex logic in script)
+# =============================================================================
+
+[tasks."deps:check"]
+description = "Check for outdated dependencies"
+run = "cargo outdated -R --color always"
+
+[tasks."deps:security"]
+description = "Run security audit on dependencies"
+run = "cargo deny check advisories && cargo deny check licenses"
+
+[tasks."deps:tree"]
+description = "Show dependency tree (depth 1)"
+run = "cargo tree --depth 1 | grep -E '^[a-z]'"
+
+[tasks."deps:update"]
+description = "Update dependencies (simple - no rollback)"
+run = """
+cargo update
+cargo nextest run --no-fail-fast
+echo "Dependencies updated and tests passed"
+"""
+
+# Complex update with rollback kept in script
+[tasks."deps:update-safe"]
+description = "Update dependencies with backup/rollback (uses script)"
+run = "./scripts/dependency_monitor.sh auto"
+
+# =============================================================================
+# Production Validation Tasks (REPLACES production_validation.sh)
+# =============================================================================
+
+[tasks."validate:security"]
+description = "Validate no privilege escalation in scripts"
+run = """
+if grep -r 'sudo' scripts/*.sh 2>/dev/null; then
+  echo "FAIL: Found sudo usage in scripts"
+  exit 1
+fi
+echo "PASS: No privilege escalation detected"
+"""
+
+[tasks."validate:injection"]
+description = "Validate command injection prevention"
+run = """
+if grep -E '\\$\\(.*\\$[A-Z]' scripts/*.sh 2>/dev/null; then
+  echo "WARN: Potential command injection pattern found"
+fi
+echo "PASS: Command injection check complete"
+"""
+
+[tasks."validate:memory"]
+description = "Validate memory efficiency for high-volume months (prevents OOM regressions)"
+run = "python scripts/validate_memory_efficiency.py"
+
+[tasks."validate:all"]
+description = "Run all production validation checks"
+depends = ["validate:security", "validate:injection", "validate:memory"]
+
+[tasks."validate:clickhouse"]
+description = "Validate ClickHouse connectivity and cache integrity"
+run = "python scripts/validate_clickhouse.py"
+
+# =============================================================================
+# ClickHouse Cache Tasks
+# =============================================================================
+
+[tasks."cache:status"]
+description = "Show ClickHouse cache statistics"
+run = "python scripts/cache_status.py"
+
+[tasks."cache:clear"]
+description = "Clear ClickHouse cache for a symbol (interactive)"
+run = "python scripts/cache_clear.py"
+
+# =============================================================================
+# Release Tasks
+# =============================================================================
+
+[tasks.release]
+description = "Build all release wheels"
+run = "./scripts/build-release.sh"
+
+[tasks.publish]
+description = "Publish wheels to PyPI"
+run = "./scripts/publish-wheels.sh"
+
+[tasks."release:local"]
+description = "Build local wheel only (macOS ARM64)"
+run = "maturin build --profile wheel"
+
+[tasks."release:sdist"]
+description = "Build source distribution"
+run = "maturin sdist"
+
+# =============================================================================
+# Platform-Specific Build Tasks (Issue #17)
+# =============================================================================
+
+[tasks."release:macos-arm64"]
+description = "Build macOS ARM64 wheels for Python 3.13 (native)"
+run = """
+echo "=== Building macOS ARM64 wheels (Python 3.13) ==="
+for pyver in python3.13; do
+    if command -v $pyver &> /dev/null; then
+        echo "Building for $pyver..."
+        maturin build --profile wheel -i $pyver
+    else
+        echo "WARN: $pyver not found, skipping"
+    fi
+done
+echo "OK: macOS ARM64 wheels built"
+"""
+
+[tasks."release:linux-preflight"]
+description = "Verify Linux build host availability"
+run = """
+echo "=== Linux Build Preflight ==="
+if ! ssh -o ConnectTimeout=5 -o BatchMode=yes "$LINUX_BUILD_USER@$LINUX_BUILD_HOST" "echo connected" >/dev/null 2>&1; then
+    echo "FAIL: Cannot connect to $LINUX_BUILD_USER@$LINUX_BUILD_HOST"
+    exit 1
+fi
+echo "OK: SSH connectivity verified"
+
+REMOTE_RUST=$(ssh "$LINUX_BUILD_USER@$LINUX_BUILD_HOST" "~/.cargo/bin/rustc --version 2>/dev/null | cut -d' ' -f2" || echo "not found")
+echo "OK: Remote Rust version: $REMOTE_RUST"
+"""
+
+[tasks."release:linux"]
+description = "Build Linux x86_64 wheels for Python 3.13 on remote host (Docker manylinux)"
+depends = ["release:linux-preflight"]
+run = """
+echo "=== Building Linux x86_64 Wheels (Docker manylinux, Python 3.13) ==="
+PROJECT_DIR="$(pwd)"
+REMOTE_DIR="${LINUX_BUILD_DIR}-$$"
+
+cleanup() { ssh "$LINUX_BUILD_USER@$LINUX_BUILD_HOST" "rm -rf $REMOTE_DIR" 2>/dev/null || true; }
+trap cleanup EXIT
+
+ssh "$LINUX_BUILD_USER@$LINUX_BUILD_HOST" "mkdir -p $REMOTE_DIR"
+
+rsync -az --delete \
+    --exclude 'target/' --exclude 'dist/' --exclude '.git/' \
+    --exclude '__pycache__/' --exclude '*.egg-info/' --exclude 'node_modules/' \
+    "$PROJECT_DIR/" "$LINUX_BUILD_USER@$LINUX_BUILD_HOST:$REMOTE_DIR/"
+
+# Build using manylinux Docker container for glibc compatibility
+# Build for Python 3.13 only (abi3 removed, need per-version wheels)
+ssh "$LINUX_BUILD_USER@$LINUX_BUILD_HOST" 'cd '"$REMOTE_DIR"' && docker run --rm -v $(pwd):/io -w /io quay.io/pypa/manylinux2014_x86_64 bash -c "yum install -y openssl-devel perl-IPC-Cmd && curl --proto =https --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && source ~/.cargo/env && /opt/python/cp313-cp313/bin/pip install maturin && /opt/python/cp313-cp313/bin/maturin build --profile wheel --compatibility manylinux2014 -i /opt/python/cp313-cp313/bin/python"'
+
+mkdir -p dist/
+scp "$LINUX_BUILD_USER@$LINUX_BUILD_HOST:$REMOTE_DIR/target/wheels/*manylinux*.whl" dist/
+echo "OK: Linux wheels built"
+"""
+
+# =============================================================================
+# 4-Phase Workflow Tasks
+# =============================================================================
+
+[tasks."release:preflight"]
+description = "Validate release prerequisites (Phase 1)"
+run = """
+echo "=== PREFLIGHT ==="
+git update-index --refresh -q || true
+
+if [ -n "$(git status --porcelain)" ]; then
+    echo "FAIL: Working directory not clean"
+    git status --short
+    exit 1
+fi
+
+BRANCH=$(git branch --show-current)
+if [ "$BRANCH" != "main" ]; then
+    echo "FAIL: Not on main branch (on: $BRANCH)"
+    exit 1
+fi
+
+echo "OK: Preflight passed"
+"""
+
+[tasks."release:sync"]
+description = "Synchronize with remote (Phase 2)"
+depends = ["release:preflight"]
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "=== SYNC ==="
+
+# Ensure SSH remote for terrylica account
+REMOTE_URL=$(git remote get-url origin)
+if [[ ! "$REMOTE_URL" =~ github.com-terrylica ]]; then
+  echo "Fixing remote URL for terrylica identity..."
+  git remote set-url origin "git@github.com-terrylica:terrylica/rangebar-py.git"
+fi
+
+git pull --rebase origin main || { echo "FAIL: Pull failed"; exit 1; }
+git push origin main || { echo "FAIL: Push failed"; exit 1; }
+echo "OK: Synced"
+"""
+
+[tasks."release:check-config"]
+description = "Verify release configuration (GitHub, Doppler, SSH)"
+run = "./scripts/check-release-config.sh"
+
+[tasks."release:build-all"]
+description = "Build all platform wheels + sdist (Phase 3 - runs AFTER version bump)"
+depends = ["release:version"]
+run = """
+echo "=== BUILD ALL PLATFORMS ==="
+mise run release:macos-arm64
+mise run release:linux
+mise run release:sdist
+# Copy macOS wheel and sdist to dist/ (Linux wheel already lands there via scp)
+VERSION=$(grep -A5 '\\[workspace.package\\]' Cargo.toml | grep '^version' | head -1 | sed 's/.*= "\\(.*\\)"/\\1/')
+cp -n target/wheels/rangebar-${VERSION}-*.whl dist/ 2>/dev/null || true
+cp -n target/wheels/rangebar-${VERSION}.tar.gz dist/ 2>/dev/null || true
+echo "OK: All wheels + sdist built"
+ls -la dist/rangebar-${VERSION}* 2>/dev/null || true
+"""
+
+[tasks."release:postflight"]
+description = "Verify and publish (Phase 4 - runs AFTER builds)"
+depends = ["smoke", "release:build-all"]
+run = """
+echo "=== POSTFLIGHT ==="
+WHEEL_COUNT=$(find dist/ -name "*.whl" 2>/dev/null | wc -l | tr -d ' ')
+echo "Found $WHEEL_COUNT wheel(s)"
+ls -la dist/*.whl 2>/dev/null || true
+echo ""
+echo "To publish: mise run publish"
+"""
+
+[tasks."release:version"]
+description = "Bump version via semantic-release with Doppler GitHub token"
+depends = ["release:sync"]
+run = "./scripts/semantic-release.sh"
+
+[tasks."release:dry"]
+description = "Preview what semantic-release would do (no changes)"
+run = "bun install --silent 2>/dev/null && GH_CONFIG_DIR=$HOME/.config/gh/profiles/terrylica GITHUB_TOKEN=$(gh auth token) bun run semantic-release --dry-run --no-ci"
+
+[tasks."release:pypi"]
+description = "Publish to PyPI using Doppler credentials (local-only, ADR-0027)"
+depends = ["release:build-all"]
+run = "./scripts/publish-to-pypi.sh"
+
+[tasks."release:full"]
+description = "Full release workflow: version bump → build → smoke → publish to PyPI"
+# Dependency chain enforced via task-level depends:
+#   preflight → sync → version → build-all → postflight
+#                                    ↓
+#                              release:pypi (publish)
+# mise resolves the full DAG automatically.
+depends = ["release:postflight", "release:pypi"]
+run = """
+echo '========================================='
+echo ' Release complete and published to PyPI!'
+echo '========================================='
+"""
+
+# =============================================================================
+# Smoke Test Tasks
+# =============================================================================
+
+[tasks."smoke:import"]
+description = "Verify Python import works"
+run = "python -c 'from rangebar import RangeBarProcessor; print(\"OK: import works\")'"
+
+[tasks."smoke:process"]
+description = "Verify basic processing works"
+run = """
+python -c '
+from rangebar._core import PyRangeBarProcessor
+proc = PyRangeBarProcessor(threshold_decimal_bps=250)
+assert proc.threshold_decimal_bps == 250
+bars = proc.process_trades([])
+assert bars == []
+print("OK: basic processing works")
+'
+"""
+
+[tasks.smoke]
+description = "Run all smoke tests"
+depends = ["smoke:import", "smoke:process"]
+
+# =============================================================================
+# Checksum Verification Tasks (Issue #43)
+# =============================================================================
+
+[tasks."test:checksum"]
+description = "Test Rust checksum verification module"
+run = "cargo nextest run -p rangebar-providers checksum"
+
+[tasks."test:checksum:integration"]
+description = "Integration test with real Binance data (requires network)"
+run = """
+python -c '
+from rangebar import get_range_bars
+import logging
+logging.basicConfig(level=logging.DEBUG)
+
+# Test with checksum verification (should see checksum events in logs)
+df = get_range_bars("BTCUSDT", "2024-01-01", "2024-01-01", verify_checksum=True)
+print(f"Downloaded {len(df)} bars with checksum verification")
+'
+"""
+
+[tasks."checksum:audit"]
+description = "Audit Tier 1 cache for unverified files"
+run = """
+python -c '
+from rangebar.storage.checksum_registry import ChecksumRegistry
+registry = ChecksumRegistry()
+count = registry.get_verified_count("BTCUSDT")
+print(f"BTCUSDT verified dates: {count}")
+'
+"""
+
+[tasks."checksum:pushover-test"]
+description = "Send test Pushover alert to verify credentials"
+run = """
+python -c '
+from rangebar.notify.pushover import send_critical_alert
+result = send_critical_alert(
+    title="🧪 RB Test Alert",
+    message="Checksum verification test - ignore this alert.",
+)
+print(f"Pushover alert sent: {result}")
+'
+"""

@@ -1,0 +1,314 @@
+[build-system]
+requires = ["maturin>=1.7,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "rangebar"
+# SSoT: Version is pulled from Cargo.toml by maturin (dynamic = ["version"])
+dynamic = ["version"]
+description = "Python bindings for rangebar: Non-lookahead range bar construction for cryptocurrency trading"
+readme = "README.md"
+requires-python = ">=3.13"
+license = { text = "MIT" }
+authors = [
+    { name = "Terry Li" }
+]
+keywords = ["trading", "cryptocurrency", "range-bars", "backtesting", "technical-analysis"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Financial and Insurance Industry",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Rust",
+    "Topic :: Office/Business :: Financial :: Investment",
+]
+
+dependencies = [
+    "pandas>=2.0",
+    "numpy>=1.24",
+    "polars>=1.0",              # Parquet I/O for Tier 1 cache
+    "pyarrow>=14.0",            # Required by polars for to_pandas() conversion
+    "platformdirs>=4.0",        # Cross-platform cache directory
+    "clickhouse-connect>=0.8",  # ClickHouse cache layer (Tier 2)
+    "arro3-core>=0.6.5",
+    "click>=8.0",               # CLI framework (#42)
+    "requests>=2.28",           # Telegram notifications (#41)
+    "loguru>=0.7.0",            # Structured NDJSON logging (#43)
+]
+
+[project.scripts]
+rangebar = "rangebar.cli:main"
+
+[project.optional-dependencies]
+backtesting = ["backtesting>=0.3"]
+exness = []  # Feature flag handled at Rust build level (maturin --features exness)
+dev = [
+    "pytest>=7.0",
+    "pytest-benchmark>=4.0",
+    "mypy>=1.0",
+    "black>=23.0",
+    "ruff>=0.1",
+]
+
+[project.urls]
+Repository = "https://github.com/terrylica/rangebar-py"
+Documentation = "https://github.com/terrylica/rangebar-py#readme"
+"Upstream (Rust)" = "https://github.com/terrylica/rangebar"
+
+[tool.maturin]
+python-source = "python"
+module-name = "rangebar._core"
+# Include data-providers for full API (get_range_bars with automatic data fetching)
+# This is now default in Cargo.toml, but explicit here for documentation
+features = ["pyo3/extension-module", "data-providers"]
+# Force optimized wheel profile (see Cargo.toml [profile.wheel])
+profile = "wheel"
+# Strip symbols to minimize wheel size
+strip = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "clickhouse: marks tests requiring ClickHouse (deselect with '-m \"not clickhouse\"')",
+    "benchmark: marks tests as performance benchmarks",
+    "asyncio: marks tests as async (requires pytest-asyncio)",
+]
+
+[tool.coverage.run]
+source = ["python/rangebar"]
+omit = ["tests/*", "python/rangebar/__init__.pyi"]
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+skip_covered = false
+
+[tool.mypy]
+strict = true
+python_version = "3.13"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+
+[tool.black]
+line-length = 88
+target-version = ["py313"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py313"
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "F",    # pyflakes
+    "W",    # pycodestyle warnings
+    "I",    # isort
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "ANN",  # flake8-annotations
+    "B",    # flake8-bugbear
+    "A",    # flake8-builtins
+    "C4",   # flake8-comprehensions
+    "DTZ",  # flake8-datetimez
+    "T10",  # flake8-debugger
+    "EM",   # flake8-errmsg
+    "ISC",  # flake8-implicit-str-concat
+    "ICN",  # flake8-import-conventions
+    "G",    # flake8-logging-format
+    "PIE",  # flake8-pie
+    "PYI",  # flake8-pyi
+    "PT",   # flake8-pytest-style
+    "Q",    # flake8-quotes
+    "RET",  # flake8-return
+    "SIM",  # flake8-simplify
+    "TID",  # flake8-tidy-imports
+    "ARG",  # flake8-unused-arguments
+    "PTH",  # flake8-use-pathlib
+    "PD",   # pandas-vet
+    "PL",   # pylint
+    "TRY",  # tryceratops
+    "NPY",  # numpy-specific rules
+    "RUF",  # ruff-specific rules
+]
+ignore = [
+    # ANN101/ANN102 removed in ruff 0.9+
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = [
+    "ANN001",  # Missing type annotation for function argument
+    "ANN201",  # Missing return type annotation
+    "ANN401",  # Using Any type
+    "ARG002",  # Unused method argument (common in fixtures)
+    "PLR2004", # Magic value in comparison
+    "NPY002",  # Legacy numpy random
+    "PD901",   # Generic variable name 'df'
+    "F841",    # Unused variable (common in mock tests)
+    "RET504",  # Unnecessary assignment before return
+    "SIM117",  # Nested with statements
+    "E501",    # Line too long (test output messages can be verbose)
+    "B007",    # Loop control variable not used (common in iterrows)
+]
+"examples/*" = [
+    "PD901",   # Generic variable name 'df'
+    "NPY002",  # Legacy numpy random
+    "PLR2004", # Magic value
+    "PLR0915", # Too many statements
+    "TRY300",  # Consider moving to else block
+    "B904",    # Within except clause, raise with from
+    "E501",    # Line too long (examples can be verbose)
+]
+"python/rangebar/__init__.pyi" = [
+    "PYI021",  # Docstrings in stubs (kept for documentation)
+    "PYI034",  # Self return type (intentional RangeBarCache return)
+    "E501",    # Line too long (docstring examples)
+    "E402",    # Module-level import not at top (organized by section)
+]
+"python/rangebar/__init__.py" = [
+    "F821",    # Forward references for type hints
+    "SIM108",  # Ternary operator (readability preference)
+    "PLC0415", # Lazy imports for optional ClickHouse dependencies
+    "PLR0912", # Too many branches (get_range_bars is comprehensive)
+    "PLR0913", # Too many arguments (get_range_bars exposes full API)
+    "PLR0915", # Too many statements (get_range_bars is entry point)
+    "F401",    # Unused imports (polars used for type hints)
+    "PD901",   # Generic variable name 'df'
+    "TRY300",  # Consider moving to else block
+    "E501",    # Line too long (docstring examples)
+    "E402",    # Module-level import not at top (lazy imports after __all__)
+]
+"python/rangebar/processors/api.py" = [
+    "PLC0415", # Lazy imports for optional ClickHouse/Polars dependencies
+    "PD901",   # Generic variable name 'df'
+]
+"python/rangebar/orchestration/*.py" = [
+    "PLC0415", # Lazy imports for optional ClickHouse/Polars/Exness dependencies
+    "PLR0913", # Too many arguments (orchestration functions expose full API surface)
+    "PLR0912", # Too many branches (complex orchestration logic)
+    "PLR0915", # Too many statements (orchestration entry points)
+    "PLR0911", # Too many return statements (complex control flow)
+    "PD901",   # Generic variable name 'df'
+    "ARG001",  # Unused function arguments (reserved for future use / API stability)
+    "TRY300",  # Consider moving to else block
+    "SIM108",  # Ternary operator (readability preference)
+    "DTZ007",  # Naive datetime from strptime (intentional, dates are local)
+    "DTZ001",  # Naive datetime constructor (intentional for month boundaries)
+    "E501",    # Line too long (docstring examples, long comments)
+    "ANN401",  # Any type in kwargs (deprecated shim compatibility)
+]
+"python/rangebar/clickhouse/*.py" = [
+    "PD901",   # Generic variable name 'df' (common in data processing)
+    "RET504",  # Unnecessary assignment before return
+    "TRY300",  # Consider moving to else block
+    "PLW2901", # Loop variable overwritten
+    "ANN401",  # Any type in kwargs
+    "PYI034",  # Self return type
+    "PLR2004", # Magic values (port numbers, etc.)
+    "PLR0913", # Too many arguments (cache API needs symbol, threshold, timestamps, etc.)
+    "PLC0415", # Lazy imports for optional dependencies
+    "TID252",  # Relative imports from parent (intentional for package structure)
+]
+"python/rangebar/exness.py" = [
+    "PD901",   # Generic variable name 'df'
+    "ANN401",  # Any type in kwargs
+    "F821",    # Forward references (ExnessInstrument placeholders)
+    "PLC0415", # Import in function (needed for optional imports)
+    "RET504",  # Unnecessary assignment before return (readability preference)
+]
+"scripts/*" = [
+    "E501",    # Line too long (scripts can be verbose)
+    "PLR2004", # Magic values (common in scripts)
+    "PLR0913", # Too many arguments (analysis scripts need full APIs)
+    "PLR0915", # Too many statements (analysis scripts are comprehensive)
+    "TRY300",  # Consider moving to else block
+    "ANN001",  # Missing type annotation
+    "ANN201",  # Missing return type annotation
+]
+"python/rangebar/cli.py" = [
+    "PLC0415", # Lazy imports (CLI only loads modules when needed)
+    "TRY300",  # Consider moving to else block
+    "PD901",   # Generic variable name 'df' (common in data processing)
+]
+"python/rangebar/checkpoint.py" = [
+    "PLC0415", # Lazy imports (avoid circular imports)
+    "PLR0913", # Too many arguments (resumable population API)
+    "UP035",   # Import from collections.abc (typing.Iterator is fine)
+    "PTH105",  # os.replace for atomic operations
+    "PTH108",  # os.unlink for cleanup
+    "SIM105",  # contextlib.suppress (explicit try-except is clearer)
+    "PD901",   # Generic variable name 'df' (common in data processing)
+]
+"python/rangebar/hooks.py" = [
+    "ANN401",  # Any type in kwargs (details are intentionally flexible)
+    "UP035",   # Import from collections.abc (typing.Callable is fine for compatibility)
+]
+"python/rangebar/notify/*.py" = [
+    "PLC0415", # Lazy imports (optional requests dependency)
+    "TID252",  # Relative imports from parent (intentional for subpackage)
+    "TRY300",  # Consider moving to else block
+]
+"python/rangebar/validation/post_storage.py" = [
+    "PLC0415", # Lazy imports (avoid import-time overhead)
+]
+"python/rangebar/validation/__init__.py" = [
+    "E501",    # Line too long (docstring)
+]
+"python/rangebar/logging.py" = [
+    "PLC0415", # Lazy imports (loguru, socket, uuid for optional/deferred loading)
+    "PLW0603", # Global statement for lazy logger initialization singleton
+]
+"python/rangebar/validation/tier2.py" = [
+    "PLC0415", # Lazy imports (optional statsmodels/scipy/sklearn dependencies)
+]
+"python/rangebar/storage/parquet.py" = [
+    "PLC0415", # Lazy imports (pyarrow inside generator for streaming)
+]
+"python/rangebar/storage/checksum_registry.py" = [
+    "PLR0913", # Too many arguments (create factory method needs all fields)
+    "PLC0415", # Lazy imports (avoid circular import with notify)
+    "TID252",  # Relative imports from parent (intentional for package structure)
+]
+"python/rangebar/ouroboros.py" = [
+    "PLR2004", # Magic values (weekday numbers 5/6 for Saturday/Sunday, month 12)
+    "PLC0415", # Lazy imports (zoneinfo for exchange session detection)
+]
+
+[tool.semantic_release]
+# SSoT: Cargo.toml is the single source of truth for version
+# - workspace.package.version: Inherited by all workspace crates (via version.workspace = true)
+# - package.version: The PyO3 extension crate (rangebar-py) version
+# - pyproject.toml uses dynamic = ["version"] to pull from Cargo.toml at build time
+version_toml = [
+    "Cargo.toml:workspace.package.version",
+    "Cargo.toml:package.version"
+]
+build_command = "pip install build && python -m build --sdist"
+commit_parser = "conventional"
+tag_format = "v{version}"
+allow_zero_version = true
+
+[tool.semantic_release.changelog]
+exclude_commit_patterns = [
+    '''chore(?:\([^)]*?\))?: .+''',
+    '''ci(?:\([^)]*?\))?: .+''',
+    '''refactor(?:\([^)]*?\))?: .+''',
+    '''style(?:\([^)]*?\))?: .+''',
+    '''test(?:\([^)]*?\))?: .+''',
+    '''build(?:\([^)]*?\))?: .+''',
+    '''docs(?:\([^)]*?\))?: .+''',
+]
+
+[tool.semantic_release.branches.main]
+match = "(main|master)"
+prerelease = false
+
+[dependency-groups]
+dev = [
+    "psutil>=7.2.1",
+    "pytest-cov>=7.0.0",
+]

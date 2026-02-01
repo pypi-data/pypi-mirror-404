@@ -1,0 +1,36 @@
+branches:
+  - main
+
+plugins:
+  # Analyze commits to determine version bump
+  - "@semantic-release/commit-analyzer"
+
+  # Generate release notes from commits
+  - "@semantic-release/release-notes-generator"
+
+  # Update CHANGELOG.md
+  - - "@semantic-release/changelog"
+    - changelogFile: CHANGELOG.md
+
+  # Update version in pyproject.toml AND Cargo.toml (both are version SSoT)
+  # Uses perl for cross-platform compatibility (BSD sed vs GNU sed differ)
+  - - "@semantic-release/exec"
+    - prepareCmd: |
+        perl -i -pe 's/^version = ".*"/version = "${nextRelease.version}"/' pyproject.toml
+        perl -i -pe 's/^version = ".*"/version = "${nextRelease.version}"/' Cargo.toml
+      successCmd: |
+        git push --follow-tags origin main
+        git update-index --refresh -q || true
+        echo "Version ${nextRelease.version} released"
+      publishCmd: "echo 'Use mise run publish for PyPI'"
+
+  # Commit version changes back to repository
+  - - "@semantic-release/git"
+    - assets:
+        - pyproject.toml
+        - Cargo.toml
+        - CHANGELOG.md
+      message: "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
+
+  # Create GitHub release
+  - "@semantic-release/github"
