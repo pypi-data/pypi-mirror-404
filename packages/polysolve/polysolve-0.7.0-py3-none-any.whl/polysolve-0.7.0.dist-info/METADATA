@@ -1,0 +1,236 @@
+Metadata-Version: 2.4
+Name: polysolve
+Version: 0.7.0
+Summary: A Python library for representing, manipulating, and solving exponential functions using analytical methods and genetic algorithms, with optional CUDA acceleration.
+Author-email: Jonathan Rampersad <jonathan@jono-rams.work>
+License: MIT License
+        
+        Copyright (c) 2025 Jonathan Rampersad
+        
+        Permission is hereby granted, free of charge, to any person obtaining a copy of this software and 
+        associated documentation files (the "Software"), to deal in the Software without restriction, including 
+        without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell 
+        copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the 
+        following conditions:
+        
+        The above copyright notice and this permission notice shall be included in all copies or substantial 
+        portions of the Software.
+        
+        THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT 
+        LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO 
+        EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER 
+        IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE 
+        USE OR OTHER DEALINGS IN THE SOFTWARE.
+        
+Project-URL: Homepage, https://polysolve.jono-rams.work
+Project-URL: Documentation, https://polysolve.jono-rams.work/docs
+Project-URL: Repository, https://github.com/jono-rams/PolySolve
+Project-URL: Bug Tracker, https://github.com/jono-rams/PolySolve/issues
+Keywords: math,polynomial,genetic algorithm,cuda,equation solver
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: Intended Audience :: Science/Research
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Scientific/Engineering :: Mathematics
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: numpy>=1.21
+Requires-Dist: numba
+Provides-Extra: cuda12
+Requires-Dist: cupy-cuda12x; extra == "cuda12"
+Provides-Extra: dev
+Requires-Dist: pytest; extra == "dev"
+Dynamic: license-file
+
+<p align="center">
+  <img src="https://i.ibb.co/N22Gx6xq/Poly-Solve-Logo.png" alt="polysolve Logo" width="256">
+</p>
+
+[![PyPI version](https://img.shields.io/pypi/v/polysolve.svg)](https://pypi.org/project/polysolve/)
+[![PyPI pyversions](https://img.shields.io/pypi/pyversions/polysolve.svg)](https://pypi.org/project/polysolve/)
+
+A Python library for representing, manipulating, and solving polynomial equations. Features a high-performance, Numba-accelerated genetic algorithm for CPU, with an optional CUDA/GPU backend for massive-scale parallel solving.
+
+---
+
+## Key Features
+
+* **Numerically Stable Solver**: Makes complex calculations **practical**. Leverage your GPU to power the robust genetic algorithm, solving high-degree polynomials accurately in a reasonable timeframe.
+* **Complex Number Support**: Fully supports complex coefficients and finding roots in the complex plane (e.g., $x^2 + 1 = 0 \to \pm i$).
+* **Numba Accelerated CPU Solver**: The default genetic algorithm is JIT-compiled with Numba for high-speed CPU performance, right out of the box.
+* **CUDA Accelerated**: Leverage NVIDIA GPUs for a massive performance boost when finding roots in large solution spaces.
+* **Create and Manipulate Polynomials**: Easily define polynomials of any degree using integer or float coefficients, and perform arithmetic operations like addition, subtraction, multiplication, and scaling.
+* **Analytical Solvers**: Includes standard, exact solvers for simple cases (e.g., `quadratic_solve`).
+* **Simple API**: Designed to be intuitive and easy to integrate into any project.
+
+---
+
+## Installation
+
+Install the base package from PyPI:
+
+```bash
+pip install polysolve
+```
+
+### CUDA Acceleration
+
+To enable GPU acceleration, install the extra that matches your installed NVIDIA CUDA Toolkit version. This provides a significant speedup for the genetic algorithm.
+
+**For CUDA 12.x users:**
+```bash
+pip install polysolve[cuda12]
+```
+
+---
+
+## Quick Start
+
+Here is a simple example of how to define a quadratic function, find its properties, and solve for its roots.
+
+```python
+from polysolve import Function, GA_Options
+
+# 1. Define the function f(x) = 2x^2 - 3x - 5
+#    Coefficients can be integers or floats.
+f1 = Function(largest_exponent=2)
+f1.set_coeffs([2, -3, -5])
+
+print(f"Function f1: {f1}")
+# > Function f1: 2x^2 - 3x - 5
+
+# 2. Solve for y at a given x
+y_val = f1.solve_y(5)
+print(f"Value of f1 at x=5 is: {y_val}")
+# > Value of f1 at x=5 is: 30.0
+
+# 3. Get the derivative: 4x - 3
+df1 = f1.derivative()
+print(f"Derivative of f1: {df1}")
+# > Derivative of f1: 4x - 3
+
+# 4. Get the 2nd derivative: 4
+ddf1 = f1.nth_derivative(2)
+print(f"2nd Derivative of f1: {ddf1}")
+# > Derivative of f1: 4
+
+# 5. Find roots analytically using the quadratic formula
+#    This is exact and fast for degree-2 polynomials.
+roots_analytic = f1.quadratic_solve()
+print(f"Analytic roots: {sorted(roots_analytic)}")
+# > Analytic roots: [-1.0, 2.5]
+
+# 6. Find REAL roots with the genetic algorithm (Numba CPU)
+#    This is the default, JIT-compiled CPU solver.
+ga_opts = GA_Options(num_of_generations=20)
+roots_ga = f1.get_real_roots(ga_opts, use_cuda=False)
+print(f"Approximate real roots: {roots_ga[:2]}")
+# > Approximate real roots: [-1.000..., 2.500...]
+
+# 7. Find ALL roots (Real + Complex)
+#    Use get_roots() to search the complex plane.
+f_complex = Function(2, [1, 0, 1]) # x^2 + 1
+roots_all = f_complex.get_roots(ga_opts)
+print(f"Approximate complex roots: {roots_all}")
+# > Approximate complex roots: [-1.00...j, 1.00...j]
+
+# If you installed a CUDA extra, you can run it on the GPU:
+# roots_ga_gpu = f1.get_real_roots(ga_opts, use_cuda=True)
+# print(f"Approximate roots from GA (GPU): {roots_ga_gpu[:2]}")
+
+```
+
+---
+
+## Tuning the Genetic Algorithm
+
+The `GA_Options` class gives you fine-grained control over the genetic algorithm's performance, letting you trade speed for accuracy.
+
+The default options are balanced, but for very complex polynomials, you may want a more exhaustive search.
+
+```python
+from polysolve import GA_Options
+
+# Create a config for a deep search, optimized for finding
+# *all* real roots (even if they are far apart).
+ga_robust_search = GA_Options(
+    num_of_generations=50,  # Run for more generations
+    data_size=500000,       # Use a larger population
+
+    # --- Key Tuning Parameters for Multi-Root Finding ---
+
+    # Widen the parent pool to 75% to keep more "niches"
+    # (solution-clouds around different roots) alive.
+    selection_percentile=0.75, 
+
+    # Increase the crossover blend factor to 0.75.
+    # This allows new solutions to be created further
+    # away from their parents, increasing exploration.
+    blend_alpha=0.75,
+
+    # Enable complex root finding (default is True)
+    find_complex=True
+)
+
+# Pass the custom options to the solver
+roots = f1.get_real_roots(ga_accurate)
+```
+
+For a full breakdown of all parameters, including crossover_ratio, mutation_strength, and more, please see [the full GA_Options API Documentation](https://polysolve.jono-rams.work/docs/ga-options-api).
+
+---
+
+## Development & Testing Environment
+
+This project is automatically tested against a specific set of dependencies to ensure stability. Our Continuous Integration (CI) pipeline runs on an environment using **CUDA 12.5** on **Ubuntu 24.04**.
+
+While the code may work on other configurations, all contributions must pass the automated tests in our reference environment. For detailed information on how to replicate the testing environment, please see our [**Contributing Guide**](CONTRIBUTING.md).
+
+## Contributing
+
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](http://makeapullrequest.com)
+[![GitHub issues](https://img.shields.io/github/issues/jono-rams/PolySolve.svg?style=flat-square)](https://github.com/jono-rams/PolySolve/issues)
+[![GitHub pull requests](https://img.shields.io/github/issues-pr/jono-rams/PolySolve.svg?style=flat-square)](https://github.com/jono-rams/PolySolve/pulls)
+
+Contributions are welcome! Whether it's a bug report, a feature request, or a pull request, please feel free to get involved.
+
+Please read our `CONTRIBUTING.md` file for details on our code of conduct and the process for submitting pull requests.
+
+## Contributors
+
+<!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->
+<!-- prettier-ignore-start -->
+<!-- markdownlint-disable -->
+<table>
+  <tbody>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="https://jono-rams.work"><img src="https://avatars.githubusercontent.com/u/29872001?v=4?s=100" width="100px;" alt="Jonathan Rampersad"/><br /><sub><b>Jonathan Rampersad</b></sub></a><br /><a href="https://github.com/jono-rams/PolySolve/commits?author=jono-rams" title="Maintenance">🚧</a> <a href="https://github.com/jono-rams/PolySolve/commits?author=jono-rams" title="Code">💻</a> <a href="https://github.com/jono-rams/PolySolve/commits?author=jono-rams" title="Documentation">📖</a> <a href="#infra-jono-rams" title="Infrastructure (Hosting, Build-Tools, etc)">🚇</a></td>
+    </tr>
+  </tbody>
+  <tfoot>
+    <tr>
+      <td align="center" size="13px" colspan="7">
+        <img src="https://raw.githubusercontent.com/all-contributors/all-contributors-cli/1b8533af435da9854653492b1327a23a4dbd0a10/assets/logo-small.svg">
+          <a href="https://all-contributors.js.org/docs/en/bot/usage">Add your contributions</a>
+        </img>
+      </td>
+    </tr>
+  </tfoot>
+</table>
+
+<!-- markdownlint-restore -->
+<!-- prettier-ignore-end -->
+
+<!-- ALL-CONTRIBUTORS-LIST:END -->
+
+## License
+
+This project is licensed under the MIT License - see the `LICENSE` file for details.
