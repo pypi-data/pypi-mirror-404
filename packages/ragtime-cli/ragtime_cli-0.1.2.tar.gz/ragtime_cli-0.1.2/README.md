@@ -1,0 +1,190 @@
+# ragtime-cli
+
+Local-first memory and RAG system for Claude Code. Semantic search over code, docs, and team knowledge.
+
+## Features
+
+- **Memory Storage**: Store structured knowledge with namespaces, types, and metadata
+- **Semantic Search**: Query memories and docs with natural language
+- **Cross-Branch Sync**: Share context with teammates before PRs merge
+- **MCP Server**: Native Claude Code integration
+- **Claude Commands**: Pre-built `/remember`, `/recall`, `/handoff`, `/start` commands
+
+## Installation
+
+```bash
+pip install ragtime-cli
+```
+
+## Quick Start
+
+```bash
+# Initialize in your project
+ragtime init
+
+# Store a memory
+ragtime remember "Auth uses JWT with 15-min expiry" \
+  --namespace app \
+  --type architecture \
+  --component auth
+
+# Search memories
+ragtime search "authentication" --namespace app
+
+# Install Claude commands
+ragtime install --workspace
+```
+
+## CLI Commands
+
+### Memory Storage
+
+```bash
+# Store a memory
+ragtime remember "content" --namespace app --type architecture --component auth
+
+# List memories
+ragtime memories --namespace app --type decision
+
+# Graduate branch memory to app
+ragtime graduate <memory-id>
+
+# Delete a memory
+ragtime forget <memory-id>
+```
+
+### Search & Indexing
+
+```bash
+# Index docs
+ragtime index --type docs
+
+# Semantic search
+ragtime search "how does auth work" --namespace app --limit 10
+
+# Reindex memory files
+ragtime reindex
+```
+
+### Cross-Branch Sync
+
+```bash
+# Sync teammate's branch memories
+ragtime sync origin/jm/feature-auth
+
+# Clean up stale synced folders
+ragtime prune --dry-run
+ragtime prune
+```
+
+### Claude Integration
+
+```bash
+# Install Claude commands to workspace
+ragtime install --workspace
+
+# Install globally
+ragtime install --global
+
+# List available commands
+ragtime install --list
+```
+
+## MCP Server
+
+Add to your Claude config (`.mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "ragtime": {
+      "command": "ragtime-mcp",
+      "args": ["--path", "."]
+    }
+  }
+}
+```
+
+Available tools:
+- `remember` - Store a memory
+- `search` - Semantic search
+- `list_memories` - List with filters
+- `get_memory` - Get by ID
+- `store_doc` - Store document verbatim
+- `forget` - Delete memory
+- `graduate` - Promote branch → app
+- `update_status` - Change memory status
+
+## Storage Structure
+
+```
+.claude/memory/
+├── app/{component}/            # Graduated app knowledge
+│   └── {id}-{slug}.md
+├── team/                       # Team conventions
+│   └── {id}-{slug}.md
+├── users/{username}/           # User preferences
+│   └── {id}-{slug}.md
+└── branches/
+    ├── {branch-slug}/          # Your branch (tracked in git)
+    │   ├── context.md          # Session handoff
+    │   └── {id}-{slug}.md
+    └── {branch}(unmerged)/     # Synced from teammates (gitignored)
+```
+
+## Memory Format
+
+Memories are markdown files with YAML frontmatter:
+
+```markdown
+---
+id: abc123
+namespace: app
+type: architecture
+component: auth
+confidence: high
+status: active
+added: '2026-01-31'
+author: bretwardjames
+---
+
+Auth uses JWT tokens with 15-minute expiry for security.
+Sessions are stored in Redis, not cookies.
+```
+
+## Namespaces
+
+| Namespace | Purpose |
+|-----------|---------|
+| `app` | How the codebase works (architecture, decisions) |
+| `team` | Team conventions and standards |
+| `user-{name}` | Individual preferences |
+| `branch-{name}` | Work-in-progress context |
+
+## Memory Types
+
+| Type | Description |
+|------|-------------|
+| `architecture` | System design, patterns |
+| `feature` | How features work |
+| `decision` | Why we chose X over Y |
+| `convention` | Team standards |
+| `pattern` | Reusable approaches |
+| `context` | Session handoff |
+
+## Claude Commands
+
+After `ragtime install --workspace`:
+
+| Command | Purpose |
+|---------|---------|
+| `/remember` | Capture knowledge mid-session |
+| `/recall` | Search memories |
+| `/handoff` | Save session context |
+| `/start` | Resume work on an issue |
+| `/pr-graduate` | Curate branch knowledge after merge |
+| `/audit` | Find duplicates/conflicts |
+
+## License
+
+MIT
