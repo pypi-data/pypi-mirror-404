@@ -1,0 +1,147 @@
+[project]
+name = "cortexhub"
+version = "0.1.8"
+description = "CortexHub Python SDK - Policy-as-Code for AI Agents"
+readme = "README.md"
+requires-python = ">=3.10,<3.14"
+license = { text = "MIT" }
+authors = [
+    { name = "CortexHub", email = "hello@cortexhub.ai" }
+]
+keywords = ["ai", "agents", "policy", "governance", "authorization", "cedar"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+# Core dependencies - minimal and essential
+# Users install framework-specific deps via optional dependencies
+dependencies = [
+    "pydantic>=2.9.0",
+    "structlog>=24.4.0",
+    "httpx>=0.28.0",
+    # OpenTelemetry for telemetry
+    "opentelemetry-api>=1.20.0",
+    "opentelemetry-sdk>=1.20.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.20.0",
+    # Cedar policy engine
+    "cedarpy>=4.0.0",
+    # Guardrails (built-in)
+    "presidio-analyzer>=2.2.360",
+    "presidio-anonymizer>=2.2.360",
+    "detect-secrets>=1.5.0",
+    # Utils
+    "python-dotenv>=1.0.0",
+    # Required by detect-secrets at runtime
+    "pip>=23.0",
+]
+
+[project.optional-dependencies]
+# Framework adapters - install what you need
+# We support AGENTIC frameworks only (not LLM proxies or RAG tools)
+
+langgraph = [
+    "langchain-core>=0.2.0",
+    "langchain-openai>=0.1.0",
+    "langgraph>=0.2.0",
+]
+
+crewai = [
+    "crewai>=0.50.0",
+    "litellm>=1.81.5",
+]
+
+openai-agents = [
+    "openai-agents>=0.0.3",
+]
+
+claude-agents = [
+    "anthropic>=0.40.0",
+    "claude-agent-sdk>=0.0.1",
+]
+
+# All frameworks (for testing/development)
+all = [
+    "cortexhub[langgraph]",
+    "cortexhub[crewai]",
+    "cortexhub[openai-agents]",
+    "cortexhub[claude-agents]",
+]
+
+# Development dependencies
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=5.0.0",
+    "ruff>=0.4.0",
+    "mypy>=1.10.0",
+]
+
+[project.urls]
+Homepage = "https://cortexhub.ai"
+Documentation = "https://docs.cortexhub.ai"
+Repository = "https://github.com/cortexhub/sdks"
+Issues = "https://github.com/cortexhub/sdks/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cortexhub"]
+include = ["LICENSE"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/README.md",
+    "/LICENSE",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-v --tb=short"
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "DTZ", "T10", "RUF"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+warn_return_any = true
+warn_unused_ignores = true
+
+[tool.uv]
+python-preference = "only-managed"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "pytest-asyncio>=1.3.0",
+    "pytest-cov>=7.0.0",
+    "ruff>=0.4.0",
+    # Agentic frameworks for running examples
+    "langchain-core>=0.2.0",
+    "langchain-openai>=0.1.0",
+    "langgraph>=0.2.0",
+    "crewai>=0.50.0",
+    "litellm>=1.81.5",
+    "openai-agents>=0.0.3",
+    "anthropic>=0.40.0",
+    "claude-agent-sdk>=0.0.1",
+]
