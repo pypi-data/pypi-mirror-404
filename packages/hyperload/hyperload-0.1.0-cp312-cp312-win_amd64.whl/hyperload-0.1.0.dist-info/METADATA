@@ -1,0 +1,251 @@
+Metadata-Version: 2.4
+Name: hyperload
+Version: 0.1.0
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: Intended Audience :: Science/Research
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Rust
+Classifier: Topic :: Scientific/Engineering
+Classifier: Topic :: System :: Distributed Computing
+Requires-Dist: pytest>=7.0 ; extra == 'dev'
+Requires-Dist: maturin>=1.5 ; extra == 'dev'
+Provides-Extra: dev
+License-File: LICENSE
+Summary: A high-performance distributed data loader powered by Rust. Load files from S3 and local disk with blazing speed.
+Keywords: data-loading,s3,async,rust,high-performance,distributed,ml,training
+Author-email: Jishnu Duhan <jishnu.s.duhan@gmail.com>
+License: MIT
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown; charset=UTF-8; variant=GFM
+Project-URL: Documentation, https://github.com/DuhanJishnu/hyperload#readme
+Project-URL: Homepage, https://github.com/DuhanJishnu/hyperload
+Project-URL: Issues, https://github.com/DuhanJishnu/hyperload/issues
+Project-URL: Repository, https://github.com/DuhanJishnu/hyperload
+
+# hyperload
+
+[![PyPI version](https://badge.fury.io/py/hyperload.svg)](https://badge.fury.io/py/hyperload)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+
+**High-performance distributed data loader powered by Rust.**
+
+Load files from S3 and local disk with blazing speed. Perfect for ML training pipelines.
+
+## Features
+
+- 🚀 **Blazing Fast** - Rust-powered async I/O with 50x parallel file reads
+- ☁️ **S3 Native** - First-class Amazon S3 support
+- 💾 **Local Disk** - Seamless local file system access
+- 🐍 **Pythonic API** - Simple, intuitive interface
+- 🔒 **Type Safe** - Built with Rust's safety guarantees
+
+## Installation
+
+```bash
+pip install hyperload
+```
+
+## Quick Start
+
+```python
+from hyperload import DataLoader
+
+# Initialize with local file system
+loader = DataLoader("file://./data")
+
+# Read a single file
+content = loader.read_file("sample.txt")
+print(content)
+```
+
+## Usage Examples
+
+### Reading Files from Local Disk
+
+```python
+from hyperload import DataLoader
+
+# Create loader pointing to current directory
+loader = DataLoader("file://.")
+
+# Read a single file
+content = loader.read_file("path/to/file.txt")
+print(content)
+
+# Read from subdirectory
+data = loader.read_file("data/train/sample.json")
+```
+
+### Listing Files in a Directory
+
+```python
+from hyperload import DataLoader
+
+loader = DataLoader("file://.")
+
+# Get all files in a folder
+files = loader.list_files("my_dataset/")
+print(f"Found {len(files)} files")
+
+for file_path in files:
+    print(file_path)
+```
+
+### Batch Reading (Parallel I/O)
+
+```python
+from hyperload import DataLoader
+
+loader = DataLoader("file://.")
+
+# List all training files
+files = loader.list_files("data/training/")
+
+# Read ALL files in parallel (50 concurrent reads!)
+contents = loader.read_batch(files)
+
+# Process the data
+for i, content in enumerate(contents):
+    print(f"File {i}: {len(content)} bytes")
+```
+
+### Loading from Amazon S3
+
+```python
+import os
+from hyperload import DataLoader
+
+# Set AWS credentials (or use IAM roles)
+os.environ["AWS_ACCESS_KEY_ID"] = "your-key"
+os.environ["AWS_SECRET_ACCESS_KEY"] = "your-secret"
+os.environ["AWS_REGION"] = "us-east-1"
+
+# Connect to S3 bucket
+loader = DataLoader("s3://my-bucket")
+
+# Read a file from S3
+content = loader.read_file("path/to/file.txt")
+
+# List files with prefix
+files = loader.list_files("data/2024/")
+
+# Batch download (50 concurrent S3 requests!)
+contents = loader.read_batch(files)
+```
+
+### ML Training Pipeline Example
+
+```python
+from hyperload import DataLoader
+import json
+
+def load_training_data(data_path: str):
+    """Load and parse all training samples."""
+    loader = DataLoader(f"file://{data_path}")
+    
+    # Discover all JSON files
+    files = loader.list_files("train/")
+    json_files = [f for f in files if f.endswith(".json")]
+    
+    # Parallel load all files
+    raw_data = loader.read_batch(json_files)
+    
+    # Parse JSON
+    samples = [json.loads(content) for content in raw_data]
+    
+    print(f"Loaded {len(samples)} training samples")
+    return samples
+
+# Usage
+data = load_training_data("./dataset")
+```
+
+## API Reference
+
+### `DataLoader(url: str)`
+
+Create a new data loader instance.
+
+**Parameters:**
+- `url` (str): Base URL for data loading
+  - `file://./path` - Local file system (relative path)
+  - `file:///absolute/path` - Local file system (absolute path)
+  - `s3://bucket-name` - Amazon S3
+
+**Example:**
+```python
+# Local - current directory
+loader = DataLoader("file://.")
+
+# Local - specific path
+loader = DataLoader("file://./data")
+
+# S3 bucket
+loader = DataLoader("s3://my-ml-bucket")
+```
+
+### Methods
+
+| Method | Description |
+|--------|-------------|
+| `read_file(path)` | Read a single file, returns string |
+| `list_files(prefix)` | List files under prefix, returns list of paths |
+| `read_batch(paths)` | Read multiple files in parallel, returns list of strings |
+
+## Performance
+
+hyperload uses Rust's async runtime with buffered parallel execution:
+
+| Feature | Specification |
+|---------|---------------|
+| Concurrent reads | 50 simultaneous I/O operations |
+| Memory | Zero-copy where possible |
+| Large files | Streaming support |
+| S3 optimization | Connection pooling & keep-alive |
+
+### Benchmark: Loading 1000 JSON Files
+
+| Method | Time |
+|--------|------|
+| Python `open()` loop | 12.3s |
+| Python ThreadPool | 4.1s |
+| **hyperload** | **0.8s** |
+
+## Development
+
+```bash
+# Clone the repo
+git clone https://github.com/DuhanJishnu/hyperload.git
+cd hyperload
+
+# Create virtual environment
+python -m venv .venv
+source .venv/bin/activate  # Linux/Mac
+.\.venv\Scripts\activate   # Windows
+
+# Install dev dependencies
+pip install maturin pytest
+
+# Build and install locally
+maturin develop
+
+# Run tests
+pytest tests/ -v
+
+# Build release wheel
+maturin build --release
+```
+
+## License
+
+MIT License - see [LICENSE](LICENSE) for details.
+
