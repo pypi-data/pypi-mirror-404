@@ -1,0 +1,123 @@
+"""
+JSON Schema-based workflow validation for CausalIQ.
+
+Uses standard JSON Schema validation with the jsonschema library.
+"""
+
+import json
+from pathlib import Path
+from typing import Any, Dict, Optional, Union
+
+import yaml
+
+
+class WorkflowValidationError(Exception):
+    """Raised when workflow validation against JSON Schema fails."""
+
+    def __init__(self, message: str, schema_path: str = "") -> None:
+        """Initialise validation error.
+
+        Args:
+            message: Validation error description
+            schema_path: JSON Schema path where validation failed
+        """
+        super().__init__(message)
+        self.schema_path = schema_path
+
+
+def load_schema(
+    schema_path: Optional[Union[str, Path]] = None,
+) -> Dict[str, Any]:
+    """Load CausalIQ workflow JSON Schema.
+
+    Args:
+        schema_path: Optional path to custom schema file.
+                    If None, loads default package schema.
+
+    Returns:
+        Parsed JSON Schema dictionary
+
+    Raises:
+        WorkflowValidationError: If schema file cannot be loaded
+    """
+    if schema_path is None:
+        file_path = (
+            Path(__file__).parent / "schemas" / "causaliq-workflow.json"
+        )
+    else:
+        file_path = Path(schema_path)
+
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            if not isinstance(data, dict):
+                raise WorkflowValidationError(
+                    f"Schema must be JSON object, got {type(data).__name__}"
+                )
+            return data
+    except FileNotFoundError:
+        raise WorkflowValidationError(f"Schema file not found: {file_path}")
+    except json.JSONDecodeError as e:
+        raise WorkflowValidationError(f"Invalid JSON in schema: {e}")
+
+
+def validate_workflow(
+    workflow: Dict[str, Any], schema_path: Optional[Union[str, Path]] = None
+) -> bool:
+    """Validate workflow against CausalIQ JSON Schema.
+
+    Args:
+        workflow: Workflow configuration dictionary
+        schema_path: Optional path to custom schema file
+
+    Returns:
+        True if workflow is valid
+
+    Raises:
+        WorkflowValidationError: If workflow validation fails
+    """
+    try:
+        import jsonschema
+    except ImportError:
+        raise WorkflowValidationError(
+            "jsonschema library required: pip install jsonschema"
+        )
+
+    schema = load_schema(schema_path)
+
+    try:
+        jsonschema.validate(workflow, schema)
+        return True
+    except jsonschema.ValidationError as e:
+        # Convert absolute_path to string for error reporting
+        path_str = ".".join(str(p) for p in e.absolute_path)
+        raise WorkflowValidationError(
+            f"Workflow validation failed: {e.message}",
+            schema_path=path_str,
+        )
+
+
+def load_workflow_file(file_path: Union[str, Path]) -> Dict[str, Any]:
+    """Load workflow from YAML file.
+
+    Args:
+        file_path: Path to workflow YAML file
+
+    Returns:
+        Parsed workflow dictionary
+
+    Raises:
+        WorkflowValidationError: If file cannot be loaded
+    """
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+            if not isinstance(data, dict):
+                raise WorkflowValidationError(
+                    f"Workflow must be YAML object, got {type(data).__name__}"
+                )
+            return data
+    except FileNotFoundError:
+        raise WorkflowValidationError(f"Workflow file not found: {file_path}")
+    except yaml.YAMLError as e:
+        raise WorkflowValidationError(f"Invalid YAML syntax: {e}")
