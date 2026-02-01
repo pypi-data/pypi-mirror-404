@@ -1,0 +1,626 @@
+"""Unit tests."""
+
+import os
+import sqlite3
+
+import numpy as np
+import pytest
+from sifts.core import CollectionSQLite
+
+
+def test_init(tmp_path):
+    path = tmp_path / "search_engine.db"
+    CollectionSQLite(path, name="123")
+    assert os.path.isfile(path)
+    conn = sqlite3.connect(path)
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='documents';"
+    )
+    assert cursor.fetchone() is not None
+    cursor.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='documents_fts';"
+    )
+    assert cursor.fetchone() is not None
+
+
+def test_collection_names(tmp_path):
+    path = tmp_path / "search_engine.db"
+    with pytest.raises(ValueError):
+        CollectionSQLite(path, name="1 2")
+    with pytest.raises(ValueError):
+        CollectionSQLite(path, name=" abc")
+    CollectionSQLite(path, name="1+2")
+    CollectionSQLite(path, name="1-2")
+    CollectionSQLite(path, name="ab/c")
+    CollectionSQLite(path, name="abc")
+
+
+def test_add(tmp_path):
+    path = tmp_path / "search_engine.db"
+    search = CollectionSQLite(path, name="123")
+    assert search.query("Lorem") == {"results": [], "total": 0}
+    # assert search.count() == 0
+    search.count()
+    ids1 = search.add(["Lorem ipsum dolor"])
+    ids2 = search.add(["sit amet"])
+    assert len(search.query("Lorem")["results"]) == 1
+    assert search.query("Lorem")["results"][0]["id"] == ids1[0]
+    assert len(search.query("am*")["results"]) == 1
+    assert search.query("am*")["results"][0]["id"] == ids2[0]
+    assert len(search.query("Lorem or amet")["results"]) == 2
+    # assert search.count() == 2
+    search.count()
+
+
+def test_query_multiple(tmp_path):
+    path = tmp_path / "search_engine.db"
+    search = CollectionSQLite(path, name="123")
+    search.add(["Lorem ipsum dolor"])
+    search.add(["sit amet"])
+    assert len(search.query("Lorem ipsum")["results"]) == 1
+    assert len(search.query("sit amet")["results"]) == 1
+    assert len(search.query("Lorem sit")["results"]) == 0
+
+
+def test_add_name(tmp_path):
+    path = tmp_path / "search_engine.db"
+    search = CollectionSQLite(path, name="my_name")
+    assert search.query("Lorem")["results"] == []
+    search.add(["Lorem ipsum dolor"])
+    assert len(search.query("Lorem")["results"]) == 1
+    search = CollectionSQLite(path, name="123")
+    assert len(search.query("Lorem")["results"]) == 0
+    search = CollectionSQLite(path, name="my_name")
+    assert len(search.query("Lorem")["results"]) == 1
+
+
+def test_add_id(tmp_path):
+    path = tmp_path / "search_engine.db"
+    search = CollectionSQLite(path, name="123")
+    ids = search.add(["x"])
+    assert len(ids) == 1
+    assert len(ids[0]) == 36  # is UUIDv4
+    ids = search.add(["y"], ids=["my_id"])
+    assert ids == ["my_id"]
+    res = search.query("y")
+    assert len(res["results"]) == 1
+    res = res["results"]
+    assert res[0]["id"] == "my_id"
+    # does not raise, but updates
+    search.add(["z"], ids=["my_id"])
+    res = search.query("y")
+    assert len(res["results"]) == 0
+    res = search.query("z")
+    assert len(res["results"]) == 1
+
+
+def test_update(tmp_path):
+    path = tmp_path / "search_engine.db"
+    search = CollectionSQLite(path, name="123")
+    ids = search.add(["Lorem ipsum"])
+    res = search.query("Lorem")
+    res = res["results"]
+    assert len(res) == 1
+    assert res[0]["id"] == ids[0]
+    search.update(ids=ids, contents=["dolor sit"])
+    res = search.query("Lorem")
+    assert len(res["results"]) == 0
+    res = search.query("sit")
+    res = res["results"]
+    assert len(res) == 1
+    assert res[0]["id"] == ids[0]
+
+
+def test_delete(tmp_path):
+    path = tmp_path / "search_engine.db"
+    search = CollectionSQLite(path, name="123")
+    search.count()
+    ids = search.add(["Lorem ipsum", "Lorem dolor"])
+    res = search.query("Lorem")
+    assert len(res["results"]) == 2
+    search.count()
+    search.delete(ids)
+    res = search.query("Lorem")
+    assert len(res["results"]) == 0
+    search.count()
+    search.delete(ids)
+
+
+def test_query_metadata(tmp_path):
+    path = tmp_path / "search_engine.db"
+    search = CollectionSQLite(path, name="123")
+    search.add(["Lorem ipsum dolor"], metadatas=[{"foo": "bar"}])
+    search.add(["sit amet"])
+    res = search.query("Lorem")
+    res = res["results"]
+    assert len(res) == 1
+    assert res[0]["metadata"] == {"foo": "bar"}
+    res = search.query("sit")
+    assert res["total"] == 1
+    res = res["results"]
+    assert len(res) == 1
+    assert res[0]["metadata"] is None
+
+
+def test_query_order(tmp_path):
+    path = tmp_path / "search_engine.db"
+    search = CollectionSQLite(path, name="123")
+    search.add(["Lorem"], metadatas=[{"k1": "a", "k2": "c"}], ids=["i1"])
+    search.add(["Lorem"], metadatas=[{"k1": "b", "k2": "c"}], ids=["i2"])
+    search.add(["Lorem"], metadatas=[{"k1": "c", "k2": "c"}], ids=["i3"])
+    search.add(["Lorem"], metadatas=[{"k1": "d", "k2": "b"}], ids=["i4"])
+    search.add(["Lorem"], metadatas=[{"k1": "e", "k2": "b"}], ids=["i5"])
+    search.add(["Lorem"], metadatas=[{"k1": "f", "k2": "b"}], ids=["i6"])
+    search.add(["Lorem"], metadatas=[{"k1": "g", "k2": "a"}], ids=["i7"])
+    search.add(["Lorem"], metadatas=[{"k1": "h", "k2": "a"}], ids=["i8"])
+    search.add(["Lorem"], metadatas=[{"k1": "i", "k2": "a"}], ids=["i9"])
+    search.add(["Lorem"], ids=["i0"])
+    res = search.query("Lorem")
+    assert res["total"] == 10
+    assert len(res["results"]) == 10
+    # k1
+    res = search.query("Lorem", order_by="k1")
+    assert res["total"] == 10
+    res = res["results"]
+    assert len(res) == 10
+    assert [r["id"][1:] for r in res] == list("1234567890")
+    assert [(r["metadata"] or {}).get("k1", "0") for r in res] == list("abcdefghi0")
+    # +k1
+    res = search.query("Lorem", order_by="+k1")["results"]
+    assert [r["id"][1:] for r in res] == list("1234567890")
+    assert [(r["metadata"] or {}).get("k1", "0") for r in res] == list("abcdefghi0")
+    # -k1
+    res = search.query("Lorem", order_by="-k1")["results"]
+    assert [r["id"][1:] for r in res] == list("0987654321")
+    assert [(r["metadata"] or {}).get("k1", "0") for r in res] == list("0ihgfedcba")
+    # k2,k1
+    res = search.query("Lorem", order_by=["k2", "k1"])["results"]
+    assert [r["id"][1:] for r in res] == list("7894561230")
+    assert [(r["metadata"] or {}).get("k2", "0") for r in res] == list("aaabbbccc0")
+    assert [(r["metadata"] or {}).get("k1", "0") for r in res] == list("ghidefabc0")
+    # k2,-k1
+    res = search.query("Lorem", order_by=["k2", "-k1"])["results"]
+    assert [r["id"][1:] for r in res] == list("9876543210")
+    assert [(r["metadata"] or {}).get("k2", "0") for r in res] == list("aaabbbccc0")
+    assert [(r["metadata"] or {}).get("k1", "0") for r in res] == list("ihgfedcba0")
+
+
+def test_query_limit_offset(tmp_path):
+    path = tmp_path / "search_engine.db"
+    search = CollectionSQLite(path, name="123")
+    search.add(["Lorem"], metadatas=[{"k1": "a", "k2": "c"}], ids=["i1"])
+    search.add(["Lorem"], metadatas=[{"k1": "b", "k2": "c"}], ids=["i2"])
+    search.add(["Lorem"], metadatas=[{"k1": "c", "k2": "c"}], ids=["i3"])
+    search.add(["Lorem"], metadatas=[{"k1": "d", "k2": "b"}], ids=["i4"])
+    search.add(["Lorem"], metadatas=[{"k1": "e", "k2": "b"}], ids=["i5"])
+    search.add(["Lorem"], metadatas=[{"k1": "f", "k2": "b"}], ids=["i6"])
+    search.add(["Lorem"], metadatas=[{"k1": "g", "k2": "a"}], ids=["i7"])
+    search.add(["Lorem"], metadatas=[{"k1": "h", "k2": "a"}], ids=["i8"])
+    search.add(["Lorem"], metadatas=[{"k1": "i", "k2": "a"}], ids=["i9"])
+    search.add(["Lorem"], ids=["i0"])
+    res = search.query("Lorem", order_by="k1")
+    assert res["total"] == 10
+    assert len(res["results"]) == 10
+    res = search.query("Lorem", order_by="k1", limit=0)
+    assert res["total"] == 10
+    assert len(res["results"]) == 10
+    res = search.query("Lorem", order_by="k1", limit=3)
+    assert res["total"] == 10
+    res = res["results"]
+    assert len(res) == 3
+    assert [r["id"][1:] for r in res] == list("123")
+    res = search.query("Lorem", order_by="k1", limit=3, offset=3)
+    assert res["total"] == 10
+    res = res["results"]
+    assert len(res) == 3
+    assert [r["id"][1:] for r in res] == list("456")
+    res = search.query("Lorem", order_by="k1", limit=3, offset=8)
+    assert res["total"] == 10
+    res = res["results"]
+    assert len(res) == 2
+    assert [r["id"][1:] for r in res] == list("90")
+
+
+def test_query_where(tmp_path):
+    path = tmp_path / "search_engine.db"
+    search = CollectionSQLite(path, name="123")
+    search.add(["Lorem"], metadatas=[{"k1": "a", "k2": "c"}], ids=["i1"])
+    search.add(["Lorem"], metadatas=[{"k1": "b", "k2": "c"}], ids=["i2"])
+    search.add(["Lorem"], metadatas=[{"k1": "c", "k2": "c"}], ids=["i3"])
+    search.add(["Lorem"], metadatas=[{"k1": "d", "k2": "b"}], ids=["i4"])
+    search.add(["Lorem"], metadatas=[{"k1": "e", "k2": "b"}], ids=["i5"])
+    search.add(["Lorem"], metadatas=[{"k1": "f", "k2": "b"}], ids=["i6"])
+    search.add(["Lorem"], metadatas=[{"k1": "g", "k2": "a"}], ids=["i7"])
+    search.add(["Lorem"], metadatas=[{"k1": "h", "k2": "a"}], ids=["i8"])
+    search.add(["Lorem"], metadatas=[{"k1": "i", "k2": "a"}], ids=["i9"])
+    search.add(["Lorem"], ids=["i0"])
+    res = search.query("Lorem", where={"k2": "a"}, order_by="k1")
+    assert res["total"] == 3
+    res = res["results"]
+    assert len(res) == 3
+    res = search.query("Lorem", where={"k2": {"$eq": "a"}}, order_by="k1")
+    assert res["total"] == 3
+    res = res["results"]
+    assert len(res) == 3
+    res = search.query("Lorem", where={"k2": {"$gt": "a"}}, order_by="k1")
+    assert res["total"] == 6
+    res = res["results"]
+    assert len(res) == 6
+    res = search.query("Lorem", where={"k2": {"$lt": "a"}}, order_by="k1")
+    assert res["total"] == 0
+    res = res["results"]
+    assert len(res) == 0
+
+
+def test_query_where_num(tmp_path):
+    path = tmp_path / "search_engine.db"
+    search = CollectionSQLite(path, name="123")
+    search.add(["Lorem"], metadatas=[{"k1": 1, "k2": 3}], ids=["i1"])
+    search.add(["Lorem"], metadatas=[{"k1": 2, "k2": 3}], ids=["i2"])
+    search.add(["Lorem"], metadatas=[{"k1": 3, "k2": 3}], ids=["i3"])
+    search.add(["Lorem"], metadatas=[{"k1": 4, "k2": 2}], ids=["i4"])
+    search.add(["Lorem"], metadatas=[{"k1": 5, "k2": 2}], ids=["i5"])
+    search.add(["Lorem"], metadatas=[{"k1": 6, "k2": 2}], ids=["i6"])
+    search.add(["Lorem"], metadatas=[{"k1": 7, "k2": 1}], ids=["i7"])
+    search.add(["Lorem"], metadatas=[{"k1": 8, "k2": 1}], ids=["i8"])
+    search.add(["Lorem"], metadatas=[{"k1": 9, "k2": 1}], ids=["i9"])
+    search.add(["Lorem"], ids=["i0"])
+    res = search.query("Lorem", where={"k2": 1}, order_by="k1")
+    assert res["total"] == 3
+    res = res["results"]
+    assert len(res) == 3
+    res = search.query("Lorem", where={"k2": {"$eq": 1}}, order_by="k1")
+    assert res["total"] == 3
+    res = res["results"]
+    assert len(res) == 3
+    res = search.query("Lorem", where={"k2": {"$gt": 1}}, order_by="k1")
+    assert res["total"] == 6
+    res = res["results"]
+    assert len(res) == 6
+    res = search.query("Lorem", where={"k2": {"$lt": 1}}, order_by="k1")
+    assert res["total"] == 0
+    res = res["results"]
+    assert len(res) == 0
+
+
+def test_query_where_in(tmp_path):
+    path = tmp_path / "search_engine.db"
+    search = CollectionSQLite(path, name="123")
+    search.add(["Lorem"], metadatas=[{"k1": "a", "k2": "c"}], ids=["i1"])
+    search.add(["Lorem"], metadatas=[{"k1": "b", "k2": "c"}], ids=["i2"])
+    search.add(["Lorem"], metadatas=[{"k1": "c", "k2": "c"}], ids=["i3"])
+    search.add(["Lorem"], metadatas=[{"k1": "d", "k2": "b"}], ids=["i4"])
+    search.add(["Lorem"], metadatas=[{"k1": "e", "k2": "b"}], ids=["i5"])
+    search.add(["Lorem"], metadatas=[{"k1": "f", "k2": "b"}], ids=["i6"])
+    search.add(["Lorem"], metadatas=[{"k1": "g", "k2": "a"}], ids=["i7"])
+    search.add(["Lorem"], metadatas=[{"k1": "h", "k2": "a"}], ids=["i8"])
+    search.add(["Lorem"], metadatas=[{"k1": "i", "k2": "a"}], ids=["i9"])
+    search.add(["Lorem"], ids=["i0"])
+    with pytest.raises(ValueError):
+        # wrong operator
+        search.query("Lorem", where={"k1": {"in": "a"}})
+    res = search.query(
+        "Lorem", where={"k1": {"$in": ["a", "b", "c", "d"]}}, order_by="k1"
+    )
+    assert res["total"] == 4
+    res = res["results"]
+    assert len(res) == 4
+    assert [r["id"][1:] for r in res] == list("1234")
+    res = search.query(
+        "Lorem", where={"k1": {"$nin": ["a", "b", "c", "d"]}}, order_by="k1"
+    )
+    assert res["total"] == 5
+    res = res["results"]
+    assert len(res) == 5
+    assert [r["id"][1:] for r in res] == list("56789")
+
+
+def test_all_docs(tmp_path):
+    path = tmp_path / "search_engine.db"
+    search = CollectionSQLite(path, name="123")
+    search.add(["Lorem ipsum dolor"])
+    search.add(["sit amet"])
+    res = search.get()
+    assert len(res["results"]) == 2
+    assert res["total"] == 2
+
+
+def test_vector_add(tmp_path):
+    path = tmp_path / "search_engine.db"
+    vectors = {"Lorem ipsum dolor": [0, 0, 0], "sit amet": [0, 0.5, 0]}
+
+    def f(documents):
+        return [vectors[doc] for doc in documents]
+
+    search = CollectionSQLite(path, name="vector", embedding_function=f)
+    search.add(["Lorem ipsum dolor", "sit amet"])
+    with search.conn() as conn:
+        res = conn.execute("SELECT embedding FROM documents")
+        vectors = res.fetchall()
+        vectors = [np.frombuffer(v[0], dtype=np.float32) for v in vectors]
+        assert len(vectors) == 2
+        assert isinstance(vectors[0], np.ndarray)
+        assert vectors[0].tolist() == [0, 0, 0]
+        assert vectors[1].tolist() == [0, 0.5, 0]
+
+
+def test_vector_query(tmp_path):
+    path = tmp_path / "search_engine.db"
+    vectors = {
+        "Lorem ipsum dolor": [1, 1, 1],
+        "sit amet": [1, -1, 1],
+        "consectetur": [-1, -1, 1],
+        "adipiscing": [-1, -1, -1],
+    }
+
+    def f(documents):
+        return [vectors[doc] for doc in documents]
+
+    search = CollectionSQLite(path, name="vector", embedding_function=f)
+    search.add(["Lorem ipsum dolor", "sit amet"])
+    res = search.query("consectetur", vector_search=True)
+    assert res["total"] == 2
+    assert res["results"][0]["content"] == "sit amet"
+    assert res["results"][0]["rank"] == pytest.approx(1 / 3)
+    assert res["results"][1]["content"] == "Lorem ipsum dolor"
+    assert res["results"][1]["rank"] == pytest.approx(-1 / 3)
+    # limit & offset
+    res = search.query("consectetur", vector_search=True, offset=0, limit=1)
+    assert res["total"] == 2
+    assert len(res["results"]) == 1
+    assert res["results"][0]["content"] == "sit amet"
+    res = search.query("consectetur", vector_search=True, offset=1, limit=1)
+    assert res["total"] == 2
+    assert len(res["results"]) == 1
+    assert res["results"][0]["content"] == "Lorem ipsum dolor"
+    res = search.query("consectetur", vector_search=True, offset=2)
+    assert res["total"] == 2
+    assert len(res["results"]) == 0
+
+
+def test_vector_query_fts(tmp_path):
+    path = tmp_path / "search_engine.db"
+    vectors = {
+        "Lorem ipsum dolor": [1, 1, 1],
+        "sit amet": [1, -1, 1],
+        "consectetur": [-1, -1, 1],
+        "adipiscing": [-1, -1, -1],
+    }
+
+    def f(documents):
+        return [vectors[doc] for doc in documents]
+
+    search = CollectionSQLite(path, name="vector", embedding_function=f)
+    search.add(["Lorem ipsum dolor", "sit amet"])
+    res = search.query("Lorem", vector_search=False)
+    assert res["total"] == 1
+    assert res["results"][0]["content"] == "Lorem ipsum dolor"
+
+
+def test_vector_update(tmp_path):
+    path = tmp_path / "search_engine.db"
+    vectors = {
+        "Lorem ipsum dolor": [1, 1, 1],
+        "sit amet": [1, -1, 1],
+        "consectetur": [-1, -1, 1],
+        "adipiscing": [-1, -1, -1],
+    }
+
+    def f(documents):
+        return [vectors[doc] for doc in documents]
+
+    search = CollectionSQLite(path, name="vector", embedding_function=f)
+    ids = search.add(["Lorem ipsum dolor", "sit amet"])
+    res = search.query("consectetur", vector_search=True)
+    assert res["total"] == 2
+    assert res["results"][0]["content"] == "sit amet"
+    assert res["results"][0]["content"] == "sit amet"
+    assert res["results"][0]["rank"] == pytest.approx(1 / 3)
+    assert res["results"][0]["id"] == ids[1]
+    assert res["results"][1]["content"] == "Lorem ipsum dolor"
+    assert res["results"][1]["rank"] == pytest.approx(-1 / 3)
+    assert res["results"][1]["id"] == ids[0]
+    # update: switch order
+    search.update(ids=ids, contents=["sit amet", "Lorem ipsum dolor"])
+    res = search.query("consectetur", vector_search=True)
+    assert res["total"] == 2
+    assert res["results"][0]["content"] == "sit amet"
+    assert res["results"][0]["content"] == "sit amet"
+    assert res["results"][0]["rank"] == pytest.approx(1 / 3)
+    assert res["results"][0]["id"] == ids[0]
+    assert res["results"][1]["content"] == "Lorem ipsum dolor"
+    assert res["results"][1]["rank"] == pytest.approx(-1 / 3)
+    assert res["results"][1]["id"] == ids[1]
+
+
+def test_vector_update_nofts(tmp_path):
+    path = tmp_path / "search_engine.db"
+    vectors = {
+        "Lorem ipsum dolor": [1, 1, 1],
+        "sit amet": [1, -1, 1],
+        "consectetur": [-1, -1, 1],
+        "adipiscing": [-1, -1, -1],
+    }
+
+    def f(documents):
+        return [vectors[doc] for doc in documents]
+
+    search = CollectionSQLite(path, name="vector", embedding_function=f, use_fts=False)
+    ids = search.add(["Lorem ipsum dolor", "sit amet"])
+    with pytest.raises(ValueError):
+        res = search.query("Lorem", vector_search=False)
+    res = search.query("consectetur", vector_search=True)
+    assert res["total"] == 2
+    assert res["results"][0]["content"] == "sit amet"
+    assert res["results"][0]["content"] == "sit amet"
+    assert res["results"][0]["rank"] == pytest.approx(1 / 3)
+    assert res["results"][0]["id"] == ids[1]
+    assert res["results"][1]["content"] == "Lorem ipsum dolor"
+    assert res["results"][1]["rank"] == pytest.approx(-1 / 3)
+    assert res["results"][1]["id"] == ids[0]
+    # update: switch order
+    search.update(ids=ids, contents=["sit amet", "Lorem ipsum dolor"])
+    res = search.query("consectetur", vector_search=True)
+    assert res["total"] == 2
+    assert res["results"][0]["content"] == "sit amet"
+    assert res["results"][0]["content"] == "sit amet"
+    assert res["results"][0]["rank"] == pytest.approx(1 / 3)
+    assert res["results"][0]["id"] == ids[0]
+    assert res["results"][1]["content"] == "Lorem ipsum dolor"
+    assert res["results"][1]["rank"] == pytest.approx(-1 / 3)
+    assert res["results"][1]["id"] == ids[1]
+
+
+def test_query_hyphenated_word(tmp_path):
+    path = tmp_path / "search_engine.db"
+    search = CollectionSQLite(path, name="123")
+    search.add(["This is a test-word example"])
+    search.add(["Another document without it"])
+    res = search.query("test-word")
+    assert res["total"] == 1
+    assert len(res["results"]) == 1
+    assert res["results"][0]["content"] == "This is a test-word example"
+
+
+def test_query_hyphenated_wildcard(tmp_path):
+    path = tmp_path / "search_engine.db"
+    search = CollectionSQLite(path, name="123")
+    search.add(["This is a test-word example"])
+    search.add(["This is a test-word-extended version"])
+    search.add(["Another document without it"])
+    res = search.query("test-word*")
+    assert res["total"] == 2
+    assert len(res["results"]) == 2
+
+
+def test_query_wildcard_end(tmp_path):
+    path = tmp_path / "search_engine.db"
+    search = CollectionSQLite(path, name="123")
+    search.add(["testing document"])
+    search.add(["tester document"])
+    search.add(["tests document"])
+    search.add(["another document"])
+    res = search.query("test*")
+    assert res["total"] == 3
+    assert len(res["results"]) == 3
+
+
+def test_query_wildcard_middle(tmp_path):
+    # Note: SQLite FTS5 does not support wildcards in the middle of words
+    # Only trailing wildcards are supported
+    path = tmp_path / "search_engine.db"
+    search = CollectionSQLite(path, name="123")
+    search.add(["testing document"])
+    search.add(["tester document"])
+    search.add(["another document"])
+    res = search.query("te*ing")
+    # This won't match anything because mid-word wildcards aren't supported
+    assert res["total"] == 0
+
+
+def test_query_wildcard_beginning(tmp_path):
+    # Note: SQLite FTS5 does not support leading wildcards
+    path = tmp_path / "search_engine.db"
+    search = CollectionSQLite(path, name="123")
+    search.add(["testing document"])
+    search.add(["interesting document"])
+    search.add(["another document"])
+    res = search.query("*sting")
+    # This won't match anything because leading wildcards aren't supported
+    assert res["total"] == 0
+
+
+def test_query_apostrophe(tmp_path):
+    path = tmp_path / "search_engine.db"
+    search = CollectionSQLite(path, name="123")
+    search.add(["It's a test document"])
+    search.add(["Another document"])
+    res = search.query("it's")
+    assert res["total"] == 1
+    assert res["results"][0]["content"] == "It's a test document"
+
+
+def test_query_comma_special_char(tmp_path):
+    """Integration test: Search for text containing comma (FTS5 special char)"""
+    path = tmp_path / "search_engine.db"
+    search = CollectionSQLite(path, name="123")
+    search.add(["Bydgoszcz, Poland is a city"])
+    search.add(["Another document without special chars"])
+    # This should not raise FTS5 syntax error and should find the document
+    res = search.query("Bydgoszcz, Poland")
+    assert res["total"] == 1
+    assert "Bydgoszcz, Poland" in res["results"][0]["content"]
+
+
+def test_query_colon_special_char(tmp_path):
+    """Integration test: Search for text containing colon (FTS5 special char)"""
+    path = tmp_path / "search_engine.db"
+    search = CollectionSQLite(path, name="123")
+    search.add(["The time:12:00 format is common"])
+    search.add(["Regular document"])
+    # Should not raise FTS5 syntax error
+    res = search.query("time:12:00")
+    assert res["total"] == 1
+    assert "time:12:00" in res["results"][0]["content"]
+
+
+def test_query_parentheses_special_char(tmp_path):
+    """Integration test: Search for text with parentheses (FTS5 special char)"""
+    path = tmp_path / "search_engine.db"
+    search = CollectionSQLite(path, name="123")
+    search.add(["This is test (example) text"])
+    search.add(["Regular document"])
+    # Should not raise FTS5 syntax error
+    res = search.query("test (example)")
+    assert res["total"] == 1
+    assert "test (example)" in res["results"][0]["content"]
+
+
+def test_query_brackets_special_char(tmp_path):
+    """Integration test: Search for text with brackets (FTS5 special char)"""
+    path = tmp_path / "search_engine.db"
+    search = CollectionSQLite(path, name="123")
+    search.add(["Array access test[0] example"])
+    search.add(["Regular document"])
+    # Should not raise FTS5 syntax error
+    res = search.query("test[0]")
+    assert res["total"] == 1
+    assert "test[0]" in res["results"][0]["content"]
+
+
+def test_query_curly_braces_special_char(tmp_path):
+    """Integration test: Search for text with curly braces (FTS5 special char)"""
+    path = tmp_path / "search_engine.db"
+    search = CollectionSQLite(path, name="123")
+    search.add(["Template {value} syntax"])
+    search.add(["Regular document"])
+    # Should not raise FTS5 syntax error
+    res = search.query("template{value}")
+    assert res["total"] == 1
+    assert "{value}" in res["results"][0]["content"]
+
+
+def test_query_colon_wildcard_special_char(tmp_path):
+    """Integration test: Special char with wildcard"""
+    path = tmp_path / "search_engine.db"
+    search = CollectionSQLite(path, name="123")
+    search.add(["User profile user:john123"])
+    search.add(["User profile user:jane456"])
+    search.add(["Regular document"])
+    # Should find both user: documents
+    res = search.query("user:*")
+    assert res["total"] == 2
+
+
+def test_query_multiple_special_chars(tmp_path):
+    """Integration test: Multiple special char types in one query"""
+    path = tmp_path / "search_engine.db"
+    search = CollectionSQLite(path, name="123")
+    search.add(["Complex: (test) with {data}, and [values]"])
+    search.add(["Regular document"])
+    # Should handle multiple special characters correctly
+    res = search.query("(test) and {data}")
+    assert res["total"] == 1
+    assert "(test)" in res["results"][0]["content"]
+    assert "{data}" in res["results"][0]["content"]
