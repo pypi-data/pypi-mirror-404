@@ -1,0 +1,73 @@
+[package]
+name = "eryx-runtime"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Python WASM runtime component for the eryx sandbox"
+readme = "README.md"
+
+# This crate contains the WIT definition and builds the WASM component.
+# The component uses our custom eryx-wasm-runtime (liberyx_runtime.so)
+# instead of componentize-py's runtime.
+
+[features]
+default = []
+
+# Pre-initialization support for capturing Python memory state.
+# Provides ~25x speedup for sandbox creation by snapshotting initialized Python.
+# Works with or without native extensions - can pre-import stdlib modules only.
+preinit = [
+    "dep:wit-component",
+    "dep:zstd",
+    "dep:sha2",
+    "dep:zip",
+    "dep:component-init-transform",
+    "dep:wasmtime",
+    "dep:wasmtime-wasi",
+    "dep:async-trait",
+    "dep:futures",
+    "dep:tempfile",
+    "dep:anyhow",
+    "dep:tracing",
+    "dep:wasm-encoder",
+    "dep:wasmparser",
+]
+
+# Native Python extension support via late-linking.
+# Allows adding extensions like numpy at sandbox creation time.
+# Implies preinit since the linker infrastructure is shared.
+native-extensions = ["preinit"]
+
+[dependencies]
+wit-component = { workspace = true, optional = true }
+zstd = { workspace = true, optional = true }
+sha2 = { workspace = true, optional = true }
+zip = { workspace = true, optional = true }
+component-init-transform = { workspace = true, optional = true }
+wasmtime = { workspace = true, optional = true }
+wasmtime-wasi = { workspace = true, optional = true }
+async-trait = { workspace = true, optional = true }
+futures = { workspace = true, optional = true }
+tempfile = { workspace = true, optional = true }
+anyhow = { workspace = true, optional = true }
+tracing = { workspace = true, optional = true }
+wasm-encoder = { workspace = true, optional = true }
+wasmparser = { workspace = true, optional = true }
+
+[build-dependencies]
+wit-dylib.workspace = true
+wit-component.workspace = true
+wit-parser.workspace = true
+zstd.workspace = true
+
+[lints]
+workspace = true
+
+[package.metadata.cargo-all-features]
+# Skip native-extensions feature as it requires the WASM runtime to be built first.
+# The build script embeds liberyx_runtime.so.zst which is only available after
+# running `mise run build-eryx-runtime`.
+denylist = ["native-extensions"]

@@ -1,0 +1,121 @@
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+# Dev tools (install via cargo or mise):
+# - cargo-nextest: Fast test runner (`cargo nextest run`)
+
+[workspace.package]
+version = "0.2.1"
+edition = "2024"
+rust-version = "1.90.0"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/sd2k/eryx"
+authors = ["Ben Sully <ben.sully88@gmail.com>"]
+
+[workspace.dependencies]
+anyhow = "1.0"
+async-trait = "0.1"
+
+# Pre-initialization for capturing Python memory state
+# Note: crates.io version 0.1.0 uses wasm-tools 0.235, incompatible with 0.243
+component-init-transform = { git = "https://github.com/sd2k/component-init", rev = "75be39bf2e9d8af57b9bc10888c3f2992fbca3df" }
+
+# Benchmarking
+criterion = { version = "0.5", features = ["async_tokio"] }
+crossterm = "0.28"
+
+# Internal crates
+eryx = { path = "crates/eryx" }
+flate2 = "1.0"
+futures = "0.3"
+futures-concurrency = "7.6"
+futures-lite = "2.6"
+lending-stream = "1.0"
+pyo3 = { version = "^0.27.2", features = ["extension-module"] }
+pyo3-async-runtimes = { version = "0.27", features = ["tokio-runtime"] }
+pythonize = "0.27"
+
+# JSON Schema
+schemars = "1.0.0-alpha.17"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Hashing
+sha2 = "0.10"
+
+# Archive extraction
+tar = "0.4"
+tempfile = "3.20"
+
+# Error handling
+thiserror = "2.0"
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+tokio-stream = "0.1"
+tokio-util = "0.7"
+
+# TLS
+rustls = "0.23"
+rustls-pemfile = "2.0"
+tokio-rustls = "0.26"
+webpki-roots = "0.26"
+rcgen = "0.13"
+
+# Utilities
+tracing = "0.1"
+
+# Directory walking
+walkdir = "2.5"
+wasm-encoder = "0.243"
+wasmparser = "0.243"
+
+# WebAssembly runtime (v40+ required for async component model)
+wasmtime = { version = "41", features = ["component-model", "async"] }
+wasmtime-wasi = "41"
+
+# WebAssembly component linking and WIT parsing
+wit-component = "0.243"
+wit-dylib = "0.243"
+
+# wit-dylib FFI for implementing interpreter interface (not published to crates.io)
+wit-dylib-ffi = { git = "https://github.com/bytecodealliance/wasm-tools.git", rev = "d05406062d031ae96146486f58a965d87eefea5e", features = ["async-raw"] }
+wit-parser = "0.243"
+zip = "2.0"
+
+# Compression
+zstd = "0.13"
+
+[workspace.lints.rust]
+missing_debug_implementations = "warn"
+missing_docs = "warn"
+# Priority -1 ensures this lint group is applied before individual lints,
+# avoiding clippy::lint_groups_priority warning about ambiguous ordering.
+rust_2018_idioms = { level = "warn", priority = -1 }
+# Note: unsafe_code lint is handled per-crate in lib.rs, not at workspace level.
+# The eryx crate uses `forbid(unsafe_code)` by default, relaxed to `deny` when
+# the `precompiled` feature is enabled.
+
+[workspace.lints.clippy]
+all = "warn"
+unwrap_used = "warn"
+expect_used = "warn"
+
+# See https://nnethercote.github.io/perf-book/build-configuration.html
+[profile.release]
+codegen-units = 1
+lto = false
+
+[profile.profiling]
+inherits = "release"
+debug = true
+
+# Optimize heavy deps in dev mode to speed up tests
+# (wasmtime/cranelift JIT is ~10-50x slower unoptimized)
+[profile.dev.package]
+cranelift-codegen.opt-level = 3
+regalloc2.opt-level = 3
+wasmtime.opt-level = 3
+wasmparser.opt-level = 3
