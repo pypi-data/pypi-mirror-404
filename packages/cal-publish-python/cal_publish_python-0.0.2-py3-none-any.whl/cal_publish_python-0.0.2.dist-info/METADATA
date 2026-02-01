@@ -1,0 +1,170 @@
+Metadata-Version: 2.4
+Name: cal-publish-python
+Version: 0.0.2
+Summary: CLI tool to publish Python packages and documentation with external configuration
+Project-URL: Repository, https://gitlab.com/cyberassessmentlabs/public/tools/cal-publish-python
+Project-URL: Documentation, https://cyberassessmentlabs.gitlab.io/public/docs/cal-publish-python/latest
+Author: Cyber Assessment Labs
+License-Expression: MIT
+License-File: LICENSE
+Classifier: Development Status :: 3 - Alpha
+Classifier: Environment :: Console
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.14
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Requires-Python: >=3.14
+Requires-Dist: gitlab-pages-upload
+Requires-Dist: twine>=6.0.0
+Description-Content-Type: text/markdown
+
+# cal-publish-python
+
+CLI tool to publish Python packages and documentation with external configuration.
+
+## Overview
+
+`cal-publish-python` is designed to keep sensitive configuration (tokens, registry URLs, SSH keys) outside of build jobs. The project being published defines the "what" (name, version), while the publishing configuration defines the "where" (registry, documentation platform).
+
+## Installation
+
+```bash
+pip install cal-publish-python
+```
+
+Or with uv:
+
+```bash
+uv pip install cal-publish-python
+```
+
+## Usage
+
+### Publishing to PyPI
+
+```bash
+cal-publish-python pypi --output-dir output/
+```
+
+Or specify a wheel directly:
+
+```bash
+cal-publish-python pypi --wheel output/my-package-1.0.0-py3-none-any.whl
+```
+
+### Publishing Documentation
+
+#### GitLab Pages Mode
+
+```bash
+cal-publish-python docs --project my-project --doc-version 1.0.0 --html html/
+```
+
+With options:
+
+```bash
+cal-publish-python docs -p my-project -V 1.0.0 -H html/ --set-latest --force
+```
+
+#### SSH Mode
+
+Configure SSH mode in your config file, then:
+
+```bash
+cal-publish-python docs -p my-project -V 1.0.0 --output-dir output/
+```
+
+## Configuration
+
+### Config File
+
+Create a JSON configuration file:
+
+```json
+{
+    "pypi": {
+        "token": "pypi-xxxxxxxxxxxx",
+        "repository_url": "https://upload.pypi.org/legacy/"
+    },
+    "docs": {
+        "mode": "gitlab-pages",
+        "gitlab_pages": {
+            "token": "glpat-xxxxxxxxxxxx",
+            "url": "https://gitlab.com",
+            "group": "docs"
+        },
+        "ssh": {
+            "host": "docs.example.com",
+            "base_path": "/var/www/docs",
+            "ssh_key": "~/.ssh/id_rsa",
+            "user": "deploy",
+            "port": 22
+        }
+    }
+}
+```
+
+Set the config file path via environment variable:
+
+```bash
+export CAL_PUBLISH_CONFIG=/path/to/config.json
+```
+
+Or pass it directly:
+
+```bash
+cal-publish-python -c config.json pypi --output-dir output/
+```
+
+### Environment Variables
+
+All configuration values can be overridden by environment variables:
+
+| Variable | Description |
+|----------|-------------|
+| `CAL_PUBLISH_CONFIG` | Path to JSON config file |
+| `CAL_PUBLISH_PYPI_TOKEN` | PyPI API token |
+| `CAL_PUBLISH_PYPI_REPOSITORY_URL` | PyPI repository URL |
+| `CAL_PUBLISH_DOCS_MODE` | Documentation mode (`gitlab-pages` or `ssh`) |
+| `CAL_PUBLISH_GITLAB_TOKEN` | GitLab personal access token |
+| `CAL_PUBLISH_GITLAB_URL` | GitLab instance URL |
+| `CAL_PUBLISH_GITLAB_GROUP` | GitLab group for docs |
+| `CAL_PUBLISH_SSH_HOST` | SSH host |
+| `CAL_PUBLISH_SSH_BASE_PATH` | Base path on remote server |
+| `CAL_PUBLISH_SSH_KEY` | Path to SSH private key |
+| `CAL_PUBLISH_SSH_USER` | SSH user |
+| `CAL_PUBLISH_SSH_PORT` | SSH port |
+
+## Integration with Makefile
+
+Add a `publish` target to your project's Makefile:
+
+```makefile
+.PHONY: publish
+publish: build
+	cal-publish-python pypi --output-dir output/
+	cal-publish-python docs -p $(PROJECT_NAME) -V $(VERSION_STR) --output-dir output/ --set-latest
+```
+
+## Development
+
+```bash
+# Clone the repository
+git clone <repo-url>
+cd cal-publish-python
+
+# Set up development environment
+make dev
+
+# Run checks
+make check
+
+# Build
+make build
+```
+
+## Licence
+
+MIT License — Copyright (c) 2026 Cyber Assessment Labs
