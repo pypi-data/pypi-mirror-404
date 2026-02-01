@@ -1,0 +1,108 @@
+# Simple Python package
+
+[![Publish to PyPI](https://github.com/gperdrizet/simple-python-package/actions/workflows/publish-to-pypi.yml/badge.svg)](https://github.com/gperdrizet/simple-python-package/actions/workflows/publish-to-pypi.yml)
+
+This repository is a minimal template for publishing a small Python package to PyPI using GitHub Actions and trusted publishing.
+
+## Quick start
+
+1. Fork this repository on GitHub and mark your fork as a template via the repo settings (once)
+2. Try and/or remove the demo files from your fork: `src/lorenz.py` & `notebooks/lorenz_demo.py` (once)
+3. Create a pending publisher on [PyPI.org](https://pypi.org) (each new project)
+4. Create a new repository for your project from your template fork on GitHub (each new project)
+5. Update `pyproject.toml` to reflect your new project's metadata (each new project)
+6. Commit and push your code (each code update)
+7. Tag and publish a release on GitHub - this will trigger the workflow to publish the current commit to PyPI (each code update)
+
+## Project structure
+
+```
+.
+├── .devcontainer/               # Dev container config
+├── .git/                        # Local Git metadata
+├── .github/                     # GitHub configuration
+│   └── workflows/
+│       └── publish-to-pypi.yml  # Builds package and publishes to PyPI
+├── .gitignore                   # Files and folders Git should ignore
+├── LICENSE                      # Package license
+├── pyproject.toml               # Package metadata, build system, and dependencies
+├── README.md                    # Project overview and setup instructions
+├── requirements.txt             # Dev/test dependencies for local usage
+├── notebooks/
+│   └── lorenz_demo.ipynb        # Example notebook demonstrating the package
+└── src/
+	└── lorenz.py                # Example module shipped in the package
+```
+## Usage
+
+### 1. Fork and mark the template (once)
+
+1. Fork this repository.
+2. In the fork, open **Settings → General → Template repository** and enable it.
+
+### 2. Try or remove the demo (once)
+
+This repository ships a tiny demo package (`lorenz`) used to illustrate packaging and publishing. You can try it locally or remove it before starting your own project.
+
+#### 2.1. Try the demo locally
+
+
+1. Open the repo in a devcontainer or GitHub Codespace.
+2. Install the package in editable mode:
+following
+	```text
+	pip install -e .
+	```
+
+3. Run the demo notebook [notebooks/lorenz_demo.ipynb](notebooks/lorenz_demo.ipynb)
+
+#### 2.2. Install the demo from PyPI
+
+Since the demo package has been published to PyPI from this repo, you can install it via pip anywhere:
+
+```text
+pip install simple-python-package
+```
+
+#### 2.3. Remove the demo from your fork
+
+If you want a clean template fork to start new projects, simply delete the demo files:
+- `src/lorenz.py](src/lorenz.py`
+- `notebooks/lorenz_demo.ipynb`
+
+
+### 3. Create a pending publisher on PyPI (each new project)
+
+1. In PyPI, go to **Project → Publishing → Trusted Publishers**.
+2. Add a pending publisher with these values:
+	- **PyPI Project Name**: must be unique, site-wide
+	- **Owner**: your GitHub user or org
+	- **Repository**: your repo name
+	- **Workflow**: `publish-to-pypi.yml`
+	- **Environment**: `pypi`
+
+Do this first, before naming the GitHub repository to determine if your planned name is available on PyPI. PyPI project names must be unique site-wide. The GitHub repo and PyPI project names don't have to match, but it's nice if they do.
+
+### 4. Create a new repository from your template (each new project)
+
+1. In your template fork, click **Use this template** on GitHub.
+2. Create a new repository for your project.
+
+### 5. Update project metadata (each new project)
+
+Update `pyproject.toml` with your project metadata:
+
+- Change `name`, `authors` and `description`
+- Update `classifiers`, `keywords`, and `dependencies`
+- Replace or remove `[project.urls]`
+
+### 6. Commit and push (each code update)
+
+Use the repo to develop your project as you normally would. Place Python modules to be published as part of your package in the `src/` directory. Commit and push your code to GitHub.
+
+### 7. Tag and publish a release (each code update)
+
+1. Create a GitHub release tag that matches your current `version` in `pyproject.toml` (e.g., `0.1.0` or `v0.1.0` - see [here](https://semver.org/) for information about version numbering).
+2. The **Publish to PyPI** workflow will build and publish automatically.
+
+If you prefer a manual run, you can trigger the workflow from the **Actions** tab.
