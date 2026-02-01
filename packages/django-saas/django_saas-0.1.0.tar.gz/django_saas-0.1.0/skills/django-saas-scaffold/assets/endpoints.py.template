@@ -1,0 +1,22 @@
+from rest_framework.mixins import ListModelMixin, CreateModelMixin
+from saas.drf.views import TenantEndpoint
+from saas.drf.filters import TenantIdFilter
+from saas.drf.decorators import resource_permission
+from ..models import ${feature_name}
+from ..serializers import ${feature_name}Serializer
+
+class ${feature_name}ListEndpoint(ListModelMixin, CreateModelMixin, TenantEndpoint):
+    serializer_class = ${feature_name}Serializer
+    queryset = ${feature_name}.objects.all()
+    filter_backends = [TenantIdFilter]
+
+    @resource_permission('${app_label}.${feature_name_lower}.view')
+    def get(self, request, *args, **kwargs):
+        return self.list(request, *args, **kwargs)
+
+    @resource_permission('${app_label}.${feature_name_lower}.manage')
+    def post(self, request, *args, **kwargs):
+        return self.create(request, *args, **kwargs)
+
+    def perform_create(self, serializer):
+        serializer.save(tenant=self.request.tenant)

@@ -1,0 +1,335 @@
+import time
+from urllib.parse import parse_qs, urlparse
+
+from django.conf import settings
+from django.contrib.auth import get_user_model
+from django.test import override_settings
+from joserfc import jwt
+from joserfc.jwk import RSAKey
+from requests_mock.mocker import Mocker
+
+from saas.identity.models import UserEmail
+from saas.sso.models import UserIdentity
+from tests.client import FixturesTestCase
+
+UserModel = get_user_model()
+DEFAULT_SAAS_SSO = settings.SAAS_SSO.copy()
+
+
+class TestOAuthLogin(FixturesTestCase):
+    user_id = FixturesTestCase.GUEST_USER_ID
+
+    def generate_apple_id_token(self):
+        key = RSAKey.import_key(self.load_fixture('sso/rsa_key.pem'))
+        now = int(time.time())
+        claims = {
+            'iss': 'https://appleid.apple.com',
+            'aud': 'sso/apple_client_id',
+            'exp': now + 3600,
+            'iat': now,
+            'sub': 'sso/apple-user-sub',
+            'email': 'sso/apple@example.com',
+            'email_verified': True,
+        }
+        header = {'kid': 'test-key-id', 'alg': 'RS256'}
+        return jwt.encode(header, claims, key)
+
+    def mock_apple_id_token(self, m: Mocker):
+        id_token = self.generate_apple_id_token()
+        m.register_uri(
+            'POST',
+            'https://appleid.apple.com/auth/token',
+            json={
+                'access_token': 'sso/apple-access-token',
+                'expires_in': 3600,
+                'id_token': id_token,
+            },
+        )
+
+    def mock_google_id_token(self, m: Mocker):
+        key = RSAKey.import_key(self.load_fixture('sso/rsa_key.pem'))
+        now = int(time.time())
+        claims = {
+            'iss': 'https://accounts.google.com',
+            'aud': 'sso/google_client_id',
+            'exp': now + 3600,
+            'iat': now,
+            'sub': 'sso/google-user-sub',
+            'email': 'sso/google-id-token@example.com',
+            'email_verified': True,
+        }
+        header = {'kid': 'test-key-id', 'alg': 'RS256'}
+        id_token = jwt.encode(header, claims, key)
+        m.register_uri(
+            'POST',
+            'https://oauth2.googleapis.com/token',
+            json={
+                'access_token': 'sso/google-access-token',
+                'expires_in': 3600,
+                'id_token': id_token,
+            },
+        )
+
+    def test_invalid_strategy(self):
+        resp = self.client.get('/m/sso/login/invalid/')
+        self.assertEqual(resp.status_code, 404)
+        resp = self.client.get('/m/sso/auth/invalid/')
+        self.assertEqual(resp.status_code, 404)
+
+    def test_mismatch_state(self):
+        resp = self.client.get('/m/sso/login/github/')
+        self.assertEqual(resp.status_code, 302)
+        resp = self.client.get('/m/sso/auth/github/?state=abc&code=123')
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn(b'<h1>400</h1>', resp.content)
+
+    def run_github_flow(self):
+        params = self.resolve_url_params('/m/sso/login/github/')
+
+        with self.mock_requests(
+            'sso/github_token.json',
+            'sso/github_user.json',
+            'sso/github_user_primary_emails.json',
+        ):
+            state = params['state']
+            resp = self.client.get(f'/m/sso/auth/github/?state={state}&code=123')
+            self.assertEqual(resp.status_code, 302)
+            return resp
+
+    def test_google_not_create_user(self):
+        params = self.resolve_url_params('/m/sso/login/google/')
+
+        with self.mock_requests(
+            'sso/google_openid_configuration.json',
+            'sso/google_token.json',
+            'sso/google_user.json',
+        ):
+            state = params['state']
+            resp = self.client.get(f'/m/sso/auth/google/?state={state}&code=123')
+            self.assertEqual(resp.status_code, 302)
+            count = UserIdentity.objects.filter(strategy='google').count()
+            self.assertEqual(count, 0)
+
+    @override_settings(SAAS_SSO={**DEFAULT_SAAS_SSO, 'AUTO_CREATE_USER': True})
+    def test_google_id_token_create_user(self):
+        params = self.resolve_url_params('/m/sso/login/google/')
+
+        with self.mock_requests(
+            'sso/google_openid_configuration.json',
+            'sso/google_jwks.json',
+        ) as m:
+            self.mock_google_id_token(m)
+            state = params['state']
+            resp = self.client.get(f'/m/sso/auth/google/?state={state}&code=123')
+            self.assertEqual(resp.status_code, 302)
+
+            # Verify identity created
+            identity = UserIdentity.objects.get(strategy='google', subject='sso/google-user-sub')
+            self.assertEqual(identity.profile['email'], 'sso/google-id-token@example.com')
+
+    @override_settings(SAAS_SSO={**DEFAULT_SAAS_SSO, 'AUTO_CREATE_USER': True})
+    def test_google_flow_with_preferred_username(self):
+        params = self.resolve_url_params('/m/sso/login/google/')
+
+        with self.mock_requests(
+            'sso/google_openid_configuration.json', 'sso/google_token.json', 'sso/google_user_pref.json'
+        ):
+            state = params['state']
+            resp = self.client.get(f'/m/sso/auth/google/?state={state}&code=123')
+            self.assertEqual(resp.status_code, 302)
+            identity = UserIdentity.objects.get(strategy='google', subject='google-pref')
+            self.assertEqual(identity.user.username, 'google_user')
+
+    @override_settings(SAAS_SSO={**DEFAULT_SAAS_SSO, 'AUTO_CREATE_USER': True})
+    def test_google_flow_email_not_verified(self):
+        params = self.resolve_url_params('/m/sso/login/google/')
+
+        with self.mock_requests(
+            'sso/google_openid_configuration.json', 'sso/google_token.json', 'sso/google_user_unverified.json'
+        ):
+            state = params['state']
+            resp = self.client.get(f'/m/sso/auth/google/?state={state}&code=123')
+            self.assertEqual(resp.status_code, 302)
+
+            # Verify user created but email NOT in UserEmail table
+            identity = UserIdentity.objects.get(strategy='google', subject='google-unverified')
+            self.assertFalse(UserEmail.objects.filter(user=identity.user, email='unverified@example.com').exists())
+
+    @override_settings(SAAS_SSO={**DEFAULT_SAAS_SSO, 'AUTO_CREATE_USER': True})
+    def test_apple_flow(self):
+        params = self.resolve_url_params('/m/sso/login/apple/')
+
+        # Test Apple's POST callback (form_post)
+        with self.mock_requests('sso/apple_openid_configuration.json', 'sso/apple_jwks.json') as m:
+            self.mock_apple_id_token(m)
+            state = params['state']
+            resp = self.client.post(
+                '/m/sso/auth/apple/',
+                data={'state': state, 'code': '123'},
+                format='multipart',
+            )
+            self.assertEqual(resp.status_code, 302)
+
+            # Verify identity creation
+            self.assertTrue(UserIdentity.objects.filter(strategy='apple', subject='sso/apple-user-sub').exists())
+            # Verify email creation
+            self.assertTrue(UserEmail.objects.filter(email='sso/apple@example.com').exists())
+
+    @override_settings(SAAS_SSO={**DEFAULT_SAAS_SSO, 'AUTO_CREATE_USER': True})
+    def test_apple_flow_with_user_name(self):
+        params = self.resolve_url_params('/m/sso/login/apple/')
+        user_json = '{"name": {"firstName": "Apple", "lastName": "User"}}'
+
+        with self.mock_requests('sso/apple_openid_configuration.json', 'sso/apple_jwks.json') as m:
+            self.mock_apple_id_token(m)
+            state = params['state']
+            resp = self.client.post(
+                '/m/sso/auth/apple/',
+                data={'state': state, 'code': '123', 'user': user_json},
+                format='multipart',
+            )
+            self.assertEqual(resp.status_code, 302)
+
+            # Verify identity profile has name
+            identity = UserIdentity.objects.get(strategy='apple', subject='sso/apple-user-sub')
+            self.assertEqual(identity.profile['given_name'], 'Apple')
+            self.assertEqual(identity.profile['family_name'], 'User')
+
+    @override_settings(SAAS_SSO={**DEFAULT_SAAS_SSO, 'AUTO_CREATE_USER': True})
+    def test_apple_flow_code_exchange(self):
+        params = self.resolve_url_params('/m/sso/login/apple/')
+        id_token = self.generate_apple_id_token()
+
+        with self.mock_requests('sso/apple_openid_configuration.json', 'sso/apple_jwks.json') as m:
+            m.register_uri(
+                'POST',
+                'https://appleid.apple.com/auth/token',
+                json={
+                    'access_token': 'sso/apple-access-token',
+                    'expires_in': 3600,
+                    'id_token': id_token,
+                },
+            )
+            # NO id_token in POST data
+            state = params['state']
+            resp = self.client.post(
+                '/m/sso/auth/apple/',
+                data={'state': state, 'code': '123'},
+                format='multipart',
+            )
+            self.assertEqual(resp.status_code, 302)
+            self.assertTrue(UserIdentity.objects.filter(strategy='apple', subject='sso/apple-user-sub').exists())
+
+    def test_fetch_no_userinfo(self):
+        resp = self.client.get('/m/sso/userinfo/')
+        self.assertEqual(resp.status_code, 404)
+
+    def test_github_not_auto_create_user(self):
+        self.assertFalse(UserEmail.objects.filter(email='octocat@github.com').exists())
+        self.run_github_flow()
+        self.assertFalse(UserEmail.objects.filter(email='octocat@github.com').exists())
+
+        # we can fetch userinfo from session
+        resp = self.client.get('/m/sso/userinfo/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()['preferred_username'], 'octocat')
+
+        # then we can create user
+        resp = self.client.post('/m/sso/create-user/', data={'username': 'octocat'})
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(UserEmail.objects.filter(email='octocat@github.com').exists())
+
+    @override_settings(SAAS_SSO={**DEFAULT_SAAS_SSO, 'TRUST_EMAIL_VERIFIED': True})
+    def test_github_auto_connect_user(self):
+        self.assertFalse(UserIdentity.objects.filter(strategy='github').exists())
+        user = UserModel.objects.create_user('username', 'demo@example.com')
+        UserEmail.objects.create(user=user, email='octocat@github.com')
+        self.run_github_flow()
+        self.assertTrue(UserIdentity.objects.filter(strategy='github').exists())
+
+    @override_settings(SAAS_SSO={**DEFAULT_SAAS_SSO, 'TRUST_EMAIL_VERIFIED': True})
+    def test_github_no_related_user(self):
+        self.assertFalse(UserIdentity.objects.filter(strategy='github').exists())
+        self.run_github_flow()
+        self.assertFalse(UserIdentity.objects.filter(strategy='github').exists())
+
+    @override_settings(SAAS_SSO={**DEFAULT_SAAS_SSO, 'AUTO_CREATE_USER': True})
+    def test_github_auto_create_user(self):
+        self.assertFalse(UserEmail.objects.filter(email='octocat@github.com').exists())
+        self.run_github_flow()
+        self.assertTrue(UserEmail.objects.filter(email='octocat@github.com').exists())
+        # the next flow will auto login
+        self.run_github_flow()
+
+    @override_settings(SAAS_SSO={**DEFAULT_SAAS_SSO, 'AUTO_CREATE_USER': True})
+    def test_duplicate_username_fallback(self):
+        # Create user with username 'collision'
+        UserModel.objects.create_user(username='collision', email='original@example.com')
+
+        params = self.resolve_url_params('/m/sso/login/github/')
+
+        # GitHub user has login 'collision' but different email
+        with self.mock_requests(
+            'sso/github_token.json', 'sso/github_user_collision.json', 'sso/github_user_collision_emails.json'
+        ):
+            state = params['state']
+            resp = self.client.get(f'/m/sso/auth/github/?state={state}&code=123')
+            self.assertEqual(resp.status_code, 302)
+
+            # Verify new user created with different username (UUID)
+            identity = UserIdentity.objects.get(strategy='github', subject='999')
+            self.assertNotEqual(identity.user.username, 'collision')
+            self.assertEqual(identity.user.email, 'new@example.com')
+
+    @override_settings(SAAS_SSO={**DEFAULT_SAAS_SSO, 'AUTO_CREATE_USER': True})
+    def test_github_name_parsing_single(self):
+        params = self.resolve_url_params('/m/sso/login/github/')
+
+        with self.mock_requests(
+            'sso/github_token.json', 'sso/github_user_single.json', 'sso/github_user_single_emails.json'
+        ):
+            state = params['state']
+            resp = self.client.get(f'/m/sso/auth/github/?state={state}&code=123')
+            self.assertEqual(resp.status_code, 302)
+
+            identity = UserIdentity.objects.get(strategy='github', subject='888')
+            self.assertEqual(identity.profile['given_name'], 'SingleName')
+            self.assertIsNone(identity.profile['family_name'])
+
+    @override_settings(SAAS_SSO={**DEFAULT_SAAS_SSO, 'AUTO_CREATE_USER': True})
+    def test_github_no_primary_email(self):
+        params = self.resolve_url_params('/m/sso/login/github/')
+
+        with self.mock_requests(
+            'sso/github_token.json', 'sso/github_user_noprimary.json', 'sso/github_user_noprimary_emails.json'
+        ):
+            state = params['state']
+            resp = self.client.get(f'/m/sso/auth/github/?state={state}&code=123')
+            self.assertEqual(resp.status_code, 302)
+
+            identity = UserIdentity.objects.get(strategy='github', subject='777')
+            # Should pick first email
+            self.assertEqual(identity.profile['email'], 'secondary@example.com')
+
+    @override_settings(SAAS_SSO={**DEFAULT_SAAS_SSO, 'AUTO_CREATE_USER': True})
+    def test_login_view_next_url(self):
+        resp = self.client.get('/m/sso/login/github/?next=/dashboard')
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(self.client.session.get('next_url'), '/dashboard')
+        resp = self.run_github_flow()
+        self.assertEqual(resp.headers['Location'], '/dashboard')
+
+    @override_settings(SAAS_SSO={**DEFAULT_SAAS_SSO, 'AUTO_CREATE_USER': True, 'AUTHORIZED_REDIRECT_URL': '/test'})
+    def test_authorized_redirect_url_settings(self):
+        self.client.get('/m/sso/login/github/')
+        resp = self.run_github_flow()
+        self.assertEqual(resp.headers['Location'], '/test')
+
+    @override_settings(SAAS_SSO={**DEFAULT_SAAS_SSO, 'AUTHORIZED_URL': 'http://test/{strategy}'})
+    def test_authorization_redirect_url_settings(self):
+        resp = self.client.get('/m/sso/login/github/')
+        self.assertEqual(resp.status_code, 302)
+        location = resp.get('Location')
+        params = parse_qs(urlparse(location).query)
+        redirect_uri = params['redirect_uri'][0]
+        self.assertEqual(redirect_uri, 'http://test/github')
