@@ -1,0 +1,566 @@
+Metadata-Version: 2.1
+Name: pystdapi
+Version: 0.1.0
+Summary: 纯异步 Python Web 框架，仅依赖 Python 标准库
+Home-page: https://gitee.com/wangweiyong/pystdapi
+Author: 王伟勇
+Author-email: 王伟勇 <909094426@qq.com>
+License: MIT
+Project-URL: Homepage, https://gitee.com/wangweiyong/pystdapi
+Project-URL: Documentation, https://gitee.com/wangweiyong/pystdapi#readme
+Keywords: asgi,web,framework,async,python,standard-library
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.7
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Internet :: WWW/HTTP
+Classifier: Topic :: Internet :: WWW/HTTP :: Dynamic Content
+Classifier: Topic :: Internet :: WWW/HTTP :: HTTP Servers
+Classifier: Topic :: Software Development :: Libraries :: Application Frameworks
+Requires-Python: >=3.7
+Description-Content-Type: text/markdown
+License-File: LICENSE
+
+# PystdAPI - 纯异步 Python Web 框架
+
+[![Python Version](https://img.shields.io/badge/python-3.7+-blue.svg)](https://www.python.org/downloads/)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![ASGI Compatible](https://img.shields.io/badge/ASGI-3.0-ff69b4.svg)](https://asgi.readthedocs.io/)
+
+**PystdAPI** 是一个基于 ASGI 标准的高性能异步 Web 框架，仅依赖 Python 标准库，设计简洁、易于使用且功能强大。
+
+## ✨ 特性
+
+- 🚀 **纯异步**：基于 Python asyncio，支持高并发处理
+- 📦 **零依赖**：仅使用 Python 标准库，无需安装额外包
+- 🏗️ **模块化设计**：清晰的架构，易于扩展和维护
+- 🔌 **插件系统**：灵活的插件机制，可扩展框架功能
+- 🛡️ **中间件支持**：完整的中间件系统，支持请求/响应处理
+- 📝 **模板引擎**：内置简单模板系统，支持变量替换、条件判断和循环
+- 🔧 **命令行工具**：提供项目创建、服务器管理等命令行功能
+- 📡 **ASGI 兼容**：完全兼容 ASGI 3.0 标准
+
+## 📦 安装
+
+### 方式一：使用 pip（推荐）
+```bash
+pip install pystdapi
+```
+
+### 方式二：直接使用源码
+```bash
+# 克隆或下载源码
+git clone https://gitee.com/wangweiyong/pystdapi.git
+cd pystdapi
+
+# 将 pystdapi 目录复制到你的项目中
+cp -r pystdapi /path/to/your/project/
+```
+
+或者直接安装最新开发版：
+```bash
+pip install git+https://gitee.com/wangweiyong/pystdapi.git
+```
+
+## 🚀 快速开始
+
+### 基础示例
+
+创建一个简单的 Web 应用：
+
+```python
+#!/usr/bin/env python3
+from pystdapi import PystdAPI
+
+app = PystdAPI(name="myapp", debug=True)
+
+@app.get("/")
+async def index(request):
+    return {"message": "Hello, PystdAPI!"}
+
+@app.get("/hello/<name>")
+async def hello(request, name):
+    return {"message": f"Hello, {name}!"}
+
+@app.post("/api/data")
+async def create_data(request):
+    data = await request.json()
+    return {"received": data, "status": "created"}
+
+if __name__ == "__main__":
+    app.run(host="127.0.0.1", port=8000)
+```
+
+### 运行应用
+```bash
+python app.py
+```
+
+访问 http://127.0.0.1:8000 查看应用。
+
+## 📚 核心概念
+
+### 1. 应用对象
+
+```python
+from pystdapi import PystdAPI, create_app
+
+# 创建应用实例
+app = PystdAPI(name="myapp", debug=True)
+
+# 或者使用快捷函数
+app = create_app(name="myapp", debug=True)
+```
+
+### 2. 路由系统
+
+支持多种 HTTP 方法和路由参数：
+
+```python
+# 基本路由
+@app.get("/")
+async def index(request):
+    return "首页"
+
+@app.post("/users")
+async def create_user(request):
+    data = await request.json()
+    return {"id": 1, **data}
+
+# 路由参数
+@app.get("/users/<user_id:int>")
+async def get_user(request, user_id):
+    return {"id": user_id, "name": "Alice"}
+
+@app.get("/files/<path:filepath>")
+async def get_file(request, filepath):
+    return {"file": filepath}
+
+# 路由装饰器快捷方式
+@app.route("/about", method="GET")
+async def about(request):
+    return "关于我们"
+```
+
+### 3. 请求对象
+
+```python
+@app.post("/api/submit")
+async def submit(request):
+    # 获取请求信息
+    method = request.method
+    path = request.path
+    headers = request.headers
+    
+    # 获取请求体
+    body = await request.body()      # 原始字节
+    text = await request.text()      # 文本
+    json_data = await request.json() # JSON 数据
+    form_data = await request.form() # 表单数据
+    
+    # 获取查询参数
+    query_param = request.query.get("page", ["1"])[0]
+    
+    # 获取 Cookie
+    session_id = request.get_cookie("session_id")
+    
+    return {"method": method, "path": path}
+```
+
+### 4. 响应对象
+
+```python
+from pystdapi import Response, text_response, json_response, html_response, redirect_response
+
+@app.get("/responses")
+async def responses(request):
+    # 返回文本响应
+    return "Hello World"
+    
+    # 返回 JSON 响应
+    return {"status": "ok", "data": [1, 2, 3]}
+    
+    # 返回 HTML 响应
+    return "<h1>Hello</h1>"
+    
+    # 返回自定义响应
+    return Response("Custom", status=201, headers={"X-Custom": "value"})
+    
+    # 使用快捷函数
+    return text_response("Text response")
+    return json_response({"key": "value"})
+    return html_response("<h1>HTML</h1>")
+    return redirect_response("/new-location")
+```
+
+### 5. 中间件
+
+```python
+from pystdapi.middleware import (
+    cors_middleware, 
+    logging_middleware, 
+    error_middleware,
+    static_files_middleware
+)
+
+# 添加 CORS 中间件
+app.add_middleware(cors_middleware(
+    allow_origins=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_headers=["*"]
+))
+
+# 添加日志中间件
+app.add_middleware(logging_middleware(format="verbose"))
+
+# 添加错误处理中间件
+app.add_middleware(error_middleware(debug=True))
+
+# 添加静态文件中间件
+app.add_middleware(static_files_middleware(
+    directory="./static",
+    url_prefix="/static"
+))
+
+# 自定义中间件
+async def custom_middleware(app):
+    async def middleware(scope, receive, send):
+        # 请求前处理
+        print(f"Request: {scope.get('method')} {scope.get('path')}")
+        
+        # 调用下一个中间件或应用
+        await app(scope, receive, send)
+        
+        # 请求后处理
+        print("Request completed")
+    return middleware
+
+app.add_middleware(custom_middleware)
+```
+
+### 6. 插件系统
+
+```python
+from pystdapi.plugins import (
+    json_plugin, 
+    template_plugin, 
+    session_plugin,
+    auth_plugin,
+    cors_plugin
+)
+
+# 添加 JSON 插件（自动解析 JSON 请求/响应）
+app.add_plugin(json_plugin())
+
+# 添加模板插件
+from pystdapi.templates import SimpleTemplate
+app.add_plugin(template_plugin(
+    template_adapter=SimpleTemplate,
+    search_path="./templates",
+    cache=True
+))
+
+# 使用模板
+@app.get("/template")
+async def template_demo(request):
+    return {
+        "template": "index.html",
+        "title": "页面标题",
+        "users": ["Alice", "Bob", "Charlie"]
+    }
+```
+
+### 7. 钩子函数
+
+```python
+# 请求前钩子
+@app.hook("before_request")
+async def before_request_hook(request):
+    request.start_time = time.time()
+    print(f"开始处理请求: {request.method} {request.path}")
+
+# 请求后钩子
+@app.hook("after_request")
+async def after_request_hook(request):
+    duration = time.time() - request.start_time
+    print(f"请求处理完成，耗时: {duration:.3f}s")
+
+# 响应前钩子
+@app.hook("before_response")
+async def before_response_hook(request, response):
+    response.set_header("X-Response-Time", str(time.time() - request.start_time))
+
+# 响应后钩子
+@app.hook("after_response")
+async def after_response_hook(request, response):
+    print(f"响应已发送: {response.status}")
+```
+
+### 8. 错误处理
+
+```python
+# 自定义错误处理器
+@app.error_handler(404)
+async def not_found_handler(error, request):
+    return {"error": "页面未找到", "path": request.path}, 404
+
+@app.error_handler(500)
+async def server_error_handler(error, request):
+    return {"error": "服务器内部错误"}, 500
+
+# 抛出 HTTP 错误
+from pystdapi.exceptions import HTTPError
+
+@app.get("/protected")
+async def protected(request):
+    if not request.get_header("Authorization"):
+        raise HTTPError(401, "需要认证")
+    return {"message": "访问成功"}
+```
+
+## 🛠️ 命令行工具
+
+PystdAPI 提供了命令行工具来简化开发流程：
+
+```bash
+# 创建新项目
+pystdapi new myproject
+pystdapi new myapi --template api
+pystdapi new myfull --template full
+
+# 运行开发服务器
+pystdapi run
+pystdapi run --port 8080 --debug --reload
+
+# 显示版本信息
+pystdapi version
+```
+
+### 项目模板
+
+- **basic**: 基础项目模板
+- **api**: API 项目模板（包含 RESTful API 示例）
+- **full**: 完整项目模板（包含模板、静态文件等）
+
+## 📁 项目结构
+
+一个典型的 PystdAPI 项目结构：
+
+```
+myproject/
+├── app.py              # 主应用文件
+├── requirements.txt    # 依赖文件
+├── README.md          # 项目说明
+├── api/               # API 模块
+│   ├── __init__.py
+│   └── users.py      # 用户 API
+├── templates/         # 模板目录
+│   ├── base.html
+│   └── index.html
+└── static/           # 静态文件
+    ├── css/
+    │   └── style.css
+    └── js/
+        └── app.js
+```
+
+## 🔌 插件开发
+
+创建自定义插件：
+
+```python
+from pystdapi.plugins import Plugin
+
+class MyPlugin(Plugin):
+    name = 'myplugin'
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.config = kwargs
+    
+    def setup(self, app):
+        """插件初始化"""
+        app.myplugin_config = self.config
+    
+    def apply(self, callback, route):
+        """应用到路由"""
+        def wrapper(request, *args, **kwargs):
+            # 插件逻辑
+            request.plugin_data = "来自插件的数据"
+            return callback(request, *args, **kwargs)
+        return wrapper
+
+# 使用插件
+app.add_plugin(MyPlugin(key="value"))
+```
+
+## 🧪 测试
+
+### 单元测试示例
+
+由于 PystdAPI 是一个 ASGI 应用，你可以使用标准的 ASGI 测试工具进行测试：
+
+```python
+import pytest
+from pystdapi import PystdAPI
+import asyncio
+
+app = PystdAPI()
+
+@app.get("/test")
+async def test_endpoint(request):
+    return {"status": "ok"}
+
+# 使用 asyncio 测试
+async def test_app():
+    # 模拟 ASGI 请求
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "path": "/test",
+        "headers": [],
+    }
+    
+    # 收集响应
+    responses = []
+    
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+    
+    async def send(message):
+        responses.append(message)
+    
+    # 调用应用
+    await app(scope, receive, send)
+    
+    # 验证响应
+    assert len(responses) == 2  # response.start 和 response.body
+    assert responses[0]["type"] == "http.response.start"
+    assert responses[0]["status"] == 200
+    assert responses[1]["type"] == "http.response.body"
+
+# 运行测试
+def test_sync():
+    asyncio.run(test_app())
+
+# 或者使用 pytest-asyncio
+@pytest.mark.asyncio
+async def test_with_pytest():
+    await test_app()
+```
+
+### 使用第三方测试库
+
+你也可以使用第三方 ASGI 测试库：
+
+```python
+# 安装: pip install httpx
+import httpx
+import asyncio
+from pystdapi import PystdAPI
+
+app = PystdAPI()
+
+@app.get("/api/test")
+async def api_test(request):
+    return {"status": "ok", "data": [1, 2, 3]}
+
+async def test_with_httpx():
+    # 启动测试服务器
+    import uvicorn
+    from uvicorn.config import Config
+    from uvicorn.server import Server
+    
+    config = Config(app=app, host="127.0.0.1", port=8888, log_level="error")
+    server = Server(config=config)
+    
+    # 在后台启动服务器
+    server_task = asyncio.create_task(server.serve())
+    await asyncio.sleep(0.5)  # 等待服务器启动
+    
+    try:
+        # 使用 httpx 测试
+        async with httpx.AsyncClient(base_url="http://127.0.0.1:8888") as client:
+            response = await client.get("/api/test")
+            assert response.status_code == 200
+            assert response.json() == {"status": "ok", "data": [1, 2, 3]}
+    finally:
+        # 停止服务器
+        server.should_exit = True
+        await server_task
+```
+
+## 📖 API 参考
+
+### 主要类和方法
+
+#### PystdAPI 类
+- `__init__(name="pystdapi", debug=False)`: 初始化应用
+- `route(rule, method="GET", **options)`: 路由装饰器
+- `get(rule, **options)`: GET 路由装饰器
+- `post(rule, **options)`: POST 路由装饰器
+- `put(rule, **options)`: PUT 路由装饰器
+- `delete(rule, **options)`: DELETE 路由装饰器
+- `patch(rule, **options)`: PATCH 路由装饰器
+- `add_middleware(middleware)`: 添加中间件
+- `add_plugin(plugin)`: 添加插件
+- `hook(name)`: 钩子装饰器
+- `error_handler(code)`: 错误处理装饰器
+- `run(host="127.0.0.1", port=8000, **options)`: 运行服务器
+- `url_for(route_name, **kwargs)`: 构建 URL
+
+#### Request 类
+- `method`: HTTP 方法
+- `path`: 请求路径
+- `headers`: 请求头
+- `query`: 查询参数
+- `body()`: 获取请求体（异步）
+- `text()`: 获取请求体文本（异步）
+- `json()`: 获取 JSON 数据（异步）
+- `form()`: 获取表单数据（异步）
+- `get_header(name, default=None)`: 获取请求头
+- `get_cookie(name, default=None)`: 获取 Cookie
+
+#### Response 类
+- `__init__(body="", status=200, headers=None, **kwargs)`: 初始化响应
+- `text(text, status=200, **kwargs)`: 创建文本响应（类方法）
+- `html(html, status=200, **kwargs)`: 创建 HTML 响应（类方法）
+- `json(data, status=200, **kwargs)`: 创建 JSON 响应（类方法）
+- `redirect(url, status=302)`: 创建重定向响应（类方法）
+- `set_header(name, value)`: 设置响应头
+- `set_cookie(key, value, **options)`: 设置 Cookie
+- `delete_cookie(key, **options)`: 删除 Cookie
+
+## 🚀 部署
+
+### 使用 Uvicorn
+
+```bash
+# 安装 ASGI 服务器
+pip install uvicorn
+
+# 运行应用
+uvicorn app:app --host 0.0.0.0 --port 8000 --workers 4
+```
+
+## 📄 许可证
+
+本项目采用 MIT 许可证。详见 [LICENSE](LICENSE) 文件。
+
+## 🤝 贡献
+
+欢迎提交 Issue 和 Pull Request！
+
+1. Fork 项目
+2. 创建功能分支 (`git checkout -b feature/amazing-feature`)
+3. 提交更改 (`git commit -m 'Add amazing feature'`)
+4. 推送到分支 (`git push origin feature/amazing-feature`)
+5. 创建 Pull Request
+
+**PystdAPI** - 让异步 Web 开发更简单！ 🚀
