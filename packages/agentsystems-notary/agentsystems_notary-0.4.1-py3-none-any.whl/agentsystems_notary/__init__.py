@@ -1,0 +1,60 @@
+"""AgentSystems Notary - Audit logging for LLM interactions."""
+
+from importlib import metadata as _metadata
+
+from .config import (
+    ArweaveHashStorage,
+    AwsKmsSignerConfig,
+    AwsS3StorageConfig,
+    AzureBlobStorageConfig,
+    AzureKeyVaultSignerConfig,
+    CustodiedHashStorage,
+    GcpCloudStorageConfig,
+    GcpKmsSignerConfig,
+    LocalKeySignerConfig,
+    RawPayloadStorage,
+    SignerConfig,
+    StorageConfig,
+)
+from .core import LogResult, NotaryCore, PayloadTooLargeError
+
+__version__ = (
+    _metadata.version(__name__.replace("_", "-")) if __name__ != "__main__" else "0.0.0"
+)
+
+__all__ = [
+    "__version__",
+    "NotaryCore",
+    "RawPayloadStorage",
+    "CustodiedHashStorage",
+    "ArweaveHashStorage",
+    # Signer configs
+    "AwsKmsSignerConfig",
+    "GcpKmsSignerConfig",
+    "AzureKeyVaultSignerConfig",
+    "LocalKeySignerConfig",
+    "SignerConfig",
+    # Storage configs
+    "AwsS3StorageConfig",
+    "GcpCloudStorageConfig",
+    "AzureBlobStorageConfig",
+    "StorageConfig",
+    # Results and errors
+    "LogResult",
+    "PayloadTooLargeError",
+]
+
+# Framework adapters (optional - only available if dependencies installed)
+try:
+    from .langchain_adapter import LangChainNotary  # noqa: F401
+
+    __all__.append("LangChainNotary")
+except ImportError:
+    pass
+
+try:
+    from .crewai_adapter import CrewAINotary  # noqa: F401
+
+    __all__.append("CrewAINotary")
+except ImportError:
+    pass
