@@ -1,0 +1,1 @@
+Répertoire qui contient les fichiers cachés utilisés par le projet QueryCraft pour éviter trop de requêtes aux IA génératives.
