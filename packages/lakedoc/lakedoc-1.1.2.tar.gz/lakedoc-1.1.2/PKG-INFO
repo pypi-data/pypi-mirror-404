@@ -1,0 +1,288 @@
+Metadata-Version: 2.4
+Name: lakedoc
+Version: 1.1.2
+Summary: Convert Lake documents (Yuque) into the specified format.
+License-Expression: MIT
+License-File: LICENSE
+Author: gupingan
+Author-email: gupingan6@outlook.com
+Requires-Python: >=3.7
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.7
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Programming Language :: Python :: 3.14
+Requires-Dist: beautifulsoup4 (==4.12.3)
+Requires-Dist: colorama (==0.4.6)
+Requires-Dist: markdown (==3.4.4)
+Requires-Dist: pymdown-extensions (==10.0.1)
+Project-URL: Documentation, https://github.com/gupingan/lakedoc
+Project-URL: Homepage, https://github.com/gupingan/lakedoc
+Project-URL: Repository, https://github.com/gupingan/lakedoc
+Description-Content-Type: text/markdown
+
+<p align="center">
+  <img src="https://gitee.com/xiaogugyx/drawing-bed/raw/master/lakedoc-logo.png" alt="LakeDoc Logo" width="66%">
+</p>
+
+<p align="center">
+  将语雀（Yuque）Lake 文档转换为多种格式的 Python 库
+</p>
+
+<p align="center">
+    <a href="https://github.com/gupingan/lakedoc"><img src="https://img.shields.io/badge/language-python-brightgreen" alt="Language"></a>
+    <a href="https://github.com/gupingan/lakedoc/graphs/contributors"><img src="https://img.shields.io/github/contributors/gupingan/lakedoc.svg" alt="Contributors"></a>
+    <a href="https://github.com/gupingan/lakedoc/network/members"><img src="https://img.shields.io/github/forks/gupingan/lakedoc.svg?style=flat" alt="Forks"></a>
+    <a href="https://github.com/gupingan/lakedoc/stargazers"><img src="https://img.shields.io/github/stars/gupingan/lakedoc.svg?style=flat" alt="Stargazers"></a>
+    <a href="https://github.com/gupingan/lakedoc/issues"><img src="https://img.shields.io/github/issues/gupingan/lakedoc.svg" alt="Issues"></a>
+    <a href="https://github.com/gupingan/lakedoc/blob/master/LICENSE"><img src="https://img.shields.io/github/license/gupingan/lakedoc.svg" alt="MIT License"></a>
+</p>
+
+<p align="center">
+  <a href="#快速开始">快速开始</a> ·
+  <a href="#使用示例">使用示例</a> ·
+  <a href="#高级用法">高级用法</a> ·
+  <a href="#api-文档">API 文档</a> ·
+  <a href="#架构说明">架构说明</a>
+</p>
+## 简介
+
+LakeDoc 是一个用于将语雀（Yuque）Lake 文档转换为多种格式的 Python 库。它支持将包含 `<!doctype lake>` 标记的 HTML 文档转换为 Markdown、HTML 等格式，并提供灵活的扩展机制，允许开发者自定义转换器。
+
+## 声明
+
+本模块仅用于对语雀官方 LakeDoc 的学习研究目的，本人未将其作为任何盈利渠道，禁止用于任何违背本国法律的行为。我更加支持语雀官方的内置导出功能，请优先使用官方提供的导出方式。
+
+## 特性
+
+- **多格式支持**：支持转换为 Markdown、HTML 等格式
+- **语雀特性适配**：支持语雀特有的卡片组件（如代码块、图表、数学公式等）
+- **灵活扩展**：支持自定义转换器并自动注册
+- **简单易用**：提供统一的 `convert()` 接口，通过参数配置转换行为
+- **调试支持**：内置调试工具，便于问题排查
+
+## 安装
+
+```bash
+pip install lakedoc
+```
+
+## 快速开始
+
+```python
+import lakedoc
+
+# 从文件转换并返回结果
+result = lakedoc.convert('./input.html')
+
+# 从文件转换并保存
+lakedoc.convert('./input.html', saveto='./output.md')
+
+# 从 HTML 内容转换（自动识别包含 <!doctype lake> 的内容）
+result = lakedoc.convert('<!doctype lake><html>...</html>')
+
+# 转换内容并保存
+lakedoc.convert('<!doctype lake><html>...</html>', saveto='./output.md')
+```
+
+## 使用示例
+
+### 基本转换
+
+```python
+import lakedoc
+
+# 添加标题
+lakedoc.convert('./input.html', saveto='./output.md', title='# 我的文档')
+
+# 保存到目录（使用时间戳命名）
+lakedoc.convert('./input.html', saveto='./output/')
+```
+
+### 启用调试模式
+
+```python
+import lakedoc
+
+# 启用全局调试模式
+lakedoc.enable_debug()
+
+# 转换时显示详细过程
+lakedoc.convert('./input.html')
+```
+
+## 高级用法
+
+### 自定义转换器
+
+```python
+from lakedoc.converters import LakeBaseConverter
+
+class MyConverter(LakeBaseConverter):
+    name = "custom"
+    suffix = ".custom"
+
+    def __init__(self, raw_html: str, **options):
+        self.raw_html = raw_html
+
+    def convert(self) -> str:
+        # 实现你的转换逻辑
+        return "converted content"
+
+# 使用自定义转换器
+lakedoc.convert('./input.html', converter='custom')
+```
+
+### 配置转换选项
+
+```python
+import lakedoc
+from lakedoc import HeadingStyle 
+
+# 自定义 HTML 解析器
+lakedoc.convert('./input.html', bs4_builder='lxml')
+
+# 自定义需要删除的标签
+lakedoc.convert('./input.html', remove_tags={'meta', 'link', 'script'})
+
+# 配置 Markdown 输出选项
+lakedoc.convert('./input.html', 
+                heading_style=HeadingStyle.ATX,
+                bullets='*+-',
+                code_language='python')
+```
+
+### 调试 API
+
+```python
+import lakedoc
+
+# 启用全局调试模式
+lakedoc.enable_debug()
+
+# 禁用全局调试模式
+lakedoc.disable_debug()
+
+# 输出调试信息
+lakedoc.debug("这是一条调试信息")
+
+# 输出带缩进和颜色的调试信息
+lakedoc.debug("这是一条调试信息", level=2, color='red')
+```
+
+## API 文档
+
+### convert(source, **options)
+
+将 Lake 文档转换为指定格式。
+
+**参数：**
+
+| 参数                     | 类型                                       | 说明                                                                          |
+| ------------------------ | ------------------------------------------ | ----------------------------------------------------------------------------- |
+| `source`                 | `str`                                      | 输入源，自动识别类型（包含 `<!doctype lake>` 则为 HTML 内容，否则为文件路径） |
+| `saveto`                 | `str`                                      | `PathLike`、`str`类型，保存路径，支持目录、文件等                             |
+| `converter`              | `str`                                      | 转换器类型，默认 `'markdown'`                                                 |
+| `encoding`               | `str`                                      | 文件编码，默认 `'utf-8'`                                                      |
+| `title`                  | `str`                                      | 转换后文档标题（可选）                                                        |
+| `bs4_builder`            | `str`                                      | BeautifulSoup HTML 解析器，默认 `'html.parser'`                               |
+| `remove_tags`            | `Set[str]`                                 | 需要从源文件中删除的标签集合                                                  |
+| `diagram_as_code`        | `bool`                                     | 是否将 `diagram` 转换为代码块格式，默认 False                                 |
+| `diagram_as_code_cond`   | `Optional[Callable[[str, str, str],bool]]` | 指定需要转换为代码块的回调条件函数： (src, lang, code) => bool                |
+| `autolinks`              | `bool`                                     | 是否自动将 URL 转换为自动链接格式                                             |
+| `bullets`                | `str`                                      | 无序列表的标记字符序列                                                        |
+| `code_language`          | `str`                                      | 代码块的语言标识符                                                            |
+| `code_language_callback` | `Optional[Callable[[Tag], Optional[str]]]` | 代码块语言回调函数                                                            |
+| `convert`                | `Optional[List[str]]`                      | 要转换的标签列表（与 strip 互斥）                                             |
+| `default_title`          | `bool`                                     | 是否为没有标题的链接使用 URL 作为默认标题                                     |
+| `escape_asterisks`       | `bool`                                     | 是否转义星号                                                                  |
+| `escape_underscores`     | `bool`                                     | 是否转义下划线                                                                |
+| `escape_misc`            | `bool`                                     | 是否转义其他特殊字符                                                          |
+| `heading_style`          | `HeadingStyle`                             | 标题样式（HeadingStyle枚举）：ATX / ATX_CLOSED / UNDERLINED / SETEXT          |
+| `keep_inline_images_in`  | `Optional[List[str]]`                      | 保持内联图片的父标签列表                                                      |
+| `newline_style`          | `NewlineStyle`                             | 换行样式（NewLineStyle枚举）：SPACES / BACKSLASH                              |
+| `strip`                  | `Optional[List[str]]`                      | 要移除的标签列表（与 convert 互斥）                                           |
+| `strip_document`         | `Optional[StripMode]`                      | 文档空白处理方式（StripMode枚举）：LSTRIP / RSTRIP / STRIP / STRIP_ONE        |
+| `strip_pre`              | `Optional[StripMode]`                      | pre 标签空白处理方式（StripMode枚举）：LSTRIP / RSTRIP / STRIP / STRIP_ONE    |
+| `strong_em_symbol`       | `StrongEmSymbol`                           | 粗体和斜体符号（StrongEmSymbol枚举）：ASTERISK / UNDERSCORE                   |
+| `sub_symbol`             | `str`                                      | 下标符号，默认为 '~'                                                          |
+| `sup_symbol`             | `str`                                      | 上标符号，默认为 '^'                                                          |
+| `table_infer_header`     | `bool`                                     | 是否推断表格标题行                                                            |
+| `wrap`                   | `bool`                                     | 是否自动换行                                                                  |
+| `wrap_width`             | `int`                                      | 换行宽度                                                                      |
+
+**返回：**
+
+- 如果未提供 `saveto` 参数，返回转换后的字符串内容
+- 如果提供了 `saveto` 参数，结果保存到文件并返回转换后的字符串内容
+
+### LakeContext
+
+上下文管理类，用于管理转换器注册和转换选项。
+
+**方法：**
+
+- `register(converter, converter_class, is_cover=True)` - 注册转换器
+- `set_options(**options)` - 设置转换选项
+- `pick(converter)` - 选择指定的转换器
+
+### LakeBaseConverter
+
+转换器基类，自定义转换器需要继承此类并实现 `convert` 方法。
+
+**类属性：**
+
+- `name` - 转换器名称（强制字段）
+- `suffix` - 输出文件后缀（强制字段）
+
+**方法：**
+
+- `convert()` - 执行转换，返回转换后的内容（抽象方法，子类必须实现）
+
+## 架构说明
+
+LakeDoc 采用分层架构设计，包含以下核心模块：
+
+- **Context 层**：上下文管理，负责转换器的注册、选择和转换流程的协调
+- **Converters 层**：转换器实现，负责实际的格式转换
+- **Utils 层**：工具模块，提供文件操作、字符串处理、异常定义和调试工具
+
+详细的架构说明请参阅 [架构文档](docs/architecture.md)。
+
+## 依赖
+
+- `beautifulsoup4` - HTML 解析
+- `colorama` - 终端颜色输出
+- `markdown` - Markdown 到 HTML 转换
+- `pymdown-extensions` - Markdown 扩展
+
+## 开发
+
+### 安装开发依赖
+
+```bash
+poetry lock
+poetry install
+```
+
+### 运行测试
+
+```bash
+poetry run pytest
+```
+
+## 许可证
+
+MIT License - 详见 [LICENSE](LICENSE) 文件
+
+## 致谢
+
+感谢以下开源项目：
+
+- [Beautiful Soup 4](https://www.crummy.com/software/BeautifulSoup/) - HTML/XML 解析库
+- [Markdownify](https://github.com/matthewwithanm/python-markdownify) - HTML 转 Markdown 库
+- [Colorama](https://github.com/tartley/colorama) - 终端颜色输出库
