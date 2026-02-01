@@ -1,0 +1,28 @@
+server {
+  listen 127.0.0.1:8900;
+  server_name localhost-sso;
+  root   /var/www/arvados-sso/current/public;
+  index  index.html;
+  passenger_enabled on;
+}
+
+upstream sso {
+  server     127.0.0.1:8900  fail_timeout=10s;
+}
+
+server {
+  listen       *:$ARVADOS_SSO_ELB_FACING_PORT;
+  server_name  auth.$ARVADOS_HOSTNAME;
+  index  index.html;
+  location / {
+    proxy_pass            http://sso;
+    proxy_redirect        off;
+    proxy_connect_timeout 90s;
+    proxy_read_timeout    300s;
+
+    proxy_set_header      X-Forwarded-Proto https;
+    proxy_set_header      Host $server_name;
+    proxy_set_header      X-Real-IP $remote_addr;
+    proxy_set_header      X-Forwarded-For $proxy_add_x_forwarded_for;
+  }
+}

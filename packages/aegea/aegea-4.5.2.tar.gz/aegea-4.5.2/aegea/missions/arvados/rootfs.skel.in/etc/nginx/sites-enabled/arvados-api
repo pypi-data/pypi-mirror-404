@@ -1,0 +1,62 @@
+server {
+  listen 127.0.0.1:8000;
+  server_name localhost-api;
+  root /var/www/arvados-api/current/public;
+  index  index.html index.htm index.php;
+  passenger_enabled on;
+  client_max_body_size 128m;
+}
+
+upstream api {
+  server     127.0.0.1:8000  fail_timeout=10s;
+}
+
+upstream websockets {
+  server     127.0.0.1:8100  fail_timeout=10s;
+}
+
+geo $external_client {
+  default        1;
+  10.0.0.0/8     0;
+  172.16.0.0/12  0;
+  192.168.0.0/16 0;
+}
+
+server {
+  listen       *:$ARVADOS_API_ELB_FACING_PORT;
+  server_name  $ARVADOS_UUID_PREFIX.$ARVADOS_HOSTNAME;
+
+  index  index.html index.htm index.php;
+
+  client_max_body_size 128m;
+
+  location / {
+    proxy_pass            http://api;
+    proxy_redirect        off;
+    proxy_connect_timeout 90s;
+    proxy_read_timeout    300s;
+
+    proxy_set_header      X-Forwarded-Proto https;
+    proxy_set_header      Host $server_name;
+    proxy_set_header      X-External-Client $external_client;
+    proxy_set_header      X-Real-IP $remote_addr;
+    proxy_set_header      X-Forwarded-For $proxy_add_x_forwarded_for;
+  }
+}
+
+server {
+  listen       *:$ARVADOS_API_ELB_FACING_PORT;
+  server_name  ws.$ARVADOS_UUID_PREFIX.$ARVADOS_HOSTNAME;
+
+  index  index.html index.htm index.php;
+
+  location / {
+    proxy_pass            http://websockets;
+    proxy_redirect        off;
+    proxy_connect_timeout 90s;
+    proxy_read_timeout    300s;
+
+    proxy_set_header      Upgrade $http_upgrade;
+    proxy_set_header      Connection "upgrade";
+  }
+}
