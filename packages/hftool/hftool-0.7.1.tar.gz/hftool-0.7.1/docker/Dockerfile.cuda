@@ -1,0 +1,103 @@
+# hftool Docker image for NVIDIA CUDA
+# Based on official PyTorch CUDA image
+#
+# Build: docker build -f docker/Dockerfile.cuda -t hftool:cuda .
+# Run:   docker run --gpus all -it hftool:cuda
+
+ARG CUDA_VERSION=12.4
+ARG PYTORCH_VERSION=2.5.1
+
+FROM pytorch/pytorch:${PYTORCH_VERSION}-cuda${CUDA_VERSION}-cudnn9-runtime
+
+LABEL maintainer="zashboy <info@zashboy.com>"
+LABEL description="hftool - HuggingFace CLI for NVIDIA CUDA GPUs"
+LABEL cuda.version="${CUDA_VERSION}"
+
+# Prevent interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # FFmpeg for video/audio processing
+    ffmpeg \
+    # Audio libraries
+    libsndfile1 \
+    libsox-dev \
+    # Image libraries
+    libjpeg-dev \
+    libpng-dev \
+    # Build tools (for some pip packages)
+    build-essential \
+    # Git (for installing from git repos if needed)
+    git \
+    # Useful utilities
+    curl \
+    wget \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Set up Python environment
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# Fix deprecated PyTorch env var warning
+ENV PYTORCH_CUDA_ALLOC_CONF=""
+ENV PYTORCH_ALLOC_CONF=""
+
+# Upgrade pip and install build dependencies
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+
+# Install hftool with all dependencies
+COPY pyproject.toml README.md ./
+COPY hftool/ ./hftool/
+
+# Set version for Docker build
+ARG HFTOOL_VERSION=0.7.1
+RUN echo "__version__ = '${HFTOOL_VERSION}'" > hftool/_version.py
+
+# Install all dependencies (fast, from pre-built wheels)
+RUN pip install --no-cache-dir \
+    "transformers>=4.45.0" \
+    "click>=8.0.0" \
+    "huggingface_hub>=0.20.0" \
+    "rich>=13.0.0" \
+    "python-dotenv>=1.0.0" \
+    "Pillow>=9.0.0" \
+    "accelerate>=0.26.0" \
+    "protobuf>=3.20.0" \
+    "sentencepiece>=0.1.99" \
+    "soundfile>=0.12.0" \
+    "ftfy>=6.0.0" \
+    "InquirerPy>=0.3.0"
+
+# Install diffusers from main branch for LTX-2 support (requires 0.37.0+)
+# Once diffusers 0.37.0 is released, replace with: "diffusers>=0.37.0"
+RUN pip install --no-cache-dir git+https://github.com/huggingface/diffusers
+
+# Install hftool manually (bypass pyproject.toml entirely)
+RUN SITE_PACKAGES=$(python -c "import site; print(site.getsitepackages()[0])") && \
+    cp -r hftool $SITE_PACKAGES/ && \
+    printf '#!/usr/bin/env python\nfrom hftool.cli import main\nmain()\n' > /usr/local/bin/hftool && \
+    chmod +x /usr/local/bin/hftool
+
+# Pre-download common model components to speed up first run
+RUN python -c "from transformers import AutoTokenizer; print('Transformers ready')"
+RUN python -c "from diffusers import DiffusionPipeline; print('Diffusers ready')"
+
+# Create directories for model cache and config
+RUN mkdir -p /root/.cache/huggingface /root/.hftool
+
+# Set default environment variables
+ENV HFTOOL_MODELS_DIR=/root/.cache/huggingface
+ENV HF_HOME=/root/.cache/huggingface
+ENV TRANSFORMERS_CACHE=/root/.cache/huggingface
+
+# Verify CUDA is working
+RUN python -c "import torch; print(f'PyTorch {torch.__version__}'); print(f'CUDA available: {torch.cuda.is_available()}'); print(f'Device count: {torch.cuda.device_count()}')" || echo "GPU check will run at runtime"
+
+# Set working directory
+WORKDIR /workspace
+
+# Set entrypoint to hftool (arguments are appended)
+ENTRYPOINT ["hftool"]
+CMD ["--help"]
