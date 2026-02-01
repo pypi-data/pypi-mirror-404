@@ -1,0 +1,92 @@
+"""Application configuration using Pydantic settings."""
+
+import json
+import logging
+from functools import lru_cache
+from pathlib import Path
+from typing import Any, Optional
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
+
+
+class Settings(BaseSettings):
+    """Application settings loaded from environment variables."""
+
+    # API Configuration
+    API_HOST: str = "127.0.0.1"
+    API_PORT: int = 8000
+    DEBUG: bool = False
+
+    # OpenAI Configuration
+    OPENAI_API_KEY: str = ""
+    EMBEDDING_MODEL: str = "text-embedding-3-large"
+    EMBEDDING_DIMENSIONS: int = 3072
+
+    # Anthropic Configuration
+    ANTHROPIC_API_KEY: str = ""
+    CLAUDE_MODEL: str = "claude-3-5-haiku-20241022"  # Claude 3.5 Haiku (latest)
+
+    # Chroma Configuration
+    CHROMA_PERSIST_DIR: str = "./chroma_db"
+    BM25_INDEX_PATH: str = "./bm25_index"
+    COLLECTION_NAME: str = "doc_serve_collection"
+
+    # Chunking Configuration
+    DEFAULT_CHUNK_SIZE: int = 512
+    DEFAULT_CHUNK_OVERLAP: int = 50
+    MAX_CHUNK_SIZE: int = 2048
+    MIN_CHUNK_SIZE: int = 128
+
+    # Query Configuration
+    DEFAULT_TOP_K: int = 5
+    MAX_TOP_K: int = 50
+    DEFAULT_SIMILARITY_THRESHOLD: float = 0.7
+
+    # Rate Limiting
+    EMBEDDING_BATCH_SIZE: int = 100
+
+    # Multi-instance Configuration
+    DOC_SERVE_STATE_DIR: Optional[str] = None  # Override state directory
+    DOC_SERVE_MODE: str = "project"  # "project" or "shared"
+
+    model_config = SettingsConfigDict(
+        env_file=[
+            ".env",  # Current directory
+            Path(__file__).parent.parent.parent / ".env",  # Project root
+            Path(__file__).parent.parent / ".env",  # doc-serve-server directory
+        ],
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+    )
+
+
+@lru_cache
+def get_settings() -> Settings:
+    """Get cached settings instance."""
+    return Settings()
+
+
+settings = get_settings()
+
+
+def load_project_config(state_dir: Path) -> dict[str, Any]:
+    """Load project configuration from state directory.
+
+    Precedence: CLI flags > env vars > project config > defaults
+
+    Args:
+        state_dir: Path to the state directory containing config.json.
+
+    Returns:
+        Dictionary of configuration values from config.json, or empty dict.
+    """
+    config_path = state_dir / "config.json"
+    if config_path.exists():
+        try:
+            with open(config_path) as f:
+                return json.load(f)  # type: ignore[no-any-return]
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning(f"Failed to load project config from {config_path}: {e}")
+    return {}
