@@ -1,0 +1,134 @@
+.. _spkg_hatchling:
+
+hatchling: Modern, extensible Python build backend
+==================================================
+
+Description
+-----------
+
+Modern, extensible Python build backend
+
+License
+-------
+
+MIT
+
+Upstream Contact
+----------------
+
+https://pypi.org/project/hatchling/
+
+
+
+Type
+----
+
+standard
+
+
+Dependencies
+------------
+
+- $(PYTHON)
+- :ref:`spkg_editables`
+- :ref:`spkg_packaging`
+- :ref:`spkg_pathspec`
+- :ref:`spkg_pip`
+- :ref:`spkg_pluggy`
+- :ref:`spkg_tomli`
+- :ref:`spkg_trove_classifiers`
+
+Version Information
+-------------------
+
+package-version.txt::
+
+    1.27.0
+
+version_requirements.txt::
+
+    hatchling
+
+Installation commands
+---------------------
+
+.. tab:: PyPI:
+
+   .. CODE-BLOCK:: bash
+
+       $ pip install hatchling
+
+.. tab:: Sage distribution:
+
+   .. CODE-BLOCK:: bash
+
+       $ sage -i hatchling
+
+.. tab:: Alpine:
+
+   .. CODE-BLOCK:: bash
+
+       $ apk add py3-hatchling
+
+.. tab:: Arch Linux:
+
+   .. CODE-BLOCK:: bash
+
+       $ sudo pacman -S python-hatchling
+
+.. tab:: conda-forge:
+
+   .. CODE-BLOCK:: bash
+
+       $ conda install hatchling
+
+.. tab:: Debian/Ubuntu:
+
+   .. CODE-BLOCK:: bash
+
+       $ sudo apt-get install hatchling
+
+.. tab:: Fedora/Redhat/CentOS:
+
+   .. CODE-BLOCK:: bash
+
+       $ sudo dnf install python-hatchling
+
+.. tab:: FreeBSD:
+
+   .. CODE-BLOCK:: bash
+
+       $ sudo pkg install devel/py-hatchling
+
+.. tab:: Gentoo Linux:
+
+   .. CODE-BLOCK:: bash
+
+       $ sudo emerge dev-python/hatchling
+
+.. tab:: mingw-w64:
+
+   .. CODE-BLOCK:: bash
+
+       $ sudo pacman -S ${MINGW_PACKAGE_PREFIX}-python-hatchling
+
+.. tab:: OpenBSD:
+
+   install the following packages: devel/py-hatchling
+
+.. tab:: openSUSE:
+
+   .. CODE-BLOCK:: bash
+
+       $ sudo zypper install python-hatchling
+
+.. tab:: Void Linux:
+
+   .. CODE-BLOCK:: bash
+
+       $ sudo xbps-install hatchling
+
+
+If the system package is installed and if the (experimental) option
+``--enable-system-site-packages`` is passed to ``./configure``, then 
+``./configure`` will check if the system package can be used.

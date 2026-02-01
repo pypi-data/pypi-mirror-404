@@ -1,0 +1,85 @@
+.. _spkg_elliptic_curves:
+
+elliptic_curves: Databases of elliptic curves
+=============================================
+
+Description
+-----------
+
+Includes two databases:
+
+-  A small subset of John Cremona's database of elliptic curves up
+   to conductor 10000.
+
+-  William Stein's database of interesting curves
+
+
+Upstream Contact
+----------------
+
+cremona_mini
+~~~~~~~~~~~~
+
+-  Author: John Cremona
+-  Email: john.cremona@gmail.com
+-  Website: http://johncremona.github.io/ecdata/
+
+ellcurves
+~~~~~~~~~
+
+-  Author: William Stein
+-  Email: wstein@gmail.com
+
+
+
+Type
+----
+
+standard
+
+
+Dependencies
+------------
+
+- $(PYTHON)
+
+Version Information
+-------------------
+
+package-version.txt::
+
+    0.8.1
+
+See https://repology.org/project/sagemath-elliptic-curves/versions
+
+Installation commands
+---------------------
+
+.. tab:: Sage distribution:
+
+   .. CODE-BLOCK:: bash
+
+       $ sage -i elliptic_curves
+
+.. tab:: Arch Linux:
+
+   .. CODE-BLOCK:: bash
+
+       $ sudo pacman -S sage-data-elliptic_curves
+
+.. tab:: conda-forge:
+
+   .. CODE-BLOCK:: bash
+
+       $ conda install sagemath-db-elliptic-curves
+
+.. tab:: Void Linux:
+
+   .. CODE-BLOCK:: bash
+
+       $ sudo xbps-install sage-data-elliptic_curves
+
+
+However, these system packages will not be used for building Sage
+because ``spkg-configure.m4`` has not been written for this package;
+see :issue:`27330` for more information.
