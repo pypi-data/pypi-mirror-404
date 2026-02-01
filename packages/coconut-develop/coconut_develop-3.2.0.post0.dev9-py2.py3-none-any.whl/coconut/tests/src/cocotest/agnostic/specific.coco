@@ -1,0 +1,285 @@
+import sys
+from io import StringIO
+if TYPE_CHECKING:
+    from typing import Any
+
+from .util import mod, assert_raises  # NOQA
+
+
+def non_py26_test() -> bool:
+    """Tests for any non-py26 version."""
+    test: dict = {}
+    exec("a = 1", test)
+    assert test["a"] == 1
+    exec("a = 2", globals(), test)
+    assert test["a"] == 2
+    test: dict = {}
+    exec("b = mod(5, 3)", globals(), test)
+    assert test["b"] == 2
+    assert 5 .bit_length() == 3
+    assert 5 .imag == 0
+    return True
+
+
+def non_py32_test() -> bool:
+    """Tests for any non-py32 version."""
+    assert {range(8): True}[range(8)]
+    assert range(1, 2) == range(1, 2)
+    assert range(1, 2) != range(3, 4)
+    fakefile = StringIO()
+    print("herpaderp", file=fakefile, flush=True)
+    assert fakefile.getvalue() == "herpaderp\n"
+    return True
+
+
+def py3_spec_test() -> bool:
+    """Tests for any py3 version."""
+    class Outer:
+        class Inner:
+            if TYPE_CHECKING:
+                f: Any
+        def Inner.f(x) = x
+    assert Outer.Inner.f(2) == 2
+    assert Outer.Inner.f.__name__ == "f"
+    assert Outer.Inner.f.__qualname__.endswith("Outer.Inner.f"), Outer.Inner.f.__qualname__
+    for xs in [
+        py_zip((x for x in range(5)), (x for x in range(10))),
+        py_map((,), (x for x in range(5)), (x for x in range(10))),
+    ]:  # type: ignore
+        assert list(xs) == list(zip(range(5), range(5)))
+        assert list(xs) == [] if sys.version_info >= (3,) else list(zip(range(5), range(5)))
+    py_xs = py_map((.+1), range(5))
+    assert list(py_xs) == list(range(1, 6))
+    assert list(py_xs) == []
+    return True
+
+
+def py33_spec_test() -> bool:
+    """Tests for any py33+ version."""
+    from inspect import signature
+    def f(x, y=1) = x, y
+    def g(a, b=2) = a, b
+    assert signature(f ..*> g) == signature(f) == signature(f ..> g)
+    assert signature(f <*.. g) == signature(g) == signature(f <.. g)
+    assert signature(f$(0) ..> g) == signature(f$(0))
+    assert signature(f ..*> (+)) == signature(f)
+    assert signature((f ..*> g) ..*> g) == signature(f)
+    return True
+
+
+def py36_spec_test(tco: bool) -> bool:
+    """Tests for any py36+ version."""
+    from dataclasses import dataclass
+    from typing import \Any, Literal  # \Any to suppress overwriting
+
+    outfile = StringIO()
+
+    class Console:
+        def interpret(self):
+            raise NotImplementedError()
+
+    @dataclass
+    class PrintLine(Console):
+        line: str
+        rest: Console
+
+        def interpret(self):
+            print(self.line, file=outfile)
+            return self.rest.interpret()
+
+    @dataclass
+    class ReadLine(Console):
+        rest: str -> Console
+
+        def interpret(self):
+            return self.rest(input()).interpret()
+
+    @dataclass
+    class Return(Console):
+        val: Any
+
+        def interpret(self):
+            return self.val
+
+    program = PrintLine(
+        'what is your name? ',
+        ReadLine(
+            name -> PrintLine(f'Hello {name}!',
+                                   Return(None))
+        )
+    )  # type: ignore
+
+    if tco:
+        p = PrintLine('', Return(None))  # type: ignore
+        for _ in range(10000):
+            p = PrintLine('', p)  # type: ignore
+        p.interpret()  # type: ignore
+
+        assert outfile.getvalue() == "\n" * 10001
+
+    class HasGens[T, U]
+    assert HasGens `issubclass` object
+
+    class HasPSpec[**P]
+    assert HasPSpec `issubclass` object
+
+    data D1[T](x: T, y: T)  # type: ignore
+    assert D1(10, 20).y == 20
+
+    data D2[T <: int[]](xs: T)  # type: ignore
+    assert D2((10, 20)).xs == (10, 20)
+
+    def myid[ T ]( x : T ) -> T = x
+    assert myid(10) == 10
+
+    def fst[T](x: T, y: T) -> T = x
+    assert fst(1, 2) == 1
+
+    def twople[T, U](x: T, y: U) -> (T; U) = (x, y)
+    assert twople(1, 2) == (1, 2)
+
+    def head[T <: int[]](xs: T) -> (int; T) = (xs[0], xs)
+    def head_[T <: int[]](xs: T) -> (int; T) = (xs[0], xs)
+    assert head(range(5)) == (0, range(5)) == head_(range(5))
+
+    def duplicate[T](x: T) -> (T; T) = x, y where:
+        y: T = x
+    assert duplicate(10) == (10, 10)
+
+    class HasStr[T <: str]:
+        def __init__(self, x: T):
+            self.x: T = x
+
+        def get(self) -> T:
+            return self.x
+
+    hello: Literal["hello"] = "hello"
+    hello = HasStr(hello).get()
+
+    def forward_compose[**P, T, U](f: (**P) -> T, g: T -> U) -> (**P) -> U =
+        (*args, **kwargs) -> g(f(*args, **kwargs))
+    assert (.+5) `forward_compose` (.*2) <| 3 == 16
+
+    def mk_repeat[T, **P](f: (T, **P) -> T) -> (int, T, **P) -> T:
+        def newf(n: int, x: T, *args, **kwargs) -> T:
+            if n == 0:
+                return x
+            else:
+                return newf(n - 1, f(x, *args, **kwargs), *args, **kwargs)
+        return newf
+    assert mk_repeat(+)(3, 1, 2) == 7
+
+    return True
+
+
+def py37_spec_test() -> bool:
+    """Tests for any py37+ version."""
+    import asyncio, typing, typing_extensions
+    assert py_breakpoint  # type: ignore
+    ns: typing.Dict[str, typing.Any] = {}
+    exec("""async def toa(it):
+    for x in it:
+        yield x""", ns)
+    toa = ns["toa"]
+    exec("""async def aconsume(it):
+    async for x in it:
+        pass""", ns)
+    aconsume = ns["aconsume"]
+    l: typing.List[int] = []
+    range(10) |> toa |> fmap$(l.append) |> aconsume |> asyncio.run
+    assert l == list(range(10))
+    class HasVarGen[*Ts]  # type: ignore
+    assert HasVarGen `issubclass` object
+    assert typing.Protocol is typing_extensions.Protocol
+    assert_raises((def -> raise ExceptionGroup("derp", [Exception("herp")])), ExceptionGroup)
+    assert_raises((def -> raise BaseExceptionGroup("derp", [BaseException("herp")])), BaseExceptionGroup)
+    return True
+
+
+def py38_spec_test() -> bool:
+    """Tests for any py38+ version."""
+    from itertools import accumulate
+    assert range(5) |> accumulate$(?, (+), initial=10) |> list == [10, 10, 11, 13, 16, 20]
+    return True
+
+
+def py310_spec_test() -> bool:
+    """Tests for any py310+ version (t-string backport)."""
+    # Test basic t-string with tstr backport
+    name = "World"
+    template = t"Hello {name}!"
+    assert type(template).__name__ == "Template"
+    assert template.strings == ("Hello ", "!")
+    assert len(template.interpolations) == 1
+    assert template.interpolations[0].value == "World"
+
+    # Test t-string with Coconut syntax
+    template2 = t"Result: {[1,2,3] |> len}"
+    assert template2.strings == ("Result: ", "")
+    assert template2.interpolations[0].value == 3
+
+    # Test t-string with = specifier (debug syntax)
+    x = 42
+    template3 = t"{x=}"
+    assert template3.interpolations[0].value == 42
+
+    # Test raw t-string
+    template4 = rt"\n{x}"
+    assert template4.strings == ("\\n", "")
+    assert template4.interpolations[0].value == 42
+
+    # Test multiple interpolations
+    a, b = 1, 2
+    template5 = t"{a} + {b} = {a + b}"
+    assert template5.strings == ("", " + ", " = ", "")
+    assert len(template5.interpolations) == 3
+    assert template5.interpolations[0].value == 1
+    assert template5.interpolations[1].value == 2
+    assert template5.interpolations[2].value == 3
+
+    # dt-string (PEP 822 + t-string) tests
+    dt_name = "World"
+    dt_template = dt"""
+        Hello, {dt_name}!
+        """
+    assert type(dt_template).__name__ == "Template"
+    assert dt_template.strings == ("Hello, ", "!\n")
+    assert len(dt_template.interpolations) == 1
+    assert dt_template.interpolations[0].value == "World"
+
+    # dt-string prefix permutations: td
+    td_template = td"""
+        Hello, {dt_name}!
+        """
+    assert type(td_template).__name__ == "Template"
+    assert td_template.strings == ("Hello, ", "!\n")
+    assert td_template.interpolations[0].value == "World"
+
+    # dt-string prefix permutations: dtr/drt/tdr/trd/rdt/rtd
+    dtr_template = dtr"""
+        Hello\n, {dt_name}!
+        """
+    assert type(dtr_template).__name__ == "Template"
+    assert dtr_template.strings == ("Hello\\n, ", "!\n")
+    drt_template = drt"""
+        Hello\n, {dt_name}!
+        """
+    assert drt_template.strings == ("Hello\\n, ", "!\n")
+    tdr_template = tdr"""
+        Hello\n, {dt_name}!
+        """
+    assert tdr_template.strings == ("Hello\\n, ", "!\n")
+    trd_template = trd"""
+        Hello\n, {dt_name}!
+        """
+    assert trd_template.strings == ("Hello\\n, ", "!\n")
+    rdt_template = rdt"""
+        Hello\n, {dt_name}!
+        """
+    assert rdt_template.strings == ("Hello\\n, ", "!\n")
+    rtd_template = rtd"""
+        Hello\n, {dt_name}!
+        """
+    assert rtd_template.strings == ("Hello\\n, ", "!\n")
+
+    return True
