@@ -1,0 +1,154 @@
+[project]
+name = "cooperbench"
+description = "Multi-agent coordination benchmark for collaborative code generation"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.12"
+dynamic = ["version"]
+authors = [
+    {name = "Arpandeep Khatua"},
+    {name = "Hao Zhu"},
+    {name = "Peter Tran"},
+    {name = "Arya Prabhudesai"},
+    {name = "Frederic Sadrieh"},
+    {name = "Johann K. Lieberwirth"},
+    {name = "Xinkai Yu"},
+    {name = "Yicheng Fu"},
+    {name = "Michael J. Ryan"},
+    {name = "Jiaxin Pei"},
+    {name = "Diyi Yang"},
+]
+keywords = [
+    "benchmark",
+    "multi-agent",
+    "llm",
+    "code-generation",
+    "collaboration",
+    "coordination",
+    "ai-agents",
+    "software-engineering",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Testing",
+    "Typing :: Typed",
+]
+dependencies = [
+    "jinja2>=3.0",
+    "litellm>=1.0",
+    "modal>=0.70",
+    "platformdirs>=3.0",
+    "pydantic>=2.0",
+    "python-dotenv>=1.0",
+    "pyyaml>=6.0",
+    "redis>=7.0",
+    "rich>=13.0",
+    "tenacity>=8.0",
+]
+
+[project.optional-dependencies]
+swe-agent = [
+    "swe-agent>=1.0",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=4.0",
+    "pytest-asyncio>=0.23",
+    "mypy>=1.10",
+    "ruff>=0.4",
+]
+all = ["cooperbench[swe-agent,dev]"]
+
+[project.scripts]
+cooperbench = "cooperbench.cli:main"
+coop = "cooperbench.cli:main"
+
+[project.urls]
+Homepage = "https://cooperbench.com"
+Documentation = "https://cooperbench.com"
+Repository = "https://github.com/cooperbench/CooperBench"
+Issues = "https://github.com/cooperbench/CooperBench/issues"
+Dataset = "https://huggingface.co/datasets/CodeConflict/cooperbench-dataset"
+Paper = "https://arxiv.org/abs/2601.13295"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/cooperbench/__about__.py"
+
+[tool.hatch.build.targets.sdist]
+exclude = [
+    "dataset/",
+    "logs/",
+    "docs/",
+    "scripts/",
+    ".github/",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cooperbench"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+exclude = [
+    "src/cooperbench/agents/swe_agent/",  # vendored code
+]
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "F",      # pyflakes
+    "I",      # isort
+    "UP",     # pyupgrade
+]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+    "UP046",  # Generic[T] style (keep for compatibility)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["cooperbench"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+check_untyped_defs = false
+disallow_untyped_defs = false
+disable_error_code = ["override", "misc", "no-any-return", "arg-type", "call-arg", "operator", "assignment", "call-overload", "index", "import-untyped", "dict-item", "var-annotated", "union-attr", "empty-body", "return-value", "attr-defined"]
+exclude = ["tests/", "src/cooperbench/agents/swe_agent/"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-v --tb=short"
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+# Don't collect test_ functions from imported source modules
+norecursedirs = ["src", "dataset", "logs", ".git", "__pycache__"]
+filterwarnings = [
+    "ignore::pytest.PytestConfigWarning",
+    "ignore::DeprecationWarning:litellm.*",
+]
+
+[tool.coverage.run]
+source = ["src/cooperbench"]
+branch = true
+omit = ["src/cooperbench/agents/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]
