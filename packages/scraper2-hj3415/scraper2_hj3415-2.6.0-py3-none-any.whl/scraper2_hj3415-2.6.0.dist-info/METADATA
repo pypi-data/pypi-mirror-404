@@ -1,0 +1,167 @@
+Metadata-Version: 2.4
+Name: scraper2-hj3415
+Version: 2.6.0
+Summary: Naver WiseReport scraper
+Keywords: example,demo
+Author-email: Hyungjin Kim <hj3415@gmail.com>
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Typing :: Typed
+License-File: LICENSE
+Requires-Dist: playwright>=1.55
+Requires-Dist: pandas>=2.3.3
+Requires-Dist: pandas-stubs>=2.3.3
+Requires-Dist: lxml>=6.0.2
+Requires-Dist: typer>=0.21.0
+Requires-Dist: db2-hj3415
+Requires-Dist: contracts-hj3415
+Requires-Dist: common-hj3415
+Requires-Dist: logging-hj3415
+
+# scraper2
+
+KRX 기반 국내 주식 재무(NFS) 데이터 스크래퍼 CLI 도구입니다.
+종목 단건 수집(one)과 유니버스 전체 수집(all)을 명확히 분리해 운영합니다.
+
+⸻
+
+설치
+
+pip install -e .
+
+설치 후 CLI 확인:
+
+scraper2 --help
+
+
+⸻
+
+CLI 구조
+
+scraper2
+ ├─ nfs
+ │   ├─ one   # 종목 1개 수집
+ │   └─ all   # 유니버스 전체 수집
+ └─ mi        # (reserved)
+
+
+⸻
+
+1️⃣ 단일 종목 수집 (one)
+
+사용법
+
+scraper2 nfs one <endpoint> <code> [options]
+
+예시
+
+# 삼성전자 c101 단건 수집 (메모리)
+scraper2 nfs one c101 005930
+
+# 여러 endpoint 동시 수집
+scraper2 nfs one all 005930
+
+# MongoDB 저장
+scraper2 nfs one c101 005930 --sink mongo
+
+# 결과 DTO 출력 비활성화
+scraper2 nfs one c101 005930 --no-show
+
+특징
+	•	항상 종목 1개만 처리
+	•	결과 DTO를 즉시 출력 (디버깅·검증용)
+	•	운영 자동화보다는 수동 테스트 / 검증용
+
+⸻
+
+2️⃣ 유니버스 전체 수집 (all)
+
+사용 전 필수
+
+# universe를 먼저 DB에 적재
+krx sync
+
+
+⸻
+
+사용법
+
+scraper2 nfs all <endpoint> [options]
+
+예시
+
+# krx300 전체 종목 c101 수집
+scraper2 nfs all c101
+
+# 모든 endpoint 수집
+scraper2 nfs all all
+
+# 특정 유니버스 지정
+scraper2 nfs all c103 --universe krx300
+
+# 처리 개수 제한 (테스트용)
+scraper2 nfs all c101 --limit 10
+
+# 진행률 배치 크기 조정
+scraper2 nfs all c101 --chunk 5
+
+실행 중 출력 예시
+
+=== NFS ALL === universe=krx300, endpoint=c101, codes=298, sink=mongo
+
+=== START: c101 === total=298, chunk_size=5
+progress: 25/298 (ok=25, fail=0)
+progress: 50/298 (ok=50, fail=0)
+...
+=== DONE: c101 === ok=297, fail=1, total=298
+
+⏱ elapsed time: 6m 42s
+
+특징
+	•	DB에 저장된 universe_latest 기준
+	•	진행률, 성공/실패 개수 실시간 출력
+	•	전체 작업 종료 시 총 소요 시간 표시
+	•	운영/스케줄러용 메인 모드
+
+⸻
+
+3️⃣ 작업 스케줄러 예시 (cron)
+
+매일 새벽 2시 전체 수집
+
+0 2 * * * /path/to/venv/bin/scraper2 nfs all all >> /var/log/scraper2_nfs.log 2>&1
+
+endpoint 분리 실행 (권장)
+
+0 2 * * * /path/to/venv/bin/scraper2 nfs all c101 >> /var/log/nfs_c101.log 2>&1
+10 2 * * * /path/to/venv/bin/scraper2 nfs all c103 >> /var/log/nfs_c103.log 2>&1
+
+테스트용 제한 실행
+
+0 1 * * * /path/to/venv/bin/scraper2 nfs all c101 --limit 20 >> /var/log/nfs_test.log 2>&1
+
+
+⸻
+
+운영 권장 사항
+	•	all 모드는 반드시 mongo sink 사용
+	•	universe는 krx sync로 관리
+	•	로그에는
+	•	진행률
+	•	ok / fail 개수
+	•	전체 소요 시간
+이 모두 남도록 설계됨
+	•	장애 발생 시 어디까지 진행됐는지 로그만 보고 판단 가능
+
+⸻
+
+요약
+
+목적	명령
+단건 검증	scraper2 nfs one c101 005930
+전체 수집	scraper2 nfs all all
+스케줄러	scraper2 nfs all <endpoint>
+
+
