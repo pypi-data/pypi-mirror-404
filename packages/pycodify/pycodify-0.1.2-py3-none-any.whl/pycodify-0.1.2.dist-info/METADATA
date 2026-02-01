@@ -1,0 +1,89 @@
+Metadata-Version: 2.4
+Name: pycodify
+Version: 0.1.2
+Summary: Python source code as a serialization format with automatic import resolution
+Project-URL: Homepage, https://github.com/OpenHCSDev/pycodify
+Project-URL: Documentation, https://pycodify.readthedocs.io
+Project-URL: Repository, https://github.com/OpenHCSDev/pycodify
+Project-URL: Issues, https://github.com/OpenHCSDev/pycodify/issues
+Author-email: Tristan Simas <tristan.simas@mail.mcgill.ca>
+License: MIT
+License-File: LICENSE
+Keywords: code-generation,configuration,python-source,reproducibility,serialization
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Classifier: Topic :: Utilities
+Requires-Python: >=3.10
+Provides-Extra: dev
+Requires-Dist: black>=23.0; extra == 'dev'
+Requires-Dist: mypy>=1.0; extra == 'dev'
+Requires-Dist: pytest-cov>=4.0; extra == 'dev'
+Requires-Dist: pytest>=7.0; extra == 'dev'
+Requires-Dist: ruff>=0.1.0; extra == 'dev'
+Provides-Extra: docs
+Requires-Dist: sphinx-autodoc-typehints>=1.25; extra == 'docs'
+Requires-Dist: sphinx-rtd-theme>=2.0; extra == 'docs'
+Requires-Dist: sphinx>=7.0; extra == 'docs'
+Description-Content-Type: text/markdown
+
+# pycodify
+
+Python source code as a serialization format with automatic import resolution.
+
+## Quick Start
+
+```python
+from pycodify import Assignment, generate_python_source
+from dataclasses import dataclass
+
+@dataclass
+class Config:
+    name: str = "default"
+    value: int = 42
+
+config = Config(name="production", value=100)
+code = generate_python_source(Assignment("config", config), clean_mode=True)
+print(code)
+# Output:
+# from __main__ import Config
+# config = Config(name='production', value=100)
+```
+
+## Why Python Source?
+
+| Format | Diffable | Inspectable | Editable | Type-preserving | Cross-version |
+|--------|:--------:|:-----------:|:--------:|:---------------:|:-------------:|
+| pickle | ✗ | ✗ | ✗ | ✓ | ✗ |
+| JSON/YAML | ✓ | ✓ | ✓ | ✗ | ✓ |
+| Python source | ✓ | ✓ | ✓ | ✓ | ✓ |
+
+Binary formats like `pickle` cannot be diffed, inspected, or edited. Text formats like JSON lose type information. Python source code has all desired properties: it is diffable, inspectable, editable, type-preserving, and cross-version stable.
+
+## Features
+
+- **Complete Executable Source**: Generates imports + code, not just expressions
+- **Type-Preserving**: Enums, Paths, callables serialize as themselves
+- **Collision Handling**: Automatic aliasing for name collisions across modules
+- **Clean Mode**: Omit fields matching defaults for concise output
+- **Extensible**: Register custom formatters for domain-specific types
+
+## Documentation
+
+Full documentation available at [pycodify.readthedocs.io](https://pycodify.readthedocs.io)
+
+## Installation
+
+```bash
+pip install pycodify
+```
+
+## License
+
+MIT
