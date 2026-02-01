@@ -1,0 +1,302 @@
+Metadata-Version: 2.4
+Name: minecraft-schemes
+Version: 0.3.0
+Summary: Parse Minecraft-relative JSON to structured objects
+Author-email: Izanagi Tokiyuki <izanagitokiyuki@noreply.codeberg.org>
+License-Expression: MulanPSL-2.0
+Project-URL: Repository, https://codeberg.org/IzanagiTokiyuki/minecraft-schemes
+Project-URL: Issues, https://codeberg.org/IzanagiTokiyuki/minecraft-schemes/issues
+Project-URL: Changelog, https://codeberg.org/IzanagiTokiyuki/minecraft-schemes/src/branch/master/HISTORY.md
+Keywords: minecraft,scheme
+Classifier: Programming Language :: Python :: 3 :: Only
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Programming Language :: Python :: 3.14
+Requires-Python: >=3.12
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: attrs>=25.4.0
+Requires-Dist: cattrs>=25.3.0
+Requires-Dist: pendulum>=3.1.0
+Requires-Dist: typing-extensions>=4.15.0
+Dynamic: license-file
+
+# minecraft-schemes
+
+A Python library for help you to parse Minecraft-relative JSON to structured objects.
+
+**Disclaimer:** Although the project name contains "minecraft", this project is not supported by Mojang Studios or Microsoft.
+
+## Features
+
+### Already implemented
+
+- Easy installing
+- Open source
+- All public APIs are static typed
+- Supports parsing various file structures used by Mojang and Minecraft ([see below](#supported-file-structures))
+- Easy-to-use file structure definitions, powered by [`attrs`](https://www.attrs.org)
+- Rapidly file parsing, powered by [`cattrs`](https://catt.rs)
+- Conditional testing for game/command line options and dependency libraries (in `client.json`)
+
+### Not implemented yet (not a complete list)
+
+- [ ] Export the data structures to the file
+- [ ] Parse/build supports for `launcher_profiles.json` (used by official Minecraft Launcher)
+- [ ] Search/exactly find a specified version in `version_manifest.json`
+- [ ] Game/JVM command line options concatenating and completing
+
+## Supported file structures
+
+Click link to see the corresponding documentations.
+
+- `version_manifest.json` and `version_manifest_v2.json` [[Minecraft Wiki](https://minecraft.wiki/w/Version_manifest.json)]
+    - A JSON file that list Minecraft versions available in the official launcher.
+- `client.json` [[Minecraft Wiki](https://minecraft.wiki/w/Client.json)]
+    - A JSON file that accompanies client.jar in `.minecraft/versions/<version>` and lists the version's attributes.
+    - Usually named `<game version>.json`.
+    - Don't confuse this file with `version.json`; they are fundamentally different.
+- Asset index
+  file [[Minecraft Wiki (only Chinese version)](https://zh.minecraft.wiki/w/%E6%95%A3%E5%88%97%E8%B5%84%E6%BA%90%E6%96%87%E4%BB%B6#%E8%B5%84%E6%BA%90%E7%B4%A2%E5%BC%95)]
+    - A series of JSON files used to query the hash value of the corresponding hashed resource file based on the resource path, in order to invoke
+      the file.
+    - Can be downloaded from the URL pointed in the `client.json`: `[Root Tag] > "assetIndex" > "url"`
+- `version.json` [[Minecraft Wiki](https://minecraft.wiki/w/Version.json)]
+    - A JSON file that offers some basic information about the version's attributes.
+    - Embedded within client.jar in `.minecraft/versions/<version>` and `server.jar`.
+    - Don't confuse this file with `client.json`; they are fundamentally different.
+- Mojang Java Runtime index file and manifest files
+    - A JSON file that list manifest files of Java Runtime provided by Mojang via their "codename".
+    - Not documented by Minecraft Wiki or Mojang, but it is believed to be for the purposes described above.
+
+## Install
+
+Install `minecraft-schemes` using pip:
+
+```commandline
+pip install minecraft-schemes
+```
+
+The release page also provides various versions of wheel files for manual download and installation.
+
+## Usage Example
+
+#### Parse `version_manifest.json` ([download at here](https://piston-meta.mojang.com/mc/game/version_manifest_v2.json))
+
+```python
+import mcschemes
+
+with open('version_manifest.json', mode='r') as f:
+    version_manifest = mcschemes.load(f, mcschemes.Scheme.VERSION_MANIFEST)
+
+print('Latest release:', version_manifest.latest.release)
+print('Latest snapshot:', version_manifest.latest.snapshot)
+print('Number of available versions:', len(version_manifest.versions))
+for entity in version_manifest.versions:
+    if entity.type == 'release':
+        print('The ID of the first release version found:', entity.id)
+        print('The release time of the first release version found:', entity.releaseTime)
+        print('The last update time of the first release version found:', entity.time)
+        break
+```
+
+### Parse `client.json`
+
+This example code uses `client.json` from Minecraft Java Edition
+1.21.11, [download at here](https://piston-meta.mojang.com/v1/packages/3f42d3ea921915b36c581a435ed03683a7023fb1/1.21.11.json).
+
+```python
+import mcschemes
+
+with open('1.21.11.json', mode='r') as f:
+    client_manifest_1_21_11 = mcschemes.load(f, mcschemes.Scheme.CLIENT_MANIFEST)
+
+print('Version ID:', client_manifest_1_21_11.id)
+# The following field is structured as a member of enum mcschemes.enums.VersionType
+print('Version Type:', str(client_manifest_1_21_11.type))
+print('Asset version ID:', client_manifest_1_21_11.assetIndex.id)
+print('Main class:', client_manifest_1_21_11.mainClass)
+print('Release time:', client_manifest_1_21_11.releaseTime)
+print('Last update time:', client_manifest_1_21_11.time)
+print('Number of dependency libraries:', len(client_manifest_1_21_11.libraries))
+client_jar_file_info = client_manifest_1_21_11.downloads.get('client')
+if client_jar_file_info:
+    print('URL to download the client JAR file:', client_jar_file_info.url)
+```
+
+### Parse asset index file
+
+This example code uses the asset index file version 29. You can download
+it [at here](https://piston-meta.mojang.com/v1/packages/aaf4be9d6e197c384a09b1d9c631c6900d1f077c/29.json).
+
+```python
+from pathlib import Path
+
+import mcschemes
+
+with open('29.json', mode='r') as f:
+    asset_index = mcschemes.load(f, mcschemes.Scheme.ASSET_INDEX)
+
+print('Number of asset files:', len(asset_index.objects))
+asset_file_relative_path = Path('icons/icon_256x256.png')
+if asset_file_relative_path in asset_index.objects:
+    target_asset_file_info = asset_index.objects[asset_file_relative_path]
+    print('Information about asset file {0}: hash={1.hash}, size={1.size}'.format(asset_file_relative_path, target_asset_file_info))
+```
+
+### Parse `version.json` from a client JAR file
+
+This example code uses the client JAR file from Minecraft Java Edition 1.21.11. You can download it in official Minecraft Launcher
+or [at here](https://piston-data.mojang.com/v1/objects/ba2df812c2d12e0219c489c4cd9a5e1f0760f5bd/client.jar).
+
+```python
+from pathlib import Path
+
+import mcschemes
+
+version_attrs = mcschemes.loadVersionAttrsFromClientJar(Path.home().joinpath('.minecraft/versions/1.21.11/1.21.11.jar'))
+
+print('Unique identifier of this client JAR:', version_attrs.id)
+print('User-friendly name of this client JAR:', version_attrs.name)
+print('Data version of this client JAR:', version_attrs.world_version)
+print('Protocol version of this client JAR:', version_attrs.protocol_version)
+print('Build time of this client JAR:', version_attrs.build_time)
+if version_attrs.series_id:
+    print('Series ID (branch name) of this client JAR:', version_attrs.series_id)
+```
+
+### Load `client.json`, then filter and concatenate command line
+
+This example code uses `client.json` from Minecraft Java Edition
+1.21.11, [download at here](https://piston-meta.mojang.com/v1/packages/3f42d3ea921915b36c581a435ed03683a7023fb1/1.21.11.json).
+
+**Note:** this example only demonstrates basic conditional filtering and concatenation operations, and does not consider the replacement of
+placeholder parameters (which may be supported in future versions).
+
+```python
+import mcschemes
+from mcschemes.tools import rules
+
+with open('1.21.11.json', mode='r') as f:
+    client_manifest_1_21_11 = mcschemes.load(f, mcschemes.Scheme.CLIENT_MANIFEST)
+
+features: dict[str, bool] = {
+    'is_demo_user'         : True,
+    'has_custom_resolution': True
+}
+cmdline: list[str] = ['java']
+for jvm_arg_entry in client_manifest_1_21_11.arguments.jvm:
+    if rules.isArgumentCanBeAppended(jvm_arg_entry, features=features):
+        cmdline.extend(jvm_arg_entry.value)
+cmdline.append(client_manifest_1_21_11.mainClass)
+for game_arg_entry in client_manifest_1_21_11.arguments.game:
+    if rules.isArgumentCanBeAppended(game_arg_entry, features=features):
+        cmdline.extend(game_arg_entry.value)
+print('Concatenated command line (without placeholder replacements):', cmdline)
+```
+
+# History
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+Not planned yet.
+
+## [0.3.0] - 2026-01-31
+
+### Added
+
+- **Scheme:** Added support for parsing version information files (the `version.json` embedded within `client.jar`).
+- **Scheme:** Added parse support for index file of Mojang Java Runtimes, and file manifest of each java runtime.
+- **Parsing:** Added a dedicated converter class in `mcschemes.tools.parser.Converter.DedicatedConverter`.
+    - This is intended to replace the `mcschemes.tools.parser.createConverter()`.
+
+### Backwards-incompatible Changes
+
+- **Scheme:** `mcschemes.assetindex.AssetIndex` now use the `Path` object from the standard library's `pathlib` module to represent file relative
+  paths in asset index files.
+
+    1. Previously, it will use `str` to represent file relative paths, so you can access information (e.g. hash, size) by the following way:
+
+        ```python
+        from mcschemes.assetindex import AssetIndex
+  
+        asset_index: AssetIndex = ...  # Some operations to obtain the json and structure it to the AssetIndex instance
+        file_info = asset_index.objects['icons/icon_128x128.png']
+  
+        [...]  # Do your operations for file_info
+        ```
+
+    2. Now, you need to use a `pathlib.Path` object as the key to access the corresponding information:
+
+        ```python
+        from pathlib import Path
+        from mcschemes.assetindex import AssetIndex
+      
+        asset_index: AssetIndex = ...  # Some operations to obtain the json and structure it to the AssetIndex instance
+        file_info = asset_index.objects[Path('icons/icon_128x128.png')]
+      
+        [...]  # Do your operations for file_info
+        ```
+
+### Deprecations
+
+- **Parsing:** `mcschemes.tools.parser.createConverter()` is now marked as deprecated and will be removed in future versions.
+    - Now pass a converter class based on `cattrs.Converter` to the kw-only argument ``converter_class`` is no longer determines the type of the
+      returned dedicated converter instance.
+
+### Changes
+
+- **Project metadata:** This version history file has been revised to conform to the format described
+  in [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+- **Project metadata:** Fully updated the [README file](README.md):
+    - Added a summary of the main features and benefits.
+    - Added a summary of file structures supported by this library.
+    - Usage example are now more useful and better represent typical use cases.
+- **Organizational:** Reorganized the project structure:
+    - `mcschemes.tools.parser` now is a package.
+        - Sub-package `mcschemes.tools.parser.converters` is added to contains dedicated converters.
+- **Typing:** `typing-extensions` was used instead of stdlib `typing` for better backward-compatibility for type annotation.
+- **Scheme:** Several changes for SHA-1 hexdigest container:
+    - The comparison between two `mcsehemes.specials.Sha1Sum` instances now is based on the case-insensitive form of the `hexdigest` attribute of
+      both.
+    - The exception class `mcschemes.specials.ChecksumMismatch` is now exposed.
+- **Parsing:** `mcschemes.tools.parser.parse()` now will check the second argument `scheme` in more robust way.
+
+### Fixed
+
+- **Tooling:** Fixed a mistake when comparing the OS name in the function `mcschemes.tools.rules.isAllow()`.
+
+## [0.2.0] - 2025-12-11
+
+### Added
+
+- **Project metadata:** Added `MANIFEST.in` for setuptools.
+- **Scheme:** Added a SHA-1 hexdigest container type for `sha1`/`hash` fields (un-)structuring. Its definition can be found at:
+  `mcschemes.specials.Sha1Sum`.
+- **Tooling:** Added some tool functions to calculate a set of rules (iterable of `mcschemes.clientmanifest.nodes.RuleEntry` instances) means allow or
+  disallow some operation, such as append an argument or download a library file.
+
+### Changes
+
+- **Project metadata:** Declared build backend `setuptools` into `pyproject.toml`.
+- **Project metadata:** According to [PEP 561](https://peps.python.org/pep-0561), an empty `py.typed` is added into the root directory of package.
+- **Project metadata:** Corrected the date format for all tier-2 titles in this version history file.
+- **Organizational:** Moved `typings.py` to the root directory of package.
+
+## [0.1.0.post1] - 2025-12-05
+
+### Changes
+
+- **Project metadata:** Added project urls into `pyproject.toml`.
+- **Project metadata:** Added disclaimer in `README.md`.
+
+## [0.1.0] - 2025-12-04
+
+### Added
+
+The initial release.
