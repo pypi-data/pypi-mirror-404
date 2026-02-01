@@ -1,0 +1,1246 @@
+# Feature Showcase Query Examples for OpenCypher to Databricks SQL Transpiler
+# These examples demonstrate each implemented feature with simple, clear queries
+# Focus: Understanding features, complexity, and computational cost
+
+# Schema definition for feature demonstration
+schema:
+  nodes:
+    - name: Person
+      tableName: catalog.demo.Person
+      idProperty: { name: id, type: int }
+      properties:
+        - { name: name, type: string }
+        - { name: age, type: int }
+        - { name: nickname, type: string }
+        - { name: salary, type: float }
+        - { name: active, type: boolean }
+
+    - name: City
+      tableName: catalog.demo.City
+      idProperty: { name: id, type: int }
+      properties:
+        - { name: name, type: string }
+        - { name: population, type: int }
+        - { name: country, type: string }
+
+    - name: Movie
+      tableName: catalog.demo.Movie
+      idProperty: { name: id, type: int }
+      properties:
+        - { name: title, type: string }
+        - { name: year, type: int }
+        - { name: genre, type: string }
+        - { name: rating, type: float }
+
+    - name: Company
+      tableName: catalog.demo.Company
+      idProperty: { name: id, type: int }
+      properties:
+        - { name: name, type: string }
+        - { name: industry, type: string }
+
+  edges:
+    - name: KNOWS
+      sourceNode: Person
+      sinkNode: Person
+      tableName: catalog.demo.Knows
+      sourceIdProperty: { name: person_id, type: int }
+      sinkIdProperty: { name: friend_id, type: int }
+      properties:
+        - { name: since, type: int }
+        - { name: strength, type: float }
+
+    - name: LIVES_IN
+      sourceNode: Person
+      sinkNode: City
+      tableName: catalog.demo.LivesIn
+      sourceIdProperty: { name: person_id, type: int }
+      sinkIdProperty: { name: city_id, type: int }
+
+    - name: ACTED_IN
+      sourceNode: Person
+      sinkNode: Movie
+      tableName: catalog.demo.ActedIn
+      sourceIdProperty: { name: person_id, type: int }
+      sinkIdProperty: { name: movie_id, type: int }
+      properties:
+        - { name: role, type: string }
+
+    - name: DIRECTED
+      sourceNode: Person
+      sinkNode: Movie
+      tableName: catalog.demo.Directed
+      sourceIdProperty: { name: person_id, type: int }
+      sinkIdProperty: { name: movie_id, type: int }
+
+    - name: WORKS_AT
+      sourceNode: Person
+      sinkNode: Company
+      tableName: catalog.demo.WorksAt
+      sourceIdProperty: { name: person_id, type: int }
+      sinkIdProperty: { name: company_id, type: int }
+      properties:
+        - { name: since, type: int }
+        - { name: position, type: string }
+
+  # Enable no-label support for queries like MATCH (a)-[:REL]->(b:Label)
+  # Requires a view/table that unions all node types
+  noLabelSupport:
+    enabled: true
+    tableName: catalog.demo.AllNodes
+    nodeIdColumns: [id]
+
+examples:
+  # =============================================================================
+  # BASIC QUERIES
+  # =============================================================================
+
+  - description: "Simple node lookup - retrieve all nodes of a type"
+    application: "Features: Basic MATCH"
+    query: |
+      MATCH (p:Person)
+      RETURN p.name, p.age
+    notes: |
+      The simplest query pattern - retrieves all nodes with a label.
+
+      WHY USEFUL: Foundation of all graph queries. Start here to explore data.
+
+      DATABRICKS COMPLEXITY: O(n) - single table scan
+      COST: Very low. Maps to: SELECT name, age FROM Person
+      Optimizations: Partition pruning if table is partitioned.
+
+  - description: "Property filter with WHERE clause"
+    application: "Features: WHERE filtering"
+    query: |
+      MATCH (p:Person)
+      WHERE p.age > 30 AND p.active = true
+      RETURN p.name, p.age
+    notes: |
+      Filters nodes by property values using boolean conditions.
+
+      WHY USEFUL: Essential for narrowing results. Supports =, <>, <, >, <=, >=, AND, OR, NOT.
+
+      DATABRICKS COMPLEXITY: O(n) without index, O(log n) with Delta index
+      COST: Low. WHERE pushdown to storage layer in Delta Lake.
+      TIP: Create Z-ORDER on frequently filtered columns.
+
+  - description: "Property projection with aliases"
+    application: "Features: SELECT aliases"
+    query: |
+      MATCH (p:Person)
+      RETURN p.name AS personName, p.age AS personAge, p.salary AS income
+    notes: |
+      Projects specific properties with custom column names.
+
+      WHY USEFUL: Control output schema, rename for clarity, reduce data transfer.
+
+      DATABRICKS COMPLEXITY: O(n) - projection happens after scan
+      COST: Very low. Column pruning reduces I/O.
+      Note: Only requested columns are read from Delta Lake.
+
+  - description: "Pagination with ORDER BY, SKIP and LIMIT"
+    application: "Features: Pagination"
+    query: |
+      MATCH (p:Person)
+      RETURN p.name, p.age
+      ORDER BY p.age DESC
+      SKIP 10 LIMIT 5
+    notes: |
+      Orders results and returns a specific page of data.
+
+      WHY USEFUL: Implement pagination in APIs, get top-N results.
+
+      DATABRICKS COMPLEXITY: O(n log n) for sorting
+      COST: Medium. Full sort before SKIP/LIMIT.
+      WARNING: SKIP without ORDER BY gives non-deterministic results.
+      TIP: For large offsets, consider keyset pagination instead.
+
+  # =============================================================================
+  # AGGREGATION
+  # =============================================================================
+
+  - description: "COUNT aggregation without grouping"
+    application: "Features: COUNT"
+    query: |
+      MATCH (p:Person)
+      RETURN COUNT(p) AS totalPeople
+    notes: |
+      Counts all nodes matching the pattern.
+
+      WHY USEFUL: Get cardinality metrics, validate data.
+
+      DATABRICKS COMPLEXITY: O(n) - single pass
+      COST: Very low. COUNT(*) is highly optimized in Delta Lake.
+      Returns single row. NULL values are counted.
+
+  - description: "GROUP BY with multiple aggregations"
+    application: "Features: GROUP BY"
+    query: |
+      MATCH (p:Person)-[:LIVES_IN]->(c:City)
+      RETURN c.name AS city,
+             COUNT(p) AS population,
+             AVG(p.age) AS avgAge,
+             MIN(p.salary) AS minSalary,
+             MAX(p.salary) AS maxSalary
+    notes: |
+      Groups by non-aggregated columns, computes multiple metrics per group.
+
+      WHY USEFUL: Analytics dashboards, summary reports, KPIs.
+
+      DATABRICKS COMPLEXITY: O(n) with hash aggregation
+      COST: Medium. Memory for hash table proportional to group count.
+      Cypher implicit GROUP BY: all non-aggregated RETURN columns become keys.
+
+  - description: "Aggregation with ORDER BY on aggregated column"
+    application: "Features: ORDER BY aggregates"
+    query: |
+      MATCH (p:Person)-[:LIVES_IN]->(c:City)
+      RETURN c.name AS city, COUNT(p) AS population
+      ORDER BY population DESC
+      LIMIT 10
+    notes: |
+      Orders grouped results by aggregated values.
+
+      WHY USEFUL: Find top cities, worst performers, outliers.
+
+      DATABRICKS COMPLEXITY: O(n) aggregate + O(g log g) sort where g = groups
+      COST: Medium. Sort happens after aggregation.
+      TIP: LIMIT reduces sort cost significantly.
+
+  - description: "HAVING-style filter using WITH...WHERE"
+    application: "Features: HAVING filter"
+    query: |
+      MATCH (p:Person)-[:LIVES_IN]->(c:City)
+      WITH c.name AS city, COUNT(p) AS population
+      WHERE population > 1000
+      RETURN city, population
+      ORDER BY population DESC
+    notes: |
+      Filters aggregated results (SQL HAVING equivalent).
+
+      WHY USEFUL: Filter groups by computed values. Find "cities with > 1000 people".
+
+      DATABRICKS COMPLEXITY: O(n) aggregate + O(g) filter
+      COST: Low. Filter applied after aggregation, before final output.
+      Pattern: WITH creates intermediate result, WHERE filters it.
+
+  - description: "COLLECT aggregation into arrays"
+    application: "Features: COLLECT_LIST"
+    query: |
+      MATCH (c:City)<-[:LIVES_IN]-(p:Person)
+      RETURN c.name AS city, COLLECT(p.name) AS residents
+    notes: |
+      Collects values into an array per group.
+
+      WHY USEFUL: Denormalize data, create nested structures for JSON APIs.
+
+      DATABRICKS COMPLEXITY: O(n) - single pass
+      COST: Medium-High. Memory for array construction.
+      Maps to COLLECT_LIST() in Databricks SQL.
+      WARNING: Large arrays can cause OOM. Consider LIMIT inside COLLECT.
+
+  # =============================================================================
+  # RELATIONSHIPS
+  # =============================================================================
+
+  - description: "Directed relationship traversal"
+    application: "Features: Directed edges"
+    query: |
+      MATCH (p:Person)-[:ACTED_IN]->(m:Movie)
+      RETURN p.name AS actor, m.title AS movie
+    notes: |
+      Matches directed relationships from source to target.
+
+      WHY USEFUL: Traverse graph edges in specific direction.
+
+      DATABRICKS COMPLEXITY: O(n * m) worst case, O(n + e) with proper joins
+      COST: Medium. Translates to INNER JOIN.
+      TIP: Ensure foreign keys have indexes/Z-ORDER.
+
+  - description: "Relationship with property filter"
+    application: "Features: Edge properties"
+    query: |
+      MATCH (p:Person)-[r:KNOWS]->(f:Person)
+      WHERE r.since > 2020 AND r.strength > 0.8
+      RETURN p.name AS person, f.name AS friend, r.since, r.strength
+    notes: |
+      Filters relationships by their properties.
+
+      WHY USEFUL: Find "strong" relationships, recent connections.
+
+      DATABRICKS COMPLEXITY: O(e) where e = edges
+      COST: Medium. Filter on edge table reduces join size.
+      Edge properties stored in edge table as columns.
+
+  - description: "Undirected relationship (both directions)"
+    application: "Features: Undirected edges"
+    query: |
+      MATCH (p:Person)-[:KNOWS]-(f:Person)
+      WHERE p.name = 'Alice'
+      RETURN DISTINCT f.name AS friend
+    notes: |
+      Matches relationships in both directions.
+
+      WHY USEFUL: Social networks where direction doesn't matter.
+
+      DATABRICKS COMPLEXITY: O(2e) - UNION of both directions
+      COST: Higher. Translates to UNION of forward and reverse joins.
+      May produce duplicates - use DISTINCT if needed.
+
+      OPTIMIZATION: Predicate pushdown moves WHERE p.name = 'Alice' into
+      the Person table subquery BEFORE the join, dramatically reducing rows.
+
+  # =============================================================================
+  # PREDICATE PUSHDOWN FOR UNDIRECTED RELATIONSHIPS
+  # =============================================================================
+  # These examples demonstrate the SelectionPushdownOptimizer which moves
+  # WHERE predicates into DataSource operators for early filtering.
+
+  - description: "Undirected with source filter pushdown"
+    application: "Features: Predicate Pushdown"
+    query: |
+      MATCH (p:Person)-[:KNOWS]-(f:Person)
+      WHERE p.name = 'Alice' AND p.age > 25
+      RETURN f.name AS friend, f.age AS friendAge
+    notes: |
+      Compound source-only filter is pushed into the Person subquery.
+
+      OPTIMIZATION APPLIED:
+        BEFORE: Full Person scan → Full KNOWS scan → Full Person scan → Filter
+        AFTER:  Filtered Person (name='Alice' AND age>25) → KNOWS → Person
+
+      WHY IT MATTERS: If Person table has 1M rows but only 1 Alice over 25,
+      we process 1 row instead of 1M in the initial joins.
+
+      SQL Pattern (optimized):
+        FROM (SELECT ... FROM Person WHERE name='Alice' AND age>25) AS p
+        JOIN Knows ON (p.id = source_id OR p.id = target_id)
+        JOIN Person AS f ON ...
+
+  - description: "Undirected with target filter (not pushed)"
+    application: "Features: Filter Semantics"
+    query: |
+      MATCH (p:Person)-[:KNOWS]-(f:Person)
+      WHERE f.age > 30
+      RETURN p.name AS person, f.name AS olderFriend
+    notes: |
+      Target node filter cannot be pushed to source - stays after join.
+
+      WHY NOT PUSHED: The filter references 'f' (target), which is only
+      known after traversing the relationship. The filter must remain
+      after the join to correctly filter matching targets.
+
+      SQL Pattern:
+        FROM Person AS p
+        JOIN Knows ON ...
+        JOIN Person AS f ON ...
+        WHERE f.age > 30  -- Applied after all joins
+
+      COST: Higher than source pushdown - full initial scans required.
+
+  - description: "Undirected with mixed filters (partial pushdown)"
+    application: "Features: Filter Splitting"
+    query: |
+      MATCH (p:Person)-[:KNOWS]-(f:Person)
+      WHERE p.name = 'Alice' AND f.age > 30 AND p.active = true
+      RETURN f.name AS friend, f.age AS friendAge
+    notes: |
+      Source filters are pushed, target filter remains after join.
+
+      FILTER ANALYSIS:
+        p.name = 'Alice'  → PUSHED (references only 'p')
+        p.active = true   → PUSHED (references only 'p')
+        f.age > 30        → NOT PUSHED (references 'f')
+
+      SQL Pattern (optimized):
+        FROM (SELECT ... FROM Person WHERE name='Alice' AND active=true) AS p
+        JOIN Knows ON ...
+        JOIN Person AS f ON ...
+        WHERE f.age > 30  -- Target filter stays here
+
+      BENEFIT: Source node filtering happens early, reducing join size.
+      Target filtering still required but on smaller intermediate result.
+
+  - description: "Undirected multi-hop with predicate pushdown"
+    application: "Features: Complex Traversal"
+    query: |
+      MATCH (p:Person)-[:KNOWS]-(m:Person)-[:KNOWS]-(f:Person)
+      WHERE p.name = 'Alice'
+      RETURN DISTINCT f.name AS friendOfFriend
+    notes: |
+      Multi-hop undirected traversal with source filter pushdown.
+
+      PATTERN: Alice's friends' friends (2-hop undirected)
+
+      OPTIMIZATION: Filter p.name='Alice' is pushed into first Person scan.
+      Each hop doubles potential paths, so early filtering is critical.
+
+      SQL Pattern:
+        FROM (SELECT ... FROM Person WHERE name='Alice') AS p
+        JOIN Knows k1 ON (p.id = k1.person_id OR p.id = k1.friend_id)
+        JOIN Person m ON (m.id = k1.person_id OR m.id = k1.friend_id)
+        JOIN Knows k2 ON (m.id = k2.person_id OR m.id = k2.friend_id)
+        JOIN Person f ON (f.id = k2.person_id OR f.id = k2.friend_id)
+
+      DATABRICKS COMPLEXITY: O(k^2) where k = avg degree
+      COST: High, but pushdown prevents O(n * k^2) explosion.
+
+  - description: "Undirected relationship with aggregation"
+    application: "Features: Aggregation + Pushdown"
+    query: |
+      MATCH (p:Person)-[r:KNOWS]-(f:Person)
+      WHERE p.salary > 100000
+      RETURN p.name AS highEarner,
+             COUNT(f) AS friendCount,
+             AVG(f.age) AS avgFriendAge
+    notes: |
+      Aggregation over undirected relationships with source filter.
+
+      USE CASE: "High earners and their social network metrics"
+
+      OPTIMIZATION: p.salary > 100000 pushed to Person scan.
+      Only high earners participate in the aggregation joins.
+
+      SQL Pattern:
+        SELECT p.name, COUNT(f.id), AVG(f.age)
+        FROM (SELECT ... FROM Person WHERE salary > 100000) AS p
+        JOIN Knows ON ...
+        JOIN Person AS f ON ...
+        GROUP BY p.id, p.name
+
+      COST: Filter before aggregation = fewer GROUP BY operations.
+
+  - description: "OPTIONAL MATCH (left join semantics)"
+    application: "Features: OPTIONAL MATCH"
+    query: |
+      MATCH (p:Person)
+      OPTIONAL MATCH (p)-[:ACTED_IN]->(m:Movie)
+      RETURN p.name, m.title
+    notes: |
+      Returns all people, with movies if they exist (NULL otherwise).
+
+      WHY USEFUL: Include all entities even without relationships.
+
+      DATABRICKS COMPLEXITY: O(n + e) - LEFT JOIN
+      COST: Medium. LEFT JOIN preserves all left-side rows.
+      CRITICAL: Uses LEFT JOIN, not INNER JOIN.
+      NULL values appear where no relationship exists.
+
+  # =============================================================================
+  # VARIABLE-LENGTH PATHS
+  # =============================================================================
+
+  - description: "Variable-length path traversal (1 to 3 hops)"
+    application: "Features: Recursive paths"
+    query: |
+      MATCH (p:Person)-[:KNOWS*1..3]->(f:Person)
+      WHERE p.name = 'Alice'
+      RETURN DISTINCT f.name AS reachable
+    notes: |
+      Finds all people reachable within 1-3 hops.
+
+      WHY USEFUL: Friend-of-friend queries, network analysis, influence propagation.
+
+      DATABRICKS COMPLEXITY: O(k^d) where k=avg degree, d=max depth
+      COST: HIGH. Uses WITH RECURSIVE CTE.
+      Includes cycle detection to prevent infinite loops.
+
+      SQL Pattern:
+      WITH RECURSIVE paths AS (
+        -- base case
+        UNION ALL
+        -- recursive case with depth < max_depth
+      )
+
+  - description: "Variable-length path with zero-length (includes self)"
+    application: "Features: Zero-length paths"
+    query: |
+      MATCH (p:Person)-[:KNOWS*0..2]->(f:Person)
+      WHERE p.name = 'Alice'
+      RETURN DISTINCT f.name AS reachable
+    notes: |
+      Includes the starting node (depth=0) plus 1-2 hop neighbors.
+
+      WHY USEFUL: Include self in results, optional relationship matching.
+
+      DATABRICKS COMPLEXITY: O(1 + k + k^2) - identity + 1-hop + 2-hop
+      COST: HIGH. Recursive CTE with special depth=0 base case.
+      Depth 0 = no joins, just the starting node.
+
+  # =============================================================================
+  # EXPRESSIONS AND FUNCTIONS
+  # =============================================================================
+
+  - description: "CASE expression for conditional values"
+    application: "Features: CASE WHEN"
+    query: |
+      MATCH (p:Person)
+      RETURN p.name,
+             CASE
+               WHEN p.age < 18 THEN 'minor'
+               WHEN p.age < 65 THEN 'adult'
+               ELSE 'senior'
+             END AS ageGroup
+    notes: |
+      Evaluates conditions sequentially, returns first match.
+
+      WHY USEFUL: Categorize data, compute derived fields, business logic.
+
+      DATABRICKS COMPLEXITY: O(n) - evaluated per row
+      COST: Very low. Direct translation to SQL CASE.
+      First matching WHEN wins. ELSE is optional (defaults to NULL).
+      Can be used in WHERE, ORDER BY, GROUP BY.
+
+  - description: "COALESCE for null-safe default values"
+    application: "Features: COALESCE"
+    query: |
+      MATCH (p:Person)
+      RETURN COALESCE(p.nickname, p.name) AS displayName,
+             COALESCE(p.salary, 0) AS salary
+    notes: |
+      Returns first non-NULL value from the argument list.
+
+      WHY USEFUL: Handle missing data, provide defaults.
+
+      DATABRICKS COMPLEXITY: O(n) - evaluated per row
+      COST: Very low. Native Databricks function.
+      Left-to-right evaluation with short-circuit.
+      COALESCE(a, b, c) = first non-NULL of a, b, c.
+
+  - description: "DISTINCT for deduplication"
+    application: "Features: DISTINCT"
+    query: |
+      MATCH (p:Person)-[:ACTED_IN]->(m:Movie)
+      RETURN DISTINCT m.genre
+    notes: |
+      Removes duplicate rows from results.
+
+      WHY USEFUL: Get unique values, eliminate duplicates from traversals.
+
+      DATABRICKS COMPLEXITY: O(n log n) or O(n) with hash
+      COST: Medium. Requires sorting or hashing.
+      NULL is treated as a distinct value.
+      Compares ALL returned columns for uniqueness.
+
+  # =============================================================================
+  # SET OPERATIONS
+  # =============================================================================
+
+  - description: "UNION to combine query results"
+    application: "Features: UNION"
+    query: |
+      MATCH (p:Person)-[:ACTED_IN]->(m:Movie)
+      RETURN p.name AS name
+      UNION
+      MATCH (d:Person)-[:DIRECTED]->(m:Movie)
+      RETURN d.name AS name
+    notes: |
+      Combines results from two queries, removes duplicates.
+
+      WHY USEFUL: Merge different query paths, find "actors OR directors".
+
+      DATABRICKS COMPLEXITY: O(n + m + (n+m) log(n+m)) for dedup
+      COST: High. UNION requires deduplication.
+      Both queries must have same column count and compatible types.
+      Use UNION ALL if duplicates are OK (faster).
+
+  # =============================================================================
+  # ADVANCED PATTERNS
+  # =============================================================================
+
+  - description: "Multi-hop path with intermediate filtering"
+    application: "Features: Chained patterns"
+    query: |
+      MATCH (p:Person)-[:LIVES_IN]->(c:City),
+            (p)-[:WORKS_AT]->(co:Company)
+      WHERE c.country = 'USA' AND co.industry = 'Tech'
+      RETURN p.name, c.name AS city, co.name AS company
+    notes: |
+      Matches multiple relationship patterns from the same node.
+
+      WHY USEFUL: Complex entity queries with multiple constraints.
+
+      DATABRICKS COMPLEXITY: O(n * j1 * j2) worst case
+      COST: Medium-High. Multiple JOINs.
+      Comma-separated patterns share the same variable scope.
+      Filter pushdown optimizes join order.
+
+  - description: "Chained WITH for multi-stage computation"
+    application: "Features: WITH chaining"
+    query: |
+      MATCH (p:Person)-[:LIVES_IN]->(c:City)
+      WITH c, COUNT(p) AS pop
+      WHERE pop > 100
+      WITH c.name AS city, pop, pop * 1.0 / 1000 AS popK
+      RETURN city, popK
+      ORDER BY popK DESC
+    notes: |
+      Chains multiple WITH clauses for staged computation.
+
+      WHY USEFUL: Break complex queries into steps, compute derived values.
+
+      DATABRICKS COMPLEXITY: O(n) per stage
+      COST: Medium. Each WITH creates a logical stage.
+      Variables from previous WITH are available in next stage.
+      Useful for aggregation → filtering → transformation pipelines.
+
+  # =============================================================================
+  # RECURSIVE SINK FILTER PUSHDOWN (P2 Optimization)
+  # =============================================================================
+
+  - description: "Simplest sink filter pushdown"
+    application: "Features: Sink Filter Pushdown"
+    query: |
+      MATCH (a:Person)-[:KNOWS*1..2]->(b:Person)
+      WHERE b.age > 30
+      RETURN a.name, b.name
+    notes: |
+      Minimal example: filter on sink node b is pushed into recursive join.
+
+      SQL: WHERE p.depth >= 1 AND p.depth <= 2 AND (sink.age) > (30)
+
+  - description: "Variable-length path with sink filter pushdown"
+    application: "Features: Recursive Sink Filter Pushdown"
+    query: |
+      MATCH path = (a:Person)-[:KNOWS*2..4]->(b:Person)
+      WHERE b.age > 50
+      RETURN a.id, b.id, LENGTH(path) AS chain_length
+    notes: |
+      Filter on sink node (b.age > 50) is pushed into the recursive join.
+
+      OPTIMIZATION APPLIED:
+        BEFORE: CTE → JOIN sink → JOIN source → depth filter → OUTER sink filter
+        AFTER:  CTE → JOIN sink → JOIN source → WHERE depth AND sink.age > 50
+
+      WHY IT MATTERS: Instead of filtering 1000 paths after all joins complete,
+      we filter during the join and only keep paths ending at older people.
+
+      SQL Pattern (optimized):
+        FROM paths_1 p
+        JOIN Person sink ON sink.id = p.end_node
+        JOIN Person source ON source.id = p.start_node
+        WHERE p.depth >= 2 AND p.depth <= 4 AND (sink.age) > (50)
+
+  - description: "Variable-length with source AND sink filter pushdown"
+    application: "Features: Dual Filter Pushdown"
+    query: |
+      MATCH path = (a:Person)-[:KNOWS*2..4]->(b:Person)
+      WHERE a.age > 30 AND b.age > 50
+      RETURN a.id, b.id
+    notes: |
+      Both source and sink filters are optimized:
+        - Source filter (a.age > 30) → pushed into CTE base case
+        - Sink filter (b.age > 50) → pushed into recursive join
+
+      BENEFIT: Maximum optimization for path queries between filtered nodes.
+      We only explore paths starting from people over 30 (source filter)
+      and only keep paths ending at people over 50 (sink filter).
+
+      SQL Pattern:
+        Base case: ... JOIN Person src ON ... WHERE (src.age) > (30)
+        Join: ... WHERE depth_bounds AND (sink.age) > (50)
+
+  - description: "Variable-length with compound sink filter"
+    application: "Features: Compound Sink Filter Pushdown"
+    query: |
+      MATCH path = (a:Person)-[:KNOWS*1..3]->(b:Person)
+      WHERE b.age > 40 AND b.active = true
+      RETURN a.id, b.id, [n IN nodes(path) | n.id] AS path_nodes
+    notes: |
+      Compound sink filter (AND of two conditions) is pushed together.
+
+      OPTIMIZATION: Both conditions are applied in the recursive join WHERE:
+        WHERE p.depth >= 1 AND ((sink.age) > (40) AND sink.active = true)
+
+      USE CASE: Find chains of connections ending at active people over 40.
+
+  - description: "Variable-length with sink filter and edge predicate"
+    application: "Features: Combined Optimizations"
+    query: |
+      MATCH path = (a:Person)-[:KNOWS*2..5]->(b:Person)
+      WHERE b.age > 60
+        AND ALL(k IN relationships(path) WHERE k.since > 2010)
+      RETURN a.id, b.id, LENGTH(path) AS hops
+    notes: |
+      Combines multiple optimizations:
+        1. Edge predicate (since > 2010) pushed into CTE base and recursive cases
+        2. Sink filter (age > 60) pushed into recursive join
+
+      USE CASE: Find chains of recent connections ending at seniors.
+      Only explores paths where EVERY connection was made after 2010.
+
+      SQL Pattern:
+        Base case: WHERE (e.since) > (2010)
+        Recursive: WHERE depth < 5 AND (e.since) > (2010)
+        Join: WHERE depth_bounds AND (sink.age) > (60)
+
+  # =============================================================================
+  # CONJUNCTION SPLITTING FOR UNDIRECTED EDGES
+  # =============================================================================
+  # These examples demonstrate how the optimizer splits AND conjunctions
+  # and pushes predicates to their respective DataSources before joins.
+  # This is critical for performance in undirected relationship patterns.
+
+  - description: "Undirected both filters pushdown - split AND to both sources"
+    application: "Features: Conjunction Splitting Pushdown"
+    query: |
+      MATCH (p:Person)-[:KNOWS]-(f:Person)
+      WHERE p.name = 'Alice' AND f.age > 30
+      RETURN p.name, f.name, f.age
+    notes: |
+      BEFORE optimization (suboptimal):
+        Selection(p.name='Alice' AND f.age>30) sits AFTER the join
+        → Joins ALL Person rows, then filters.
+
+      AFTER optimization (with conjunction splitting):
+        - p.name = 'Alice' → pushed to DataSource(p)
+        - f.age > 30 → pushed to DataSource(f)
+        → Both filters applied BEFORE the join!
+
+      SQL Pattern (optimized):
+        FROM (SELECT ... FROM Person WHERE name = 'Alice') AS _left
+        JOIN ...
+        JOIN (SELECT ... FROM Person WHERE age > 30) AS _right
+
+      PERFORMANCE: Dramatically reduces join cardinality.
+
+  - description: "Undirected partial pushdown - one pushed, one cross-variable"
+    application: "Features: Partial Conjunction Pushdown"
+    query: |
+      MATCH (p:Person)-[:KNOWS]-(f:Person)
+      WHERE p.age > 25 AND p.name = f.name
+      RETURN p.name, f.name
+    notes: |
+      The optimizer splits the AND conjunction:
+        - p.age > 25 → PUSHED to DataSource(p) (single-variable)
+        - p.name = f.name → KEPT in Selection (cross-variable, cannot push!)
+
+      BENEFIT: Even partial pushdown reduces join input size.
+      The cross-variable predicate (p.name = f.name) must be evaluated
+      after the join because it compares values from both sides.
+
+      SQL Pattern:
+        FROM (SELECT ... FROM Person WHERE age > 25) AS _left  -- PUSHED
+        JOIN ...
+        WHERE p.name = f.name  -- KEPT (cross-variable)
+
+  - description: "Undirected multiple same-variable predicates combined"
+    application: "Features: Predicate Combination"
+    query: |
+      MATCH (p:Person)-[:KNOWS]-(f:Person)
+      WHERE p.name = 'Bob' AND p.age > 18 AND p.active = true AND f.salary > 50000
+      RETURN p.id, f.id
+    notes: |
+      Multiple predicates for the same variable are combined with AND:
+        - p: (name='Bob' AND age>18 AND active=true) → pushed to DataSource(p)
+        - f: (salary>50000) → pushed to DataSource(f)
+
+      OPTIMIZATION: All predicates pushed, SelectionOperator removed entirely!
+
+      SQL Pattern:
+        FROM (SELECT ... FROM Person WHERE name='Bob' AND age>18 AND active=true) AS _left
+        JOIN ...
+        JOIN (SELECT ... FROM Person WHERE salary > 50000) AS _right
+
+  - description: "Undirected with OR predicate - cannot split"
+    application: "Features: OR Predicate Handling"
+    query: |
+      MATCH (p:Person)-[:KNOWS]-(f:Person)
+      WHERE p.name = 'Alice' OR f.age > 30
+      RETURN p.name, f.name
+    notes: |
+      OR predicates CANNOT be split! This is algebraically unsafe:
+        σ_{p(A) ∨ q(B)}(A ⋈ B) ≢ σ_{p(A)}(A) ⋈ σ_{q(B)}(B)
+
+      If we pushed, we'd miss rows where:
+        - p.name != 'Alice' but f.age > 30
+
+      RESULT: Entire predicate stays in Selection (no pushdown).
+
+      TODO: Future optimization could rewrite as UNION:
+        (MATCH ... WHERE p.name='Alice')
+        UNION
+        (MATCH ... WHERE f.age > 30)
+
+  - description: "Undirected three-way mixed filters"
+    application: "Features: Complex Conjunction Splitting"
+    query: |
+      MATCH (p:Person)-[:KNOWS]-(f:Person)-[:WORKS_AT]->(c:Company)
+      WHERE p.age > 25 AND f.salary > 50000 AND c.industry = 'Tech'
+      RETURN p.name, f.name, c.name
+    notes: |
+      Three-way join with filters on all three entities:
+        - p.age > 25 → pushed to DataSource(p)
+        - f.salary > 50000 → pushed to DataSource(f)
+        - c.industry = 'Tech' → pushed to DataSource(c)
+
+      BENEFIT: All three table scans are filtered before any joins!
+      The SelectionOperator is completely removed.
+
+      SQL Pattern:
+        FROM (SELECT ... FROM Person WHERE age > 25) AS p
+        JOIN ...
+        JOIN (SELECT ... FROM Person WHERE salary > 50000) AS f
+        JOIN ...
+        JOIN (SELECT ... FROM Company WHERE industry = 'Tech') AS c
+
+  - description: "Variable-length paths with multi-hop traversal and aggregation"
+    application: "Features: Complex graph traversal with aggregation"
+    query: |
+      MATCH (p:Person)-[:KNOWS*1..3]-(friend:Person)-[:WORKS_AT]->(c:Company)
+      WHERE c.industry = 'Technology'
+      RETURN p.name, COUNT(DISTINCT friend) AS tech_connections
+      ORDER BY tech_connections DESC
+      LIMIT 10
+    notes: |
+      This query demonstrates a powerful combination of features:
+        1. Variable-length path: KNOWS*1..3 (1 to 3 hops)
+        2. Pattern continuation after varlen path
+        3. Filter on final relationship target
+        4. Aggregation with COUNT(DISTINCT)
+        5. Ordering by aggregated column
+
+      REAL-WORLD USE: Find people with the most connections to tech workers.
+      Used in professional networking, talent acquisition, and social graph analysis.
+
+      OPTIMIZATION: Filter on c.industry pushed down before joins.
+
+      COMPLEXITY: O(n^3) for 3-hop traversal, but filtered early.
+      Result deduplication via DISTINCT crucial for accurate counts.
+
+      SQL Pattern:
+        WITH RECURSIVE path AS (...)  -- Variable-length expansion
+        SELECT p.name, COUNT(DISTINCT friend_id) AS tech_connections
+        FROM path
+        JOIN WorksAt ON ...
+        JOIN (SELECT ... FROM Company WHERE industry = 'Technology') AS c
+        GROUP BY p.name
+        ORDER BY tech_connections DESC
+        LIMIT 10
+
+  # =========================================================================
+  # INLINE PROPERTY FILTERS
+  # =========================================================================
+  # Feature: Inline property filters in MATCH patterns
+  # Syntax: (n:Label {property: value}) instead of WHERE n.property = value
+  # Benefits: More compact syntax, automatic optimization for BFS/DFS
+  # =========================================================================
+
+  - description: "Inline property filter on source node"
+    application: "Features: Inline filters (source node)"
+    query: |
+      MATCH (p:Person {name: 'Alice'})-[:KNOWS]->(f:Person)
+      RETURN p.name, f.name
+      LIMIT 20
+    notes: |
+      Inline property filter {name: 'Alice'} applied on source node.
+
+      EQUIVALENT TO:
+        MATCH (p:Person)-[:KNOWS]->(f:Person)
+        WHERE p.name = 'Alice'
+        RETURN p.name, f.name
+
+      SYNTAX: More compact and readable - filter is part of the pattern.
+
+      SQL PATTERN:
+        FROM (SELECT ... FROM Person WHERE name = 'Alice') AS p
+        JOIN Knows ON p.id = person_id
+        JOIN Person AS f ON f.id = friend_id
+
+  - description: "Inline property filter on target node"
+    application: "Features: Inline filters (target node)"
+    query: |
+      MATCH (p:Person)-[:KNOWS]->(f:Person {age: 30})
+      RETURN p.name, f.name
+      LIMIT 20
+    notes: |
+      Inline property filter {age: 30} applied on target node.
+
+      FILTER POSITION: Applied on right-hand side of the pattern.
+
+      SQL PATTERN:
+        FROM Person AS p
+        JOIN Knows ON p.id = person_id
+        JOIN (SELECT ... FROM Person WHERE age = 30) AS f ON f.id = friend_id
+
+  - description: "Inline property filter on relationship"
+    application: "Features: Inline filters (relationship)"
+    query: |
+      MATCH (p:Person)-[:KNOWS {since: 2020}]->(f:Person)
+      RETURN p.name, f.name
+      LIMIT 20
+    notes: |
+      Inline property filter {since: 2020} applied on relationship.
+
+      USE CASE: Filter edges by their properties (timestamps, weights, etc).
+
+      SQL PATTERN:
+        FROM Person AS p
+        JOIN (SELECT ... FROM Knows WHERE since = 2020) AS e ON p.id = e.person_id
+        JOIN Person AS f ON f.id = e.friend_id
+
+  - description: "Multiple inline property filters on same element"
+    application: "Features: Multiple inline filters"
+    query: |
+      MATCH (p:Person {name: 'Alice', age: 30, active: true})-[:KNOWS]->(f:Person)
+      RETURN p.name, p.age, f.name
+      LIMIT 20
+    notes: |
+      Multiple inline properties combined with AND automatically.
+
+      EQUIVALENT TO:
+        WHERE p.name = 'Alice' AND p.age = 30 AND p.active = true
+
+      READABILITY: All filters for one element are grouped together.
+
+      SQL PATTERN:
+        FROM (
+          SELECT ... FROM Person
+          WHERE name = 'Alice' AND age = 30 AND active = true
+        ) AS p
+
+  - description: "Combined inline filters - source, target, and relationship"
+    application: "Features: Inline filters (combined)"
+    query: |
+      MATCH (p:Person {name: 'Alice'})-[:KNOWS {since: 2020}]->(f:Person {age: 30})
+      RETURN p.name, f.name
+      LIMIT 20
+    notes: |
+      Inline filters on ALL three elements: source, relationship, target.
+
+      EQUIVALENT TO:
+        WHERE p.name = 'Alice' AND r.since = 2020 AND f.age = 30
+
+      READABILITY BENEFIT: Filters are positioned next to the elements they constrain.
+
+      SQL PATTERN:
+        FROM (SELECT ... FROM Person WHERE name = 'Alice') AS p
+        JOIN (SELECT ... FROM Knows WHERE since = 2020) AS e ON ...
+        JOIN (SELECT ... FROM Person WHERE age = 30) AS f ON ...
+
+  - description: "Inline filter combined with explicit WHERE clause"
+    application: "Features: Inline + WHERE"
+    query: |
+      MATCH (p:Person {name: 'Alice'})-[:KNOWS]->(f:Person)
+      WHERE f.age > 25
+      RETURN p.name, f.name
+      LIMIT 20
+    notes: |
+      Inline filters can be combined with explicit WHERE clause.
+
+      COMBINED AS: (p.name = 'Alice') AND (f.age > 25)
+
+      BEST PRACTICE:
+        - Use inline for equality filters (property = value)
+        - Use WHERE for complex predicates (>, <, BETWEEN, etc.)
+
+      SQL PATTERN:
+        FROM (SELECT ... FROM Person WHERE name = 'Alice') AS p
+        JOIN Knows ON ...
+        JOIN Person AS f ON ...
+        WHERE f.age > 25
+
+  - description: "BFS with inline source filter (CRITICAL OPTIMIZATION)"
+    application: "Features: Inline filters (BFS optimization)"
+    query: |
+      MATCH path = (a:Person {name: 'Alice'})-[:KNOWS*1..3]->(b:Person)
+      RETURN b.name, length(path) AS hops
+      ORDER BY hops
+      LIMIT 50
+    notes: |
+      CRITICAL OPTIMIZATION for variable-length paths!
+
+      Inline filter on SOURCE node {name: 'Alice'} is pushed to the
+      BASE CASE of the recursive CTE, so BFS starts ONLY from Alice,
+      not from all nodes in the graph.
+
+      PERFORMANCE IMPACT:
+        - Without filter: O(N * E^k) - starts from ALL N nodes
+        - With inline filter: O(1 * E^k) - starts from 1 node only
+        - For large graphs, this is the difference between seconds and hours!
+
+      EQUIVALENT TO:
+        MATCH path = (a:Person)-[:KNOWS*1..3]->(b:Person)
+        WHERE a.name = 'Alice'
+
+      SQL PATTERN:
+        WITH RECURSIVE bfs AS (
+          -- BASE CASE: Filter applied HERE (before traversal)
+          SELECT e.src, e.dst, 1 AS depth
+          FROM Knows e
+          JOIN Person src ON src.id = e.src
+          WHERE (src.name) = ('Alice')  ← INLINE FILTER OPTIMIZATION
+
+          UNION ALL
+
+          -- RECURSIVE CASE: No source filter (only depth check)
+          SELECT e.src, e.dst, depth + 1
+          FROM bfs b
+          JOIN Knows e ON b.dst = e.src
+          WHERE depth < 3
+        )
+
+  - description: "BFS with inline filter on target node"
+    application: "Features: Inline filters (target in BFS)"
+    query: |
+      MATCH path = (a:Person)-[:KNOWS*1..3]->(b:Person {active: true})
+      RETURN a.name, b.name, length(path) AS hops
+      ORDER BY hops
+      LIMIT 50
+    notes: |
+      Inline filter on TARGET node {active: true} is applied AFTER traversal.
+
+      DIFFERENCE FROM SOURCE FILTER:
+        - Source filter: Applied in BASE CASE (optimizes starting point)
+        - Target filter: Applied in FINAL WHERE (filters results)
+
+      BFS BEHAVIOR:
+        1. Traverse graph from ALL source nodes (no starting point filter)
+        2. Follow KNOWS edges for 1-3 hops
+        3. Filter final results where b.active = true
+
+      SQL PATTERN:
+        WITH RECURSIVE bfs AS (...)  -- Full traversal
+        SELECT a.name, b.name, depth AS hops
+        FROM bfs
+        JOIN Person b ON b.id = bfs.dst
+        WHERE (b.active) = (true)  ← TARGET FILTER (post-traversal)
+
+  - description: "Anonymous node with inline filter"
+    application: "Features: Inline filters (anonymous nodes)"
+    query: |
+      MATCH (:Person {name: 'Alice'})-[:KNOWS]->(f:Person)
+      RETURN f.name
+      LIMIT 20
+    notes: |
+      Inline filters work on anonymous nodes (nodes without variables).
+
+      USE CASE: Filter starting/ending nodes that aren't returned.
+
+      TRANSPILER HANDLING:
+        1. Auto-assign alias: (:Person {name: 'Alice'}) → (_anon1:Person)
+        2. Convert filter: _anon1.name = 'Alice'
+        3. Push to DataSource
+
+      SQL PATTERN:
+        FROM (SELECT ... FROM Person WHERE name = 'Alice') AS _anon1
+        JOIN Knows ON _anon1.id = person_id
+        JOIN Person AS f ON f.id = friend_id
+
+  - description: "Inline filter comparison with WHERE (semantics)"
+    application: "Features: Inline vs WHERE semantics"
+    query: |
+      MATCH (p:Person {name: 'Alice'})-[:KNOWS]->(f:Person)
+      RETURN COUNT(*) AS count_inline
+    notes: |
+      SEMANTIC EQUIVALENCE: Inline filters generate identical SQL to WHERE.
+
+      COMPARE WITH:
+        MATCH (p:Person)-[:KNOWS]->(f:Person)
+        WHERE p.name = 'Alice'
+        RETURN COUNT(*)
+
+      Both queries produce the SAME SQL and SAME results.
+
+      WHEN TO USE INLINE:
+        ✅ Equality filters (property = literal_value)
+        ✅ Structural constraints (part of the pattern)
+        ✅ BFS/DFS source filters (visual clarity of optimization)
+
+      WHEN TO USE WHERE:
+        ✅ Complex predicates (>, <, BETWEEN, LIKE, IN)
+        ✅ Cross-variable filters (p.age > f.age)
+        ✅ Dynamic values (property = $parameter)
+
+      CURRENT LIMITATION:
+        ⚠️  Inline filters only support LITERAL values
+        ⚠️  Variable references not supported yet
+            Example that doesn't work: {id: $param}
+
+  # =========================================================================
+  # NO LABEL: Nodes Without Explicit Labels (OpenCypher Standard)
+  # =========================================================================
+  # Feature: Nodes without labels match ANY node type
+  # Syntax: (a) instead of (a:Label)
+  # Use case: Generic traversals, exploratory queries, multi-type patterns
+  # =========================================================================
+
+  - description: "NO LABEL: Source node without label"
+    application: "Features: No-label source node"
+    query: |
+      MATCH (a)-[:WORKS_AT]->(c:Company)
+      RETURN a.name, c.name
+      LIMIT 20
+    notes: |
+      Source node 'a' has no label - matches ANY node type.
+
+      OPENCYPHER STANDARD: Unlabeled nodes match all node types.
+
+      SQL PATTERN:
+        FROM nodes AS a  -- NO type filter for 'a'
+        JOIN edges ON a.id = edges.src
+        JOIN (SELECT ... FROM Company) AS c ON edges.dst = c.id
+        WHERE edges.relationship_type = 'WORKS_AT'
+
+      USE CASE: Find all entities that work at companies (could be Person, Bot, etc).
+
+      PERFORMANCE: Full table scan on source. Use labels when possible for filtering.
+
+  - description: "NO LABEL: Target node without label"
+    application: "Features: No-label target node"
+    query: |
+      MATCH (p:Person)-[:KNOWS]->(target)
+      RETURN p.name, target.name
+      LIMIT 20
+    notes: |
+      Target node 'target' has no label - matches ANY node type.
+
+      USE CASE: Find all connections of a person regardless of type.
+
+      SQL PATTERN:
+        FROM (SELECT ... FROM Person) AS p
+        JOIN edges ON p.id = edges.src
+        JOIN nodes AS target ON edges.dst = target.id  -- NO type filter
+        WHERE edges.relationship_type = 'KNOWS'
+
+      BENEFIT: Explore graph structure without knowing all node types.
+
+  - description: "NO LABEL: Both endpoints without labels"
+    application: "Features: No-label both nodes"
+    query: |
+      MATCH (a)-[:KNOWS]->(b)
+      RETURN a.name, b.name
+      LIMIT 20
+    notes: |
+      Both nodes 'a' and 'b' have no labels - match ANY node types.
+
+      SQL PATTERN:
+        FROM nodes AS a
+        JOIN edges ON a.id = edges.src
+        JOIN nodes AS b ON edges.dst = b.id
+        WHERE edges.relationship_type = 'KNOWS'
+
+      USE CASE: Explore all KNOWS relationships regardless of node types.
+
+      WARNING: Can be expensive on large graphs - no type filtering applied!
+
+  - description: "NO LABEL: Variable-length path without labels"
+    application: "Features: No-label VLP"
+    query: |
+      MATCH path = (a)-[:KNOWS*1..2]->(b)
+      RETURN a.id, b.id, length(path) AS hops
+      LIMIT 50
+    notes: |
+      Variable-length path where both endpoints have no labels.
+
+      SQL PATTERN (WITH RECURSIVE):
+        WITH RECURSIVE paths AS (
+          -- Base case: no type filters on source
+          UNION ALL
+          -- Recursive case: traverses any matching edge
+        )
+        SELECT ... FROM paths
+        JOIN nodes AS a ON ...  -- No type filter
+        JOIN nodes AS b ON ...  -- No type filter
+
+      USE CASE: Generic graph traversal - find all paths of any type.
+
+      COMPLEXITY: O(k^d) where k=avg degree, d=max depth
+      WARNING: Expensive without labels. Use sparingly on large graphs.
+
+  - description: "NO LABEL: VLP with labeled source, unlabeled target"
+    application: "Features: No-label VLP (partial)"
+    query: |
+      MATCH path = (a:Person)-[:KNOWS*1..2]->(b)
+      RETURN a.name, b.id, length(path) AS hops
+      LIMIT 50
+    notes: |
+      Variable-length path: source has label, target has no label.
+
+      SOURCE FILTER: a:Person adds WHERE node_type = 'Person' to base case
+      TARGET: No filter applied - matches any node type
+
+      SQL PATTERN:
+        WITH RECURSIVE paths AS (
+          -- Base case: source filter applied
+          SELECT ... FROM edges
+          JOIN (SELECT ... FROM Person) AS src ON ...
+          WHERE ...
+
+          UNION ALL
+          ...
+        )
+        SELECT ... FROM paths
+        JOIN nodes AS b ON ...  -- No type filter for target
+
+      USE CASE: "Find everything a Person can reach via KNOWS relationships"
+
+  - description: "NO LABEL: VLP with unlabeled source, labeled target"
+    application: "Features: No-label VLP (reverse partial)"
+    query: |
+      MATCH path = (a)-[:KNOWS*1..2]->(b:Person)
+      RETURN a.id, b.name, length(path) AS hops
+      LIMIT 50
+    notes: |
+      Variable-length path: source has no label, target has label.
+
+      SOURCE: No filter - starts from any node type
+      TARGET FILTER: b:Person applied in final join
+
+      SQL PATTERN:
+        WITH RECURSIVE paths AS (
+          -- Base case: no source filter (all nodes)
+          UNION ALL
+          ...
+        )
+        SELECT ... FROM paths
+        JOIN (SELECT ... FROM Person) AS b ON ...  -- Target filter
+
+      USE CASE: "Find all paths ending at a Person, regardless of start"
+
+      NOTE: VLP type filter rendering for labeled nodes may be a pre-existing
+      gap in some cases - but binding and SQL generation work correctly.
+
+  - description: "NO LABEL: Node reused after WITH (type already bound)"
+    application: "Features: No-label after WITH"
+    query: |
+      MATCH (a:Person)-[:WORKS_AT]->(c:Company)
+      WITH a, COUNT(c) AS company_count
+      MATCH (a)-[:KNOWS]->(friend:Person)
+      RETURN a.name, company_count, friend.name
+      LIMIT 20
+    notes: |
+      Node 'a' has no label in second MATCH, but type was already bound in first MATCH.
+
+      BEHAVIOR:
+        - First MATCH: 'a' is bound to Person (label specified)
+        - WITH: 'a' is passed through with its type
+        - Second MATCH: 'a' reuses existing binding (no label needed)
+
+      SQL PATTERN:
+        WITH first_match AS (
+          SELECT a.*, COUNT(c.id) AS company_count
+          FROM Person AS a
+          JOIN ... Company AS c
+          GROUP BY a.id
+        )
+        SELECT ... FROM first_match
+        JOIN edges ON ...
+        JOIN Person AS friend ON ...
+
+      USE CASE: Multi-stage queries where type is established early.
+
+  # NOTE: The following pattern is NOT supported due to parser limitations:
+  #
+  #   MATCH (start:Person)-[:KNOWS]->(mid)-[:WORKS_AT]->(end:Company)
+  #
+  # The parser fails with: "no viable alternative at input '...->(mid)-[:WORKS_AT]'"
+  # This is because the ANTLR grammar doesn't recognize unlabeled nodes
+  # in the middle of a chained relationship pattern.
+  #
+  # WORKAROUND: Use comma-separated patterns:
+  #   MATCH (start:Person)-[:KNOWS]->(mid:Person), (mid)-[:WORKS_AT]->(end:Company)
+  #
+  # But even with comma syntax, unlabeled nodes after -> have parser issues.
+  # This is a known OpenCypher parser limitation, not a transpiler bug.
+

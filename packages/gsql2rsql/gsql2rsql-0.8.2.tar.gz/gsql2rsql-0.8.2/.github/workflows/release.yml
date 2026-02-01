@@ -1,0 +1,165 @@
+name: Release & Publish
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      # Only trigger release when source code or dependencies change
+      - 'src/**'
+      - 'pyproject.toml'
+      - 'uv.lock'
+  workflow_dispatch:  # Allow manual trigger
+
+permissions:
+  contents: write      # Create releases and tags
+  id-token: write      # OIDC for PyPI trusted publishing
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    concurrency: release  # Prevent concurrent releases
+
+    outputs:
+      released: ${{ steps.release.outputs.released }}
+      version: ${{ steps.release.outputs.version }}
+      tag: ${{ steps.release.outputs.tag }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for semantic-release
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: |
+          uv sync --extra dev
+          uv pip install -e ".[dev]"
+          uv pip install python-semantic-release
+
+      - name: Generate golden files
+        run: make generate-golden-files
+
+      - name: Run tests
+        run: make test-no-pyspark
+
+      - name: Semantic Release (version bump, changelog, tag)
+        id: release
+        uses: python-semantic-release/python-semantic-release@v9.8.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+  build:
+    name: Build Package
+    needs: release
+    if: needs.release.outputs.released == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code at tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release.outputs.tag }}
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: |
+          uv sync --extra dev
+          uv pip install -e ".[dev]"
+
+      - name: Generate golden files
+        run: make generate-golden-files
+
+      - name: Run tests
+        run: make test-no-pyspark
+
+      - name: Build package
+        run: |
+          uv pip install build
+          uv run python -m build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+
+  publish-pypi:
+    name: Publish to PyPI
+    needs: [release, build]
+    if: needs.release.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/gsql2rsql/
+
+    permissions:
+      id-token: write  # OIDC for trusted publishing
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        # OIDC trusted publisher - configure at: https://pypi.org/manage/account/publishing/
+        # Project: gsql2rsql
+        # Workflow: release.yml
+        # Environment: pypi
+
+  create-release:
+    name: Create GitHub Release
+    needs: [release, build, publish-pypi]
+    if: needs.release.outputs.released == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ needs.release.outputs.tag }}
+          files: dist/*
+          generate_release_notes: true
+
+  notify:
+    name: Notify Release
+    needs: [release, create-release]
+    if: needs.release.outputs.released == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Print release info
+        run: |
+          echo "🎉 Released version ${{ needs.release.outputs.version }}"
+          echo "📦 Published to PyPI: https://pypi.org/project/gsql2rsql/${{ needs.release.outputs.version }}/"
+          echo "🏷️  Tag: ${{ needs.release.outputs.tag }}"
