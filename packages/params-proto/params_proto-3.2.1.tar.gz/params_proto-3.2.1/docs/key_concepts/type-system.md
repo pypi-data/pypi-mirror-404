@@ -1,0 +1,827 @@
+# Type Annotations
+
+params-proto v3 supports rich type annotations for parameters, providing type safety and automatic CLI help generation.
+
+## Known Type System Issues
+
+✅ **All major types are now fully supported in v3.0.0-rc24!**
+
+Previously broken types now working:
+- **`Literal[...]`** - Full validation of allowed values
+- **`Enum`** - Conversion to enum members (case-insensitive matching)
+- **`Path`** - Automatic instantiation via `pathlib.Path()`
+- **`dict`** - Safe parsing using `ast.literal_eval`
+
+## Required Parameters and Callable Types
+
+**Key Design Principle:** For required parameters (those without default values), params-proto **always calls the type hint as a constructor**.
+
+This is the foundation for Union types and potential subcommand support.
+
+### How It Works
+
+When a parameter has no default value, its type hint must be **callable**:
+
+```python
+from dataclasses import dataclass
+from params_proto import proto
+
+@dataclass
+class Params:
+    lr: float = 0.001
+    batch_size: int = 32
+
+@proto.cli
+def train(
+    config: Params,  # Required parameter - Params will be called as Params()
+    epochs: int = 100,  # Optional parameter with default
+):
+    """Train with configuration."""
+    print(f"Using lr={config.lr}, batch_size={config.batch_size}")
+```
+
+**CLI Usage:**
+```bash
+# params-proto calls Params() to instantiate it
+python train.py params --lr 0.01 --batch-size 64
+```
+
+### Union Types as Subcommands
+
+This pattern enables **Union types to act like subcommands**:
+
+```python
+from dataclasses import dataclass
+
+@dataclass
+class Perspect:
+    """Perspective camera configuration."""
+    fov: float = 60.0  # Field of view in degrees
+    near: float = 0.1  # Near clipping plane
+    far: float = 100.0  # Far clipping plane
+
+@dataclass
+class Orthographic:
+    """Orthographic camera configuration."""
+    zoom: float = 1.0  # Zoom level
+    near: float = 0.1  # Near clipping plane
+    far: float = 100.0  # Far clipping plane
+
+@proto.cli
+def render(
+    camera: Perspect | Orthographic,  # Required - user must choose which type
+    output: str = "output.png",
+):
+    """Render scene with camera configuration."""
+    print(f"Using camera: {camera}")
+```
+
+**CLI Usage:**
+```bash
+# Choose perspective camera (calls Perspect())
+python render.py perspect --fov 45.0 --near 0.1
+
+# Choose orthographic camera (calls Orthographic())
+python render.py orthographic --zoom 2.0 --near 0.5
+
+# Get help for specific camera type
+python render.py perspect --help
+python render.py orthographic --help
+```
+
+The first positional argument selects **which type to instantiate**, and subsequent arguments configure that instance.
+
+### Why This Matters
+
+This design enables:
+
+1. **Type-safe subcommand patterns** without special subcommand syntax
+2. **Polymorphic configurations** - choose between different config types at runtime
+3. **Composable types** - any callable (dataclass, class, function) works as a type hint
+4. **Automatic CLI generation** - params-proto generates appropriate help text for each union member
+
+### Required vs Optional
+
+The **callable type instantiation only applies to required parameters**:
+
+```python
+@proto.cli
+def train(
+    # Required: Type hint MUST be callable, will be instantiated
+    config: Params,
+
+    # Optional: Uses the default value, type hint is for validation
+    epochs: int = 100,
+    lr: float = 0.001,
+):
+    pass
+```
+
+For optional parameters (with defaults), the type hint is used for **type conversion and validation**, not instantiation.
+
+### Class Name to CLI Command Conversion
+
+**Important:** When using Union types, class names are converted to lowercase CLI commands:
+
+```python
+from dataclasses import dataclass
+
+@dataclass
+class Perspect:      # Python: PascalCase
+    fov: float = 60.0
+
+@dataclass
+class Orthographic:
+    zoom: float = 1.0
+
+@proto.cli
+def render(camera: Perspect | Orthographic):
+    """Render with camera."""
+    pass
+```
+
+**CLI usage:**
+```bash
+# Class names become kebab-case commands
+python render.py perspect --fov 45.0       # Not Perspect or PERSPECT
+python render.py orthographic --zoom 2.0   # Not Orthographic
+```
+
+**Conversion rule:** PascalCase → kebab-case (e.g., `HTTPServer` → `http-server`, `MLModel` → `ml-model`)
+
+#### Best Practices for Union Type Names
+
+**Use simple single-word names:**
+
+```python
+# ✓ Recommended
+class Train:      # → train
+class Evaluate:   # → evaluate
+class Export:     # → export
+```
+
+**Acronyms and multi-word names now convert properly:**
+
+```python
+# ✓ Good: acronyms now convert to kebab-case
+class HTTPServer:    # → http-server
+class MLModel:       # → ml-model
+class DeepQNetwork:  # → deep-q-network
+
+# ✓ Also good: simple alternatives remain clear
+class Server:     # → server
+class Model:      # → model
+class Network:    # → network
+```
+
+## Basic Types
+
+### Primitive Types
+
+```python
+from params_proto import proto
+
+@proto.cli
+def example(
+    count: int = 10,  # Integer parameter
+    rate: float = 0.5,  # Floating point parameter
+    name: str = "default",  # String parameter
+    enabled: bool = True,  # Boolean flag
+):
+    """Example with basic types."""
+    pass
+```
+
+**CLI usage:**
+```bash
+python example.py --count 20 --rate 0.75 --name custom --enabled
+python example.py --no-enabled  # Set to False
+```
+
+### Type Conversion
+
+Values are automatically converted to the annotated type:
+
+```python
+@proto.cli
+def train(
+    lr: float = 0.001,  # Converts "0.01" → 0.01
+    epochs: int = 100,  # Converts "50" → 50
+    debug: bool = False,  # Converts "true" → True
+):
+    pass
+```
+
+**Boolean conversion:**
+- `True`: `"true"`, `"1"`, `"yes"`, `"on"` (case-insensitive)
+- `False`: `"false"`, `"0"`, `"no"`, `"off"`, or flag `--no-{param}`
+
+## Optional Types
+
+### Using `| None` (Python 3.10+)
+
+```python
+@proto.cli
+def process(
+    config_file: str | None = None,  # Optional string
+    max_items: int | None = None,  # Optional integer
+):
+    """Process with optional parameters."""
+    if config_file:
+        print(f"Using config: {config_file}")
+    else:
+        print("Using defaults")
+```
+
+### Using `Optional` (Python 3.9+)
+
+```python
+from typing import Optional
+
+@proto.cli
+def process(
+    config_file: Optional[str] = None,
+    max_items: Optional[int] = None,
+):
+    """Same as above, alternative syntax."""
+    pass
+```
+
+## Union Types
+
+### Multiple Accepted Types
+
+```python
+@proto.cli
+def train(
+    lr: int | float = 0.001,  # Accepts either int or float
+    seed: int | None = None,  # Accepts int or None
+):
+    """Training with union types."""
+    pass
+```
+
+**CLI usage:**
+```bash
+python train.py --lr 0.01  # float
+python train.py --lr 1  # int (also valid)
+```
+
+## Literal Types
+
+Literal types restrict parameters to a specific set of allowed values with runtime validation.
+
+```python
+from typing import Literal
+
+@proto.cli
+def train(
+    # String literals
+    optimizer: Literal["adam", "sgd", "rmsprop"] = "adam",
+    device: Literal["cuda", "cpu", "mps"] = "cuda",
+    # Numeric literals
+    precision: Literal[16, 32, 64] = 32,
+    # Mixed literals
+    mode: Literal["auto", 1, 2, 3] = "auto",
+):
+    """Training with literal types."""
+    print(f"Using {optimizer} on {device}, precision={precision}")
+```
+
+**CLI usage:**
+```bash
+# Valid values are accepted
+python train.py --optimizer sgd --device cpu
+
+# Invalid values are rejected with clear error
+python train.py --optimizer invalid
+# error: value must be one of ('adam', 'sgd', 'rmsprop'), got 'invalid'
+
+# Numeric literals work too
+python train.py --precision 16
+```
+
+**Help text shows allowed values:**
+```
+--optimizer {adam,sgd,rmsprop}    Optimizer (default: adam)
+--precision {16,32,64}             Precision (default: 32)
+```
+
+**Key features:**
+- Validates input against allowed values
+- Works with strings, numbers, or mixed types
+- Clear error messages showing valid options
+
+## Enum Types
+
+Enums are converted to enum members with automatic case-insensitive name matching.
+
+```python
+from enum import Enum, auto
+from params_proto import proto
+
+class Optimizer(Enum):
+    """Optimizer choices."""
+    ADAM = auto()
+    SGD = auto()
+    RMSPROP = auto()
+
+class Device(Enum):
+    """Hardware device."""
+    CUDA = "cuda"
+    CPU = "cpu"
+    MPS = "mps"
+
+@proto.cli
+def train(
+    optimizer: Optimizer = Optimizer.ADAM,   # Enum with auto()
+    device: Device = Device.CUDA,             # Enum with custom values
+):
+    """Training with enum types."""
+    print(f"Optimizer: {optimizer.name}")     # ADAM
+    print(f"Optimizer value: {optimizer.value}")  # 1
+    print(f"Device: {device.name}")            # CUDA
+    print(f"Device value: {device.value}")     # cuda
+```
+
+**CLI usage:**
+```bash
+# Exact case matching
+python train.py --optimizer SGD --device CPU
+
+# Case-insensitive matching (CLI convenience)
+python train.py --optimizer adam --device cuda
+
+# Mixed case also works
+python train.py --optimizer Sgd --device Mps
+```
+
+**Help text shows member names:**
+```
+--optimizer {ADAM,SGD,RMSPROP}    Optimizer (default: ADAM)
+--device {CUDA,CPU,MPS}            Hardware device (default: CUDA)
+```
+
+**Key features:**
+- Converts CLI strings to enum members
+- Case-insensitive name matching for user convenience
+- Shows available options in help text
+- Works with both `auto()` and custom values
+
+## Collection Types
+
+### List Types
+
+List types allow collecting multiple values from the CLI. Each element is converted to the specified type.
+
+```python
+from typing import List
+
+@proto.cli
+def process(
+    files: List[str] = ["input.txt"],  # List of strings
+    dimensions: List[int] = [128, 256],  # List of integers
+    ratios: List[float] = [0.5, 0.3],  # List of floats
+):
+    """Process multiple files."""
+    print(f"Files: {files}")  # e.g., ['a.txt', 'b.txt', 'c.txt']
+    print(f"Dimensions: {dimensions}")  # e.g., [512, 1024]
+    print(f"Ratios: {ratios}")  # e.g., [0.8, 0.2]
+```
+
+**CLI usage:**
+```bash
+# Multiple string values
+python process.py --files a.txt b.txt c.txt
+
+# Multiple integer values (type-converted)
+python process.py --dimensions 512 1024
+
+# Multiple float values
+python process.py --ratios 0.8 0.2
+
+# Combine with other arguments
+python process.py --files x.txt y.txt --dimensions 256 256 --ratios 0.5
+```
+
+**Help text shows list notation:**
+```{ansi-block}
+:string_escape:
+
+--files [STR]            List of input files \x1b[36m(default:\x1b[0m \x1b[1m\x1b[36m['input.txt']\x1b[0m\x1b[36m)\x1b[0m
+--dimensions [INT]       Dimensions to process \x1b[36m(default:\x1b[0m \x1b[1m\x1b[36m[128, 256]\x1b[0m\x1b[36m)\x1b[0m
+--ratios [FLOAT]         Aspect ratios \x1b[36m(default:\x1b[0m \x1b[1m\x1b[36m[0.5, 0.3]\x1b[0m\x1b[36m)\x1b[0m
+```
+
+**How it works:**
+- Arguments after `--flag` are collected until the next flag or end of arguments
+- Each value is converted to the element type (e.g., `"256"` → `256` for `List[int]`)
+- The result is always a list, even with a single value
+
+### Tuple Types
+
+Tuple types allow collecting multiple values from the CLI with automatic element type conversion. Both variable-length and fixed-size tuples are supported.
+
+```python
+from typing import Tuple
+
+@proto.cli
+def train(
+    # Variable-length tuple: Tuple[T, ...] collects values into a tuple
+    learning_schedule: Tuple[float, ...] = (0.1, 0.01),
+    # Fixed-size tuple: Tuple[T1, T2, T3] has specific type for each position
+    image_size: Tuple[int, int] = (224, 224),
+    # Mixed types in fixed-size tuple
+    config: Tuple[int, str, float] = (10, "default", 0.5),
+):
+    """Training with tuple types."""
+    print(f"Learning schedule: {learning_schedule}")  # e.g., (0.5, 0.1, 0.01)
+    print(f"Image size: {image_size[0]}x{image_size[1]}")  # e.g., 256x256
+    print(f"Config: {config}")  # e.g., (42, 'custom', 0.75)
+```
+
+**CLI usage:**
+```bash
+# Variable-length tuple - collects all values
+python train.py --learning-schedule 0.5 0.1 0.01
+
+# Fixed-size tuple with specific position types
+python train.py --image-size 256 256
+
+# Mixed type fixed-size tuple
+python train.py --config 42 custom 0.75
+
+# Combine with other arguments
+python train.py --learning-schedule 0.2 0.02 --image-size 512 512
+```
+
+**Help text notation:**
+- Variable-length: `--param (INT,...)`
+- Fixed-size: `--param (INT,STR,FLOAT)`
+
+**How it works:**
+- Arguments after `--flag` are collected until the next flag or end of arguments
+- Each value is converted to its corresponding type position
+- For `Tuple[T, ...]`, all values get converted to element type T
+- For fixed-size tuples, each value gets the type from its position
+
+## Path Types
+
+`pathlib.Path` objects are automatically instantiated from string arguments.
+
+```python
+from pathlib import Path
+from params_proto import proto
+
+@proto.cli
+def process(
+    input_dir: Path = Path("./data"),      # Directory path
+    output_file: Path = Path("output.txt"), # File path
+    config: Path = Path.home() / ".config", # Home-relative path
+):
+    """Process files with Path types."""
+    print(f"Reading from: {input_dir}")
+    print(f"Writing to: {output_file}")
+    print(f"Config at: {config}")
+    # Paths are ready to use with pathlib methods
+    input_dir.mkdir(parents=True, exist_ok=True)
+```
+
+**CLI usage:**
+```bash
+# Relative paths
+python process.py --input-dir ./data --output-file results.txt
+
+# Absolute paths
+python process.py --input-dir /var/data --output-file /tmp/results.txt
+
+# Paths with special characters
+python process.py --input-dir ~/Documents/project --output-file ./output/final.txt
+```
+
+**Key features:**
+- Strings automatically converted to Path objects
+- Works with relative and absolute paths
+- Ready to use with pathlib methods (`mkdir()`, `exists()`, etc.)
+- Help text shows `PATH` type
+
+## Dictionary Types
+
+Dictionary types are parsed safely using Python's `ast.literal_eval` - no code execution risk.
+
+```python
+from typing import Dict
+from params_proto import proto
+
+@proto.cli
+def config(
+    # Generic dict (any keys/values)
+    params: Dict = None,
+    # Typed dict (documentation)
+    settings: Dict[str, int] = None,
+    # Complex nested structures
+    model_config: Dict[str, float] = None,
+):
+    """Configure with dictionaries."""
+    print(f"params: {params}")
+    print(f"settings: {settings}")
+    if model_config:
+        for key, value in model_config.items():
+            print(f"  {key}: {value}")
+```
+
+**CLI usage:**
+```bash
+# Simple dict with strings and numbers
+python config.py --params '{"lr": 0.01, "batch_size": 32}'
+
+# Nested structures
+python config.py --settings '{"depth": 3, "width": 128, "dropout": 0}'
+
+# Complex dict with various types
+python config.py --model-config '{
+    "learning_rate": 0.001,
+    "hidden_sizes": [256, 128, 64],
+    "activation": "relu",
+    "use_batch_norm": true
+}'
+
+# Dict with lists and nested dicts
+python config.py --params '{"data": {"train": 0.8, "val": 0.1, "test": 0.1}, "tags": ["ml", "v2"]}'
+```
+
+**Security note:**
+- Uses `ast.literal_eval` which only evaluates Python literal structures
+- Safe for untrusted input - will never execute arbitrary code
+- Supports: strings, numbers, lists, dicts, tuples, booleans, None
+
+**Key features:**
+- Safe parsing with `ast.literal_eval`
+- Supports nested structures and mixed types
+- Works with both single and double quotes: `{'a': 1}` or `{"a": 1}`
+- Help text shows dict type: `{STR:INT}` or `{KEY:VALUE}`
+- No code execution - purely data literal evaluation
+
+## Complex Types
+
+### Nested Unions
+
+```python
+@proto.cli
+def train(
+    lr: int | float | None = 0.001,  # Multiple options
+    layers: List[int] | None = None,  # Optional list
+):
+    """Complex union types."""
+    pass
+```
+
+### Literal with Union
+
+```python
+@proto.cli
+def process(
+    format: Literal["json", "yaml"] | None = None,  # Optional literal
+    precision: Literal[16, 32, 64] = 32,  # Numeric literal
+):
+    """Literal with union types."""
+    pass
+```
+
+## Type Support Matrix
+
+| Type | CLI Support | Help Display | Notes |
+|------|-------------|--------------|-------|
+| `int` | ✅ Full | `INT` | Fully working |
+| `float` | ✅ Full | `FLOAT` | Fully working |
+| `str` | ✅ Full | `STR` | Fully working |
+| `bool` | ✅ Full | (flag) | Supports `--flag` and `--no-flag` |
+| `int \| float` | ✅ Full | `VALUE` | Ambiguous unions work |
+| `str \| None` (Optional) | ✅ Full | `STR` | Correctly unwraps to inner type |
+| `Literal[...]` | ✅ Full | `{a,b,c}` | Full validation of allowed values |
+| `Enum` | ✅ Full | `{A,B,C}` | Enum member conversion (case-insensitive) |
+| `List[T]` | ✅ Full | `[INT]` or `[STR]` | Fully working with element type conversion |
+| `Tuple[T, ...]` | ✅ Full | `(INT,...)` or `(INT,STR,FLOAT)` | Fully working - variable and fixed-size tuples |
+| `Path` | ✅ Full | `PATH` | Automatic conversion to Path objects |
+| `dict` | ✅ Full | `{STR:INT}` | Safe parsing with ast.literal_eval |
+| `Union[Class1, Class2]` | ✅ Full | Subcommand | Works as pseudo-subcommands |
+| Custom classes | ❌ Broken | - | Must be dataclasses with Union context |
+
+## Type Validation
+
+### Runtime Checks
+
+```python
+@proto.cli
+def train(lr: float = 0.001):
+    """Training function."""
+    # Type already converted by params-proto
+    assert isinstance(lr, float), "lr must be float"
+
+    # Add value validation
+    if lr <= 0 or lr >= 1:
+        raise ValueError("lr must be in (0, 1)")
+```
+
+### Using Dataclass Validation
+
+```python
+from dataclasses import dataclass
+from params_proto import proto
+
+@proto
+@dataclass
+class Params:    lr: float = 0.001
+    batch_size: int = 32
+
+    def __post_init__(self):
+        """Validate after initialization."""
+        if self.lr <= 0:
+            raise ValueError("lr must be positive")
+        if self.batch_size < 1:
+            raise ValueError("batch_size must be >= 1")
+```
+
+## Type Hints Best Practices
+
+### 1. Be Specific
+
+```python
+# ✓ Good: specific literal
+@proto.cli
+def train(optimizer: Literal["adam", "sgd"] = "adam"):
+    pass
+
+# ✗ Avoid: too general
+@proto.cli
+def train(optimizer: str = "adam"):
+    pass
+```
+
+### 2. Use Optional for Nullable Values
+
+```python
+# ✓ Good: explicit None
+@proto.cli
+def process(config: str | None = None):
+    pass
+
+# ✗ Avoid: implicit None
+@proto.cli
+def process(config: str = None):  # Type mismatch
+    pass
+```
+
+### 3. Document Type Constraints
+
+```python
+# ✓ Good: documented constraints
+@proto.cli
+def train(
+    lr: float = 0.001,  # Learning rate in range (0, 1)
+    epochs: int = 100,  # Number of epochs (positive)
+):
+    """Training with documented types."""
+    pass
+```
+
+### 4. Use Enums for Fixed Sets
+
+```python
+from enum import Enum
+
+# ✓ Good: enum for options
+class Model(Enum):
+    RESNET = "resnet50"
+    VIT = "vit-base"
+
+@proto.cli
+def train(model: Model = Model.RESNET):
+    pass
+
+# ✗ Avoid: magic strings
+@proto.cli
+def train(model: str = "resnet50"):
+    # User could pass any string
+    pass
+```
+
+## Advanced Type Patterns
+
+### Generic Types
+
+```python
+from typing import TypeVar, Generic, List
+
+T = TypeVar('T')
+
+@proto
+class Config(Generic[T]):
+    """Generic configuration."""
+    items: List[T]
+    default: T
+
+# Usage (type parameter determined at runtime)
+int_config = Config[int](items=[1, 2, 3], default=0)
+```
+
+### NewType for Documentation
+
+```python
+from typing import NewType
+
+# Create semantic types
+LearningRate = NewType('LearningRate', float)
+BatchSize = NewType('BatchSize', int)
+
+@proto.cli
+def train(
+    lr: LearningRate = 0.001,  # Type hint is self-documenting
+    batch_size: BatchSize = 32,
+):
+    """Training with semantic types."""
+    pass
+```
+
+### Type Aliases
+
+```python
+from typing import Union, List
+
+# Define complex types once
+Numeric = Union[int, float]
+PathLike = Union[str, Path]
+StringList = List[str]
+
+@proto.cli
+def process(
+    threshold: Numeric = 0.5,
+    input_path: PathLike = "data",
+    files: StringList = ["a.txt"],
+):
+    """Using type aliases."""
+    pass
+```
+
+## Environment Variable Types
+
+Type conversion also works with environment variables:
+
+```python
+from params_proto import proto, EnvVar
+
+@proto.cli
+def train(
+    # Environment variables are type-converted
+    lr: float = EnvVar @ "LEARNING_RATE" | 0.001,
+    batch_size: int = EnvVar @ "BATCH_SIZE" | 32,
+    use_cuda: bool = EnvVar @ "USE_CUDA" | True,
+):
+    """Types work with EnvVar."""
+    pass
+```
+
+**Usage:**
+```bash
+LEARNING_RATE=0.01 BATCH_SIZE=64 python train.py
+# lr will be float(0.01), batch_size will be int(64)
+```
+
+## Troubleshooting
+
+### Type Mismatch Errors
+
+```python
+# Problem: None as default for non-optional type
+@proto.cli
+def bad(count: int = None):  # Type error!
+    pass
+
+# Solution: Use Optional
+@proto.cli
+def good(count: int | None = None):
+    pass
+```
+
+### Union Type Ambiguity
+
+```python
+# Problem: Ambiguous union
+@proto.cli
+def ambiguous(value: int | str = 1):
+    # CLI string "42" - is it int or str?
+    pass
+
+# Solution: Use Literal or Enum for clarity
+@proto.cli
+def clear(value: Literal[1, 2, 3] = 1):
+    pass
+```
+
+## Related
+
+- [Core Concepts](core-concepts) - Decorators and basic usage
+- [CLI Fundamentals](cli-fundamentals) - Type display in CLI
+- [CLI Patterns](cli-patterns) - Advanced patterns with type parameters
+- [Union Types](union-types) - Union types as subcommands
+- [Configuration Patterns](configuration-patterns) - Type annotations in configurations
