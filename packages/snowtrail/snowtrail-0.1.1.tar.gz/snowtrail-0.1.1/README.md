@@ -1,0 +1,201 @@
+# Snowtrail Python SDK
+
+Python SDK for the [Snowtrail Research API](https://api.snowtrail.ai) - commodities intelligence for systematic trading.
+
+## Installation
+
+```bash
+pip install snowtrail
+```
+
+## Quick Start
+
+```python
+from snowtrail import Snowtrail
+
+# Initialize the client (uses SNOWTRAIL_API_KEY env var if set)
+client = Snowtrail(api_key="your-api-key")
+
+# Get latest GBSI-US system stress signal
+df = client.gbsi_us.system_stress()
+print(df)
+
+# Get historical data
+df = client.gbsi_us.system_stress(
+    start="2024-01-01",
+    end="2024-12-31",
+    limit=500
+)
+```
+
+All endpoints return a **pandas DataFrame** by default.
+
+## Client Overview
+
+The SDK is a thin wrapper around the REST API with no business logic:
+
+- **Typed accessors** for each product (`client.gbsi_us`, `client.pemi`, etc.)
+- **DataFrame responses** for easy analysis and backtesting
+- **Automatic retries** with exponential backoff for transient errors
+- **Environment-based auth** via `SNOWTRAIL_API_KEY`
+
+The client maps directly to API endpoints - what you see in the [API docs](https://api.snowtrail.ai/docs) is what you get.
+
+## Authentication
+
+Set your API key via environment variable (recommended):
+
+```bash
+export SNOWTRAIL_API_KEY="your-api-key"
+```
+
+```python
+from snowtrail import Snowtrail
+
+# Automatically uses SNOWTRAIL_API_KEY
+client = Snowtrail()
+df = client.gbsi_us.system_stress()
+```
+
+Or pass it directly:
+
+```python
+client = Snowtrail(api_key="your-api-key")
+```
+
+## Products
+
+| Product | Description | Primary Signal | Frequency |
+|---------|-------------|----------------|-----------|
+| `gbsi_us` | US Natural Gas Balance Stress Index | `system_stress()` | Weekly |
+| `gbsi_eu` | EU Natural Gas Balance Stress Index | `system_stress()` | Daily |
+| `pemi` | Power Event Market Intelligence | `power_stress()` | Event-driven |
+| `glmi` | Global LNG Market Intelligence | `lng_stress()` | Monthly |
+| `wrsi` | Weather Risk Signal Intelligence | `weather_risk()` | 4x daily |
+| `wssi_us` | Weather Storage Shock Index | `weather_shock()` | 4x daily |
+
+## Return Types
+
+All data endpoints return a **pandas DataFrame** by default:
+
+```python
+df = client.gbsi_us.system_stress()
+# Returns: pandas.DataFrame with columns like week_ending, stress_regime, etc.
+```
+
+For raw JSON responses (including metadata), use `_get_raw()`:
+
+```python
+response = client.gbsi_us._get_raw("system_stress", latest=True)
+# Returns: {"product_id": "gbsi_us", "table": "...", "data": {...}, "metadata": {...}}
+```
+
+## Usage Examples
+
+### GBSI-US (US Natural Gas)
+
+```python
+# Signals
+df = client.gbsi_us.system_stress()
+
+# Features
+df = client.gbsi_us.balance_momentum()
+df = client.gbsi_us.storage_inventory()
+df = client.gbsi_us.supply_elasticity()
+df = client.gbsi_us.features()
+
+# Events
+df = client.gbsi_us.storage_surprise()
+df = client.gbsi_us.regime_shift()
+```
+
+### GBSI-EU (EU Natural Gas)
+
+```python
+# Filter by country
+df = client.gbsi_eu.system_stress(country="DE")
+df = client.gbsi_eu.composite(country="NL")
+df = client.gbsi_eu.dispersion()
+```
+
+### WRSI (Weather Risk)
+
+```python
+# Filter by geography
+df = client.wrsi.weather_risk(geography="US")
+df = client.wrsi.forecast_dynamics(region_type="state")
+```
+
+### Historical Data
+
+All endpoints support date range queries:
+
+```python
+# Get history instead of latest
+df = client.gbsi_us.system_stress(
+    latest=False,
+    start="2023-01-01",
+    end="2024-01-01",
+    limit=1000
+)
+```
+
+## Retries and Timeouts
+
+The SDK handles transient failures automatically:
+
+- **Retried errors:** 429 (rate limit), 500, 502, 503, 504
+- **Retry attempts:** 3 with exponential backoff (1s, 2s, 4s)
+- **Default timeout:** 30 seconds per request
+- **Respects `Retry-After`** header when present
+
+```python
+# Custom timeout
+client = Snowtrail(api_key="...", timeout=60)
+```
+
+## Error Handling
+
+```python
+from snowtrail import Snowtrail, AuthenticationError, RateLimitError, NotFoundError, APIError
+
+client = Snowtrail(api_key="your-api-key")
+
+try:
+    df = client.gbsi_us.system_stress()
+except AuthenticationError:
+    print("Invalid API key")
+except RateLimitError:
+    print("Rate limit exceeded after retries")
+except NotFoundError:
+    print("Endpoint not found")
+except APIError as e:
+    print(f"API error: {e}")
+```
+
+## Low-Level Access
+
+For direct API access, use the underlying HTTP client:
+
+```python
+# Direct GET request (returns raw dict)
+response = client._client.get("/gbsi_us/system_stress", params={"latest": True})
+
+# Health check
+client.health()  # {"status": "ok"}
+
+# List all products
+client.products()  # [{"id": "gbsi_us", "name": "GBSI-US", ...}, ...]
+```
+
+The client includes a `User-Agent` header (`snowtrail-python/0.1.0`) for debugging.
+
+## API Reference
+
+- Full API documentation: https://api.snowtrail.ai/docs
+- Product documentation: https://docs.snowtrail.ai
+
+## Support
+
+- Email: support@snowtrail.ai
+- Documentation: https://docs.snowtrail.ai
