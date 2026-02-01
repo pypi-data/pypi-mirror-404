@@ -1,0 +1,174 @@
+"""Path utilities for Lintro.
+
+Small helpers to normalize paths for display consistency and path safety validation.
+"""
+
+from pathlib import Path
+
+from loguru import logger
+
+
+def validate_safe_path(path: str | Path, base_dir: Path | None = None) -> bool:
+    """Validate that a path doesn't escape the project boundaries.
+
+    This function prevents path traversal attacks by ensuring the resolved path
+    stays within the specified base directory (or current working directory).
+
+    Args:
+        path: The path to validate (can be absolute or relative).
+        base_dir: The base directory that paths must stay within.
+                  Defaults to current working directory if not specified.
+
+    Returns:
+        True if the path is safe (within boundaries), False otherwise.
+
+    Examples:
+        >>> validate_safe_path("./src/file.py")  # Safe relative path
+        True
+        >>> validate_safe_path("../../../etc/passwd")  # Escapes project
+        False
+        >>> validate_safe_path("/absolute/path/outside")  # Outside project
+        False
+    """
+    try:
+        base = (base_dir or Path.cwd()).resolve()
+        resolved = Path(path).resolve()
+
+        # Check if resolved path is within base directory
+        resolved.relative_to(base)
+        return True
+    except ValueError:
+        # Path escapes the base directory
+        return False
+    except OSError:
+        # Invalid path (e.g., too long, invalid characters on some systems)
+        return False
+
+
+def find_lintro_ignore() -> Path | None:
+    """Find .lintro-ignore file by searching upward from current directory.
+
+    Searches upward from the current working directory to find the project root
+    by looking for .lintro-ignore or pyproject.toml files.
+
+    Returns:
+        Path | None: Path to .lintro-ignore file if found, None otherwise.
+    """
+    current_dir = Path.cwd()
+    # Limit search to prevent infinite loops (e.g., if we're in /)
+    max_depth = 20
+    depth = 0
+
+    while depth < max_depth:
+        lintro_ignore_path = current_dir / ".lintro-ignore"
+        if lintro_ignore_path.exists():
+            return lintro_ignore_path
+
+        # Also check for pyproject.toml as project root indicator
+        pyproject_path = current_dir / "pyproject.toml"
+        if pyproject_path.exists():
+            # If pyproject.toml exists, check for .lintro-ignore in same directory
+            lintro_ignore_path = current_dir / ".lintro-ignore"
+            if lintro_ignore_path.exists():
+                return lintro_ignore_path
+            # Even if .lintro-ignore doesn't exist, we found project root
+            # Return None to indicate no .lintro-ignore found
+            return None
+
+        # Move up one directory
+        parent_dir = current_dir.parent
+        if parent_dir == current_dir:
+            # Reached filesystem root
+            break
+        current_dir = parent_dir
+        depth += 1
+
+    return None
+
+
+def load_lintro_ignore() -> list[str]:
+    """Load ignore patterns from .lintro-ignore file.
+
+    Returns:
+        list[str]: List of ignore patterns.
+    """
+    ignore_patterns: list[str] = []
+    lintro_ignore_path = find_lintro_ignore()
+
+    if lintro_ignore_path and lintro_ignore_path.exists():
+        try:
+            with open(lintro_ignore_path, encoding="utf-8") as f:
+                for line in f:
+                    line_stripped = line.strip()
+                    if not line_stripped or line_stripped.startswith("#"):
+                        continue
+                    ignore_patterns.append(line_stripped)
+        except (OSError, UnicodeDecodeError) as e:
+            logger.warning(f"Failed to load .lintro-ignore: {e}")
+
+    return ignore_patterns
+
+
+def normalize_file_path_for_display(file_path: str) -> str:
+    """Normalize file path to be relative to project root for consistent display.
+
+    This ensures all tools show file paths in the same format:
+    - Relative to project root (like ./src/file.py)
+    - Consistent across all tools regardless of how they output paths
+
+    Args:
+        file_path: File path (can be absolute or relative). If empty, returns as is.
+
+    Returns:
+        Normalized relative path from project root (e.g., "./src/file.py")
+    """
+    # Fast-path: empty or whitespace-only input
+    if not file_path or not str(file_path).strip():
+        return file_path
+
+    try:
+        project_root = Path.cwd().resolve()
+        abs_path = Path(file_path).resolve()
+
+        # Attempt to make path relative to project root
+        try:
+            rel_path = abs_path.relative_to(project_root)
+            rel_path_str = str(rel_path)
+
+            # Ensure it starts with "./" for consistency
+            if not rel_path_str.startswith("./"):
+                rel_path_str = "./" + rel_path_str
+
+            return rel_path_str
+
+        except ValueError:
+            # Path is outside project root - log warning and return with ../
+            logger.debug(f"Path '{file_path}' is outside project root")
+            # Use the original behavior for paths outside project
+            # Calculate relative path that may include ../
+            try:
+                # Find common ancestor and build relative path
+                rel_parts: list[str] = []
+                # Walk up from project_root to find common ancestor
+                project_parts = project_root.parts
+                path_parts = abs_path.parts
+
+                # Find common prefix length
+                common_len = 0
+                for p1, p2 in zip(project_parts, path_parts, strict=False):
+                    if p1 == p2:
+                        common_len += 1
+                    else:
+                        break
+
+                # Build relative path
+                ups = len(project_parts) - common_len
+                rel_parts = [".."] * ups + list(path_parts[common_len:])
+                return "/".join(rel_parts) if rel_parts else "."
+
+            except (ValueError, IndexError):
+                return file_path
+
+    except (OSError, ValueError):
+        # If path normalization fails, return the original path
+        return file_path
