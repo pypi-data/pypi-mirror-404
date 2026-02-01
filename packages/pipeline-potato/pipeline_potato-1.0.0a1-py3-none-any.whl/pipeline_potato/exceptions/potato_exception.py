@@ -1,0 +1,2 @@
+class PotatoException(Exception):
+    pass
