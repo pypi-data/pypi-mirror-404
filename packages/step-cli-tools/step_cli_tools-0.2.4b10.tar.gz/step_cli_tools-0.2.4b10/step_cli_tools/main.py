@@ -1,0 +1,156 @@
+# --- Standard library imports ---
+import sys
+from importlib.metadata import PackageNotFoundError, version
+
+# --- Third-party imports ---
+from rich.logging import RichHandler
+
+# --- Local application imports ---
+from .common import ALL_DIRS, DEFAULT_QY_STYLE, STEP_BIN, console, logger, qy
+from .configuration import check_and_repair_config_file, config, show_config_operations
+from .operations import operation1, operation2, operation3
+from .utils.general import check_for_update, install_step_cli
+
+
+def main():
+    pkg_name = "step-cli-tools"
+    profile_url = "https://github.com/LeoTN"
+    try:
+        pkg_version = version(pkg_name)
+    except PackageNotFoundError:
+        pkg_version = "0.0.0"
+
+    # Mute console logging
+    for handler in logger.handlers:
+        if isinstance(handler, RichHandler):
+            handler.setLevel("CRITICAL")
+    # Mark the log starting point
+    bannerText = f"# {pkg_name} - Version {pkg_version} #"
+    textArray = ["", "#" * len(bannerText), bannerText, "#" * len(bannerText), ""]
+    for text in textArray:
+        logger.info(text)
+    # Ensure necessary directories exist
+    for directory in ALL_DIRS:
+        if not directory.exists():
+            logger.debug(f"Creating directory: {directory}")
+            directory.mkdir(parents=True)
+    # Unmute console logging
+    for handler in logger.handlers:
+        if isinstance(handler, RichHandler):
+            handler.setLevel(logger.level)
+
+    # Verify and load the config file
+    check_and_repair_config_file()
+
+    # Check for updates when running a release version (not 0.0.0)
+    if (
+        config.get("update_config.check_for_updates_at_launch")
+        and pkg_version != "0.0.0"
+    ):
+        include_prerelease = config.get(
+            "update_config.consider_beta_versions_as_available_updates"
+        )
+        latest_version = check_for_update(
+            pkg_name=pkg_name,
+            current_pkg_version=pkg_version,
+            include_prerelease=include_prerelease,
+        )
+    else:
+        latest_version = None
+
+    if latest_version:
+        latest_tag_url = f"{profile_url}/{pkg_name}/releases/tag/{latest_version}"
+        version_text = (
+            f"[#888888]Made by[/#888888] [link={profile_url} bold #FFFFFF]LeoTN[/link]"
+            f"[#888888] - Update Available: [bold]{pkg_version}[/bold] → [/#888888]"
+            f"[link={latest_tag_url} bold #FFFFFF]{latest_version}[/]\n"
+        )
+    else:
+        version_text = (
+            f"[#888888]Made by[/#888888] [link={profile_url} bold #FFFFFF]LeoTN[/link]"
+            f"[#888888] - Version [bold #FFFFFF]{pkg_version}[/]\n"
+        )
+        # Hide the version text if the version is 0.0.0
+        version_text = (
+            f"[#888888]Made by[/#888888] [link={profile_url} bold #FFFFFF]LeoTN[/link]"
+            + (
+                f"[#888888] - Version [bold #FFFFFF]{pkg_version}[/]"
+                if pkg_version != "0.0.0"
+                else ""
+            )
+            + "\n"
+        )
+
+    logo = """
+[#F9ED69]     _                [#F08A5D]    _ _  [#B83B5E] _              _            [/]
+[#F9ED69] ___| |_ ___ _ __     [#F08A5D]___| (_) [#B83B5E]| |_ ___   ___ | |___        [/]
+[#F9ED69]/ __| __/ _ \\ '_ \\  [#F08A5D] / __| | | [#B83B5E]| __/ _ \\ / _ \\| / __|   [/]
+[#F9ED69]\\__ \\ ||  __/ |_) | [#F08A5D]| (__| | | [#B83B5E]| || (_) | (_) | \\__ \\   [/]
+[#F9ED69]|___/\\__\\___| .__/  [#F08A5D] \\___|_|_|[#B83B5E]  \\__\\___/ \\___/|_|___/ [/]
+[#F9ED69]            |_|       [#F08A5D]           [#B83B5E]                           [/]
+"""
+    console.print(f"{logo}")
+    console.print(version_text)
+
+    # Ensure step-cli is installed
+    if not STEP_BIN.exists():
+        console.print()
+        answer = qy.confirm(
+            message="step-cli binary not found. Do you want to download it now?",
+            style=DEFAULT_QY_STYLE,
+        ).ask()
+        if answer:
+            install_step_cli(STEP_BIN)
+        else:
+            sys.exit(0)
+
+    # Define operations and their corresponding functions
+    operations = [
+        qy.Choice(
+            title="Install Root CA",
+            description="Add a root certificate of your step-ca server to the system trust store.",
+            value=operation1,
+        ),
+        qy.Choice(
+            title="Uninstall Root CA (Windows & Linux)",
+            description="Delete a root certificate (of your step-ca server) from the system trust store.",
+            value=operation2,
+        ),
+        qy.Choice(
+            title="Request Certificate",
+            description="Request a new certificate from your step-ca server.",
+            value=operation3,
+        ),
+        qy.Choice(
+            title="Configuration",
+            description="View and edit the config file.",
+            value=show_config_operations,
+        ),
+        qy.Choice(
+            title="Exit",
+        ),
+    ]
+
+    # Interactive menu loop
+    while True:
+        console.print()
+        # Prompt the user to select an operation
+        selected_operation = qy.select(
+            message="Operation",
+            choices=operations,
+            use_search_filter=True,
+            use_jk_keys=False,
+            style=DEFAULT_QY_STYLE,
+        ).ask()
+
+        if selected_operation is None or selected_operation == "Exit":
+            sys.exit(0)
+
+        console.print()
+        selected_operation()
+        console.print()
+
+
+# --- Entry point ---
+if __name__ == "__main__":
+    main()
