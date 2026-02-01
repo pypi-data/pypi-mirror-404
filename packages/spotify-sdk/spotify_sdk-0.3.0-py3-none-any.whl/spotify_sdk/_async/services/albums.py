@@ -1,0 +1,98 @@
+"""Album service for Spotify API."""
+
+from __future__ import annotations
+
+from ...models import Album, Page, SimplifiedAlbum, SimplifiedTrack
+from .._base_service import AsyncBaseService
+
+
+class AsyncAlbumService(AsyncBaseService):
+    """Operations for Spotify albums."""
+
+    async def get(self, id: str, market: str | None = None) -> Album:
+        """Get an album by ID.
+
+        Args:
+            id: The Spotify ID for the album.
+            market: An ISO 3166-1 alpha-2 country code for track relinking.
+
+        Returns:
+            The requested album.
+
+        Raises:
+            ValueError: If id is empty.
+        """
+        if not id:
+            raise ValueError("id cannot be empty")
+        params = {"market": market} if market else None
+        data = await self._get(f"/albums/{id}", params=params)
+        return Album.model_validate(data)
+
+    async def get_several(
+        self,
+        ids: list[str],
+        market: str | None = None,
+    ) -> list[Album]:
+        """Get multiple albums by IDs.
+
+        Args:
+            ids: List of Spotify album IDs. The Spotify API enforces a
+                maximum of 20 IDs per request.
+            market: An ISO 3166-1 alpha-2 country code for track relinking.
+
+        Returns:
+            List of albums.
+
+        Raises:
+            ValueError: If ids is empty.
+        """
+        if not ids:
+            raise ValueError("ids cannot be empty")
+        params: dict[str, str] = {"ids": ",".join(ids)}
+        if market:
+            params["market"] = market
+        data = await self._get("/albums", params=params)
+        return [Album.model_validate(a) for a in data["albums"]]
+
+    async def get_tracks(
+        self,
+        id: str,
+        market: str | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> Page[SimplifiedTrack]:
+        """Get an album's tracks.
+
+        Args:
+            id: The Spotify ID for the album.
+            market: An ISO 3166-1 alpha-2 country code for track relinking.
+            limit: Maximum number of tracks to return (1-50, default 20).
+            offset: Index of the first track to return.
+
+        Returns:
+            Paginated list of tracks.
+
+        Raises:
+            ValueError: If id is empty.
+        """
+        if not id:
+            raise ValueError("id cannot be empty")
+        params = {"market": market, "limit": limit, "offset": offset}
+        data = await self._get(f"/albums/{id}/tracks", params=params)
+        return Page[SimplifiedTrack].model_validate(data)
+
+    async def get_new_releases(
+        self, limit: int = 20, offset: int = 0
+    ) -> Page[SimplifiedAlbum]:
+        """Get a list of new album releases on Spotify.
+
+        Args:
+            limit: Maximum number of albums to return (1-50, default 20).
+            offset: Index of the first album to return.
+
+        Returns:
+            Paginated list of new album releases.
+        """
+        params = {"limit": limit, "offset": offset}
+        data = await self._get("/browse/new-releases", params=params)
+        return Page[SimplifiedAlbum].model_validate(data["albums"])
