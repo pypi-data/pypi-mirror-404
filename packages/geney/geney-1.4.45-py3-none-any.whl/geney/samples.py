@@ -1,0 +1,3 @@
+mut_id = 'KRAS:12:25227343:G:T'
+epistasis_id = 'KRAS:12:25227343:G:T|KRAS:12:25227344:A:T'
+
