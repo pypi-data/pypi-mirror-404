@@ -1,0 +1,214 @@
+# Changelog
+
+All notable changes to Documentation Manager are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [1.2.6] - 2026-01-31
+
+### Fixed
+
+- **Duplicate syntax warnings** - `check_snippets` and `validate_code_syntax` no longer both TreeSitter-validate the same code blocks; when both enabled, only `check_snippets` runs
+- **Frontmatter parsed as headings** - YAML frontmatter is now stripped before markdown-it-py parsing, fixing false "0 H1 headers" and incorrect heading counts across all consumers (structure checks, consistency, H1 detection)
+- **Stale reference flood from CLI commands** - Built-in heuristic filters now skip references containing spaces (CLI invocations) and flag-like references (`--help`, `-v`) without requiring manual `exclude_reference_patterns` config
+- **Missing symbol false positives** - Keyboard key names (`Backspace`, `Enter`), ALL_CAPS env vars/constants (`EDITOR`), and short references (≤2 chars) are no longer flagged as missing symbols
+
+### Added
+
+- **Go API coverage preset** - New `"go"` preset excludes `internal/*`, TUI packages, generated code (`*.pb.go`, `*_gen.go`), and mock files from API coverage metrics
+
+## [1.2.5] - 2026-01-31
+
+### Fixed
+
+- **Link validation false positives** - Root README links to files outside `docs_path` (e.g., `LICENSE`, `test/README.md`) no longer report as broken; falls back to filesystem resolution for files outside the docs directory
+- **Setext heading false positives** - YAML frontmatter `---` separators no longer match the setext heading regex, fixing inflated heading style inconsistency warnings for Hugo/Jekyll projects
+
+### Added
+
+- **`exclude_reference_patterns` config option** - Filter stale reference warnings using fnmatch patterns (e.g., `pass-*`, `--*`) to suppress noise from CLI commands and config keys
+- **`exclude_paths` for API coverage** - Exclude source paths from coverage metrics (e.g., `cmd/tui/*`, `internal/cobra/*`) to avoid counting internal/CLI symbols as undocumented
+- **Stale reference confidence levels** - Each stale reference issue now includes a `confidence` field: `"high"` for file paths and qualified symbols (contains `/`, `.`, `:`), `"low"` for simple words
+- **Change detection summary** - `docmgr_detect_changes` output now includes a `summary` section with per-category counts and a `staleness_warning` when >50% of tracked files have changed
+
+## [1.2.4] - 2025-12-04
+
+### Added
+
+- **Enriched tool outputs** - MCP tools now return more useful metrics from baseline files
+- **Symbol breakdown by type** - `docmgr_update_baseline` and `docmgr_init` return symbol counts by type (class, function, method, etc.)
+- **Repository context in update_baseline** - Returns `language`, `docs_exist`, `git_branch` for project awareness
+- **Dependency metrics** - Returns `total_doc_files`, `total_source_files`, `unmatched_references` counts
+
+### Changed
+
+- `create_symbol_baseline()` now returns 3-tuple: `(path, count, breakdown)` instead of 2-tuple
+- `docmgr_update_baseline` details now include full metrics from each baseline update
+- `docmgr_init` output now includes `symbol_breakdown` dict
+
+## [1.2.3] - 2025-12-04
+
+### Fixed
+
+- `dependencies_tracked` count in `docmgr_update_baseline` output now correctly reports `total_references` instead of always showing 0
+
+## [1.2.2] - 2025-12-04
+
+### Added
+
+- **Active schema validation** - Baseline files are now validated against Pydantic schemas on load
+- **Graceful validation errors** - Invalid baselines return `None` with warning instead of crashing
+- **Version compatibility checking** - Warns when baseline version is older than required
+
+### Changed
+
+- `load_repo_baseline()` now validates by default (`validate=True`, `check_version=True`)
+- `load_dependencies()` now validates by default (`validate=True`)
+- All 11 baseline load sites now use schema validation
+- Invalid JSON or schema failures log warnings to stderr and return `None`
+
+### Fixed
+
+- Schema validation was defined but never activated (all callers passed `validate=False`)
+
+## [1.2.1] - 2025-12-04
+
+### Added
+
+- **Complete data utilization** - All stored fields in baseline files now have concrete consumers
+- **`load_repo_baseline()` function** - Load repo-baseline.json with typed access and version validation
+- **Change percentage reporting** - `docmgr_detect_changes` shows "X of Y files changed (Z%)"
+- **Project context in reports** - Quality and sync reports include repo_name and description
+- **Language-aware validation** - Primary language syntax errors elevated to error severity
+- **Early exit for missing docs** - Tools return early with clear message when `docs_exist=false`
+- **Stale reference validation** - `docmgr_validate_docs` warns about unmatched code references
+- **External asset validation** - Opt-in `check_external_assets` flag to verify HTTP URLs
+- **Docstring coverage metric** - Quality assessment reports "X% of public symbols have docstrings"
+- **Parent change detection** - `compare_symbols` detects when symbols move between classes
+- **Doc change detection** - Detect and track docstring modifications as semantic changes
+- **Precise column locations** - Action items include column number for precise source locations
+
+### Changed
+
+- `SemanticChange` now includes `column`, `old_parent`, `new_parent`, `old_doc`, `new_doc` fields
+- Action generator includes parent and doc change info in source_change references
+- `ValidateDocsInput` adds `check_stale_references` (default: true) and `check_external_assets` (default: false)
+
+## [1.2.0] - 2025-12-04
+
+### Added
+
+- **Staleness detection** - Warn when baseline files are outdated (7/30/90 day thresholds)
+- **Branch mismatch warnings** - Detect when current git branch differs from baseline
+- **`load_dependencies()` function** - Load dependencies.json with optional schema validation
+- **`get_reference_to_doc()` helper** - Derive reference→doc mappings on-demand from `all_references`
+- **Schema validation** - Pydantic schemas for all baseline files with validation helpers
+- **Config schema alignment** - Added `project_name` and `ConfigMetadata` to match actual config files
+
+### Changed
+
+- **Precise affected doc detection** - Uses `code_to_doc` from dependencies.json instead of hardcoded fallbacks
+- **Action generation** - ActionGenerator now accepts `code_to_doc` and `doc_mappings` for precise inference
+- **CLI tools detection** - Dynamically detects project name instead of hardcoded list
+- **Baseline staleness** - `docmgr_detect_changes` now includes staleness warnings in output
+
+### Deprecated
+
+- `docs_path` in repo-baseline.json - Use `config.docs_path` as authoritative source
+- `reference_to_doc` in dependencies.json - Use `get_reference_to_doc()` helper instead
+
+### Removed
+
+- Hardcoded category→doc fallback mappings - Explicit configuration or dependencies.json required
+- `reference_to_doc` from dependencies.json output - Reduces file size ~40%
+
+## [1.1.1] - 2025-12-03
+
+### Fixed
+
+- Symbol baseline now created during `docmgr_init` (was only created by `docmgr_update_baseline`)
+- Extracted `create_symbol_baseline()` as shared function for consistency
+
+## [1.1.0] - 2025-12-03
+
+### Added
+
+- **Config field tracking** - Detect changes to configuration fields in Pydantic models, dataclasses, attrs classes, Go structs, TypeScript interfaces, and Rust structs with serde
+- **Actionable outputs** - Get prioritized action items when config fields change, with clear descriptions and severity levels
+- **Rust symbol extraction** - Full support for Rust codebases including functions, structs, enums, traits, and impl blocks
+- **Context-aware skill** - New doc-management skill with improved knowledge source hierarchy
+
+### Changed
+
+- Semantic analysis now includes config field changes in output
+- Baseline files track config field signatures for change detection
+
+## [1.0.3] - 2025-11-28
+
+### Added
+
+- **Configurable API coverage** - Control which symbols appear in documentation metrics
+- **Multi-language presets** - Built-in presets for Python (pydantic), Go, TypeScript, Rust
+- **Symbol filtering strategies** - Choose `all_only`, `all_then_underscore`, or `underscore_only`
+- **Claude Code plugin** - Interactive documentation workflow with specialized agents
+
+### Changed
+
+- Improved public symbol detection using industry-standard conventions
+- Standardized heading case to sentence_case across documentation
+- Plugin renamed from `doc-manager-mcp` to `doc-manager` for consistency
+
+### Fixed
+
+- Session start hook now uses Python for cross-platform compatibility
+- Corrected MCP tool naming in plugin configuration
+
+## [1.0.2] - 2025-11-22
+
+### Added
+
+- PyPI badges and MIT license display
+- Python version classifiers in package metadata
+
+### Changed
+
+- Documentation reframed to focus on MCP server usage
+- README.md now symlinks to docs/index.md for consistency
+
+### Fixed
+
+- Corrected PyPI badge URLs
+- Resolved documentation validation errors
+- Updated installation instructions with correct repository and CLI names
+
+## [1.0.1] - 2025-11-21
+
+### Changed
+
+- Version bump for initial PyPI release
+
+## [1.0.0] - 2025-11-21
+
+### Added
+
+- Initial release of Documentation Manager MCP server
+- 8 documentation lifecycle management tools
+- TreeSitter-based symbol extraction for Python, Go, TypeScript, Rust
+- Quality assessment against 7 criteria
+- Link and asset validation
+- Platform detection (MkDocs, Sphinx, Hugo, Docusaurus)
+- Checksum and semantic change detection
+- Baseline management for tracking documentation state
+
+[1.2.4]: https://github.com/arimxyer/doc-manager-mcp/releases/tag/v1.2.4
+[1.2.3]: https://github.com/arimxyer/doc-manager-mcp/releases/tag/v1.2.3
+[1.2.2]: https://github.com/arimxyer/doc-manager-mcp/releases/tag/v1.2.2
+[1.2.1]: https://github.com/arimxyer/doc-manager-mcp/releases/tag/v1.2.1
+[1.2.0]: https://github.com/arimxyer/doc-manager-mcp/releases/tag/v1.2.0
+[1.1.1]: https://github.com/arimxyer/doc-manager-mcp/releases/tag/v1.1.1
+[1.1.0]: https://github.com/arimxyer/doc-manager-mcp/releases/tag/v1.1.0
+[1.0.3]: https://github.com/arimxyer/doc-manager-mcp/releases/tag/v1.0.3
+[1.0.2]: https://github.com/arimxyer/doc-manager-mcp/releases/tag/v1.0.2
+[1.0.1]: https://github.com/arimxyer/doc-manager-mcp/releases/tag/v1.0.1
+[1.0.0]: https://github.com/arimxyer/doc-manager-mcp/releases/tag/v1.0.0
