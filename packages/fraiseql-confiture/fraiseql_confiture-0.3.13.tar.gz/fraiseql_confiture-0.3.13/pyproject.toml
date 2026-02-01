@@ -1,0 +1,193 @@
+[project]
+name = "fraiseql-confiture"
+version = "0.3.13"
+description = "PostgreSQL schema evolution with built-in multi-agent coordination 🍓"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [
+    {name = "evoludigit", email = "lionel.hamayon@evolution-digitale.fr"}
+]
+keywords = [
+    "postgresql",
+    "migration",
+    "database",
+    "schema",
+    "ddl",
+    "coordination",
+    "multi-agent",
+    "collaboration",
+    "conflict-detection",
+    "ai-agents",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Database",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Software Development :: Version Control",
+]
+
+dependencies = [
+    "typer>=0.12.0",
+    "rich>=13.7.0",
+    "pydantic>=2.5.0",
+    "pyyaml>=6.0.1",
+    "psycopg[binary,pool]>=3.1.0",
+    "sqlparse>=0.5.0",
+    "cryptography>=42.0.0",
+]
+
+[project.optional-dependencies]
+testing = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.1.0",
+    "pytest-json-report>=1.5.0",
+]
+
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.1.0",
+    "pytest-watch>=4.2.0",
+    "pytest-json-report>=1.5.0",
+    "ruff>=0.6.0",
+    "ty>=0.0.7",  # Astral's ultra-fast type checker (replaces mypy)
+    "maturin>=1.7.0",
+]
+
+fraiseql = [
+    # FraiseQL integration (requires Python 3.13+)
+]
+
+[project.urls]
+Homepage = "https://github.com/fraiseql/confiture"
+Documentation = "https://github.com/fraiseql/confiture"
+Repository = "https://github.com/fraiseql/confiture"
+Issues = "https://github.com/fraiseql/confiture/issues"
+FraiseQL = "https://github.com/fraiseql/fraiseql"
+
+[project.scripts]
+confiture = "confiture.cli.main:app"
+
+[project.entry-points."pytest11"]
+confiture = "confiture.testing.pytest_plugin"
+
+[build-system]
+requires = ["maturin>=1.7,<2.0"]
+build-backend = "maturin"
+
+[tool.maturin]
+python-source = "python"
+module-name = "confiture._core"
+features = ["pyo3/extension-module"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "python/tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+pythonpath = ["python"]
+addopts = [
+    "--strict-markers",
+    "--tb=short",
+]
+markers = [
+    "unit: Unit tests (no database required)",
+    "integration: Integration tests (require database)",
+    "e2e: End-to-end tests (full workflows)",
+    "slow: Slow tests (skip in fast CI)",
+    "benchmark: Performance benchmark tests",
+]
+
+[tool.coverage.run]
+source = ["python/confiture"]
+omit = [
+    "*/tests/*",
+    "*/__pycache__/*",
+    "*/site-packages/*",
+    "*/testing/fixtures/*",  # Test infrastructure, not application code
+]
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "@abstractmethod",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["python"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+    "ARG", # flake8-unused-arguments
+    "SIM", # flake8-simplify
+]
+ignore = [
+    "E501",  # line too long (handled by formatter)
+    "B008",  # do not perform function calls in argument defaults
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Allow assert statements and nested with statements in tests
+# SIM117: Nested with statements are often clearer in tests with many patches
+# SIM105: try-except-pass is acceptable for "expected to fail" test scenarios
+"tests/*" = ["ARG", "S101", "SIM117", "SIM105"]
+"python/tests/*" = ["ARG", "S101", "SIM117", "SIM105"]
+"python/confiture/cli/*" = ["ARG001"]  # Allow unused args in CLI callbacks
+
+[tool.ty.src]
+# Astral's ultra-fast type checker configuration
+# Includes Python source code, excludes tests and examples
+include = ["python"]
+exclude = ["examples", "tests", "**/test_*.py"]
+
+[tool.ty.environment]
+python-version = "3.11"
+root = ["python"]
+
+[tool.ty.analysis]
+respect-type-ignore-comments = true
+
+[tool.ty.rules]
+# psycopg3 uses strict type requirements (LiteralString for SQL queries).
+# This library is designed to execute dynamic SQL from:
+# - Migration files (trusted developer content)
+# - Schema building (concatenated SQL files)
+# - SAVEPOINT/ROLLBACK commands (safe, controlled strings)
+# These are safe operations that can't be made type-safe without major refactoring.
+invalid-argument-type = "ignore"
+
+# Strategy configs use dynamic attribute access that the type checker can't verify.
+# The base StrategyConfig class is extended by subclasses with additional fields,
+# but the type system only sees the base class type in generic code.
+possibly-missing-attribute = "ignore"
+
+[dependency-groups]
+dev = [
+    "maturin>=1.9.6",
+    "ruff==0.14.5",
+]
