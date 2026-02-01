@@ -1,0 +1,347 @@
+[project]
+name = "typechecked"
+dynamic = ["version"]
+requires-python = ">=3.10"
+description = "Runtime type checking using type hints."
+authors = [
+    {name = "Jerilyn Franz", email = "opensource@snowhare.com"}
+]
+maintainers = [
+    {name = "Jerilyn Franz", email = "opensource@snowhare.com"}
+]
+readme = "README.rst"
+keywords = [
+    "typehint",
+    "type-hints",
+    "typechecking",
+    "type-checking",
+    "typechecked",
+    "type-checked",
+    "runtime",
+    "runtime-validation",
+    "validation",
+    "typing",
+    "developer-tools",
+    "python",
+    "static-analysis",
+    "type-safety",
+    "type-enforcement"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS :: MacOS X",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+    "Topic :: Software Development",
+    "Typing :: Typed",
+]
+
+dependencies = [
+    "typing-extensions>=4.10.0"
+]
+
+[project.urls]
+Homepage = "https://github.com/JerilynFranz/python-typechecked"
+Documentation = "https://python-typechecked.readthedocs.io/en/latest/"
+Repository = "https://github.com/JerilynFranz/python-typechecked.git"
+Issues = "https://github.com/JerilynFranz/python-typechecked/issues"
+Changelog = "https://github.com/JerilynFranz/python-typechecked/blob/main/CHANGELOG.rst"
+
+
+[dependency-groups]
+# Dependencies for running the test suite
+test = [
+    "pytest>=7.4.1,<9.0.0",
+    "pytest-cov>=4.2.1",
+    "coverage>=6.10.6",
+]
+
+# Dependencies for linting and code style
+lint = [
+    "flake8>=6.3.0",
+    "Flake8-pyproject>=1.2.4",
+    "isort>=5.12.0",
+    "mypy>=1.13.1",
+    "pylint>=3.1.8",
+    "pytest>=7.4.1,<9.0.0",
+    "yapf>=0.40.0",
+]
+
+# Dependencies for building documentation
+docs = [
+    "furo>=2025.09.25",
+    "sphinx>=8.2.3,<9.0.0",
+    "sphinx-copybutton>=0.5.2",
+    "sphinx-design>=0.6.1",
+]
+
+# A group for all other development tools
+tools = [
+    "hatch>=1.13",
+    "hatchling>=1.27",
+    "pydeps>=1.23.2",
+    "tox>=4.22.0",
+    "tox-uv>=1.13.1",
+    "uv>=0.9.18",
+]
+
+[tool.tox]
+requires = ["tox>=4.22"]
+env_list = [ 
+    "py31{0-4}",
+    "lint",
+]
+install_command = ["uv", "pip", "install", "{opts}", "{packages}"]
+
+# labels table for grouping environments
+[tool.tox.labels]
+test = ["py310", "py311", "py312", "py313", "py314", "pypy310", "pypy311", "doctest", "lint"]
+
+# --- Base Test Environment for automation of 'run' from env_list -
+
+[tool.tox.env_run_base]
+description = "Run test under {base_python}"
+allowlist_externals = ["pytest", "flake8", "pylint", "mypy", "coverage"]
+dependency_groups = ["test", "lint", "tools"]
+extras = ["all"]
+commands = [
+    ["coverage", "run", "-m", "pytest", { replace = "posargs", extend = true }],
+    ["coverage", "report"],
+]
+
+# --- Concrete Test Environments ---
+
+# environments table
+[tool.tox.env]
+
+# tox devenv -e dev
+[tool.tox.env.dev]
+description = "Development environment with all tools"
+package = "editable"
+dependency_groups = ["test", "tools", "lint"]
+base = ["testenv"]
+base_python = ["python3.12", "python3.11", "python3.13", "python3.14"]
+allowlist_externals = ["pytest", "mypy", "flake8", "pylint", "coverage"]
+commands = []
+
+[tool.tox.env.lint]
+description = "Run linters"
+package = "skip"
+base_python = ["python3.10", "python3.11", "python3.12", "python3.13", "python3.14"]
+dependency_groups = ["lint"]
+commands = [
+    ["flake8", "src", "tests"],
+    ["pylint", "src", "tests"],
+    ["mypy", "src", "tests"],
+]
+
+[tool.mypy]
+exclude = ["venv"]
+mypy_path = "tests,src"
+
+[tool.tox.env.docs]
+# This environment is self-contained and does NOT inherit from basetest.
+description = "Build the documentation"
+base_python = ["python3.12"]
+dependency_groups = ["docs", "test"]
+extras = ["all"]
+allowlist_externals = ["sphinx-build", "sphinx-apidoc", "pydeps"]
+commands = [
+    ["pydeps", "src/typechecked"],
+    ["sphinx-apidoc", "--separate", "--remove-old", "--module-first", "-f", "-o", "docs_source/source", "src"],
+    ["sphinx-build", "-b", "html", "docs_source/", "documentation/"],
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/typechecked"]
+exclude = [
+    ".trunk/",
+    ".git/",
+    ".gitignore",
+    "coverage/",
+    "tests/",
+    ".github/",
+    "bootstrap.py",
+    ".python-version",
+    ".readthedocs.yaml",
+    ".vscode/",
+    "coverage_html_report/",
+    "documentation/",
+    "examples/",
+    "docs/",
+    "python-typechecked.code-workspace",
+    "docs_source/",
+    "README.rst",
+    "CODE_OF_CONDUCT.rst",
+    "MODULE.bazel",
+    "BUILD.bazel",
+    "WORKSPACE.bazel",
+]
+
+[tool.hatch.build.targets.sdist]
+exclude = [
+    ".trunk/",
+    ".git/",
+    "coverage/",
+    "coverage_html_report/",
+    "examples/",
+]
+[tool.hatch.version]
+path = "src/typechecked/_meta.py"
+
+
+[tool.pyright]
+include = ["src", "tests", "bench"]
+exclude = ["**/node_modules",
+    "**/__pycache__",
+    "src/experimental",
+    "src/typestubs"
+]
+ignore = []
+defineConstant = { DEBUG = true }
+
+reportMissingImports = "error"
+reportUnnecessaryIsInstance = false
+
+[tool.flake8]
+max-line-length = 120
+max-complexity = 20
+# E203: whitespace before ':' (conflicts with black)
+# E501: line too long (handled by pylint)
+extend-ignore = ["E203", "E501"]
+
+[tool.isort]
+line_length = 120
+# Mode 3 - Vertical Hanging Indent
+multi_line_output = 3
+include_trailing_comma = true
+
+[tool.yapf]
+based_on_style = "pep8"
+column_limit = 120
+spaces_before_comment = 2
+allow_multiline_lambdas = true
+allow_split_before_dict_value = false
+split_before_logical_operator = true
+join_multiple_lines = false
+split_arguments_when_comma_terminated = true
+indent_dictionary_value = true
+dedent_closing_brackets = true
+coalese_brackets = true
+split_before_dot = false
+split_before_first_argument = true
+split_before_named_assigns = true
+
+
+[tool.pylint.format]
+max-line-length = 120
+
+[tool.pylint.'MESSAGES CONTROL']
+disable = ["R0401", "R0801", "R0903", "R0902", "R0912", "R0913","R0915", "R0917"]
+
+[tool.pylint.MASTER]
+
+[tool.pytest.ini_options]
+testpaths = "tests"
+norecursedirs = ".git .tox .vscode venv* .*_cache build dist"
+
+[tool.coverage.run]
+branch = true
+source = ["typechecked"]
+omit = [
+    "tests/*",
+    "bootstrap.py",
+    "test_plan.py"
+]
+
+[tool.coverage.report]
+# Regexes for lines to exclude from consideration
+fail_under = 80
+exclude_also = [
+    # Don't complain about missing debug-only code:
+    "def __repr__",
+    "if self\\.debug",
+
+    # Don't complain if tests don't hit defensive assertion code:
+    "raise AssertionError",
+    "raise NotImplementedError",
+
+    # Don't complain if non-runnable code isn't run:
+    "if 0:",
+    "if __name__ == .__main__.:",
+
+    # Don't complain about code only used by type checking tools:
+    "if TYPE_CHECKING:",
+    "def .*: \\.\\.\\.$",
+
+    # Don't complain about abstract methods, they aren't run:
+    "@(abc\\.)?abstractmethod",
+    ]
+
+ignore_errors = true
+
+[tool.coverage.html]
+directory = "coverage_html_report"
+
+
+# Configuration for generating a dependency graph
+# See https://pypi.org/project/pydeps/
+# You may need to install graphviz separately
+# (e.g. `brew install graphviz` on macOS, `sudo apt install graphviz` on Debian/Ubuntu)
+# Also, you may need to install the `graphviz` Python package
+# (e.g. `pip install graphviz` in your development environment)
+# The output file will be created at the specified location
+# relative to the project root
+# run 'pydeps src/typechecked' from the root directory of the project to generate the graph
+[tool.pydeps]
+format = "svg"
+max_bacon = 1
+max_cluster_size = 2
+max_module_depth = 5
+output = "docs_source/_static/images/dependencies.svg"
+reverse = true
+cluster = true
+rankdir = "BT"
+no_show = true
+verbose = 0
+pylib = false
+exclude_exact = [
+    "typechecked._meta",
+    "typechecked._doc_utils",
+    "typechecked._error_tags",
+    "typechecked._exceptions",
+    "typechecked._check_result",
+    "typechecked._constants",
+    "typechecked._immutable._error_tags",
+    "typechecked._immutable._immutable",
+    "typechecked._immutable._protocol",
+    "typechecked._log",
+    "typechecked._meta",
+    "typechecked._options",
+    "typechecked._primitives",
+    "typechecked._typing._typeddict_key_info",
+    "typechecked._validate",
+    "typechecked._validation_cache",
+    "typechecked._validation_cache._cache_entry",
+    "typechecked._validation_cache._cache_key",
+    "typechecked._validation_cache._cache",
+    "typechecked._validation_cache._error_tags",
+    "typechecked._validation_state",
+]
