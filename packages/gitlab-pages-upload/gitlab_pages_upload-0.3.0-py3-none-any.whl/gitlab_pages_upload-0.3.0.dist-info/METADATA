@@ -1,0 +1,214 @@
+Metadata-Version: 2.4
+Name: gitlab-pages-upload
+Version: 0.3.0
+Summary: Publish versioned static HTML documentation to GitLab Pages
+Project-URL: Repository, https://gitlab.com/cyberassessmentlabs/public/tools/gitlab-pages-upload
+Project-URL: Documentation, https://cyberassessmentlabs.gitlab.io/public/docs/gitlab-pages-upload/latest/
+Author: Cyber Assessment Labs
+License-Expression: MIT
+License-File: LICENSE
+Keywords: docs,documentation,gitlab,gitlab-pages,static-site,upload
+Classifier: Development Status :: 4 - Beta
+Classifier: Environment :: Console
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.14
+Classifier: Topic :: Documentation
+Classifier: Topic :: Software Development :: Documentation
+Classifier: Typing :: Typed
+Requires-Python: >=3.14
+Description-Content-Type: text/markdown
+
+# gitlab-pages-upload
+
+Publish versioned static HTML documentation to GitLab Pages with a single command.
+
+If you have prebuilt HTML documentation (from Sphinx, MkDocs, or any other tool), this CLI uploads it to GitLab Pages—requiring only a GitLab.com account and a personal access token. No CI/CD configuration needed on your end.
+
+## Installation
+
+```bash
+pip install gitlab-pages-upload
+```
+
+Or with uv:
+
+```bash
+uv pip install gitlab-pages-upload
+```
+
+## Quick Start
+
+1. Set your GitLab token:
+
+```bash
+export GITLAB_TOKEN=glpat-xxxxxxxxxxxxxxxxxxxx
+```
+
+2. Upload your docs:
+
+```bash
+gitlab-pages-upload --project my-project --doc-version 1.2.3 --html ./site
+```
+
+## Usage
+
+```
+gitlab-pages-upload [OPTIONS]
+
+Required:
+  --html, -H PATH         Path to HTML documentation (directory or .zip file)
+
+Project/Version (mutually exclusive):
+  --auto, -a              Auto-detect project and version from zip filename
+  --project, -p NAME      Project name (required unless --auto)
+  --doc-version, -V VER   Version (required unless --auto)
+
+Optional:
+  --force, -f             Overwrite existing version if it already exists
+  --set-latest, -l        Also copy docs to 'latest/' directory
+  --group, -g GROUP       GitLab group (default: docs)
+  --gitlab-url, -u URL    GitLab instance URL (default: https://gitlab.com)
+  --config, -c FILE       Path to JSON configuration file
+  --verbose, -v           Display verbose output (use twice for debug)
+```
+
+## Examples
+
+### Auto-detect from zip filename
+
+```bash
+# Detects project=myproject, version=1.2.3 from filename
+gitlab-pages-upload --auto -H ./myproject-1.2.3-docs.zip --set-latest
+```
+
+### Explicit project and version
+
+```bash
+gitlab-pages-upload -p cal-mkdocs -V 1.2.3 -H ./site
+```
+
+### Upload and set as latest
+
+```bash
+gitlab-pages-upload -p cal-mkdocs -V 1.2.4 -H ./site --set-latest
+```
+
+### Custom GitLab instance
+
+```bash
+gitlab-pages-upload -p my-project -V 1.0.0 -H ./docs \
+    --gitlab-url https://gitlab.example.com \
+    --group my-team/docs
+```
+
+### Using a config file
+
+```bash
+gitlab-pages-upload -p my-project -V 1.0.0 -H ./docs -c config.json
+```
+
+Example `config.json`:
+
+```json
+{
+    "gitlab_url": "https://gitlab.example.com",
+    "group": "documentation"
+}
+```
+
+## Authentication
+
+Create a GitLab Personal Access Token with these scopes:
+- `api` - for project/group creation via API
+- `write_repository` - for git push
+
+Set it as an environment variable:
+
+```bash
+export GITLAB_TOKEN=glpat-xxxxxxxxxxxxxxxxxxxx
+```
+
+Or in a config file:
+
+```json
+{
+    "token": "glpat-xxxxxxxxxxxxxxxxxxxx"
+}
+```
+
+## How It Works
+
+1. **Creates GitLab project** if it doesn't exist (private repo with public Pages)
+2. **Clones the project** (or initializes if empty)
+3. **Copies HTML files** to `public/<version>/`
+4. **Optionally copies** to `public/latest/` with `--set-latest`
+5. **Creates root redirect** to `latest/` when `--set-latest` is used
+6. **Writes `.gitlab-ci.yml`** for GitLab Pages
+7. **Commits and pushes** to GitLab
+8. **GitLab CI/CD** automatically deploys to Pages
+
+## Repository Layout
+
+The tool maintains this structure in the GitLab repository:
+
+```
+public/
+  index.html       # redirect to latest/ (only if --set-latest used)
+  1.2.3/
+    index.html
+    ...
+  1.2.4/
+    index.html
+    ...
+  latest/          # only if --set-latest used
+    index.html
+.gitlab-ci.yml
+```
+
+## Safety Features
+
+- **Version protection**: Refuses to overwrite existing versions unless `--force` is specified
+- **Preserves old versions**: Only the specified version directory is modified
+- **No force push**: Uses normal git push (not force push)
+- **Token redaction**: Tokens are never logged or displayed in error messages
+
+## Requirements
+
+- Python 3.14+
+- Git (for clone/push operations)
+- GitLab Personal Access Token with `api` and `write_repository` scopes
+
+## Development
+
+```bash
+# Set up development environment
+make dev
+
+# Run linting and type checking
+make check
+
+# Auto-format code
+make format
+
+# Build wheel and docs
+make build
+```
+
+## Publishing
+
+Publishing requires `cal-publish-python` configuration. See the [cal-publish-python documentation](https://cyberassessmentlabs.gitlab.io/public/docs/cal-publish-python/latest/) for setup.
+
+```bash
+# Build first
+make build
+
+# Publish wheel to PyPI and docs to GitLab Pages
+make publish
+```
+
+## Licence
+
+MIT License — Copyright 2026 Cyber Assessment Labs
