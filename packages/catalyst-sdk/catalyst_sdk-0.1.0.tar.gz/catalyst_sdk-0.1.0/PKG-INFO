@@ -1,0 +1,683 @@
+Metadata-Version: 2.4
+Name: catalyst-sdk
+Version: 0.1.0
+Summary: AI-powered outbound prospect finder - Generate Google dorks, find emails, and craft personalized outreach
+Project-URL: Homepage, https://github.com/namit/catalyst-sdk
+Project-URL: Repository, https://github.com/namit/catalyst-sdk
+Project-URL: Issues, https://github.com/namit/catalyst-sdk/issues
+Author: Namit
+License-Expression: MIT
+License-File: LICENSE
+Keywords: ai,email-finder,gemini,google-dorks,hunter,lead-generation,outbound,prospecting,sales,serpapi
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Requires-Python: >=3.9
+Requires-Dist: google-generativeai>=0.4.0
+Requires-Dist: httpx>=0.25.0
+Requires-Dist: pydantic>=2.0.0
+Provides-Extra: dev
+Requires-Dist: pytest-asyncio>=0.21.0; extra == 'dev'
+Requires-Dist: pytest>=7.0.0; extra == 'dev'
+Requires-Dist: ruff>=0.1.0; extra == 'dev'
+Description-Content-Type: text/markdown
+
+# Catalyst SDK (Python)
+
+> AI-powered outbound prospect finder. Generate Google dorks, find emails, and craft hyper-personalized outreach messages that don't sound like AI.
+
+[![PyPI version](https://img.shields.io/pypi/v/catalyst-sdk.svg)](https://pypi.org/project/catalyst-sdk/)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+## Installation
+
+```bash
+pip install catalyst-sdk
+# or
+poetry add catalyst-sdk
+# or
+uv add catalyst-sdk
+```
+
+---
+
+## 🔑 API Keys Setup
+
+Catalyst uses multiple AI and data services. Here's how to get each API key:
+
+### 1. Google Gemini (Required)
+
+Gemini AI powers the intelligent search strategy, dork generation, and message personalization.
+
+1. Go to [Google AI Studio](https://aistudio.google.com/apikey)
+2. Click "Create API Key"
+3. Copy your key
+
+**Model Used:** `gemma-3-27b-it` (configurable)
+
+### 2. SerpAPI (Optional - for Google searches)
+
+SerpAPI executes Google searches to find prospect profiles.
+
+1. Go to [serpapi.com](https://serpapi.com/)
+2. Sign up for a free account (100 searches/month free)
+3. Go to Dashboard → API Key
+4. Copy your key
+
+**Without SerpAPI:** You can still generate dorks and use them manually in Google.
+
+### 3. Hunter.io (Optional - for email finding)
+
+Hunter.io finds verified email addresses for your prospects.
+
+1. Go to [hunter.io](https://hunter.io/)
+2. Sign up for a free account (25 searches/month free)
+3. Go to API → Your API Key
+4. Copy your key
+
+**Without Hunter:** You'll need to find emails manually or use other email finding tools.
+
+---
+
+## 🚀 Quick Start
+
+```python
+import asyncio
+from catalyst import Catalyst
+
+async def main():
+    # Initialize with your API keys
+    catalyst = Catalyst(
+        gemini_api_key="your-gemini-key",      # Required
+        serpapi_key="your-serpapi-key",         # Optional
+        hunter_api_key="your-hunter-key",       # Optional
+    )
+    
+    # Find prospects
+    prospects = await catalyst.find_prospects("software engineers at Stripe", count=5)
+    
+    print(prospects)
+    # [
+    #   SocialProfile(
+    #     platform='linkedin',
+    #     profile_url='https://linkedin.com/in/johndoe',
+    #     username='johndoe',
+    #     full_name='John Doe',
+    #     snippet='Senior Engineer at Stripe. Building payments infrastructure...'
+    #   ),
+    #   ...
+    # ]
+    
+    # Generate personalized outreach
+    message = await catalyst.generate_message(
+        about_me="I'm building dev tools for auth. Previously at AWS.",
+        prospect=prospects[0]
+    )
+    
+    print(message)
+    # "your work on stripe's payment infra is solid - we're tackling auth challenges 
+    #  and would love to pick your brain. 15 min call?"
+
+asyncio.run(main())
+```
+
+---
+
+## 📖 Full Usage Guide
+
+### Option 1: Class-based API (Recommended)
+
+```python
+import asyncio
+from catalyst import Catalyst
+
+async def main():
+    catalyst = Catalyst(
+        gemini_api_key="your-gemini-key",
+        serpapi_key="your-serpapi-key",        # optional
+        hunter_api_key="your-hunter-key",      # optional
+        model="gemma-3-27b-it",                # optional, this is the default
+    )
+    
+    # Full pipeline: strategy → dorks → search → extract
+    prospects = await catalyst.find_prospects("YC founders in fintech", count=10)
+    
+    # Generate outreach message
+    message = await catalyst.generate_message("About me text...", prospects[0])
+    
+    # Generate cold email
+    email = await catalyst.generate_email(
+        about_me="About me text...",
+        prospect=prospects[0],
+        email="john@company.com"
+    )
+    # Email(subject='...', body='...')
+    
+    # Find email using Hunter.io
+    email_result = await catalyst.find_email("stripe.com", "John", "Doe")
+    # HunterResult(email='john.doe@stripe.com', score=95, ...)
+
+asyncio.run(main())
+```
+
+### Option 2: Functional API
+
+For more control over individual steps:
+
+```python
+import asyncio
+import os
+from catalyst import init_catalyst
+from catalyst.services import (
+    generate_search_strategy,
+    generate_dorks,
+    execute_search,
+    extract_profiles,
+    generate_personalized_message,
+    generate_email,
+    find_email,
+)
+from catalyst.services.twitter import (
+    split_name,
+    extract_company_domain,
+)
+
+async def main():
+    # Initialize once at app startup
+    init_catalyst(
+        gemini_api_key=os.environ["GEMINI_API_KEY"],
+        serpapi_key=os.environ.get("SERPAPI_KEY"),
+        hunter_api_key=os.environ.get("HUNTER_API_KEY"),
+    )
+    
+    # Step 1: Get AI-recommended platforms
+    strategy = await generate_search_strategy("ML engineers at Google")
+    print(strategy)
+    # SearchStrategy(
+    #   platforms=['linkedin'], 
+    #   reasoning='LinkedIn is best for professional/employment outreach'
+    # )
+    
+    # Step 2: Generate Google dorks
+    dorks = await generate_dorks("ML engineers at Google", strategy.platforms)
+    print(dorks.linkedin)
+    # 'site:linkedin.com/in/ "machine learning" "google" "engineer"'
+    
+    # Step 3: Execute search (requires SerpAPI key)
+    search_results = await execute_search(dorks.linkedin, num_results=20)
+    # [SearchResult(title=..., link=..., snippet=..., position=...), ...]
+    
+    # Step 4: Extract profiles from results
+    profiles = await extract_profiles(search_results, "linkedin", target_count=5)
+    # [SocialProfile(...), ...]
+    
+    # Step 5: Find email (requires Hunter API key)
+    first_name, last_name = split_name(profiles[0].full_name)
+    domain = await extract_company_domain(profiles[0].snippet)
+    if domain:
+        email_result = await find_email(domain, first_name, last_name)
+        print(email_result.email)  # 'john.doe@google.com'
+    
+    # Step 6: Generate personalized message
+    message = await generate_personalized_message(
+        about_me="I run an ML infra startup. Ex-Meta AI team.",
+        prospect=profiles[0]
+    )
+    
+    # Step 7: Generate email
+    email = await generate_email(
+        about_me="I run an ML infra startup. Ex-Meta AI team.",
+        prospect=profiles[0],
+        email="john.doe@google.com"
+    )
+
+asyncio.run(main())
+```
+
+---
+
+## 🔧 API Reference
+
+### `init_catalyst(config)` / `Catalyst(config)`
+
+Initialize the SDK with your API keys.
+
+```python
+from catalyst import Catalyst, init_catalyst
+
+# Class-based
+catalyst = Catalyst(
+    gemini_api_key: str,       # Required - Google Gemini API key
+    serpapi_key: str = None,   # Optional - SerpAPI key for searches
+    hunter_api_key: str = None,# Optional - Hunter.io key for emails
+    model: str = "gemma-3-27b-it",  # Optional - Gemini model
+)
+
+# Functional
+init_catalyst(
+    gemini_api_key: str,
+    serpapi_key: str = None,
+    hunter_api_key: str = None,
+    model: str = "gemma-3-27b-it",
+)
+```
+
+### `generate_search_strategy(query) -> SearchStrategy`
+
+Uses AI to determine the best platform(s) for your search query.
+
+```python
+strategy = await generate_search_strategy("senior React developers")
+# SearchStrategy(platforms=['linkedin'], reasoning='LinkedIn best for professional hiring')
+```
+
+**Platform Selection Logic:**
+| Target | Recommended Platform |
+|--------|---------------------|
+| Developers/Engineers | LinkedIn |
+| Open Source Contributors | GitHub |
+| Designers | Dribbble, Behance |
+| Founders/VCs | Twitter/X |
+| Enterprise/Sales | LinkedIn |
+| Creators/Influencers | Instagram, Threads |
+| Writers/Bloggers | Medium |
+| Product People | Product Hunt |
+
+### `generate_dorks(query, platforms) -> DorkResult`
+
+Generate optimized Google dork queries.
+
+```python
+dorks = await generate_dorks("ML engineers at Google", ["linkedin", "github"])
+# DorkResult(
+#   linkedin='site:linkedin.com/in/ "machine learning" "google"',
+#   github='site:github.com "google" "ML" "tensorflow"'
+# )
+```
+
+### `execute_search(query, num_results) -> List[SearchResult]`
+
+Execute a Google search via SerpAPI. **Requires SerpAPI key.**
+
+```python
+results = await execute_search('site:linkedin.com/in/ "stripe"', num_results=10)
+# [SearchResult(title=..., link=..., snippet=..., position=...), ...]
+```
+
+### `extract_profiles(serp_results, platform, target_count) -> List[SocialProfile]`
+
+Extract structured profile data from search results using AI.
+
+```python
+profiles = await extract_profiles(results, "linkedin", target_count=5)
+# [SocialProfile(
+#     platform='linkedin',
+#     profile_url='https://linkedin.com/in/johndoe',
+#     username='johndoe', 
+#     full_name='John Doe',
+#     snippet='Senior Engineer at Stripe...'
+# ), ...]
+```
+
+### `generate_personalized_message(about_me, prospect) -> str`
+
+Generate a hyper-personalized DM/message that doesn't sound like AI.
+
+```python
+message = await generate_personalized_message(
+    about_me="Building AI tools for sales. Ex-Salesforce.",
+    prospect=SocialProfile(full_name="John Doe", platform="twitter", snippet="ML engineer @OpenAI")
+)
+# "saw your work on GPT-4 - we're building AI for sales, would love your take. quick call?"
+```
+
+### `generate_email(about_me, prospect, email) -> Email`
+
+Generate a personalized cold email with subject and body.
+
+```python
+email = await generate_email(
+    about_me="Founder at Acme. Building dev tools.",
+    prospect=SocialProfile(full_name="Jane Smith", snippet="Auth lead at Stripe"),
+    email="jane@stripe.com"
+)
+# Email(subject='your auth work + our sdk', body='...')
+```
+
+### `find_email(domain, first_name, last_name) -> HunterResult`
+
+Find someone's email using Hunter.io. **Requires Hunter API key.**
+
+```python
+result = await find_email("stripe.com", "John", "Doe")
+# HunterResult(email='john.doe@stripe.com', score=95, domain='stripe.com', ...)
+```
+
+### `extract_company_domain(snippet) -> str`
+
+Use AI to extract company domain from a profile snippet.
+
+```python
+domain = await extract_company_domain("Senior Engineer at Stripe. Building payments...")
+# 'stripe.com'
+```
+
+### `split_name(full_name) -> Tuple[str, str]`
+
+Split a full name into first and last name.
+
+```python
+first_name, last_name = split_name("John Michael Doe")
+# ('John', 'Michael Doe')
+```
+
+---
+
+## 🐦 Twitter Utilities
+
+```python
+from catalyst.services.twitter import (
+    get_twitter_numeric_id,
+    generate_twitter_dm_link,
+    generate_twitter_profile_link,
+    extract_twitter_username,
+)
+
+# Get numeric ID (required for DM deep links)
+numeric_id = await get_twitter_numeric_id("elonmusk")
+# '44196397'
+
+# Generate DM deep link
+dm_link = generate_twitter_dm_link(numeric_id, "Hey! Quick question...")
+# 'https://x.com/messages/compose?recipient_id=44196397&text=Hey!%20Quick%20question...'
+
+# Generate profile link
+profile_link = generate_twitter_profile_link("naval")
+# 'https://x.com/naval'
+
+# Extract username from URL
+username = extract_twitter_username("https://x.com/naval")
+# 'naval'
+```
+
+---
+
+## 🌐 Supported Platforms
+
+| Platform | Dork Generation | Profile Extraction | DM Deep Link |
+|----------|----------------|-------------------|--------------|
+| LinkedIn | ✅ | ✅ | ❌ |
+| Twitter/X | ✅ | ✅ | ✅ |
+| GitHub | ✅ | ✅ | ❌ |
+| Instagram | ✅ | ✅ | ✅ |
+| Dribbble | ✅ | ✅ | ❌ |
+| Behance | ✅ | ✅ | ❌ |
+| Medium | ✅ | ✅ | ❌ |
+| Product Hunt | ✅ | ✅ | ❌ |
+| Peerlist | ✅ | ✅ | ❌ |
+| Threads | ✅ | ✅ | ❌ |
+| Bluesky | ✅ | ✅ | ❌ |
+
+---
+
+## 💡 Example: Full Outbound Workflow
+
+```python
+import asyncio
+import os
+from catalyst import Catalyst
+
+async def run_outbound_campaign():
+    catalyst = Catalyst(
+        gemini_api_key=os.environ["GEMINI_API_KEY"],
+        serpapi_key=os.environ["SERPAPI_KEY"],
+        hunter_api_key=os.environ["HUNTER_API_KEY"],
+    )
+    
+    # Your pitch
+    about_me = """
+        I'm the founder of AuthKit, we're building developer-friendly authentication.
+        Previously led identity at AWS. YC W24.
+    """
+    
+    # Find prospects
+    prospects = await catalyst.find_prospects(
+        "senior engineers who worked on authentication at Stripe or Okta",
+        count=10
+    )
+    
+    print(f"Found {len(prospects)} prospects")
+    
+    for prospect in prospects:
+        # Try to find their email
+        name_parts = prospect.full_name.split(" ", 1)
+        first_name = name_parts[0]
+        last_name = name_parts[1] if len(name_parts) > 1 else ""
+        
+        email_result = await catalyst.find_email("stripe.com", first_name, last_name)
+        
+        if email_result:
+            # Generate personalized email
+            outreach = await catalyst.generate_email(
+                about_me=about_me,
+                prospect=prospect,
+                email=email_result.email
+            )
+            
+            print(f"\n--- {prospect.full_name} ({email_result.email}) ---")
+            print(f"Subject: {outreach.subject}")
+            print(f"Body: {outreach.body}")
+        else:
+            # No email? Generate a DM instead
+            message = await catalyst.generate_message(about_me, prospect)
+            print(f"\n--- {prospect.full_name} (DM) ---")
+            print(f"Message: {message}")
+
+asyncio.run(run_outbound_campaign())
+```
+
+---
+
+## 🔒 Environment Variables
+
+Create a `.env` file:
+
+```bash
+# Required
+GEMINI_API_KEY=your-gemini-api-key
+
+# Optional (but recommended for full functionality)
+SERPAPI_KEY=your-serpapi-key
+HUNTER_API_KEY=your-hunter-api-key
+```
+
+Load with python-dotenv:
+
+```python
+from dotenv import load_dotenv
+import os
+from catalyst import Catalyst
+
+load_dotenv()
+
+catalyst = Catalyst(
+    gemini_api_key=os.environ["GEMINI_API_KEY"],
+    serpapi_key=os.environ.get("SERPAPI_KEY"),
+    hunter_api_key=os.environ.get("HUNTER_API_KEY"),
+)
+```
+
+---
+
+## 📊 Rate Limits & Pricing
+
+| Service | Free Tier | Paid Plans |
+|---------|-----------|------------|
+| Gemini | 60 req/min | [Pricing](https://ai.google.dev/pricing) |
+| SerpAPI | 100 searches/mo | $50/mo for 5000 |
+| Hunter | 25 searches/mo | $49/mo for 500 |
+
+---
+
+## 📦 Type Definitions
+
+All types are defined using Pydantic for runtime validation:
+
+```python
+from catalyst.types import (
+    SocialProfile,
+    SearchResult,
+    SearchStrategy,
+    DorkResult,
+    HunterResult,
+    Email,
+)
+```
+
+---
+
+## ⚠️ Important: Sending vs Generating
+
+**This SDK generates content but does NOT send emails or DMs.**
+
+| What Catalyst Does | What You Need to Add |
+|-------------------|---------------------|
+| ✅ Find prospects | ❌ N/A |
+| ✅ Find emails (Hunter) | ❌ N/A |
+| ✅ Generate personalized messages | 📧 Your own email/DM sending |
+| ✅ Generate cold emails | 📧 Your own email sending |
+
+### Why?
+
+1. **OAuth requires a web app** - Gmail/Twitter auth needs redirects and user consent
+2. **You control sending** - Use your own domain, avoid spam filters
+3. **Legal compliance** - CAN-SPAM, GDPR require sender accountability
+
+### Integrating Email Sending
+
+Use the generated content with your preferred email service:
+
+#### Option 1: smtplib (Built-in)
+
+```python
+import smtplib
+from email.mime.text import MIMEText
+from catalyst import Catalyst
+
+catalyst = Catalyst(gemini_api_key=os.environ["GEMINI_API_KEY"])
+
+# Generate the email
+email = await catalyst.generate_email(about_me, prospect, prospect_email)
+
+# Send via SMTP
+msg = MIMEText(email.body)
+msg['Subject'] = email.subject
+msg['From'] = 'you@gmail.com'
+msg['To'] = prospect_email
+
+with smtplib.SMTP('smtp.gmail.com', 587) as server:
+    server.starttls()
+    server.login('you@gmail.com', os.environ['EMAIL_APP_PASSWORD'])
+    server.send_message(msg)
+```
+
+#### Option 2: SendGrid
+
+```python
+from sendgrid import SendGridAPIClient
+from sendgrid.helpers.mail import Mail
+from catalyst import Catalyst
+
+catalyst = Catalyst(gemini_api_key=os.environ["GEMINI_API_KEY"])
+email = await catalyst.generate_email(about_me, prospect, prospect_email)
+
+sg = SendGridAPIClient(os.environ['SENDGRID_API_KEY'])
+message = Mail(
+    from_email='you@yourdomain.com',
+    to_emails=prospect_email,
+    subject=email.subject,
+    plain_text_content=email.body
+)
+sg.send(message)
+```
+
+#### Option 3: Resend
+
+```python
+import resend
+from catalyst import Catalyst
+
+resend.api_key = os.environ["RESEND_API_KEY"]
+
+catalyst = Catalyst(gemini_api_key=os.environ["GEMINI_API_KEY"])
+email = await catalyst.generate_email(about_me, prospect, prospect_email)
+
+resend.Emails.send({
+    "from": "you@yourdomain.com",
+    "to": prospect_email,
+    "subject": email.subject,
+    "text": email.body
+})
+```
+
+#### Option 4: AWS SES (boto3)
+
+```python
+import boto3
+from catalyst import Catalyst
+
+ses = boto3.client('ses', region_name='us-east-1')
+
+catalyst = Catalyst(gemini_api_key=os.environ["GEMINI_API_KEY"])
+email = await catalyst.generate_email(about_me, prospect, prospect_email)
+
+ses.send_email(
+    Source='you@yourdomain.com',
+    Destination={'ToAddresses': [prospect_email]},
+    Message={
+        'Subject': {'Data': email.subject},
+        'Body': {'Text': {'Data': email.body}}
+    }
+)
+```
+
+### Sending Twitter/LinkedIn DMs
+
+For DMs, you'll need to either:
+1. **Use the generated message manually** - Copy/paste into the platform
+2. **Use platform APIs** - Requires OAuth setup in your own app
+3. **Use automation tools** - Phantombuster, LinkedIn Sales Navigator, etc.
+
+```python
+from catalyst import Catalyst
+from catalyst.services.twitter import get_twitter_numeric_id, generate_twitter_dm_link
+
+catalyst = Catalyst(gemini_api_key=os.environ["GEMINI_API_KEY"])
+
+# Generate a DM for Twitter
+message = await catalyst.generate_message(about_me, prospect)
+
+# Get Twitter DM deep link (opens Twitter app/web with pre-filled message)
+numeric_id = await get_twitter_numeric_id(prospect.username)
+if numeric_id:
+    dm_link = generate_twitter_dm_link(numeric_id, message)
+    print(f'Open this to send DM: {dm_link}')
+    # https://x.com/messages/compose?recipient_id=123&text=your%20message
+```
+
+---
+
+## 🤝 Contributing
+
+PRs welcome! Please read our contributing guidelines first.
+
+## 📄 License
+
+MIT © Namit
