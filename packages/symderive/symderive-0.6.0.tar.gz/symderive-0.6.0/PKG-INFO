@@ -1,0 +1,506 @@
+Metadata-Version: 2.4
+Name: symderive
+Version: 0.6.0
+Summary: A standalone symbolic engine for AI agents and mathematical computing
+Project-URL: Homepage, https://github.com/closedform/deriver
+Project-URL: Documentation, https://github.com/closedform/deriver#readme
+Project-URL: Repository, https://github.com/closedform/deriver.git
+Project-URL: Issues, https://github.com/closedform/deriver/issues
+Author: Brandon DiNunno, Tom Mainiero, Victor (Mingsy) Chua
+License-Expression: MIT
+License-File: LICENSE
+Keywords: ai-agents,algebra,calculus,cas,computer-algebra,differential-geometry,llm,mathematics,physics,symbolic,sympy
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: Intended Audience :: Education
+Classifier: Intended Audience :: Science/Research
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Scientific/Engineering :: Mathematics
+Classifier: Topic :: Scientific/Engineering :: Physics
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Requires-Python: >=3.12
+Requires-Dist: ipykernel>=7.1.0
+Requires-Dist: matplotlib>=3.8
+Requires-Dist: mpmath>=1.3
+Requires-Dist: nbconvert>=7.16.6
+Requires-Dist: numpy>=1.26
+Requires-Dist: polars>=0.20
+Requires-Dist: rich>=13.0
+Requires-Dist: scipy>=1.12
+Requires-Dist: sympy>=1.13
+Provides-Extra: all
+Requires-Dist: cvxpy>=1.4; extra == 'all'
+Requires-Dist: marimo>=0.8; extra == 'all'
+Requires-Dist: pysr>=0.19; extra == 'all'
+Provides-Extra: dev
+Requires-Dist: cvxpy>=1.4; extra == 'dev'
+Requires-Dist: ipykernel>=6.29; extra == 'dev'
+Requires-Dist: jupyter>=1.0; extra == 'dev'
+Requires-Dist: marimo>=0.8; extra == 'dev'
+Requires-Dist: nbformat>=5.10; extra == 'dev'
+Requires-Dist: pytest-cov>=4.1; extra == 'dev'
+Requires-Dist: pytest>=8.0; extra == 'dev'
+Provides-Extra: notebooks
+Requires-Dist: marimo>=0.8; extra == 'notebooks'
+Provides-Extra: optimize
+Requires-Dist: cvxpy>=1.4; extra == 'optimize'
+Provides-Extra: regression
+Requires-Dist: pysr>=0.19; extra == 'regression'
+Description-Content-Type: text/markdown
+
+# Derive
+
+A Standalone Symbolic Engine for AI Agents and Mathematical Computing
+
+[![PyPI version](https://badge.fury.io/py/symderive.svg)](https://pypi.org/project/symderive/)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+<p align="center">
+    <img src="https://raw.githubusercontent.com/closedform/deriver/main/assets/derive-logo.gif" width="220" alt="Y">
+</p>
+
+## Features
+
+- **Symbolic Computation**: Work with mathematical expressions symbolically
+- **Calculus**: Differentiation, integration, limits, series, variational derivatives
+- **Linear Algebra**: Matrix operations, eigenvalues, determinants
+- **Differential Equations**: Symbolic and numerical ODE solving
+- **Differential Geometry**: Metrics, Christoffel symbols, curvature tensors, abstract indices
+- **Special Functions**: Bessel, Gamma, error functions, and more
+- **Pattern Matching**: Replace, ReplaceAll, custom function definitions
+- **Custom Types**: Define your own types (Quaternion, Vector3D included)
+- **Probability**: Distribution functions and statistics
+- **Optimization**: Convex optimization via cvxpy (optional)
+- **Symbolic Regression**: Discover formulas from data via PySR
+- **Compact Models**: Extract symbolic models from FDTD simulation data with Kramers-Kronig causality enforcement
+- **Plotting**: Publication-quality mathematical plots
+- **Composable API**: Pipe operations and functional composition
+
+## Agent-Native Architecture
+
+Derive is built for stateless, functional composition -- the ideal paradigm for LLM agents that need to chain mathematical operations without tracking mutable state.
+
+### The Pipe Framework
+
+```python
+from symderive import *
+
+# Stateless transformation pipeline
+result = (
+    Pipe((x + 1)**3)
+    .then(Expand)
+    .then(Simplify)
+    .value
+)
+
+# Or use the functional form
+result = pipe(Sin(x)**2 + Cos(x)**2, Simplify)  # Returns 1
+```
+
+Each `Pipe` stage is a pure function: input in, output out, no side effects. This makes agent-generated code predictable and debuggable.
+
+### Lisp-Style Functional Primitives
+
+Derive includes functional programming constructs that let agents express complex mathematical workflows declaratively:
+
+```python
+# Repeated function application
+Nest(lambda x: x**2, 2, 3)           # 256 (2 -> 4 -> 16 -> 256)
+NestList(lambda x: 2*x, 1, 4)        # [1, 2, 4, 8, 16]
+
+# Convergence detection
+FixedPoint(lambda x: (x + 2/x)/2, 1.0)  # sqrt(2)
+FixedPointList(lambda x: Cos(x), 1.0)   # Full convergence path
+
+# Fold operations for accumulation
+FoldList(lambda acc, x: acc + x, 0, [1, 2, 3, 4])  # [0, 1, 3, 6, 10]
+```
+
+These primitives let agents reason about iteration, convergence, and accumulation without writing explicit loops -- reducing the chance of off-by-one errors and infinite loops in generated code.
+
+## Ergonomics
+
+### Wolfram-Style CamelCase Syntax
+
+Derive uses standard mathematical notation that researchers and students already know:
+
+```python
+from symderive import *
+
+# Familiar mathematical syntax
+D(Sin(x), x)                    # Differentiation
+Integrate(Exp(-x**2), (x, -oo, oo))  # Gaussian integral
+Limit(Sin(x)/x, x, 0)           # L'Hopital
+Series(Cos(x), (x, 0, 4))       # Taylor expansion
+```
+
+No need to learn a new API. If you know Mathematica or standard mathematical notation, you know Derive.
+
+### Smart Number Handling
+
+Floats automatically convert to exact rationals, preventing floating-point drift in symbolic computation:
+
+```python
+0.5 * x      # Becomes Rational(1, 2) * x, not 0.5 * x
+1/3 + 1/6    # Exact: Rational(1, 2)
+```
+
+Use `exact()` and `numerical()` context managers when you need explicit control.
+
+## Quick Start
+
+```python
+from symderive import *
+
+# Define symbols
+x, y = symbols('x y')
+
+# Calculus
+D(Sin(x), x)                    # Differentiation: Cos(x)
+Integrate(x**2, x)              # Integration: x**3/3
+Limit(Sin(x)/x, x, 0)           # Limits: 1
+Series(Exp(x), (x, 0, 5))        # Taylor series
+
+# Algebra
+Solve(Eq(x**2 - 4, 0), x)       # Solve equations: [-2, 2]
+Factor(x**2 - 5*x + 6)          # Factor: (x-2)(x-3)
+Simplify(Sin(x)**2 + Cos(x)**2) # Simplify: 1
+
+# Linear Algebra
+A = Matrix([[1, 2], [3, 4]])
+Det(A)                          # Determinant: -2
+Eigenvalues(A)                  # Eigenvalues
+Inverse(A)                      # Matrix inverse
+
+# Differential Equations
+t = Symbol('t')
+y = Function('y')
+DSolve(Eq(y(t).diff(t), y(t)), y(t), t)  # Solve dy/dt = y
+
+# Plotting
+Plot(Sin(x), (x, 0, 2*Pi), PlotLabel="Sine Wave")
+```
+
+## Installation
+
+### From PyPI
+
+```bash
+pip install symderive
+```
+
+```python
+from symderive import *
+```
+
+### From Source
+
+```bash
+git clone git@github.com:closedform/deriver.git
+cd deriver
+pip install -e .
+```
+
+For optional dependencies:
+```bash
+pip install -e ".[notebooks]"    # Marimo interactive notebooks
+pip install -e ".[optimize]"     # Convex optimization (cvxpy)
+pip install -e ".[regression]"   # Symbolic regression (pysr + Julia)
+pip install -e ".[all]"          # All optional dependencies
+```
+
+A `requirements.txt` is also provided for environments that prefer it.
+
+### Advanced Installation (uv)
+
+For faster dependency resolution, use [uv](https://github.com/astral-sh/uv):
+
+```bash
+git clone git@github.com:closedform/deriver.git
+cd deriver
+uv sync
+```
+
+### Optional Dependencies (uv)
+
+Some features require optional dependencies:
+
+```bash
+uv sync --extra notebooks   # Marimo interactive notebooks
+uv sync --extra optimize    # Convex optimization (cvxpy)
+uv sync --extra regression  # Symbolic regression (pysr + Julia)
+uv sync --extra all         # All optional dependencies
+```
+
+## Differential Geometry
+
+```python
+from symderive.diffgeo import *
+
+# Create a metric (2-sphere)
+theta, phi = symbols('theta phi', real=True)
+sphere = Metric(
+    coords=[theta, phi],
+    components=[
+        [1, 0],
+        [0, Sin(theta)**2]
+    ]
+)
+
+# Compute geometric quantities
+christoffel = sphere.christoffel_second_kind()
+riemann = sphere.riemann_tensor()
+ricci = sphere.ricci_tensor()
+R = sphere.ricci_scalar()
+
+# Abstract index notation (xAct-style)
+spacetime = IndexType('spacetime', 4, metric=minkowski_metric())
+a, b, c = spacetime.indices('a b c')
+
+T = AbstractTensor('T', rank=2, index_type=spacetime)
+g = AbstractTensor('g', rank=2, index_type=spacetime, symmetric=[(0, 1)])
+F = AbstractTensor('F', rank=2, index_type=spacetime, antisymmetric=[(0, 1)])
+
+# Use sign convention: a = upper, -a = lower
+T[a, -b]   # T^a_b
+T[-a, -b]  # T_ab
+```
+
+## Pattern Matching
+
+```python
+from symderive import *
+
+# Pattern-based replacement
+Replace(x**2 + y**2, Rule(x**2, a))  # a + y**2
+
+# Replace all occurrences
+ReplaceAll(x + x**2 + x**3, Rule(x, 2))  # 2 + 4 + 8
+
+# Define custom functions
+x_ = Pattern_('x')
+f = DefineFunction('f')
+f.define(x_, x_**2 + 1)
+f(3)  # 10
+```
+
+## Custom Types
+
+```python
+from symderive.types import Quaternion, Vector3D
+
+# Quaternions
+q1 = Quaternion(1, 2, 3, 4)
+q2 = Quaternion(5, 6, 7, 8)
+q1 * q2  # Quaternion multiplication
+
+# 3D Vectors
+v1 = Vector3D(1, 2, 3)
+v2 = Vector3D(4, 5, 6)
+v1.cross(v2)  # Cross product
+v1.dot(v2)    # Dot product
+```
+
+## Variational Calculus
+
+```python
+from symderive import *
+from symderive.calculus import VariationalDerivative
+
+# Klein-Gordon Lagrangian
+x, t, m = symbols('x t m')
+phi = Function('phi')(x, t)
+
+L = Rational(1,2)*D(phi,t)**2 - Rational(1,2)*D(phi,x)**2 - Rational(1,2)*m**2*phi**2
+
+# Compute Euler-Lagrange equation
+eq = VariationalDerivative(L, phi, [x, t])
+# Result: -m**2 * phi - d**2 phi/dt**2 + d**2 phi/dx**2 = 0
+```
+
+## Compact Models (FDTD to Symbolic)
+
+```python
+from symderive.compact import (
+    LoadSParameters, FitRationalModel,
+    CheckCausality, RationalModel
+)
+
+# Load S-parameter data from Touchstone file
+freq, S11, S21 = LoadSParameters("device.s2p")
+
+# Fit a rational function model (vector fitting)
+model = FitRationalModel(freq, S21, n_poles=4)
+
+# Check Kramers-Kronig causality
+is_causal = CheckCausality(model)
+
+# Export pole-residue form for SPICE/Verilog-A
+poles, residues = model.pole_residue_form()
+```
+
+## Agentic Math and Physics
+
+Derive ships with **agent personas** -- pre-prompted contexts that transform general-purpose LLMs into domain experts in mathematical and physical reasoning.
+
+### Using Agent Personas
+
+```python
+from symderive.agents import load_agent, list_agents
+
+# See available agents
+list_agents()  # ['ed', 'steve', 'atiyah', 'grothendieck', ...]
+
+# Load an agent's system prompt
+prompt = load_agent("ed")  # Returns full system prompt text
+```
+
+Then paste into your LLM:
+
+**With Claude:**
+```
+System: [output of load_agent("ed")]
+
+User: Derive the Klein-Gordon equation from the scalar field Lagrangian.
+```
+
+**With ChatGPT:**
+```
+[Custom Instructions or System Message]
+[output of load_agent("steve")]
+
+User: What experimental signatures would distinguish this model from QCD?
+```
+
+This is a key differentiator from other math libraries: Derive ships with battle-tested prompts that transform general-purpose LLMs into domain experts.
+
+### Agent Roster
+
+| Agent | Expertise | Use When |
+|-------|-----------|----------|
+| **Ed** | Theoretical physicist (QFT, gravity, condensed matter, statistical mechanics). Analytical methods, scaling arguments, physical intuition. | You need derivations, physical insight, or theoretical analysis |
+| **Steve** | Particle physicist and critical reviewer. Demands experimental grounding and calculational rigor. | You need to verify calculations or connect theory to experiment |
+| **Atiyah** | Geometric bridge-builder (index theory, K-theory, topology). Elegant proofs and clear notation. | You need geometric/topological insight or elegant formulations |
+| **Grothendieck** | Abstraction architect (category theory, schemes, universal properties). Patient exposition. | You want to reframe problems in more general settings |
+| **Bill Press** | Numerical algorithms expert. Stability, conditioning, error analysis, diagnostics. | You have numerical instability or need robust algorithms |
+| **Jim Simons** | Quantitative researcher. Statistical signals, backtesting, risk management. | You need to validate strategies or design robust experiments |
+| **Edward Tufte** | Information design critic. Clarity, density, honest visual encoding. | You want feedback on visualizations or data presentation |
+| **Beavis** | Fast sanity checker. Spots obvious bugs, keeps momentum. | You need a quick gut check or obvious failure modes |
+| **Butt-Head** | Skeptical contrarian. Questions assumptions, demands clarity. | You need to stress-test reasoning or find weak claims |
+
+### Orchestrator Integration
+
+The `AGENTS.yaml` index provides lightweight metadata for routing without loading full agent definitions:
+
+```yaml
+# Read ~600 tokens instead of ~15,000
+categories:
+  physics:
+    agents:
+      - id: ed
+        summary: "Theoretical physicist..."
+        tags: [physics, theory, analytical]
+        use_when: "User needs theoretical physics analysis..."
+```
+
+Orchestrators can:
+1. Load `AGENTS.yaml` to understand available capabilities
+2. Match user intent to category, then select within category
+3. Load full `.agent.md` only when delegating to that agent
+
+Use `load_agents_index()` for the complete roster and routing hints.
+
+## Documentation
+
+See the `docs/` directory for detailed documentation on:
+- [Calculus](docs/calculus.md) - Differentiation, integration, limits, series, transforms
+- [Special Functions](docs/special.md) - Bessel, Legendre, Hermite, elliptic integrals
+- [Differential Geometry](docs/diffgeo.md) - Metrics, Christoffel, curvature, tensors
+- [Plotting](docs/plotting.md) - Function plots, data visualization
+
+## Example Notebooks
+
+The `examples/` directory contains interactive Marimo notebooks demonstrating complex use cases:
+
+| Notebook | Description | GitHub | Rendered |
+|----------|-------------|--------|----------|
+| `derive_marimo.py` | Intro notebook for core calculus/plotting | [IPYNB](examples/rendered/derive_marimo.ipynb) | [HTML](https://closedform.github.io/deriver/examples/rendered/derive_marimo.html) |
+| `symbolic_regression.py` | Discover formulas from data with FindFormula/PySR | [IPYNB](examples/rendered/symbolic_regression.ipynb) | [HTML](https://closedform.github.io/deriver/examples/rendered/symbolic_regression.html) |
+| `classical_mechanics.py` | Lagrangian/Hamiltonian mechanics, Noether's theorem | [IPYNB](examples/rendered/classical_mechanics.ipynb) | [HTML](https://closedform.github.io/deriver/examples/rendered/classical_mechanics.html) |
+| `quantum_mechanics.py` | Harmonic oscillator, hydrogen atom, perturbation theory | [IPYNB](examples/rendered/quantum_mechanics.ipynb) | [HTML](https://closedform.github.io/deriver/examples/rendered/quantum_mechanics.html) |
+| `electromagnetism.py` | Maxwell equations, gauge theory, EM waves | [IPYNB](examples/rendered/electromagnetism.ipynb) | [HTML](https://closedform.github.io/deriver/examples/rendered/electromagnetism.html) |
+| `differential_geometry.py` | Manifolds, curvature tensors, connections | [IPYNB](examples/rendered/differential_geometry.ipynb) | [HTML](https://closedform.github.io/deriver/examples/rendered/differential_geometry.html) |
+| `linearized_gravity.py` | Metric perturbations and gravitational waves | [IPYNB](examples/rendered/linearized_gravity.ipynb) | [HTML](https://closedform.github.io/deriver/examples/rendered/linearized_gravity.html) |
+| `renormalization_group.py` | CLT as RG fixed point, universality, beta functions | [IPYNB](examples/rendered/renormalization_group.ipynb) | [HTML](https://closedform.github.io/deriver/examples/rendered/renormalization_group.html) |
+| `numerical_relativity_stencils.py` | Lagrangians to finite difference stencils, code generation | [IPYNB](examples/rendered/numerical_relativity_stencils.ipynb) | [HTML](https://closedform.github.io/deriver/examples/rendered/numerical_relativity_stencils.html) |
+| `compact_models.py` | FDTD to symbolic compact models, Kramers-Kronig | [IPYNB](examples/rendered/compact_models.ipynb) | [HTML](https://closedform.github.io/deriver/examples/rendered/compact_models.html) |
+
+The RG notebook demonstrates how the Central Limit Theorem emerges as a renormalization group fixed point, inspired by [The Simplest Renormalization Group](https://dinunno.substack.com/p/the-simplest-renormalization-group).
+
+The numerical relativity stencils notebook demonstrates the pipeline from Lagrangians to numerical simulation code, based on [arXiv:1608.04408](https://arxiv.org/abs/1608.04408).
+
+### Interactive Notebooks
+
+The example notebooks are written for [Marimo](https://marimo.io/), a reactive Python notebook. Marimo is included as a dependency.
+
+To launch an interactive session for any of the examples:
+
+```bash
+uv run marimo edit examples/quantum_mechanics.py
+```
+
+Replace `examples/quantum_mechanics.py` with the path to any other notebook in the `examples/` directory.
+
+Marimo notebooks are pure Python files that can also be imported as modules or run as scripts.
+
+## Running Tests
+
+```bash
+uv run pytest tests/
+```
+
+## Project Philosophy
+
+<p align="center">
+    <a href="https://awesomeclaude.ai/ralph-wiggum"><img src="https://raw.githubusercontent.com/closedform/deriver/main/assets/ralph.jpg" width="220" alt="And I helped!"></a> <br />
+    <em>Built from vibes for your pleasure.</em>
+</p>
+
+Derive started as an experiment: what if we designed a symbolic math library specifically for the way AI agents think and work? The result is a library that prioritizes:
+
+- **Composability over configuration**: Chain operations, not configure objects
+- **Familiarity over novelty**: Use notation that physicists and mathematicians already know
+- **Exactness over approximation**: Keep things symbolic as long as possible
+
+The Ralph Wiggum philosophy: sometimes the best tools come from unexpected collaborations.
+
+## License
+
+MIT License
+
+## Acknowledgements
+
+Thanks to the open-source libraries Derive is built on:
+
+- [CVXPY](https://www.cvxpy.org/) (optional, for optimization features)
+- [Marimo](https://marimo.io/)
+- [Matplotlib](https://matplotlib.org/)
+- [mpmath](https://mpmath.org/)
+- [NumPy](https://numpy.org/)
+- [Polars](https://www.pola.rs/)
+- [PySR](https://astroautomata.com/PySR/) (symbolic regression)
+- [Rich](https://rich.readthedocs.io/)
+- [SciPy](https://scipy.org/)
+- [SymPy](https://www.sympy.org/)
+
+**Note**: This project is the result of a collaboration between Brandon DiNunno, Tom Mainiero, Victor (Mingsy) Chua, and Claude Code. Any likeness to proprietary APIs is strictly coincidental.
+
+## Official Logo
+
+<p align="center">
+    <img src="https://raw.githubusercontent.com/closedform/deriver/main/assets/mascots.png" width="380" alt="The Derive Mascots: Der and Ive">
+</p>
