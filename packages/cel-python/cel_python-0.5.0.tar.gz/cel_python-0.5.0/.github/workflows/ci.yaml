@@ -1,0 +1,61 @@
+name: "CI"
+
+on:
+  push:
+  pull_request:
+env:
+  POETRY_VERSION: "1.8.3"
+  DEFAULT_PY_VERSION: "3.13"
+
+jobs:
+  Lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ env.DEFAULT_PY_VERSION }}
+
+      - run: uv run tox -e lint
+
+  Tests:
+    needs: Lint
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - python-version: "3.10"
+            tox-target: py310
+          - python-version: "3.11"
+            tox-target: py311
+          - python-version: "3.12"
+            tox-target: py312
+          - python-version: "3.13"
+            tox-target: py313
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - run: uv run tox -e ${{ matrix.tox-target }}
+
+  Coverage:
+    needs: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ env.DEFAULT_PY_VERSION }}
+
+      - run: uv run tox -e lint
+
+      - uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.xml
+          name: codecov
