@@ -1,0 +1,311 @@
+import sys
+
+# fast-path for self-check
+# makes extension a lot faster
+if __name__ in ("__main__", "atopile.cli.cli"):
+    if len(sys.argv) == 2 and sys.argv[1] == "self-check":
+        from importlib.metadata import version as get_package_version
+
+        print(get_package_version("atopile"))
+        sys.exit(0)
+
+
+import json
+import logging
+from enum import Enum
+from importlib.metadata import version as get_package_version
+from pathlib import Path
+from typing import Annotated
+
+import typer
+
+from atopile import version
+from atopile.cli import (
+    build,
+    configure,
+    create,
+    dev,
+    inspect_,
+    install,
+    kicad_ipc,
+    lsp,
+    mcp,
+    package,
+    serve,
+    view,
+)
+from atopile.errors import (
+    UserException,
+    UserNoProjectException,
+    UserResourceException,
+    iter_leaf_exceptions,
+    log_discord_banner,
+)
+from atopile.logging import handler, logger
+from faebryk.libs.util import ConfigFlag
+
+SAFE_MODE_OPTION = ConfigFlag(
+    "SAFE_MODE", False, "Handle exceptions gracefully (coredump)"
+)
+
+app = typer.Typer(
+    no_args_is_help=True,
+    pretty_exceptions_enable=False,  # Use custom excepthook instead
+    rich_markup_mode="rich",
+)
+
+
+def python_interpreter_path(ctx: typer.Context, value: bool):
+    """Print the current python interpreter path."""
+    if not value or ctx.resilient_parsing:
+        return
+    typer.echo(sys.executable)
+    raise typer.Exit()
+
+
+def atopile_src_path(ctx: typer.Context, value: bool):
+    """Print the current python interpreter path."""
+    if not value or ctx.resilient_parsing:
+        return
+    typer.echo(Path(__file__).parent.parent)
+    raise typer.Exit()
+
+
+def version_callback(ctx: typer.Context, value: bool):
+    """Output a version string meeting the pypa version spec."""
+    if not value or ctx.resilient_parsing:
+        return
+    typer.echo(get_package_version("atopile"))
+    raise typer.Exit()
+
+
+def semver_callback(ctx: typer.Context, value: bool):
+    """Output a version string meeting the semver.org spec."""
+    if not value or ctx.resilient_parsing:
+        return
+    version_string = get_package_version("atopile")
+    typer.echo(version.parse(version_string))
+    raise typer.Exit()
+
+
+@app.callback()
+def cli(
+    ctx: typer.Context,
+    non_interactive: Annotated[
+        bool | None,
+        typer.Option(
+            "--non-interactive", envvar=["ATO_NON_INTERACTIVE", "NONINTERACTIVE"]
+        ),
+    ] = None,
+    debug: Annotated[
+        bool,
+        typer.Option("--debug", help="Wait to attach debugger on start"),
+    ] = False,
+    verbose: Annotated[
+        int,
+        typer.Option("--verbose", "-v", count=True, help="Increase verbosity"),
+    ] = 0,
+    python_path: Annotated[
+        bool, typer.Option(hidden=True, callback=python_interpreter_path)
+    ] = False,
+    atopile_path: Annotated[
+        bool, typer.Option(hidden=True, callback=atopile_src_path)
+    ] = False,
+    version: Annotated[
+        bool | None,
+        typer.Option("--version", callback=version_callback, is_eager=True),
+    ] = None,
+    semver: Annotated[
+        bool | None,
+        typer.Option("--semver", callback=semver_callback, is_eager=True),
+    ] = None,
+    safe_mode: Annotated[
+        bool,
+        typer.Option(
+            "--safe", help="Handle exceptions gracefully (coredump)", hidden=True
+        ),
+    ] = SAFE_MODE_OPTION.get(),
+):
+    if safe_mode:
+        import os
+        import resource
+        import signal
+        import subprocess
+        import time
+
+        def enable_core_dumps():
+            """Enable core dumps in the child process."""
+            try:
+                resource.setrlimit(
+                    resource.RLIMIT_CORE,
+                    (resource.RLIM_INFINITY, resource.RLIM_INFINITY),
+                )
+            except (ValueError, OSError):
+                pass  # Best effort - may fail if system limit is lower
+
+        args = [arg for arg in sys.argv if arg != "--safe"]
+        env = os.environ.copy()
+        env[SAFE_MODE_OPTION.name] = "N"  # Prevent safe wrapper recursion
+        env["ATO_SAFE"] = "1"  # Signal to workers to enable faulthandler
+
+        start_time = time.time()
+        result = subprocess.Popen(args, env=env, preexec_fn=enable_core_dumps)
+        pid = result.pid
+        returncode = result.wait()
+        if returncode not in (0, 1):
+            from faebryk.libs.util import run_gdb
+
+            print(f"Process exited with code {returncode}, PID was {pid}")
+            # Negative return code means killed by signal
+            if returncode < 0:
+                sig = -returncode
+                try:
+                    sig_name = signal.Signals(sig).name
+                except ValueError:
+                    sig_name = f"signal {sig}"
+                print(f"Killed by {sig_name}")
+            run_gdb(created_after=start_time)
+        sys.exit(returncode)
+
+    if debug:
+        import debugpy  # pylint: disable=import-outside-toplevel
+
+        debug_port = 5678
+        debugpy.listen(("localhost", debug_port))
+        logger.info("Starting debugpy on port %s", debug_port)
+        debugpy.wait_for_client()
+
+    # set the log level
+    if verbose == 1:
+        handler.hide_traceback_types = ()
+        handler.tracebacks_show_locals = True
+    elif verbose == 2:
+        handler.tracebacks_suppress_map = {}  # Traceback through atopile infra
+    elif verbose >= 3:
+        logger.root.setLevel(logging.DEBUG)
+        handler.traceback_level = logging.WARNING
+
+    # FIXME: this won't work properly when configs
+    # are reloaded from a pointed-to file (eg in `ato build path/to/file`)
+    # from outside a project directory
+    if non_interactive is not None:
+        from atopile.config import config
+
+        config.interactive = not non_interactive
+
+    # TODO use file to rate-limit check_for_update
+    # if ctx.invoked_subcommand:
+    #    check_for_update()
+
+    # Set up database logging for all CLI commands (not just builds)
+    # This ensures logs from validate, inspect, etc. are also stored in the database
+    from atopile.logging import BuildLogger
+
+    BuildLogger.setup_logging(enable_database=True, stage="cli")
+
+    configure.setup()
+
+
+app.command()(build.build)
+app.add_typer(create.create_app, name="create")
+app.command(deprecated=True, hidden=True)(install.install)
+app.command()(inspect_.inspect)
+app.command()(view.view)
+app.add_typer(package.package_app, name="package", hidden=True)
+app.add_typer(install.dependencies_app, name="dependencies", help="Manage dependencies")
+app.command(rich_help_panel="Shortcuts")(install.sync)
+app.command(rich_help_panel="Shortcuts")(install.add)
+app.command(rich_help_panel="Shortcuts")(install.remove)
+app.add_typer(lsp.lsp_app, name="lsp", hidden=True)
+app.add_typer(mcp.mcp_app, name="mcp", hidden=True)
+app.add_typer(kicad_ipc.kicad_ipc_app, name="kicad-ipc", hidden=True)
+app.add_typer(dev.dev_app, name="dev", hidden=True)
+app.add_typer(serve.serve_app, name="serve")
+
+
+@app.command(hidden=True)
+def export_config_schema(pretty: bool = False):
+    from atopile.config import ProjectConfig
+
+    config_schema = ProjectConfig.model_json_schema()
+
+    if pretty:
+        print(json.dumps(config_schema, indent=4))
+    else:
+        print(json.dumps(config_schema))
+
+
+class ConfigFormat(str, Enum):
+    python = "python"
+    json = "json"
+
+
+@app.command(hidden=True)
+def dump_config(format: ConfigFormat = ConfigFormat.python):
+    from atopile.config import config
+    from atopile.logging_utils import console
+
+    console.print(config.project.model_dump(mode=format))
+
+
+@app.command(help="Check file for syntax errors and internal consistency")
+def validate(
+    path: Annotated[Path, typer.Argument(exists=True, file_okay=True, dir_okay=False)],
+):
+    from atopile.compiler import front_end
+    from atopile.config import config
+
+    path = path.resolve().relative_to(Path.cwd())
+
+    # pick up project config if we're in a project
+    # required for package search path inclusion
+    try:
+        config.apply_options(entry=None)
+    except UserNoProjectException:
+        pass
+
+    if path.suffix != ".ato":
+        raise UserResourceException("Invalid file type")
+
+    try:
+        front_end.bob.try_build_all_from_file(path)
+    except* UserException as e:
+        for error in iter_leaf_exceptions(e):
+            logger.error(error, exc_info=error)
+
+    else:
+        typer.echo(f"{path}: ok")
+
+
+def main():
+    """
+    CLI entry point with exception handling.
+
+    Exception Contract:
+        - UserException (and subclasses): Build failures - log error, exit(1)
+        - Other exceptions: Unexpected errors - log error, exit(1)
+        - KeyboardInterrupt: User cancelled - exit(130)
+
+    When run as a subprocess by the server (via build_queue.py), the exit
+    code determines the build status:
+        - exit(0): SUCCESS
+        - exit(1): FAILED
+        - exit(130): CANCELLED (SIGINT)
+    """
+    from atopile import telemetry
+
+    try:
+        app()
+    except KeyboardInterrupt:
+        logger.info("Interrupted")
+        raise SystemExit(130)  # Standard exit code for SIGINT
+    except Exception as exc:
+        for e in iter_leaf_exceptions(exc):
+            logger.error(e, exc_info=e)
+        telemetry.capture_exception(exc)
+        log_discord_banner()
+        raise SystemExit(1)
+
+
+if __name__ == "__main__":
+    main()

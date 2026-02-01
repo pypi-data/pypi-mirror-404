@@ -1,0 +1,3531 @@
+# This file is part of the faebryk project
+# SPDX-License-Identifier: MIT
+
+import collections.abc
+import difflib
+import hashlib
+import importlib.util
+import inspect
+import itertools
+import json
+import logging
+import os
+import re
+import select
+import shutil
+import stat
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+import uuid
+from abc import abstractmethod
+from collections import defaultdict, deque
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeoutError
+from contextlib import contextmanager
+from copy import deepcopy
+from dataclasses import dataclass, fields, is_dataclass
+from datetime import datetime
+from enum import Enum, StrEnum, auto
+from functools import wraps
+from genericpath import commonprefix
+from importlib.metadata import Distribution
+from itertools import chain, pairwise
+from json import JSONEncoder
+from pathlib import Path
+from tempfile import NamedTemporaryFile
+from textwrap import indent
+from types import ModuleType
+from typing import (
+    Any,
+    Callable,
+    Concatenate,
+    Container,
+    Generator,
+    Hashable,
+    Iterable,
+    Iterator,
+    List,
+    Optional,
+    Protocol,
+    Self,
+    Sequence,
+    SupportsFloat,
+    SupportsInt,
+    Type,
+    TypeGuard,
+    cast,
+    get_origin,
+    get_type_hints,
+    overload,
+    override,
+)
+
+import psutil
+
+logger = logging.getLogger(__name__)
+
+
+class Serializable(Protocol):
+    def serialize(self) -> dict: ...
+
+    @classmethod
+    def deserialize(cls, data: dict) -> Self: ...
+
+
+class SerializableJSONEncoder(JSONEncoder):
+    def default(self, o: Serializable | None):
+        return None if o is None else o.serialize()
+
+
+class Advancable(Protocol):
+    def set_total(self, total: int | None) -> None: ...
+
+    def advance(self, advance: int = 1) -> None: ...
+
+
+class lazy:
+    def __init__(self, expr):
+        self.expr = expr
+
+    def __str__(self):
+        return str(self.expr())
+
+    def __repr__(self):
+        return repr(self.expr())
+
+
+def kw2dict(**kw):
+    return dict(kw)
+
+
+class hashable_dict:
+    def __init__(self, obj: dict):
+        self.obj = obj
+
+    def __hash__(self):
+        return hash(sum(map(hash, self.obj.items())))
+
+    def __repr__(self):
+        return "{}({})".format(type(self), repr(self.obj))
+
+    def __eq__(self, other):
+        return hash(self) == hash(other)
+
+
+def unique[T, U](
+    it: Iterable[T],
+    key: Callable[[T], U],
+    custom_eq: Callable[[U, U], bool] | None = None,
+) -> list[T]:
+    seen: list[U] = []
+    out: list[T] = []
+    custom_eq = custom_eq or (lambda x, y: x == y)
+    for i in it:
+        v = key(i)
+        if any(custom_eq(v, s) for s in seen):
+            continue
+        seen.append(v)
+        out.append(i)
+    return out
+
+
+def unique_ref[T](it: Iterable[T]) -> list[T]:
+    return unique(it, id)
+
+
+def duplicates[T, U](
+    it: Iterable[T],
+    key: Callable[[T], U],
+    by_eq: bool = False,
+    custom_eq: Callable[[T, T], bool] | None = None,
+) -> dict[U, list[T]]:
+    if by_eq:
+        return {
+            k: uv
+            for k, v in groupby(it, key).items()
+            if len(uv := unique(v, key=lambda x: x, custom_eq=custom_eq)) > 1
+        }
+    else:
+        return {k: v for k, v in groupby(it, key).items() if len(v) > 1}
+
+
+def get_dict(obj, key, default):
+    if key not in obj:
+        obj[key] = default()
+
+    return obj[key]
+
+
+def flatten(obj: Iterable, depth=1) -> List:
+    if depth == 0:
+        return list(obj)
+    if not isinstance(obj, Iterable):
+        return [obj]
+    return [nested for top in obj for nested in flatten(top, depth=depth - 1)]
+
+
+def get_key[T, U](haystack: dict[T, U], needle: U) -> T:
+    return find(haystack.items(), lambda x: x[1] == needle)[0]
+
+
+class KeyErrorNotFound(KeyError): ...
+
+
+class KeyErrorAmbiguous[T](KeyError):
+    def __init__(self, duplicates: list[T], *args: object) -> None:
+        super().__init__(*args)
+        self.duplicates = duplicates
+
+    def __str__(self):
+        return f"KeyErrorAmbiguous: {self.duplicates}"
+
+
+def find[T](haystack: Iterable[T], needle: Callable[[T], Any] | None = None) -> T:
+    if needle is None:
+        needle = lambda x: x is not None  # noqa: E731
+    results = [x for x in haystack if needle(x)]
+    if not results:
+        raise KeyErrorNotFound()
+    if len(results) != 1:
+        raise KeyErrorAmbiguous(results)
+    return results[0]
+
+
+def find_or[T](
+    haystack: Iterable[T],
+    needle: Callable[[T], bool],
+    default: T,
+    default_multi: Callable[[list[T]], T] | None = None,
+) -> T:
+    try:
+        return find(haystack, needle)
+    except KeyErrorNotFound:
+        return default
+    except KeyErrorAmbiguous as e:
+        if default_multi is not None:
+            return default_multi(e.duplicates)
+        raise
+
+
+def groupby[T, U](
+    it: Iterable[T], key: Callable[[T], U], only_multi: bool = False
+) -> dict[U, list[T]]:
+    out = defaultdict(list)
+    for i in it:
+        out[key(i)].append(i)
+    if only_multi:
+        return {k: v for k, v in out.items() if len(v) > 1}
+    return out
+
+
+def nested_enumerate(it: Iterable) -> list[tuple[list[int], Any]]:
+    out: list[tuple[list[int], Any]] = []
+    for i, obj in enumerate(it):
+        if not isinstance(obj, Iterable):
+            out.append(([i], obj))
+            continue
+        for j, _obj in nested_enumerate(obj):
+            out.append(([i] + j, _obj))
+
+    return out
+
+
+class NotifiesOnPropertyChange(object):
+    def __init__(self, callback) -> None:
+        self._callback = callback
+
+        # TODO dir -> vars?
+        for name in dir(self):
+            self._callback(name, getattr(self, name))
+
+    def __setattr__(self, __name, __value) -> None:
+        super().__setattr__(__name, __value)
+
+        # before init
+        if hasattr(self, "_callback"):
+            self._callback(__name, __value)
+
+
+class _wrapper[T, P](NotifiesOnPropertyChange):
+    @abstractmethod
+    def __init__(self, parent: P) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_all(self) -> list[T]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def handle_add(self, name: str, obj: T):
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_parent(self) -> P:
+        raise NotImplementedError
+
+    @abstractmethod
+    def extend_list(self, list_name: str, *objs: T) -> None:
+        raise NotImplementedError
+
+
+def Holder[T, P](_type: Type[T], _ptype: Type[P]) -> Type[_wrapper[T, P]]:
+    class __wrapper[_T, _P](_wrapper[_T, _P]):
+        def __init__(self, parent: P) -> None:
+            self._list: list[T] = []
+            self._type = _type
+            self._parent: P = parent
+
+            NotifiesOnPropertyChange.__init__(self, self._callback)
+
+        def _callback(self, name: str, value: Any):
+            if name.startswith("_"):
+                return
+
+            if callable(value):
+                return
+
+            if isinstance(value, self._type):
+                self._list.append(value)
+                self.handle_add(name, value)
+                return
+
+            if isinstance(value, dict):
+                value = value.values()
+
+            if isinstance(value, Iterable):
+                e_objs = nested_enumerate(value)
+                objs = [x[1] for x in e_objs]
+                assert all(map(lambda x: isinstance(x, self._type), objs))
+
+                self._list += objs
+                for i_list, instance in e_objs:
+                    i_acc = "".join(f"[{i}]" for i in i_list)
+                    self.handle_add(f"{name}{i_acc}", instance)
+                return
+
+            raise Exception(
+                f"Invalid property added for {name=} {value=} of type {type(value)},"
+                + f"expected {_type} or iterable thereof"
+            )
+
+        def extend_list(self, list_name: str, *objs: T) -> None:
+            if not hasattr(self, list_name):
+                setattr(self, list_name, [])
+            for obj in objs:
+                # emulate property setter
+                list_obj = getattr(self, list_name)
+                idx = len(list_obj)
+                list_obj.append(obj)
+                self._list.append(obj)
+                self.handle_add(f"{list_name}[{idx}]", obj)
+
+        def get_all(self) -> list[T]:
+            # check for illegal list modifications
+            for name in sorted(dir(self)):
+                value = getattr(self, name)
+                if name.startswith("_"):
+                    continue
+                if callable(value):
+                    continue
+                if isinstance(value, self._type):
+                    continue
+                if isinstance(value, dict):
+                    value = value.values()
+                if isinstance(value, Iterable):
+                    assert set(flatten(value, -1)).issubset(set(self._list))
+                    continue
+
+            return self._list
+
+        def handle_add(self, name: str, obj: T) -> None: ...
+
+        def get_parent(self) -> P:
+            return self._parent
+
+        def repr(self):
+            return f"{type(self).__name__}({self._list})"
+
+    return __wrapper[T, P]
+
+
+def not_none[T](x: T | None) -> T:
+    assert x is not None
+    return x
+
+
+@overload
+def cast_assert[T](t: type[T], obj) -> T: ...
+
+
+@overload
+def cast_assert[T1, T2](t: tuple[type[T1], type[T2]], obj) -> T1 | T2: ...
+
+
+@overload
+def cast_assert[T1, T2, T3](
+    t: tuple[type[T1], type[T2], type[T3]], obj
+) -> T1 | T2 | T3: ...
+
+
+@overload
+def cast_assert[T1, T2, T3, T4](
+    t: tuple[type[T1], type[T2], type[T3], type[T4]], obj
+) -> T1 | T2 | T3 | T4: ...
+
+
+def cast_assert(t, obj):
+    """
+    Assert that obj is an instance of type t and return it with proper type hints.
+    t can be either a single type or a tuple of types.
+    """
+    assert isinstance(obj, t), f"{obj=} is not an instance of {t}"
+    return obj
+
+
+def times[T](cnt: SupportsInt, lamb: Callable[[], T]) -> list[T]:
+    return [lamb() for _ in range(int(cnt))]
+
+
+def is_type_pair[T, U](
+    param1: Any, param2: Any, type1: type[T], type2: type[U]
+) -> Optional[tuple[T, U]]:
+    o1 = get_origin(type1) or type1
+    o2 = get_origin(type2) or type2
+    if isinstance(param1, o1) and isinstance(param2, o2):
+        return param1, param2
+    if isinstance(param2, o1) and isinstance(param1, o2):
+        return param2, param1
+    return None
+
+
+def is_type_set_subclasses(type_subclasses: set[type], types: set[type]) -> bool:
+    hits = {t: any(issubclass(s, t) for s in type_subclasses) for t in types}
+    return all(hits.values()) and all(
+        any(issubclass(s, t) for t in types) for s in type_subclasses
+    )
+
+
+def round_str(value: SupportsFloat, n=8):
+    """
+    Round a float to n decimals and strip trailing zeros.
+    """
+    f = round(float(value), n)
+    return str(f).rstrip("0").rstrip(".")
+
+
+def _print_stack(stack) -> Iterable[str]:
+    from rich.text import Text
+
+    for frame_info in stack:
+        frame = frame_info[0]
+        if "venv" in frame_info.filename:
+            continue
+        if "faebryk" not in frame_info.filename:
+            continue
+        # if frame_info.function not in ["_connect_across_hierarchies"]:
+        #    continue
+        yield str(
+            Text.assemble(
+                (
+                    f" Frame in {frame_info.filename} at line {frame_info.lineno}:",
+                    "red",
+                ),
+                (f" {frame_info.function} ", "blue"),
+            )
+        )
+
+        def pretty_val(value):
+            if isinstance(value, dict):
+                import pprint
+
+                formatted = pprint.pformat(
+                    {pretty_val(k): pretty_val(v) for k, v in value.items()},
+                    indent=2,
+                    width=120,
+                )
+                return ("\n" if len(value) > 1 else "") + indent(
+                    str(Text(formatted)), " " * 4
+                )
+            elif isinstance(value, type):
+                return f"<class {value.__name__}>"
+            return str(value)
+
+        for name, value in frame.f_locals.items():
+            yield str(
+                Text.assemble(
+                    ("  ", ""),
+                    (f"{name}", "green"),
+                    (" = ", ""),
+                    (pretty_val(value), ""),
+                )
+            )
+
+
+def print_stack(stack):
+    return "\n".join(_print_stack(stack))
+
+
+# Get deepest values in nested dict:
+def flatten_dict(d: dict):
+    for k, v in d.items():
+        if isinstance(v, dict):
+            yield from flatten_dict(v)
+        else:
+            yield (k, v)
+
+
+def split_recursive_stack(
+    stack: Iterable[inspect.FrameInfo],
+) -> tuple[list[inspect.FrameInfo], int, list[inspect.FrameInfo]]:
+    """
+    Handles RecursionError by splitting the stack into three parts:
+    - recursion: the repeating part of the stack indicating the recursion.
+    - stack_towards_recursion: the part of the stack after the recursion
+        has been detected.
+
+    :param stack: The stack obtained from inspect.stack()
+    :return: tuple (recursion, recursion_depth, stack_towards_recursion)
+    """
+
+    def find_loop_len(sequence):
+        for loop_len in range(1, len(sequence) // 2 + 1):
+            if len(sequence) % loop_len:
+                continue
+            is_loop = True
+            for i in range(0, len(sequence), loop_len):
+                if sequence[i : i + loop_len] != sequence[:loop_len]:
+                    is_loop = False
+                    break
+            if is_loop:
+                return loop_len
+
+        return 0
+
+    def find_last_longest_most_frequent_looping_sequence_in_beginning(stack):
+        stack = list(stack)
+
+        loops = []
+
+        # iterate over all possible beginnings
+        for i in range(len(stack)):
+            # iterate over all possible endings
+            # try to maximize length of looping sequence
+            for j in reversed(range(i + 1, len(stack) + 1)):
+                # determine length of loop within this range
+                loop_len = find_loop_len(stack[i:j])
+                if loop_len:
+                    # check if skipped beginning is partial loop
+                    if stack[:i] != stack[j - i : j]:
+                        continue
+                    loops.append((i, j, loop_len))
+                    continue
+
+        # print(loops)
+        max_loop = max(loops, key=lambda x: (x[1] - x[0], x[1]), default=None)
+        return max_loop
+
+    stack = list(stack)
+
+    # Get the full stack representation as a list of strings
+    full_stack = [f"{frame.filename}:{frame.positions}" for frame in stack]
+
+    max_loop = find_last_longest_most_frequent_looping_sequence_in_beginning(full_stack)
+    assert max_loop
+    i, j, depth = max_loop
+
+    return stack[i : i + depth], depth, stack[j:]
+
+
+CACHED_RECUSION_ERRORS = set()
+
+
+# TODO: now unused
+# Consider splitting into three functions
+# - A "lower_recursion_limit" contextmanager, should increase limit from current usage
+# - A "better_recursion_error" function, should improve recursion error messaging
+# - A separate composable "except" decorator which can be used to more generically
+#   return something in case of a function raising an error
+def try_avoid_endless_recursion(f: Callable[..., str]):
+    import sys
+
+    def _f_no_rec(*args, **kwargs):
+        limit = sys.getrecursionlimit()
+        target = 100
+        sys.setrecursionlimit(target)
+        try:
+            return f(*args, **kwargs)
+        except RecursionError:
+            sys.setrecursionlimit(target + 1000)
+
+            rec, depth, non_rec = split_recursive_stack(inspect.stack()[1:])
+            recursion_error_str = indent(
+                "\n".join(
+                    [
+                        f"{frame.filename}:{frame.lineno} {frame.code_context}"
+                        for frame in rec
+                    ]
+                    + [f"... repeats {depth} times ..."]
+                    + [
+                        f"{frame.filename}:{frame.lineno} {frame.code_context}"
+                        for frame in non_rec
+                    ]
+                ),
+                "   ",
+            )
+
+            if recursion_error_str in CACHED_RECUSION_ERRORS:
+                logger.error(
+                    f"Recursion error: {f.__name__} {f.__code__.co_filename}:"
+                    + f"{f.__code__.co_firstlineno}: DUPLICATE"
+                )
+            else:
+                CACHED_RECUSION_ERRORS.add(recursion_error_str)
+                logger.error(
+                    f"Recursion error: {f.__name__} {f.__code__.co_filename}:"
+                    + f"{f.__code__.co_firstlineno}"
+                )
+                logger.error(recursion_error_str)
+
+            return "<RECURSION ERROR WHILE CONVERTING TO STR>"
+        finally:
+            sys.setrecursionlimit(limit)
+
+    return _f_no_rec
+
+
+def zip_non_locked[T, U](left: Iterable[T], right: Iterable[U]):
+    # Theoretically supports any amount of iters,
+    #  but for type hinting limit to two for now
+
+    class _Iter[TS, US](Iterator[tuple[TS, US]]):
+        class _NONDEFAULT: ...
+
+        def __init__(self, args: list[Iterable]):
+            self.iters = [iter(arg) for arg in args]
+            self.stopped = False
+            self.stepped = False
+            self.values = [None for _ in self.iters]
+
+        def next(self, i: int, default: Any = _NONDEFAULT):
+            try:
+                self.advance(i)
+                return self.values[i]
+            except StopIteration as e:
+                self.stopped = True
+                if default is not self._NONDEFAULT:
+                    return default
+                raise e
+
+        def advance(self, i: int):
+            self.values[i] = next(self.iters[i])
+            self.stepped = True
+
+        def advance_all(self):
+            self.stepped = True
+            try:
+                self.values = [next(iter) for iter in self.iters]
+            except StopIteration:
+                self.stopped = True
+
+        def __next__(self):
+            if not self.stepped:
+                self.advance_all()
+            if self.stopped:
+                raise StopIteration()
+            self.stepped = False
+
+            return tuple(self.values)
+
+    return _Iter[T, U]([left, right])
+
+
+def try_or[T](
+    func: Callable[..., T],
+    default: T | None = None,
+    default_f: Callable[[Exception], T] | None = None,
+    catch: type[Exception] | tuple[type[Exception], ...] = Exception,
+) -> T:
+    try:
+        return func()
+    except catch as e:
+        if default_f is not None:
+            default = default_f(e)
+        return default
+
+
+class SharedReference[T]:
+    @dataclass
+    class Resolution[U, S]:
+        representative: S
+        object: U
+        old: U
+
+    def __init__(self, object: T):
+        self.object: T = object
+        self.links: set[Self] = set([self])
+
+    def link(self, other: Self):
+        assert type(self) is type(other), f"{type(self)=} {type(other)=}"
+        if self == other:
+            return
+
+        lhs, rhs = self, other
+        old = rhs.object
+
+        r_links = rhs.links
+        for rhs_ in r_links:
+            rhs_.object = lhs.object
+            rhs_.links = lhs.links
+
+        lhs.links.update(r_links)
+
+        return self.Resolution(lhs, lhs.object, old)
+
+    def set(self, obj: T):
+        self.object = obj
+        for link in self.links:
+            link.object = obj
+
+    def __call__(self) -> T:
+        return self.object
+
+    def __eq__(self, other: "SharedReference[T]"):
+        return self.object is other.object and self.links is other.links
+
+    def __hash__(self) -> int:
+        return hash(id(self))
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}({self.object})"
+
+
+def bfs_visit[T](
+    neighbours: Callable[[list[T]], list[T]], roots: Iterable[T]
+) -> set[T]:
+    """
+    Generic BFS (not depending on Graph)
+    Returns all visited nodes.
+    """
+    open_path_queue: list[list[T]] = [[root] for root in roots]
+    visited: set[T] = set(roots)
+
+    while open_path_queue:
+        open_path = open_path_queue.pop(0)
+
+        for neighbour in neighbours(open_path):
+            if neighbour not in visited:
+                new_path = open_path + [neighbour]
+                visited.add(neighbour)
+                open_path_queue.append(new_path)
+
+    return visited
+
+
+class TwistArgs:
+    def __init__(self, op: Callable) -> None:
+        self.op = op
+
+    def __call__(self, *args, **kwargs):
+        return self.op(*reversed(args), **kwargs)
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}({self.op})"
+
+
+def lazy_construct(cls):
+    """
+    Careful: break deepcopy
+    """
+    old_init = cls.__init__
+
+    def new_init(self, *args, **kwargs):
+        self._init = False
+        self._old_init = lambda: old_init(self, *args, **kwargs)
+
+    def __getattr__(self, name: str, /):
+        assert "_init" in self.__dict__
+        if self._init:
+            raise AttributeError(name)
+        self._old_init()
+        self._init = True
+        return self.__getattribute__(name)
+
+    cls.__init__ = new_init
+    cls.__getattr__ = __getattr__
+    return cls
+
+
+# TODO figure out nicer way (with metaclass or decorator)
+class LazyMixin:
+    @property
+    def is_init(self):
+        return self.__dict__.get("_init", False)
+
+    def force_init(self):
+        if self.is_init:
+            return
+        self._old_init()
+        self._init = True
+
+
+class Lazy(LazyMixin):
+    def __init_subclass__(cls) -> None:
+        super().__init_subclass__()
+        lazy_construct(cls)
+
+
+def once[T, **P](
+    f: Callable[P, T], _cacheable: Callable[[T], bool] | None = None
+) -> Callable[P, T]:
+    # TODO add flag for this optimization
+    # might not be desirable if different instances with same hash
+    # return same values here
+    # check if f is a method with only self
+    params = inspect.signature(f).parameters
+    # optimization: if takes self, cache in instance (saves hash of instance)
+    if "self" in params:
+        name = f.__name__
+        attr_name = f"_{name}_once"
+        param_list = list(params)
+
+        # optimization: if takes only self, no need for dict
+        if len(param_list) == 1:
+
+            def wrapper_single(self) -> Any:
+                if hasattr(self, attr_name):
+                    return getattr(self, attr_name)
+
+                result = f(self)
+                if _cacheable is None or _cacheable(result):
+                    setattr(self, attr_name, result)
+
+                return result
+
+            return wrapper_single
+
+        # optimization: if takes self + args, use self as cache
+        def wrapper_self(*args: P.args, **kwargs: P.kwargs) -> Any:
+            self = args[0]
+            lookup = (args[1:], tuple(kwargs.items()))
+            if not hasattr(self, attr_name):
+                setattr(self, attr_name, {})
+
+            cache = getattr(self, attr_name)
+            if lookup in cache:
+                return cache[lookup]
+
+            result = f(*args, **kwargs)
+            if _cacheable is None or _cacheable(result):
+                cache[lookup] = result
+            return result
+
+        return wrapper_self
+
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> Any:
+        lookup = (args, tuple(kwargs.items()))
+        if lookup in wrapper.cache:
+            return wrapper.cache[lookup]
+
+        result = f(*args, **kwargs)
+        if _cacheable is None or _cacheable(result):
+            wrapper.cache[lookup] = result
+        return result
+
+    wrapper.cache = {}
+    wrapper._is_once_wrapper = True
+    return wrapper
+
+
+def predicated_once[T](
+    pred: Callable[[T], bool],
+):
+    def decorator[F](f: F) -> F:
+        return once(f, pred)
+
+    return decorator
+
+
+def assert_once[T, O, **P](
+    f: Callable[Concatenate[O, P], T],
+) -> Callable[Concatenate[O, P], T]:
+    def wrapper(obj: O, *args: P.args, **kwargs: P.kwargs) -> T:
+        if not hasattr(obj, "_assert_once_called"):
+            setattr(obj, "_assert_once_called", set())
+
+        wrapper_set = getattr(obj, "_assert_once_called")
+
+        if wrapper not in wrapper_set:
+            wrapper_set.add(wrapper)
+            return f(obj, *args, **kwargs)
+        else:
+            raise AssertionError(f"{f.__name__} called on {obj} more than once")
+
+    return wrapper
+
+
+def assert_once_global[T, **P](f: Callable[P, T]) -> Callable[P, T]:
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+        if not wrapper.called:
+            wrapper.called = True
+            return f(*args, **kwargs)
+        else:
+            raise AssertionError("Function called more than once")
+
+    wrapper.called = False
+    return wrapper
+
+
+class _ConfigFlagBase[T]:
+    def __init__(self, name: str, default: T, descr: str = ""):
+        self._name = name
+        self.default = default
+        self.descr = descr
+        self._type: type[T] = type(default)
+        self.value = self._get()
+        self._has_been_read = False
+
+    @property
+    def name(self) -> str:
+        return f"FBRK_{self._name}"
+
+    def set(self, value: T, force: bool = False):
+        if self._has_been_read and value != self.value and not force:
+            raise ValueError(
+                f"Can't write flag {self.name}"
+                ", has already been read with different value"
+            )
+        self.value = value
+
+    @property
+    def raw_value(self) -> str | None:
+        return os.getenv(self.name, None)
+
+    def get(self) -> T:
+        self._has_been_read = True
+        return self.value
+
+    def _get(self) -> T:
+        raw_val = self.raw_value
+
+        if raw_val is None:
+            res = self.default
+        else:
+            try:
+                res = self._convert(raw_val)
+            except (ValueError, KeyError):
+                print(
+                    f"Invalid environment variable for "
+                    f"{self.name}: {raw_val}. Check your environment variables!"
+                    f"Fallback to default: {self.default}"
+                )
+                res = self.default
+
+        if res != self.default:
+            logger.warning(f"Config flag |{self.name}={res}|")
+
+        return res
+
+    def __hash__(self) -> int:
+        return hash(self.name)
+
+    @abstractmethod
+    def _convert(self, raw_val: str) -> T: ...
+
+    def __eq__(self, other) -> bool:
+        # catch cache lookup
+        if isinstance(other, _ConfigFlagBase):
+            return id(other) == id(self)
+
+        return self.get() == other
+
+
+class ConfigFlag(_ConfigFlagBase[bool]):
+    def __init__(self, name: str, default: bool = False, descr: str = "") -> None:
+        super().__init__(name, default, descr)
+
+    def _convert(self, raw_val: str) -> bool:
+        matches = [
+            (True, ["1", "true", "yes", "y"]),
+            (False, ["0", "false", "no", "n"]),
+        ]
+        val = raw_val.lower()
+
+        return find(matches, lambda x: val in x[1])[0]
+
+    def __bool__(self):
+        return self.get()
+
+
+class ConfigFlagEnum[E: StrEnum](_ConfigFlagBase[E]):
+    def __init__(self, name: str, default: E, enum: type[E], descr: str = "") -> None:
+        self.enum = enum
+        super().__init__(name, default, descr)
+
+    def _convert(self, raw_val: str) -> E:
+        return self.enum[raw_val.upper()]
+
+
+class ConfigFlagString(_ConfigFlagBase[str]):
+    def __init__(self, name: str, default: str = "", descr: str = "") -> None:
+        super().__init__(name, default, descr)
+
+    def _convert(self, raw_val: str) -> str:
+        return raw_val
+
+
+class ConfigFlagInt(_ConfigFlagBase[int]):
+    def __init__(self, name: str, default: int = 0, descr: str = "") -> None:
+        super().__init__(name, default, descr)
+
+    def _convert(self, raw_val: str) -> int:
+        if raw_val.startswith("0x"):
+            return int(raw_val, 16)
+        return int(float(raw_val))
+
+    def __int__(self) -> int:
+        return self.get()
+
+
+class ConfigFlagFloat(_ConfigFlagBase[float]):
+    def __init__(self, name: str, default: float = 0.0, descr: str = "") -> None:
+        super().__init__(name, default, descr)
+
+    def _convert(self, raw_val: str) -> float:
+        return float(raw_val)
+
+    def __float__(self) -> float:
+        return self.get()
+
+
+def zip_dicts_by_key(*dicts):
+    keys = {k for d in dicts for k in d}
+    return {k: tuple(d.get(k) for d in dicts) for k in keys}
+
+
+def factory[T, **P](con: Callable[P, T]) -> Callable[P, Callable[[], T]]:
+    def _(*args: P.args, **kwargs: P.kwargs) -> Callable[[], T]:
+        def __() -> T:
+            return con(*args, **kwargs)
+
+        return __
+
+    return _
+
+
+class PostInitCaller(type):
+    def __call__(cls, *args, **kwargs):
+        obj = type.__call__(cls, *args, **kwargs)
+        obj.__post_init__(*args, **kwargs)
+        return obj
+
+
+def post_init_decorator(cls):
+    """
+    Class decorator that calls __post_init__ after the last (of derived classes)
+    __init__ has been called.
+    Attention: Needs to be called on cls in __init_subclass__ of decorated class.
+    """
+    post_init_base = getattr(cls, "__post_init_decorator", None)
+    # already decorated
+    if post_init_base is cls:
+        return
+
+    original_init = cls.__init__
+
+    # inherited constructor
+    if post_init_base and post_init_base.__init__ == cls.__init__:
+        original_init = post_init_base.__original_init__
+
+    def new_init(self, *args, **kwargs):
+        original_init(self, *args, **kwargs)
+        if hasattr(self, "__post_init__") and type(self) is cls:
+            self.__post_init__(*args, **kwargs)
+
+    cls.__init__ = new_init
+    cls.__original_init__ = original_init
+    cls.__post_init_decorator = cls
+    return cls
+
+
+class DAG[T]:
+    class Node[T2]:
+        def __init__(self, value: T2):
+            self.value = value
+            self._children = []
+            self._parents = []
+
+        @property
+        def children(self) -> set[T2]:
+            return {child.value for child in self._children}
+
+        @property
+        def parents(self) -> set[T2]:
+            return {parent.value for parent in self._parents}
+
+    def __init__(self):
+        self.nodes: dict[T, DAG[T].Node[T]] = {}
+
+    @property
+    def values(self) -> set[T]:
+        return set(self.nodes.keys())
+
+    @property
+    def roots(self) -> set[T]:
+        return {node.value for node in self.nodes.values() if not node.parents}
+
+    @property
+    def leaves(self) -> set[T]:
+        return {node.value for node in self.nodes.values() if not node.children}
+
+    def get(self, value: T) -> Node[T]:
+        return self.add_or_get(value)
+
+    def get_node(self, value: T) -> Node[T] | None:
+        return self.nodes.get(value)
+
+    def add_or_get(self, value: T) -> Node[T]:
+        node = self.get_node(value)
+        if node is not None:
+            return node
+        node = self.Node(value)
+        self.nodes[value] = node
+        return node
+
+    def add_edge(self, parent: T, child: T):
+        parent_node = self.add_or_get(parent)
+        child_node = self.add_or_get(child)
+        parent_node._children.append(child_node)
+        child_node._parents.append(parent_node)
+
+    def _dfs_cycle_check(
+        self,
+        node: Node[T],
+        visiting: set[Node[T]],
+        visited: set[Node[T]],
+    ) -> bool:
+        """Helper recursive function for cycle detection."""
+        visiting.add(node)
+
+        for child in node._children:
+            if child in visiting:
+                # Cycle detected: trying to visit a node already
+                # in the current recursion stack
+                return True
+            if child not in visited:
+                # Recursively check subtree starting from child
+                if self._dfs_cycle_check(child, visiting, visited):
+                    return True
+
+        # Finished visiting node and all its descendants
+        visiting.remove(node)
+        visited.add(node)
+        return False
+
+    @property
+    def contains_cycles(self) -> bool:
+        """
+        Checks if the graph contains any cycles using Depth First Search.
+        """
+        visiting = set()  # Nodes currently being visited in the current DFS path
+        visited = set()  # Nodes whose subtrees have been fully explored
+
+        # Iterate through all nodes in the graph
+        # Necessary for graphs that are not fully connected (forests)
+        for node in self.nodes.values():
+            if node not in visited:
+                if self._dfs_cycle_check(node, visiting, visited):
+                    return True  # Cycle found starting from this node
+
+        return False  # No cycles found in any component of the graph
+
+    def to_tree(self, extra_roots: Iterable[T] = tuple()) -> "Tree[T]":
+        tree = Tree[T]()
+
+        def node_to_tree(node: DAG[T].Node) -> Tree[T]:
+            tree = Tree[T]()
+            for child in node._children:
+                tree[child.value] = node_to_tree(child)
+            return tree
+
+        for root in self.roots | set(extra_roots):
+            tree[root] = node_to_tree(self.nodes[root])
+        return tree
+
+    def all_parents(self, value: T) -> set[T]:
+        node = self.get(value)
+        parents = set(node.parents)
+
+        while True:
+            new_parents = set()
+            for parent in parents:
+                new_parents.update(self.get(parent).parents)
+            if not new_parents - parents:
+                break
+            parents.update(new_parents)
+
+        return parents
+
+    @property
+    def _in_degrees_by_node(self) -> dict[T, int]:
+        return {node.value: len(node._parents) for node in self.nodes.values()}
+
+    def topologically_sorted(self) -> list[T]:
+        """
+        Performs a topological sort of the DAG.
+        Returns a list where each element comes after all its dependencies (parents).
+        Raises ValueError if the graph contains cycles.
+        """
+
+        if self.contains_cycles:
+            raise ValueError("Cannot topologically sort a graph with cycles")
+
+        in_degrees_by_node = self._in_degrees_by_node
+
+        # Start with nodes with no incoming edges
+        queue = deque(
+            [value for value, degree in in_degrees_by_node.items() if degree == 0]
+        )
+        out: list[T] = []
+
+        while queue:
+            # Remove a node with no incoming edges
+            current = queue.popleft()
+            out.append(current)
+
+            # Remove edges from current node to its children
+            current_node = self.nodes[current]
+            for child_node in current_node._children:
+                child_value = child_node.value
+                in_degrees_by_node[child_value] -= 1
+
+                # If child has no more incoming edges, add to queue
+                if in_degrees_by_node[child_value] == 0:
+                    queue.append(child_value)
+
+        assert len(out) == len(self.nodes), (
+            "Topological sort failed: graph contains cycles"
+        )
+
+        return out
+
+    def get_subgraph(self, selector_func: Callable[[T], bool]) -> "DAG[T]":
+        """
+        Create the smallest subgraph that contains all nodes selected by the selector
+        function.
+
+        Args:
+            selector_func: A callable that returns True for nodes that must be included
+
+        Returns:
+            A new DAG containing the selected nodes and all their dependencies
+        """
+
+        subgraph = DAG[T]()
+
+        selected_nodes = {
+            node_value for node_value in self.nodes if selector_func(node_value)
+        }
+
+        if not selected_nodes:
+            return subgraph
+
+        nodes_to_include = selected_nodes.copy()
+
+        for node_value in selected_nodes:
+            nodes_to_include |= self.all_parents(node_value)
+
+        for node_value in nodes_to_include:
+            subgraph.add_or_get(node_value)
+
+        for node_value in nodes_to_include:
+            node = self.nodes[node_value]
+            for child_node in node._children:
+                if child_node.value in nodes_to_include:
+                    subgraph.add_edge(node_value, child_node.value)
+
+        return subgraph
+
+    def _to_graphviz(self):
+        import graphviz as gv  # type: ignore
+
+        g = gv.Digraph()
+        for node in self.nodes.values():
+            g.node(str(node.value))
+            for child in node._children:
+                g.edge(str(node.value), str(child.value))
+        return g
+
+
+class Tree[T](dict[T, "Tree[T]"]):
+    def iter_by_depth(self) -> Iterable[Sequence[T]]:
+        yield list(self.keys())
+
+        for level in zip_exhaust(*[v.iter_by_depth() for v in self.values()]):
+            # merge lists of parallel subtrees
+            yield [n for subtree in level for n in subtree]
+
+    def pretty(
+        self,
+        node_repr: Callable[[T], str] | None = None,
+        _prefix: str = "",
+        _is_root: bool = True,
+    ) -> str:
+        if node_repr is None:
+            node_repr = repr
+
+        lines: list[str] = []
+        items = list(self.items())
+
+        for i, (key, subtree) in enumerate(items):
+            is_last = i == len(items) - 1
+
+            if _is_root:
+                connector = ""
+                child_prefix = ""
+            else:
+                connector = "└── " if is_last else "├── "
+                child_prefix = _prefix + ("    " if is_last else "│   ")
+
+            lines.append(f"{_prefix}{connector}{node_repr(key)}")
+
+            if subtree:
+                lines.append(
+                    subtree.pretty(node_repr, _prefix=child_prefix, _is_root=False)
+                )
+
+        return "\n".join(lines)
+
+    def copy(self) -> "Tree[T]":
+        return Tree({k: v.copy() for k, v in self.items()})
+
+    def flat(self) -> set[T]:
+        return {n for level in self.iter_by_depth() for n in level}
+
+    def leaves(self) -> Generator[T, None, None]:
+        for child, child_tree in self.items():
+            if not child_tree:
+                yield child
+            else:
+                yield from child_tree.leaves()
+
+    def get_subtree(self, node: T) -> "Tree[T]":
+        """
+        If not acyclic, will return the highest subtree containing the node.
+        """
+        trees = [self]
+        while trees:
+            tree = find_or(
+                trees,
+                lambda t: node in not_none(t),
+                default=None,
+                default_multi=lambda x: x[0],
+            )
+            if tree is not None:
+                return tree[node]
+
+            trees = [child for tree in trees for child in tree.values()]
+
+        raise KeyErrorNotFound(f"fabll.Node {node} not found in tree")
+
+    def to_dag(self, dag: DAG[T] | None = None) -> DAG[T]:
+        if dag is None:
+            dag = DAG()
+        for parent, child_tree in self.items():
+            child_tree.to_dag(dag)
+            for child in child_tree.keys():
+                dag.add_edge(parent, child)
+        return dag
+
+
+# zip iterators, but if one iterators stops producing, the rest continue
+def zip_exhaust(*args):
+    while True:
+        out = [next(a, None) for a in args]
+        out = [a for a in out if a]
+        if not out:
+            return
+
+        yield out
+
+
+def join_if_non_empty(sep: str, *args):
+    return sep.join(s for arg in args if (s := str(arg)))
+
+
+def dataclass_as_kwargs(obj: Any) -> dict[str, Any]:
+    """
+    Unlike dataclasses.asdict because it doesn't convert children dataclasses to dicts.
+    This is useful when reconstructing a dataclass from a dict.
+    """
+    if hasattr(type(obj), "__field_names__"):
+        return {f: getattr(obj, f) for f in type(obj).__field_names__()}
+    return {f.name: getattr(obj, f.name) for f in fields(obj)}
+
+
+class RecursionGuard:
+    def __init__(self, limit: int = 10000):
+        self.limit = limit
+
+    # TODO remove this workaround when we have lazy mifs
+    def __enter__(self):
+        self.recursion_depth = sys.getrecursionlimit()
+        sys.setrecursionlimit(self.limit)
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        sys.setrecursionlimit(self.recursion_depth)
+
+
+def in_debug_session() -> bool:
+    """
+    Check if a debugger is connected.
+    """
+    # short-cut so we don't end up with a bunch of useless warnings
+    # when just checking for debugpy in the import statement
+    if "debugpy" not in sys.modules:
+        return False
+
+    try:
+        import debugpy
+
+        return debugpy.is_client_connected()
+
+    except (ImportError, ModuleNotFoundError):
+        pass
+
+    return False
+
+
+class FuncSet[T, H: Hashable = int](collections.abc.MutableSet[T]):
+    """
+    A set by pre-processing the objects with the hasher function.
+    """
+
+    def __init__(self, data: Iterable[T] = tuple(), hasher: Callable[[T], H] = id):
+        self._hasher = hasher
+        self._deref: defaultdict[H, list[T]] = defaultdict(list)
+
+        for item in data:
+            self._deref[self._hasher(item)].append(item)
+
+    def add(self, value: T):
+        if value not in self._deref[self._hasher(value)]:
+            self._deref[self._hasher(value)].append(value)
+
+    def discard(self, value: T):
+        hashed = self._hasher(value)
+        if hashed in self._deref and value in self._deref[hashed]:
+            self._deref[hashed].remove(value)
+            if not self._deref[hashed]:
+                del self._deref[hashed]
+
+    def __contains__(self, value: object):
+        try:
+            # Allow something of broader type than typically allowed
+            # but ultimately behave the same
+            hash_value = self._hasher(value)  # type: ignore
+        except Exception:
+            return False
+        return value in self._deref[hash_value]
+
+    def __iter__(self) -> Iterator[T]:
+        yield from chain.from_iterable(self._deref.values())
+
+    def __len__(self) -> int:
+        return sum(len(v) for v in self._deref.values())
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__name__}"
+            f"({repr(list(self))}, hasher={repr(self._hasher)})"
+        )
+
+
+class FuncDict[T, U, H: Hashable = int](collections.abc.MutableMapping[T, U]):
+    """
+    A dict by pre-processing the objects with the hasher function.
+    """
+
+    def __init__(
+        self,
+        data: Iterable[tuple[T, U]] = tuple(),
+        hasher: Callable[[T], H] = id,
+    ):
+        self._hasher = hasher
+        self._keys: defaultdict[H, list[T]] = defaultdict(list)
+        self._values: defaultdict[H, list[U]] = defaultdict(list)
+
+        for key, value in data:
+            hashed_key = self._hasher(key)
+            self._keys[hashed_key].append(key)
+            self._values[hashed_key].append(value)
+
+    def __contains__(self, item: object):
+        try:
+            hashed = self._hasher(item)  # type: ignore
+        except TypeError:
+            return False
+        return item in self._keys[hashed]
+
+    def keys(self) -> Iterator[T]:
+        yield from chain.from_iterable(self._keys.values())
+
+    def values(self) -> Iterator[U]:
+        yield from chain.from_iterable(self._values.values())
+
+    def __iter__(self) -> Iterator[T]:
+        yield from self.keys()
+
+    def __len__(self) -> int:
+        return sum(len(v) for v in self._values.values())
+
+    def __getitem__(self, key: T) -> U:
+        hashed = self._hasher(key)
+        for test_key, value in zip(self._keys[hashed], self._values[hashed]):
+            if test_key == key:
+                return value
+        raise KeyError(key)
+
+    def __setitem__(self, key: T, value: U):
+        hashed_key = self._hasher(key)
+        try:
+            idx = self._keys[hashed_key].index(key)
+        except ValueError:
+            self._keys[hashed_key].append(key)
+            self._values[hashed_key].append(value)
+        else:
+            self._values[hashed_key][idx] = value
+            self._keys[hashed_key][idx] = key
+
+    def __delitem__(self, key: T):
+        hashed_key = self._hasher(key)
+        try:
+            idx = self._keys[hashed_key].index(key)
+        except ValueError:
+            raise KeyError(key)
+        else:
+            del self._values[hashed_key][idx]
+            del self._keys[hashed_key][idx]
+
+    def items(self) -> Iterable[tuple[T, U]]:
+        """Iter key-value pairs as items, just like a dict."""
+        yield from zip(self.keys(), self.values())
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__name__}"
+            f"({repr(list(self.items()))}, hasher={repr(self._hasher)})"
+        )
+
+    def backwards_lookup(self, item: U) -> T:
+        """Find the first value that maps to item, and return its key."""
+        for key, value in self.items():
+            if value == item:
+                return key
+        raise KeyError(item)
+
+    def setdefault(self, key: T, default: U) -> U:
+        """Set default if key is not in the dict, and return the value."""
+        try:
+            return self[key]
+        except KeyError:
+            self[key] = default
+        return default
+
+    def backwards(self) -> "FuncDict[U, T, H]":
+        return FuncDict(((v, k) for k, v in self.items()), hasher=self._hasher)
+
+
+def dict_map_values(d: dict, function: Callable[[Any], Any]) -> dict:
+    """recursively map all values in a dict"""
+
+    result = {}
+    for key, value in d.items():
+        if isinstance(value, dict):
+            result[key] = dict_map_values(value, function)
+        elif isinstance(value, list):
+            result[key] = [dict_map_values(v, function) for v in value]
+        else:
+            result[key] = function(value)
+    return result
+
+
+def merge_dicts(*dicts: dict) -> dict:
+    """merge a list of dicts into a single dict,
+    if same key is present and value is list, lists are merged
+    if same key is dict, dicts are merged recursively
+    """
+    result = {}
+    for d in dicts:
+        for k, v in d.items():
+            if k in result:
+                if isinstance(v, list):
+                    assert isinstance(result[k], list), (
+                        f"Trying to merge list into key '{k}' of type {type(result[k])}"
+                    )
+                    result[k] += v
+                elif isinstance(v, dict):
+                    assert isinstance(result[k], dict)
+                    result[k] = merge_dicts(result[k], v)
+                else:
+                    result[k] = v
+            else:
+                result[k] = v
+    return result
+
+
+def abstract[T: type](cls: T) -> T:
+    """
+    Mark a class as abstract.
+    """
+
+    old_new = cls.__new__
+
+    def _new(cls_, *args, **kwargs):
+        if cls_ is cls:
+            raise TypeError(f"{cls.__name__} is abstract and cannot be instantiated")
+        return old_new(cls_, *args, **kwargs)
+
+    cls.__new__ = _new
+    cls.__is_abstract__ = cls
+    return cls
+
+
+def typename(x: object | type) -> str:
+    if not isinstance(x, type):
+        x = type(x)
+    return x.__name__
+
+
+def dict_value_visitor(d: dict, visitor: Callable[[Any, Any], Any]):
+    for k, v in list(d.items()):
+        if isinstance(v, dict):
+            dict_value_visitor(v, visitor)
+        else:
+            d[k] = visitor(k, v)
+
+
+def invert_dict[T, U](d: dict[T, U]) -> dict[U, list[T]]:
+    return groupby(d.keys(), key=lambda k: d[k])
+
+
+class DefaultFactoryDict[T, U](dict[T, U]):
+    def __init__(self, factory: Callable[[T], U], *args, **kwargs):
+        self.factory = factory
+        super().__init__(*args, **kwargs)
+
+    def __missing__(self, key: T) -> U:
+        res = self.factory(key)
+        self[key] = res
+        return res
+
+
+class EquivalenceClasses[T: Hashable]:
+    def __init__(self, base: Iterable[T] | None = None):
+        self.classes: dict[T, set[T]] = DefaultFactoryDict(lambda k: {k})
+        for elem in base or []:
+            self.classes[elem]
+
+    def add_eq(self, *values: T):
+        if len(values) < 2:
+            return
+        val1 = values[0]
+        for val in values[1:]:
+            self.classes[val1].update(self.classes[val])
+            for v in self.classes[val]:
+                self.classes[v] = self.classes[val1]
+
+    def is_eq(self, a: T, b: T) -> bool:
+        return self.classes[a] is self.classes[b]
+
+    def get(self, only_multi: bool = False) -> list[set[T]]:
+        sets = {id(s): s for s in self.classes.values()}
+        if only_multi:
+            sets = {k: v for k, v in sets.items() if len(v) > 1}
+        return list(sets.values())
+
+
+def common_prefix_to_tree(iterable: list[str]) -> Iterable[str]:
+    """
+    Turns:
+
+    <760>|RP2040.adc[0]|ADC.reference|ElectricPower.max_current|Parameter
+    <760>|RP2040.adc[0]|ADC.reference|ElectricPower.voltage|Parameter
+    <760>|RP2040.adc[1]|ADC.reference|ElectricPower.max_current|Parameter
+    <760>|RP2040.adc[1]|ADC.reference|ElectricPower.voltage|Parameter
+
+    Into:
+
+    <760>|RP2040.adc[0]|ADC.reference|ElectricPower.max_current|Parameter
+    -----------------------------------------------.voltage|Parameter
+    -----------------1]|ADC.reference|ElectricPower.max_current|Parameter
+    -----------------------------------------------.voltage|Parameter
+
+    Notes:
+        Recommended to sort the iterable first.
+    """
+    yield iterable[0]
+
+    for s1, s2 in pairwise(iterable):
+        prefix = commonprefix([s1, s2])
+        prefix_length = len(prefix)
+        yield "-" * prefix_length + s2[prefix_length:]
+
+
+def ind[T: str | list[str]](lines: T) -> T:
+    prefix = "    "
+    if isinstance(lines, str):
+        return indent(lines, prefix=prefix)
+    if isinstance(lines, list):
+        return [f"{prefix}{line}" for line in lines]  # type: ignore
+
+
+def run_live(
+    *args,
+    stdout: Callable[[str], Any] = logger.debug,
+    stderr: Callable[[str], Any] = logger.error,
+    check: bool = True,
+    timeout: float | None = None,
+    **kwargs,
+) -> tuple[str, str, subprocess.Popen]:
+    """Runs a process and logs the output live."""
+
+    # on windows just run the command since select does not work
+    if sys.platform == "win32":
+        return subprocess.run(*args, **kwargs)
+
+    process = subprocess.Popen(
+        *args,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        bufsize=1,  # Line buffered
+        **kwargs,
+    )
+
+    # Set up file descriptors to monitor
+    reads = [process.stdout, process.stderr]
+    stdout_lines = []
+    stderr_lines = []
+
+    # Keep reading until both streams hit EOF (not just until process exits)
+    # This ensures we capture all buffered output even after process termination
+    while reads:
+        # Use a timeout so we can check for EOF after process exits
+        readable, _, _ = select.select(reads, [], [], 0.1)
+
+        if not readable:
+            # No data available - if process has exited, try one more read
+            # to drain any remaining buffered data
+            if process.poll() is not None:
+                for stream in list(reads):
+                    remaining = stream.read()
+                    if remaining:
+                        for line in remaining.splitlines(keepends=True):
+                            if stream == process.stdout:
+                                stdout_lines.append(line)
+                                if stdout:
+                                    stdout(line.rstrip())
+                            elif stream == process.stderr:
+                                stderr_lines.append(line)
+                                if stderr:
+                                    stderr(line.rstrip())
+                    reads.remove(stream)
+            continue
+
+        for stream in readable:
+            line = stream.readline()
+            if not line:  # EOF
+                reads.remove(stream)
+                continue
+
+            if stream == process.stdout:
+                stdout_lines.append(line)
+                if stdout:
+                    stdout(line.rstrip())
+            elif stream == process.stderr:
+                stderr_lines.append(line)
+                if stderr:
+                    stderr(line.rstrip())
+
+    # Ensure the process has finished
+    process.wait(timeout=timeout)
+
+    # Get return code and check for errors
+    if process.returncode != 0 and check:
+        raise subprocess.CalledProcessError(
+            process.returncode, args[0], "".join(stdout_lines), "".join(stderr_lines)
+        )
+
+    return "\n".join(stdout_lines), "\n".join(stderr_lines), process
+
+
+@contextmanager
+def global_lock(lock_file_path: Path, timeout_s: float | None = None):
+    # TODO consider using filelock instead
+
+    lock_file_path.parent.mkdir(parents=True, exist_ok=True)
+
+    start_time = time.time()
+    while try_or(
+        lambda: bool(lock_file_path.touch(exist_ok=False)),
+        default=True,
+        catch=FileExistsError,
+    ):
+        # check if pid still alive
+        try:
+            pid = int(lock_file_path.read_text(encoding="utf-8"))
+        except ValueError:
+            lock_file_path.unlink(missing_ok=True)
+            continue
+        assert pid != os.getpid()
+        if not psutil.pid_exists(pid):
+            lock_file_path.unlink(missing_ok=True)
+            continue
+        if timeout_s and time.time() - start_time > timeout_s:
+            raise TimeoutError()
+        time.sleep(0.1)
+
+    # write our pid to the lock file
+    lock_file_path.write_text(str(os.getpid()), encoding="utf-8")
+    try:
+        yield
+    finally:
+        lock_file_path.unlink(missing_ok=True)
+
+
+def consume(iter: Iterable, n: int) -> list:
+    assert n >= 0
+    out = list(itertools.islice(iter, n))
+    return out if len(out) == n else []
+
+
+def closest_base_class(cls: type, base_classes: list[type]) -> type:
+    """
+    Find the most specific (closest) base class from a list of potential base classes.
+
+    Args:
+        cls: The class to find the closest base class for
+        base_classes: List of potential base classes to check
+
+    Returns:
+        The most specific base class from the list that cls inherits from
+
+    Raises:
+        ValueError: If cls doesn't inherit from any of the base classes
+    """
+    # Get all base classes in method resolution order (most specific first)
+    mro = cls.__mro__
+
+    # Find the first (most specific) base class that appears in the provided list
+    sort = sorted(base_classes, key=lambda x: mro.index(x))
+    return sort[0]
+
+
+def operator_type_check[**P, T](method: Callable[P, T]) -> Callable[P, T]:
+    @wraps(method)
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+        hints = get_type_hints(
+            method, include_extras=True
+        )  # This resolves string annotations
+        sig = inspect.signature(method)
+        param_hints = {name: hint for name, hint in hints.items() if name != "return"}
+
+        bound_args = sig.bind(*args, **kwargs)
+        bound_args.apply_defaults()
+
+        for name, value in bound_args.arguments.items():
+            if name not in param_hints:
+                continue
+            expected_type = param_hints[name]
+            # Handle Union, Optional, etc.
+            if hasattr(expected_type, "__origin__"):
+                expected_type = expected_type.__origin__
+            if not isinstance(value, expected_type):
+                return NotImplemented
+
+        return method(*args, **kwargs)
+
+    return wrapper
+
+
+@overload
+def partition[Y, T](
+    pred: Callable[[T], TypeGuard[Y]], iterable: Iterable[T]
+) -> tuple[Iterable[T], Iterable[Y]]: ...
+
+
+@overload
+def partition[T](
+    pred: Callable[[T], bool], iterable: Iterable[T]
+) -> tuple[Iterable[T], Iterable[T]]: ...
+
+
+def partition(pred, iterable):  # type: ignore
+    from more_itertools import partition as p
+
+    return p(pred, iterable)
+
+
+@overload
+def partition_as_list[Y, T](
+    pred: Callable[[T], TypeGuard[Y]], iterable: Iterable[T]
+) -> tuple[list[T], list[Y]]: ...
+
+
+@overload
+def partition_as_list[T](
+    pred: Callable[[T], bool], iterable: Iterable[T]
+) -> tuple[list[T], list[T]]: ...
+
+
+def partition_as_list(pred, iterable):  # type: ignore
+    false_list, true_list = partition(pred, iterable)
+    return list(false_list), list(true_list)
+
+
+def times_out(seconds: float):
+    # if running in debugger, don't timeout
+    if hasattr(sys, "gettrace") and sys.gettrace():
+        return lambda func: func
+
+    def decorator[**P, T](func: Callable[P, T]) -> Callable[P, T]:
+        @wraps(func)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+            # Check the platform
+            if sys.platform == "win32":
+                # Windows implementation using concurrent.futures
+                executor = ThreadPoolExecutor(max_workers=1)
+                future = executor.submit(func, *args, **kwargs)
+                try:
+                    # Wait for the function to complete with the specified timeout
+                    result = future.result(timeout=seconds)
+                    # Shutdown the executor without waiting for the worker thread to
+                    # finish
+                    # if the result was obtained successfully.
+                    executor.shutdown(wait=False, cancel_futures=False)
+                    return result
+                except FuturesTimeoutError:
+                    # If a timeout occurs, cancel the future (best effort) and shutdown.
+                    # Raise the standard TimeoutError for consistency.
+                    future.cancel()
+                    # Shutdown the executor without waiting for the worker thread,
+                    # as it's likely stuck or running long.
+                    executor.shutdown(wait=False, cancel_futures=True)
+                    raise TimeoutError(
+                        f"Function {func.__name__} exceeded time limit of {seconds}s"
+                    )
+                except Exception as e:
+                    # If the function itself raised an exception, ensure cleanup and re
+                    # -raise.
+                    executor.shutdown(wait=False, cancel_futures=True)
+                    raise e
+            else:
+                # Non-Windows (Unix-like) implementation using signal
+                import signal  # Import signal only when needed
+
+                def timeout_handler(signum, frame):
+                    raise TimeoutError(
+                        f"Function {func.__name__} exceeded time limit of {seconds}s"
+                    )
+
+                old_handler = signal.signal(signal.SIGALRM, timeout_handler)
+                signal.setitimer(signal.ITIMER_REAL, seconds)
+
+                try:
+                    return func(*args, **kwargs)
+                finally:
+                    # Clean up the timer and restore the original signal handler
+                    signal.setitimer(signal.ITIMER_REAL, 0)
+                    signal.signal(signal.SIGALRM, old_handler)
+
+        return wrapper
+
+    return decorator
+
+
+def hash_string(string: str) -> str:
+    """Spits out a uuid in hex from a string"""
+    return str(
+        uuid.UUID(
+            bytes=hashlib.blake2b(string.encode("utf-8"), digest_size=16).digest()
+        )
+    )
+
+
+def get_module_from_path(
+    file_path: os.PathLike, attr: str | None = None, allow_ambiguous: bool = False
+) -> ModuleType | None:
+    """
+    Return a module based on a file path if already imported, or return None.
+
+    If allow_ambiguous is True, and there are multiple modules with the same file path,
+    return the first one.
+    """
+    sanitized_file_path = Path(file_path).expanduser().resolve().absolute()
+
+    def _needle(m: ModuleType) -> bool:
+        try:
+            file = Path(getattr(m, "__file__"))
+            return sanitized_file_path.samefile(file)
+        except Exception:
+            return False
+
+    try:
+        module = find(sys.modules.values(), _needle)
+    except KeyErrorNotFound:
+        return None
+    except KeyErrorAmbiguous as e:
+        if allow_ambiguous:
+            module = e.duplicates[0]
+        else:
+            raise
+
+    if attr is None:
+        return module
+
+    return getattr(module, attr, None)
+
+
+def import_from_path(
+    file_path: os.PathLike, attr: str | None = None
+) -> ModuleType | Type:
+    """
+    Import a module from a file path.
+
+    If the module is already imported, return the existing module.
+    Otherwise, import the module and return the new module.
+
+    Raises FileNotFoundError if the file does not exist.
+    Raises AttributeError if the attr is not found in the module.
+    """
+    # custom unique name to avoid collisions
+    # we use this hasher to generate something terse and unique
+    module_name = hash_string(str(Path(file_path).expanduser().resolve().absolute()))
+
+    if module_name in sys.modules:
+        module = sys.modules[module_name]
+    else:
+        # setting to a sequence (and not None) indicates that the module is a package,
+        # which lets us use relative imports for submodules
+        submodule_search_locations = []
+
+        spec = importlib.util.spec_from_file_location(
+            module_name,
+            file_path,
+            submodule_search_locations=submodule_search_locations,
+        )
+        if spec is None:
+            raise ImportError(path=str(file_path))
+
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+
+        assert spec.loader is not None
+
+        spec.loader.exec_module(module)
+
+    if attr is None:
+        return module
+    else:
+        return getattr(module, attr)
+
+
+def has_attr_or_property(obj: object, attr: str) -> bool:
+    """Check if an object has an attribute or property by the name `attr`."""
+    return hasattr(obj, attr) or (
+        hasattr(type(obj), attr) and isinstance(getattr(type(obj), attr), property)
+    )
+
+
+def write_only_property(func: Callable):
+    def raise_write_only(*args, **kwargs):
+        raise AttributeError(f"{func.__name__} is write-only")
+
+    return property(
+        fget=raise_write_only,
+        fset=func,
+    )
+
+
+def has_instance_settable_attr(obj: object, attr: str) -> bool:
+    """
+    Check if an object has an instance attribute that is settable.
+    """
+    # If we have a property, it's going to tell us all we need to know
+    if hasattr(type(obj), attr) and isinstance(getattr(type(obj), attr), property):
+        # If the property is settable, use it to set the value
+        if getattr(type(obj), attr).fset is not None:
+            return True
+        # If not, it's not settable, end here
+        return False
+
+    # If there's an instance only attribute, we can set it
+    if hasattr(obj, attr) and not hasattr(type(obj), attr):
+        return True
+
+    # If there's an instance attribute, that's unique compared to the class
+    # attribute, we can set it. We don't need to check for a property here
+    # because we already checked for that above.
+    if (
+        hasattr(obj, attr)
+        and hasattr(type(obj), attr)
+        and getattr(obj, attr) is not getattr(type(obj), attr)
+    ):
+        return True
+
+    return False
+
+
+# Check if installed as editable
+def is_editable_install():
+    distro = Distribution.from_name("atopile")
+
+    if dist_info := distro.read_text("direct_url.json"):
+        return json.loads(dist_info).get("dir_info", {}).get("editable", False)
+
+    return False
+
+
+class SerializableEnum[E: Enum](Serializable):
+    class Value[E_: Enum](Serializable):
+        def __init__(self, enum: "SerializableEnum", value: E_):
+            self._value = value
+            self._enum = enum
+
+        @property
+        def name(self) -> str:
+            return self._value.name
+
+        @property
+        def value(self) -> E:
+            return self._value.value
+
+        @override
+        def serialize(self) -> dict:
+            return {"name": self._value.name}
+
+        def __eq__(self, other: "SerializableEnum.Value[E]") -> bool:
+            if not other._enum == self._enum:
+                return False
+            return (
+                other._value.name == self._value.name
+                and other._value.value == self._value.value
+            )
+
+        def __hash__(self) -> int:
+            return hash(self._value)
+
+        def __repr__(self) -> str:
+            return f"{self._enum.enum.__name__}.{self._value.name}"
+
+    def __init__(self, enum: type[Enum]):
+        self.enum = enum
+
+        class _Value(SerializableEnum.Value[E]):
+            @override
+            @staticmethod
+            def deserialize(data: dict) -> "_Value":
+                return _Value(self, self.enum[data["name"]])
+
+        self.value_cls = _Value
+
+    def serialize(self) -> dict:
+        enum = self.enum
+        # check enum values to all be ints or str
+        if not all(isinstance(e.value, (int, str, float)) for e in enum):
+            raise ValueError(f"Can't serialize {enum}: has non-primitive values")
+
+        enum_cls_serialized = {
+            "name": enum.__name__,
+            "values": {e.name: e.value for e in enum},
+        }
+
+        return enum_cls_serialized
+
+    @staticmethod
+    def deserialize(data: dict) -> "SerializableEnum":
+        enum_cls = Enum(data["name"], data["values"])
+        return SerializableEnum(cast(type[Enum], enum_cls))
+
+    def make_value(
+        self, value: "E | SerializableEnum.Value[E]"
+    ) -> "SerializableEnum.Value[E]":
+        if isinstance(value, SerializableEnum.Value):
+            return value
+        return self.value_cls(self, value)
+
+    def deserialize_value(self, data: dict) -> "SerializableEnum.Value[E]":
+        return self.value_cls.deserialize(data)
+
+    def __eq__(self, other: "SerializableEnum") -> bool:
+        return self.enum.__name__ == other.enum.__name__ and {
+            e.name: e.value for e in self.enum
+        } == {e.name: e.value for e in other.enum}
+
+
+def indented_container[T](
+    obj: Iterable[T] | dict[T, Any],
+    indent_level: int = 1,
+    recursive: bool = False,
+    use_repr: bool = True,
+    mapper: Callable[[T | str | int], T | str | int] = lambda x: x,
+    compress_large: int = 100,
+) -> str:
+    kvs = obj.items() if isinstance(obj, dict) else list(enumerate(obj))
+    _indent_prefix = "  "
+    _indent = _indent_prefix * indent_level
+    ind = "\n" + _indent
+
+    def compress(v: str) -> str:
+        if len(v) > compress_large:
+            return f"{v[:compress_large]}..."
+        return v
+
+    def format_v(v: T) -> str:
+        if not use_repr and isinstance(v, str):
+            return compress(indent(v, prefix=_indent))
+        if not recursive or not isinstance(v, Iterable) or isinstance(v, str):
+            return compress(repr(mapper(v)) if use_repr else str(mapper(v)))
+        return indented_container(
+            v,
+            indent_level=indent_level + 1,
+            recursive=recursive,
+            mapper=mapper,
+            compress_large=compress_large,
+        )
+
+    inside = ind.join(f"{mapper(k)}: {format_v(v)}" for k, v in kvs)
+    if len(kvs):
+        inside = f"{ind}{inside}\n"
+
+    return f"{{{inside}{_indent_prefix * (indent_level - 1)}}}"
+
+
+def md_list[T](
+    obj: Iterable[T] | dict[T, Any],
+    indent_level: int = 0,
+    recursive: bool = False,
+    mapper: Callable[[T | str | int], T | str | int] = lambda x: x,
+) -> str:
+    """
+    Convert an iterable or dictionary into a nested markdown list.
+    """
+    indent = f"{'  ' * indent_level}"
+
+    if isinstance(obj, dict):
+        kvs = obj.items()
+    elif isinstance(obj, str):
+        return f"{indent}- {obj}"
+    else:
+        try:
+            kvs = list(enumerate(obj))
+        except TypeError:
+            return f"{indent}- {str(mapper(obj))}"
+
+    if not kvs:
+        if isinstance(obj, Tree):
+            return ""
+        return f"{indent}- *(empty)*"
+
+    lines = deque()
+    for k, v in kvs:
+        k = mapper(k)
+        v = mapper(v)
+        key_str = ""
+
+        if isinstance(obj, dict):
+            sep = ":" if not isinstance(v, Tree) or len(v) else ""
+            key_str = f" **{k}{sep}**"
+
+        if recursive and isinstance(v, Iterable) and not isinstance(v, str):
+            if isinstance(obj, dict):
+                lines.append(f"{indent}-{key_str}")
+            nested = md_list(v, indent_level + 1, recursive=recursive, mapper=mapper)
+            lines.append(nested)
+        else:
+            value_str = str(v)
+            lines.append(f"{indent}-{key_str} {value_str}")
+
+    return "\n".join(lines)
+
+
+def md_table(obj: Iterable[Iterable[Any]], headers: Iterable[str]) -> str:
+    """Convert an iterable of iterables into a markdown table."""
+
+    headers_list = list(headers)
+    rows = list(obj)
+
+    if not headers_list:
+        return ""
+
+    # Calculate column widths
+    col_widths = [len(str(h)) for h in headers_list]
+    for row in rows:
+        row_list = list(row)
+        for i, cell in enumerate(row_list[: len(col_widths)]):
+            col_widths[i] = max(col_widths[i], len(str(cell)))
+
+    # Build header row
+    header_cells = []
+    for i, header in enumerate(headers_list):
+        header_cells.append(str(header).ljust(col_widths[i]))
+    header_row = "| " + " | ".join(header_cells) + " |"
+
+    # Build separator row
+    separator_cells = ["-" * width for width in col_widths]
+    separator_row = "| " + " | ".join(separator_cells) + " |"
+
+    # Build data rows
+    data_rows = []
+    for row in rows:
+        row_list = list(row)
+        cells = []
+        for i in range(len(headers_list)):
+            if i < len(row_list):
+                cells.append(str(row_list[i]).ljust(col_widths[i]))
+            else:
+                cells.append(" " * col_widths[i])
+        data_rows.append("| " + " | ".join(cells) + " |")
+
+    # Combine all parts
+    result = []
+    result.extend([header_row, separator_row] + data_rows)
+    return "\n".join(result)
+
+
+def robustly_rm_dir(path: os.PathLike) -> None:
+    """Remove a directory and all its contents."""
+
+    path = Path(path)
+
+    def remove_readonly(func, path, excinfo):
+        os.chmod(path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
+        func(path)
+
+    shutil.rmtree(path, onexc=remove_readonly)
+
+
+def yield_missing(existing: Container, candidates: Iterable | int | None = None):
+    match candidates:
+        case None:
+            counter = itertools.count()
+        case int():
+            counter = itertools.count(candidates)
+        case _:
+            counter = candidates
+
+    for c in counter:
+        if c not in existing:
+            yield c
+
+
+def try_relative_to(
+    target: os.PathLike, root: os.PathLike | None = None, walk_up: bool = False
+) -> Path:
+    target = Path(target)
+    root = Path(root) if root is not None else Path.cwd()
+    try:
+        return target.relative_to(root, walk_up=walk_up)
+    except FileNotFoundError:
+        return target
+    except ValueError as e:
+        if "is not in the subpath of" in str(e):
+            return target
+        raise
+
+
+@once
+def repo_root() -> Path:
+    return root_by_file(".git")
+
+
+def in_git_repo(path: Path) -> bool:
+    """Check if a path is in a git repository."""
+    import git
+
+    try:
+        git.Repo(path)
+    except git.InvalidGitRepositoryError:
+        return False
+    return True
+
+
+def test_for_git_executable() -> bool:
+    try:
+        import git  # noqa: F401
+    except ImportError as e:
+        # catch no git executable
+        if "executable" not in e.msg:
+            raise
+        return False
+    return True
+
+
+def root_by_file(pattern: str, start: Path = Path(__file__)) -> Path:
+    root = start
+    while not (root / pattern).exists():
+        if parent := root.parent:
+            root = parent
+        else:
+            raise FileNotFoundError("Could not find root")
+    else:
+        return root
+
+
+def is_numeric_str(s: str) -> bool:
+    """
+    Check if a string is a numeric string.
+    """
+    return s.replace(".", "").strip().isnumeric()
+
+
+def remove_venv_from_env(base_env: dict[str, str] | None = None):
+    """
+    Clean and return environment from venv, so subprocess can launch with system env.
+    """
+
+    env = base_env.copy() if base_env is not None else os.environ.copy()
+
+    # Does not work, shell variables (not exported)
+    # # Restore original PATH if saved
+    # if "_OLD_VIRTUAL_PATH" in env:
+    #     env["PATH"] = env.pop("_OLD_VIRTUAL_PATH")
+
+    # # Restore original PYTHONHOME if saved
+    # if "_OLD_VIRTUAL_PYTHONHOME" in env:
+    #     env["PYTHONHOME"] = env.pop("_OLD_VIRTUAL_PYTHONHOME")
+
+    # # Restore original shell prompt if saved (if applicable)
+    # if "_OLD_VIRTUAL_PS1" in env:
+    #     env["PS1"] = env.pop("_OLD_VIRTUAL_PS1")
+
+    def _is_venv(_path: str) -> bool:
+        path = Path(_path)
+        if not path.is_dir():
+            return False
+        if not any((path / p).exists() for p in ["python", "python.exe"]):
+            return False
+        if not any((path / p).exists() for p in ["activate", "activate.bat"]):
+            return False
+        return True
+
+    path = [p for p in env["PATH"].split(":") if not _is_venv(p)]
+
+    path = env["PATH"].split(":")
+
+    # Remove virtual environment specific variables
+    venv = env.pop("VIRTUAL_ENV", None)
+    if venv is not None:
+        # Remove venv from PATH
+        path = [p for p in path if not p.startswith(venv)]
+
+    # Remove other venvs e.g uv
+    path = [p for p in path if not _is_venv(p)]
+
+    env["PATH"] = ":".join(path)
+
+    venv_prompt = env.pop("VIRTUAL_ENV_PROMPT", None)
+    if venv_prompt is not None:
+        # Remove venv from prompt
+        if prompt := env.get("PS1"):
+            prompt = prompt.replace(venv_prompt, "")
+            env["PS1"] = prompt
+
+    env.pop("PYTHONHOME", None)
+
+    return env
+
+
+def pretty_type(t: object | type) -> str:
+    try:
+        return t.__qualname__
+    except Exception:
+        return str(t)
+
+
+class SyncedFlag:
+    def __init__(self, value: bool = False):
+        self.value = value
+
+    def __bool__(self) -> bool:
+        return bool(self.value)
+
+    def set(self, value: bool):
+        self.value = value
+
+
+def re_in(value: str, patterns: Iterable[str]) -> bool:
+    return any(re.match(pattern, value) for pattern in patterns)
+
+
+def clone_repo(
+    repo_url: str,
+    clone_target: Path,
+    depth: int | None = None,
+    ref: str | None = None,
+) -> Path:
+    """Clones a git repository and optionally checks out a specific ref.
+
+    Args:
+        repo_url: The URL of the repository to clone.
+        clone_target: The directory path where the repository should be cloned.
+        depth: If specified, creates a shallow clone with a history truncated
+               to the specified number of commits.
+        ref: The branch, tag, or commit hash to checkout after cloning.
+
+    Returns:
+        The path to the cloned repository (clone_target).
+
+    Raises:
+        git.GitCommandError: If any git command fails.
+    """
+    from git import GitCommandError, Repo
+
+    if depth is not None and ref is not None:
+        # GitPython doesn't automatically handle fetching missing refs on checkout
+        # during shallow clones like the command-line git might with fetch hints.
+        raise NotImplementedError("Cannot specify both depth and ref")
+
+    depth_str = f" with depth {depth or 'full'}" if depth is not None else ""
+    logger.debug(f"Cloning {repo_url} into {clone_target}{depth_str}...")
+    try:
+        repo = Repo.clone_from(repo_url, clone_target, depth=depth)
+        logger.debug(f"Successfully cloned {repo_url}")
+    except GitCommandError as e:
+        logger.error(f"Failed to clone {repo_url}: {e}")
+        raise
+
+    if ref:
+        logger.debug(f"Checking out ref {ref} in {clone_target}...")
+        try:
+            repo.git.checkout(ref)
+            logger.debug(f"Successfully checked out ref {ref}")
+        except GitCommandError as e:
+            logger.error(f"Failed to checkout ref {ref}: {e}")
+            raise
+
+    return clone_target
+
+
+def find_file(base_dir: Path, pattern: str):
+    """
+    equivalent to `find base_dir -type f -name pattern`
+    """
+    if not base_dir.exists() or not base_dir.is_dir():
+        return None
+    for file in base_dir.rglob(pattern):
+        if file.is_file():
+            yield file
+
+
+def call_with_file_capture[T](func: Callable[[Path], T]) -> tuple[T, bytes]:
+    with NamedTemporaryFile("wb", delete=False, delete_on_close=False) as f:
+        path = Path(f.name)
+    out = func(path), path.read_bytes()
+    path.unlink()
+    return out
+
+
+def diff(before: str, after: str) -> str:
+    """
+    diff two strings
+    """
+    return "\n".join(difflib.ndiff(before.splitlines(), after.splitlines()))
+
+
+def compare_dataclasses[T](
+    before: T,
+    after: T,
+    skip_keys: tuple[str, ...] = (),
+    require_dataclass_type_match: bool = True,
+    float_precision: int | None = 6,
+) -> dict[str, dict[str, Any]]:
+    """
+    Check two dataclasses for equivalence (with some keys skipped).
+
+    Parameters:
+        before: The first dataclass to compare.
+        after: The second dataclass to compare.
+        skip_keys: A tuple of keys to skip when encountered at any level.
+        require_dataclass_type_match: If False, compare dataclasses on fields only.
+    """
+
+    def _fmt(b, a):
+        return {"before": b, "after": a}
+
+    def _dataclasses_are_comparable(b, a):
+        return type(b) is type(a) or (
+            not require_dataclass_type_match
+            and {field.name for field in fields(b) if field.name not in skip_keys}
+            == {field.name for field in fields(a) if field.name not in skip_keys}
+        )
+
+    def _is_pyzig_mutable_list(x: Any) -> bool:
+        t = type(x)
+        return t.__name__ == "MutableList" and t.__module__ in ("pyzig", "pyzig_local")
+
+    def _is_list_like(x: Any) -> bool:
+        return isinstance(x, list) or _is_pyzig_mutable_list(x)
+
+    match (before, after):
+        case (b, a) if _is_list_like(b) and _is_list_like(a):
+            return {
+                f"[{i}]{k}": v
+                for i, (b, a) in enumerate(zip(before, after))
+                for k, v in compare_dataclasses(
+                    b,
+                    a,
+                    skip_keys=skip_keys,
+                    require_dataclass_type_match=require_dataclass_type_match,
+                ).items()
+            }
+        case (dict(), dict()):
+            return {
+                f"[{i!r}]{k}": v
+                for i, (b, a) in zip_dicts_by_key(before, after).items()
+                for k, v in compare_dataclasses(
+                    b,
+                    a,
+                    skip_keys=skip_keys,
+                    require_dataclass_type_match=require_dataclass_type_match,
+                ).items()
+                if i not in skip_keys
+            }
+        case before, after if (
+            is_dataclass(before)
+            and is_dataclass(after)
+            and _dataclasses_are_comparable(before, after)
+        ):
+            return {
+                f".{f.name}{k}": v
+                for f in fields(before)  # type: ignore
+                if f.name not in skip_keys
+                for k, v in compare_dataclasses(
+                    getattr(before, f.name),
+                    getattr(after, f.name),
+                    skip_keys=skip_keys,
+                    require_dataclass_type_match=require_dataclass_type_match,
+                ).items()
+            }
+        # zig types
+        case before, after if hasattr(type(before), "__field_names__") and (
+            (type(before) is type(after))
+            or (
+                not require_dataclass_type_match
+                and hasattr(type(after), "__field_names__")
+                and type(before).__field_names__() == type(after).__field_names__()  # type: ignore
+            )
+        ):
+            return {
+                f".{f_name}{k}": v
+                for f_name in type(before).__field_names__()  # type: ignore
+                if f_name not in skip_keys
+                for k, v in compare_dataclasses(
+                    getattr(before, f_name),
+                    getattr(after, f_name),
+                    skip_keys=skip_keys,
+                    require_dataclass_type_match=require_dataclass_type_match,
+                ).items()
+            }
+        case before, after if (
+            float_precision is not None
+            and isinstance(before, float)
+            and isinstance(after, float)
+        ):
+            difference = abs(after - before)
+            epsilon = 10**-float_precision
+            matches = difference < epsilon
+            return (
+                {"": _fmt(before, f"{after} (delta = {difference})")}
+                if not matches
+                else {}
+            )
+        case _:
+            return {"": _fmt(before, after)} if before != after else {}
+
+
+def complete_type_string(value: Any) -> str:
+    if isinstance(value, (list, set)):
+        inner = unique(
+            (complete_type_string(item) for item in value),
+            lambda x: x,
+        )
+        return f"{type(value).__name__}[{' | '.join(inner)}]"
+    elif isinstance(value, dict):
+        inner_value = unique(
+            (complete_type_string(item) for item in value.values()),
+            lambda x: x,
+        )
+        inner_key = unique(
+            (complete_type_string(item) for item in value.keys()),
+            lambda x: x,
+        )
+        return (
+            f"{type(value).__name__}["
+            f"{' | '.join(inner_key)}, "
+            f"{' | '.join(inner_value)}]"
+        )
+    elif isinstance(value, tuple):
+        inner = unique(
+            (complete_type_string(item) for item in value),
+            lambda x: x,
+        )
+        return f"{type(value).__name__}[{', '.join(inner)}]"
+    else:
+        return type(value).__name__
+
+
+def has_uncommitted_changes(files: Iterable[str | Path]) -> bool | None:
+    """Check if any of the given files have uncommitted changes."""
+    try:
+        from git import Repo
+
+        repo = Repo(search_parent_directories=True)
+        diff_index = repo.index.diff(None)  # Get uncommitted changes
+
+        # Convert all files to Path objects for consistent comparison
+        files = [Path(f).resolve() for f in files]
+        repo_root = Path(repo.working_dir)
+
+        # Check if any of the files have changes
+        for diff in diff_index:
+            touched_file = diff.a_path or diff.b_path
+            # m, c or d
+            assert touched_file is not None
+            touched_path = repo_root / touched_file
+            if touched_path in files:
+                return True
+
+        return False
+    # TODO bad
+    except Exception:
+        # If we can't check git status (not a git repo, etc), assume we don't
+        # have changes
+        return None
+
+
+def least_recently_modified_file(*paths: Path) -> tuple[Path, datetime] | None:
+    files = []
+    for path in paths:
+        if path.is_dir():
+            files.extend(path.rglob("**"))
+        elif path.is_file():
+            files.append(path)
+    if not files:
+        return None
+
+    files_with_dates = [
+        (f, datetime.fromtimestamp(max(f.stat().st_mtime, f.stat().st_ctime)))
+        for f in files
+    ]
+    return max(files_with_dates, key=lambda f: f[1])
+
+
+class FileChangedWatcher:
+    """
+    Watches directories for changes since init.
+    Returns each changed/deleted/created file.
+    """
+
+    @dataclass
+    class Result:
+        created: list[Path]
+        deleted: list[Path]
+        changed: list[Path]
+
+        def __bool__(self) -> bool:
+            return bool(self.created or self.deleted or self.changed)
+
+    class CheckMethod(Enum):
+        FS = auto()
+        HASH = auto()
+
+    @staticmethod
+    def _get_mtime_recursive(*paths: Path) -> float:
+        return max(
+            (
+                f.stat().st_mtime
+                for path in paths
+                for f in (path.rglob("**") if path.is_dir() else [path])
+                if f.is_file()
+            ),
+        )
+
+    @staticmethod
+    def _get_hash_recursive(*paths: Path) -> str:
+        return hashlib.sha256(
+            b"".join(
+                f.read_bytes()
+                for path in paths
+                for f in (path.rglob("**") if path.is_dir() else [path])
+                if f.is_file()
+            ),
+            usedforsecurity=False,
+        ).hexdigest()
+
+    def _get_file_stamp(self, path: Path) -> Any:
+        match self.method:
+            case FileChangedWatcher.CheckMethod.FS:
+                return path.stat().st_mtime
+            case FileChangedWatcher.CheckMethod.HASH:
+                return hashlib.sha256(path.read_bytes()).hexdigest()
+            case _:
+                return None
+
+    def _get_stamps(self) -> dict[Path, Any]:
+        return {
+            f: self._get_file_stamp(f)
+            for path in self.paths
+            for f in (path.rglob(self.glob) if path.is_dir() else [path])
+        }
+
+    def __init__(self, *paths: Path, method: CheckMethod, glob: str | None = None):
+        self.paths = paths
+        self.method = method
+        self.glob = glob or "**"
+        self.before_files = self._get_stamps()
+
+    def has_changed(self, reset: bool = False) -> Result:
+        new_stamps = self._get_stamps()
+
+        created = list(new_stamps.keys() - self.before_files.keys())
+        deleted = list(self.before_files.keys() - new_stamps.keys())
+        changed = [
+            f
+            for f, ns in new_stamps.items()
+            if f in self.before_files and ns != self.before_files[f]
+        ]
+
+        if reset:
+            self.before_files = new_stamps
+
+        return self.Result(created, deleted, changed)
+
+
+def lazy_split[T: str | bytes](string: T, delimiter: T) -> Iterable[T]:
+    """
+    Split a string into a list of strings, but only split when needed.
+    """
+
+    # TODO: type checking goes ham because of bytes
+
+    cur: T = string
+    while (i := cur.find(delimiter)) != -1:  # type: ignore
+        yield cur[:i]  # type: ignore
+        cur = cur[i + len(delimiter) :]  # type: ignore
+    yield cur
+
+
+def starts_or_ends_replace(
+    match: str, options: tuple[str, ...], *, prefix: str = "", suffix: str = ""
+) -> str:
+    for o in options:
+        if match.startswith(o):
+            return f"{prefix}{match[len(o) :]}{suffix}"
+        elif match.endswith(o):
+            return f"{prefix}{match[: -len(o)]}{suffix}"
+    return match
+
+
+def sanitize_filepath_part(x: str) -> str:
+    """
+    Replaces invalid or awkward characters with underscores.
+    """
+    x = re.sub(r"[^a-zA-Z0-9_]", "_", x)
+    x = x.strip("_")
+    return x
+
+
+def get_code_bin_of_terminal() -> str | None:
+    if not os.environ.get("TERM_PROGRAM") == "vscode":
+        return None
+
+    # Try cursor, fallback to code
+    options = ["cursor", "code"]
+
+    for option in options:
+        code_bin = shutil.which(option)
+        if code_bin:
+            return code_bin
+
+    return None
+
+
+def list_match[T](base: list[T], match: list[T]) -> Generator[int, None, None]:
+    for i in range(len(base)):
+        if base[i : i + len(match)] == match:
+            yield i
+
+
+def sublist_replace[T](base: list[T], match: list[T], replacement: list[T]) -> list[T]:
+    out: list[T] = []
+    buffer: list[T] = []
+
+    for i in base:
+        buffer.append(i)
+        if len(buffer) > len(match):
+            out.append(buffer.pop(0))
+        if buffer == match:
+            out.extend(replacement)
+            buffer = []
+    out.extend(buffer)
+    return out
+
+
+def path_replace(base: Path, match: Path, replacement: Path) -> Path:
+    return Path(
+        *sublist_replace(
+            list(base.parts),
+            list(match.parts),
+            list(replacement.parts),
+        ),
+    )
+
+
+def sort_dataclass(
+    obj: Any, sort_key: Callable[[Any], Any], prefix: str = "", inplace: bool = True
+) -> Any:
+    if not inplace:
+        obj = deepcopy(obj)  # TODO: more efficient copy
+
+    for f in fields(obj):
+        val = getattr(obj, f.name)
+        if isinstance(val, list):
+            s = sorted(val, key=sort_key)
+            setattr(obj, f.name, s)
+            for v in s:
+                if is_dataclass(v):
+                    sort_dataclass(v, sort_key, prefix=f"{prefix}.{f.name}")
+        elif isinstance(val, dict):
+            s = dict(sorted(val.items(), key=lambda x: sort_key(x[1])))
+            setattr(obj, f.name, s)
+            for v in s.values():
+                if is_dataclass(v):
+                    sort_dataclass(v, sort_key, prefix=f"{prefix}.{f.name}")
+        elif is_dataclass(val):
+            sort_dataclass(val, sort_key, prefix=f"{prefix}.{f.name}")
+    return obj
+
+
+def round_dataclass(obj: Any, precision: int = 0) -> Any:
+    if isinstance(obj, (float, int)):
+        return round(obj, precision)
+
+    if not is_dataclass(obj):
+        return obj
+
+    for f in fields(obj):
+        val = getattr(obj, f.name)
+        if isinstance(val, float):
+            setattr(obj, f.name, round(val, precision))
+        elif isinstance(val, list):
+            val = [round_dataclass(v, precision) for v in val]
+        elif isinstance(val, dict):
+            val = {k: round_dataclass(v, precision) for k, v in val.items()}
+        elif is_dataclass(val):
+            round_dataclass(val, precision)
+    return obj
+
+
+def match_iterables[T, U](
+    *iterables: Iterable[T], key: Callable[[T], U] = lambda x: x
+) -> dict[U, Iterable[T]]:
+    multi_dicts = [groupby(iterable, key) for iterable in iterables]
+    if not all(len(vs) == 1 for d in multi_dicts for vs in d.values()):
+        raise ValueError("All iterables must have unique keys")
+    dicts = [{k: vs[0] for k, vs in d.items()} for d in multi_dicts]
+    return zip_dicts_by_key(*dicts)  # type: ignore
+
+
+def debug_perf(*args, _logger: Callable[[str], Any] | None = None):
+    def _debug_perf[T: Callable](func: T) -> T:
+        # get module of function
+        module = func.__module__
+        logger = _logger or logging.getLogger(module).info
+
+        def _wrapper(*args, **kwargs):
+            mem_start = psutil.Process().memory_info().rss
+            start = time.perf_counter()
+            result = func(*args, **kwargs)
+            end = time.perf_counter()
+            mem_end = psutil.Process().memory_info().rss
+            diff = end - start
+            mem_diff = mem_end - mem_start
+
+            for i, prefix in enumerate(["", "m", "u", "n"]):
+                if diff * (1000**i) >= 1:
+                    diff = round(diff * (1000**i), 2)
+                    break
+
+            for i, mem_prefix in enumerate(["", "K", "M", "G"]):
+                if mem_diff / (1000**i) <= 1000:
+                    mem_diff = round(mem_diff / (1000**i), 2)
+                    break
+
+            logger(
+                f"{func.__name__} took {diff} {prefix}s "
+                f"and used {mem_diff} {mem_prefix}B"
+            )
+            return result
+
+        return _wrapper  # type: ignore
+
+    if args:
+        return _debug_perf(*args)
+    return _debug_perf
+
+
+@dataclass
+class PythonLib:
+    include_path: Path
+    name: str
+    dir_path: Path | None
+
+
+def get_python_lib():
+    import sysconfig
+
+    python_include = sysconfig.get_paths()["include"]
+
+    if sys.platform.startswith("win"):
+        python_lib = f"python{sys.version_info.major}{sys.version_info.minor}"
+    else:
+        python_lib = f"python{sys.version_info.major}.{sys.version_info.minor}"
+
+    if sys.platform.startswith("win"):
+        LIB_EXT = ".lib"
+        LIB_PREFIX = ""
+    elif sys.platform.startswith("darwin"):
+        LIB_EXT = ".dylib"
+        LIB_PREFIX = "lib"
+    else:
+        LIB_EXT = ".so"
+        LIB_PREFIX = "lib"
+
+    # if running in uv with managed python
+    if sys.platform.startswith("win"):
+        lib_dir = Path(python_include).parent / "libs"
+    else:
+        lib_dir = Path(python_include).parent.parent / "lib"
+
+    path = lib_dir / f"{LIB_PREFIX}{python_lib}{LIB_EXT}"
+    lib_dir = lib_dir if path.exists() else None
+
+    return PythonLib(
+        include_path=Path(python_include),
+        name=python_lib,
+        dir_path=lib_dir,
+    )
+
+
+def debounce(delay_s: float):
+    """
+    Debounce a function to prevent it from being called more than once within a given
+    delay.
+    If the function is called again within the delay, the last call will be canceled and
+    the function will be called only once after the delay.
+    """
+
+    def _decorator[T: Callable](func: T) -> T:
+        last_call = 0
+        waiting = threading.Semaphore()
+        last_value = None
+
+        def _run(*args, **kwargs):
+            nonlocal waiting
+            nonlocal last_call
+            nonlocal last_value
+            waiting.release()
+            last_call = time.time()
+            last_value = func(*args, **kwargs)
+            return last_value
+
+        def _debounced(*args, **kwargs):
+            nonlocal last_call
+            nonlocal waiting
+
+            if not waiting.acquire(blocking=False):
+                return last_value
+
+            time_passed = time.time() - last_call
+            if time_passed > delay_s:
+                return _run(*args, **kwargs)
+
+            timer = threading.Timer(delay_s - time_passed, _run, args, kwargs)
+            timer.start()
+            return last_value
+
+        return _debounced  # type: ignore[return-value]
+
+    return _decorator
+
+
+def crosswise[T, U](left: Iterable[T], right: Iterable[U]) -> Iterable[tuple[T, U]]:
+    return ((le, ri) for le in left for ri in right)
+
+
+def insert_into_file(source: Path, header: str, target: Path | None = None):
+    import shutil
+    import tempfile
+
+    if target is None:
+        target = source
+
+    with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as tmp:
+        tmp.write(header)
+        with open(source) as f:
+            shutil.copyfileobj(f, tmp)
+
+    shutil.move(tmp.name, target)
+
+
+def run_processes(cmds: list[list[str]]) -> bool:
+    procs: list[subprocess.Popen] = []
+    rcs = []
+    for cmd in cmds:
+        pid = subprocess.Popen(
+            cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+        procs.append(pid)
+    for pid in procs:
+        rcs.append(pid.wait())
+
+    return all(rc == 0 for rc in rcs)
+
+
+def _run_gdb_linux(test_bin: Path | None) -> None:
+    """Linux-specific core dump debugging using gdb + coredumpctl."""
+    if test_bin is None:
+        # run coredumpctl info and look for 'Executable: <test_bin>'
+        try:
+            result = subprocess.run(
+                ["coredumpctl", "info"],
+                capture_output=True,
+                check=True,
+            )
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            print("coredumpctl not available or no core dump found")
+            return
+
+        match = re.search(
+            r"Executable: (.*)", result.stdout.decode("utf-8"), re.MULTILINE
+        )
+        if not match:
+            print("Could not find test binary in coredump")
+            return
+        test_bin = Path(match.group(1))
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        core_file = Path(temp_dir) / "core.dump"
+        try:
+            subprocess.run(
+                ["coredumpctl", "dump", test_bin, *["--output", core_file]],
+                capture_output=True,
+                check=True,
+            )
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            print("Failed to dump core file with coredumpctl")
+            return
+
+        args = """-q -batch \
+            -ex 'set debuginfod enabled off' \
+            -ex 'thread apply all bt 20' \
+            -ex 'echo ===BOTTOM===\n' \
+            -ex 'thread apply all bt -20' \
+            | awk '
+            $0=="===BOTTOM===" {bottom=1; next}
+
+            # top section: print as-is
+            !bottom {print; next}
+
+            # bottom section: only print per-thread blocks if they contain frames >= 20
+            /^Thread [0-9]+/ {
+                if (seen) { for (i=1;i<=n;i++) print buf[i] }
+                delete buf; n=0; seen=0
+                buf[++n]=$0
+                next
+            }
+
+            # keep only frames #20+ (drop overlap/shallow)
+            match($0, /^#([0-9]+)/, m) {
+                if (m[1] >= 20) { buf[++n]=$0; seen=1 }
+                next
+            }
+
+            # keep other lines (but only if we end up keeping some frames)
+            { buf[++n]=$0 }
+            END { if (seen) { for (i=1;i<=n;i++) print buf[i] } }
+            '
+        """
+        cmd = f"gdb {test_bin} {core_file} {args}"
+        print(f"Attach gdb with: `gdb {test_bin} {core_file}")
+        try:
+            subprocess.run(cmd, shell=True, capture_output=False, check=True)
+        except subprocess.CalledProcessError:
+            print("Failed to run gdb on core dump")
+
+
+def _display_macos_crash_report(crash_file: Path) -> None:
+    """Parse and display a macOS .ips crash report in a readable format."""
+    import json
+
+    try:
+        content = crash_file.read_text()
+        # .ips files have a JSON header line followed by a JSON body
+        lines = content.split("\n", 1)
+        if len(lines) < 2:
+            print(content[:2000])
+            return
+
+        try:
+            report = json.loads(lines[1])
+        except json.JSONDecodeError:
+            # Fall back to showing raw content
+            print(content[:2000])
+            return
+
+        # Extract key information
+        exception = report.get("exception", {})
+        termination = report.get("termination", {})
+        threads = report.get("threads", [])
+        images = report.get("usedImages", [])
+
+        # Build image lookup for symbolication
+        image_lookup = {i: img.get("name", f"image{i}") for i, img in enumerate(images)}
+
+        print("\n--- Crash Report ---")
+        print(f"Exception: {exception.get('type', 'Unknown')}")
+        if "subtype" in exception:
+            print(f"  {exception['subtype']}")
+        print(f"Signal: {exception.get('signal', 'Unknown')}")
+        if termination:
+            print(f"Termination: {termination.get('indicator', '')}")
+
+        # Find and print the faulting thread's backtrace
+        faulting_idx = report.get("faultingThread", 0)
+        if threads and faulting_idx < len(threads):
+            thread = threads[faulting_idx]
+            frames = thread.get("frames", [])
+            print(f"\nBacktrace (Thread {faulting_idx}):")
+            for i, frame in enumerate(frames[:30]):  # Limit to 30 frames
+                symbol = frame.get("symbol", "???")
+                image_idx = frame.get("imageIndex", 0)
+                image_name = image_lookup.get(image_idx, "???")
+                source_file = frame.get("sourceFile", "")
+                source_line = frame.get("sourceLine", "")
+
+                loc = ""
+                if source_file:
+                    loc = f" ({source_file}"
+                    if source_line:
+                        loc += f":{source_line}"
+                    loc += ")"
+
+                print(f"  {i:2d}: {symbol}{loc}")
+                print(f"      [{image_name}]")
+
+            if len(frames) > 30:
+                print(f"  ... ({len(frames) - 30} more frames)")
+
+        print(f"\nFull report: {crash_file}")
+
+    except Exception as e:
+        print(f"Error parsing crash report: {e}")
+        # Fall back to raw content
+        try:
+            print(crash_file.read_text()[:2000])
+        except Exception:
+            pass
+
+
+def _run_lldb_macos(test_bin: Path | None, created_after: float | None) -> None:
+    """macOS-specific core dump debugging using lldb."""
+    cores_dir = Path("/cores")
+    core_file: Path | None = None
+
+    # Check if core dumps directory exists and has core files
+    if cores_dir.exists():
+        try:
+            all_core_files = list(cores_dir.glob("core.*"))
+            if created_after is not None:
+                # Only consider core files created after the specified time
+                core_files = [
+                    p for p in all_core_files if p.stat().st_mtime >= created_after
+                ]
+            else:
+                core_files = all_core_files
+            core_files = sorted(
+                core_files, key=lambda p: p.stat().st_mtime, reverse=True
+            )
+            if core_files:
+                core_file = core_files[0]
+        except PermissionError:
+            print("Cannot read /cores directory - permission denied")
+
+    if core_file is None:
+        # No core dump found - check for crash reports instead
+        diag_dir = Path.home() / "Library/Logs/DiagnosticReports"
+        if diag_dir.exists():
+            import time
+
+            # Wait a moment for macOS to write the crash report
+            time.sleep(0.5)
+
+            try:
+                # Look for .ips crash reports (newer format) or .crash files
+                # Filter by likely process names (python, ato, faebryk, etc.)
+                likely_names = ["Python", "python", "ato", "faebryk"]
+                if test_bin:
+                    likely_names.append(test_bin.stem)
+
+                crash_files = list(diag_dir.glob("*.ips")) + list(
+                    diag_dir.glob("*.crash")
+                )
+
+                # First try: filter by name AND time
+                if created_after is not None:
+                    time_filtered = [
+                        p for p in crash_files if p.stat().st_mtime >= created_after
+                    ]
+                    # Filter by process name in filename
+                    matching_crashes = [
+                        p
+                        for p in time_filtered
+                        if any(name in p.name for name in likely_names)
+                    ]
+                    if matching_crashes:
+                        crash_files = matching_crashes
+                    elif time_filtered:
+                        # Fall back to time-filtered only
+                        crash_files = time_filtered
+
+                crash_files = sorted(
+                    crash_files, key=lambda p: p.stat().st_mtime, reverse=True
+                )
+                if crash_files:
+                    crash_file = crash_files[0]
+                    print(f"Found crash report: {crash_file}")
+                    _display_macos_crash_report(crash_file)
+                    return
+            except PermissionError:
+                pass
+
+        print("No core dump files found in /cores")
+        if not cores_dir.exists():
+            print(
+                "Core dumps directory /cores does not exist. "
+                "Create with: sudo mkdir /cores && sudo chmod 1777 /cores"
+            )
+        elif not os.access(cores_dir, os.W_OK):
+            print(
+                "The /cores directory is not writable. Fix with: sudo chmod 1777 /cores"
+            )
+        else:
+            print(
+                "Core dumps may be disabled. Try: sudo sysctl kern.coredump=1\n"
+                "Note: macOS often writes crash reports to "
+                "~/Library/Logs/DiagnosticReports/ instead."
+            )
+        return
+
+    print(f"Using core file: {core_file}")
+
+    # Build lldb command with backtrace
+    lldb_cmd = ["lldb", "--batch"]
+    if test_bin:
+        lldb_cmd.append(str(test_bin))
+    lldb_cmd.extend(["-c", str(core_file), "-o", "thread backtrace all", "-o", "quit"])
+
+    print(f"Attach lldb with: lldb {test_bin or ''} -c {core_file}")
+    try:
+        subprocess.run(lldb_cmd, check=True)
+    except FileNotFoundError:
+        print(
+            "lldb not found. Install Xcode Command Line Tools: xcode-select --install"
+        )
+    except subprocess.CalledProcessError:
+        print("Failed to run lldb on core dump")
+
+
+def run_gdb(test_bin: Path | None = None, created_after: float | None = None) -> None:
+    """Debug a crash using platform-appropriate tools (gdb on Linux, lldb on macOS)."""
+    if sys.platform.startswith("win"):
+        print("Debugging with core dumps is not supported on Windows")
+        return
+
+    if sys.platform.startswith("darwin"):
+        _run_lldb_macos(test_bin, created_after)
+    else:
+        _run_gdb_linux(test_bin)
+
+
+class _LazyProxy:
+    def __init__(self, f: Callable[[], None], parent: Any, name: str) -> None:
+        self.__f = f
+        self.__parent = parent
+        self.__name = name
+
+    def __get_and_set(self):
+        self.__f()
+        return getattr(self.__parent, self.__name)
+
+    @override
+    def __getattribute__(self, name: str, /) -> Any:
+        if name.startswith("_"):
+            return super().__getattribute__(name)
+        return getattr(self.__get_and_set(), name)
+
+    @override
+    def __setattr__(self, name: str, value: Any, /) -> None:
+        if name.startswith("_"):
+            return super().__setattr__(name, value)
+        setattr(self.__get_and_set(), name, value)
+
+    def __contains__(self, value: Any) -> bool:
+        return value in self.__get_and_set()
+
+    def __iter__(self) -> Iterator[Any]:
+        return iter(self.__get_and_set())
+
+    def __getitem__(self, key: Any) -> Any:
+        return self.__get_and_set()[key]
+
+    def __repr__(self) -> str:
+        return f"_LazyProxy({self.__f}, {self.__parent})"
+
+
+class OrderedSet[T: Hashable](collections.abc.MutableSet[T]):
+    __slots__ = ("_data",)
+
+    def __init__(self, iterable: Iterable[T] = ()):
+        self._data: dict[T, None] = dict.fromkeys(iterable)
+
+    def __contains__(self, x: object, /) -> bool:
+        return x in self._data
+
+    def __iter__(self) -> Iterator[T]:
+        return iter(self._data)
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+    def add(self, value: T, /) -> None:
+        self._data[value] = None
+
+    def discard(self, value: T, /) -> None:
+        self._data.pop(value, None)
+
+    def update(self, *iterables: Iterable[T]) -> None:
+        for it in iterables:
+            self._data.update(dict.fromkeys(it))
+
+    def difference_update(self, *others: Iterable[object]) -> None:
+        for other in others:
+            for x in other:
+                self._data.pop(x, None)
+
+    def intersection_update(self, *others: Iterable[object]) -> None:
+        if not others:
+            return
+        rhs = [set(o) for o in others]
+        for k in list(self._data):
+            if not all(k in s for s in rhs):
+                self._data.pop(k, None)
+
+    def difference(self, *others: Iterable[object]) -> "OrderedSet[T]":
+        out = OrderedSet[T](self)
+        out.difference_update(*others)
+        return out
+
+    def intersection(self, *others: Iterable[object]) -> "OrderedSet[T]":
+        out = OrderedSet[T](self)
+        out.intersection_update(*others)
+        return out
+
+    def union(self, *iterables: Iterable[T]) -> "OrderedSet[T]":
+        out = OrderedSet[T](self)
+        out.update(*iterables)
+        return out
+
+    def issubset(self, other: Iterable[object]) -> bool:
+        c = other if isinstance(other, collections.abc.Container) else set(other)
+        return all(k in c for k in self._data)
+
+    def issuperset(self, other: Iterable[object]) -> bool:
+        return all(x in self._data for x in other)
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}({list(self._data)})"
+
+
+def one[T](iterable: Iterable[T]) -> T:
+    it = iter(iterable)
+    out = next(it)
+    try:
+        next(it)
+    except StopIteration:
+        return out
+    raise ValueError("Iterable has more than one element")
+
+
+class TestEnvironmentVariables:
+    def test_environment_variable_parsing(self):
+        # create temp env vars for every type
+        # check if they can be parsed
+        def assert_parses(flag_cls, env_name: str, raw_value: str, expected) -> None:
+            os.environ[f"FBRK_{env_name}"] = raw_value
+            assert flag_cls(env_name).get() == expected
+
+        for raw_value, expected in [
+            ("True", True),
+            ("False", False),
+            ("1", True),
+            ("0", False),
+        ]:
+            assert_parses(ConfigFlag, "TEST_BOOL", raw_value, expected)
+
+        for raw_value, expected in [
+            ("1", 1),
+            ("0", 0),
+            ("1.0", 1),
+            ("0.0", 0),
+        ]:
+            assert_parses(ConfigFlagInt, "TEST_INT", raw_value, expected)
+
+        for raw_value in ["1", "0", "1.0", "0.0"]:
+            assert_parses(ConfigFlagFloat, "TEST_FLOAT", raw_value, float(raw_value))
+
+        for raw_value in ["True", "False", "1", "0", "1.0", "0.0"]:
+            assert_parses(ConfigFlagString, "TEST_STRING", raw_value, raw_value)
+
+    def test_environment_variable_parsing_enum(self):
+        class TestEnum(StrEnum):
+            A = "a"
+            B = "b"
+            C = "c"
+
+        os.environ["FBRK_TEST_ENUM"] = "A"
+        assert (
+            ConfigFlagEnum(name="TEST_ENUM", enum=TestEnum, default=TestEnum.B).get()
+            == TestEnum.A
+        )
+
+    def test_environment_variable_parsing_enum_invalid(self, capsys):
+        class TestEnum(StrEnum):
+            A = "a"
+            B = "b"
+            C = "c"
+
+        os.environ["FBRK_TEST_ENUM"] = "D"
+        assert (
+            ConfigFlagEnum(name="TEST_ENUM", enum=TestEnum, default=TestEnum.B).get()
+            == TestEnum.B
+        )
+        # check warning message
+        assert (
+            "Invalid environment variable for FBRK_TEST_ENUM: D. Check your "
+            "environment variables!" in capsys.readouterr().out
+        )
