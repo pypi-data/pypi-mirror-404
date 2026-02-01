@@ -1,0 +1,211 @@
+name: test
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  # Runs main tests for the package.
+  #
+  # Runs on all events except when closing a pull request.
+  test:
+    name: Test package
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+        type:
+          - test
+        include:
+          - os: ubuntu-latest
+            python-version: "3.13"
+            type: code style
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Set up python 3.13
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.13
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install . --group ci
+      # Tests
+      - name: Set up pythons
+        if: ${{ matrix.type == 'test' }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: |
+            3.10
+            3.11
+            3.12
+            3.13
+            3.14
+      - name: Install Zsh and Fish
+        if: ${{ matrix.type == 'test' && matrix.os == 'ubuntu-latest' }}
+        run: |
+          sudo add-apt-repository ppa:fish-shell/release-4
+          sudo apt-get update
+          sudo apt-get install zsh fish
+          sudo chmod -R 755 /usr/share/zsh
+      - name: Test package
+        if: ${{ matrix.type == 'test' }}
+        run: |
+          tox --skip-env 'lint' --colored yes run-parallel
+        env:
+          COVERAGE_FILE: .coverage.${{ matrix.os }}
+      - name: Upload coverage artifact
+        if: ${{ matrix.type == 'test' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.os }}
+          path: .coverage.${{ matrix.os }}
+          include-hidden-files: true
+      # Lint
+      - name: Check code style
+        if: ${{ matrix.type == 'code style' }}
+        run: |
+          tox -e lint --colored yes
+
+  upload_coverage:
+    name: Upload coverage report to GitHub Pages
+    if: ${{ github.event_name == 'push' && github.event.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    needs:
+      - test
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Set up python 3.13
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.13
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install . --group ci
+      - name: Download coverage data
+        uses: actions/download-artifact@v5
+        with:
+          path: .
+          pattern: coverage-*
+          merge-multiple: true
+      - name: Make coverage report
+        run: |
+          coverage combine
+          coverage report
+          coverage xml
+          coverage html
+          genbadge coverage --local -i coverage.xml -o htmlcov/coverage.svg
+          echo $'User-agent: *\nDisallow: /' > htmlcov/robots.txt
+          touch htmlcov/.nojekyll
+      - name: Upload coverage report
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: htmlcov
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+  # Builds python packages.
+  #
+  # Only runs on tag pushes.
+  build:
+    name: Build package
+    if: ${{ github.event_name == 'push' && startsWith(github.event.ref, 'refs/tags') }}
+    runs-on: ubuntu-latest
+    outputs:
+      link: ${{ steps.metadata.outputs.link }}
+      is-pre-release: ${{ steps.changelog.outputs.is-pre-release }}
+      is-unreleased: ${{ steps.changelog.outputs.is-unreleased }}
+      changelog-text: ${{ steps.changelog.outputs.text }}
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Generate release metadata
+        id: metadata
+        run: |
+          ref="${{ github.ref }}";
+          version=${ref#refs/tags/v};
+          link="https://pypi.org/p/yuio/${version}/";
+          echo "link=${link}" >> $GITHUB_OUTPUT
+      - name: Parse Changelog
+        id: changelog
+        uses: taminomara/cl-keeper@v0
+        with:
+          version: ${{ github.ref }}
+      - name: Set up python 3.13
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.13
+      - name: Install build
+        run: |
+          pip install build
+      - name: Build project
+        run: |
+          python3 -m build .
+      - name: Upload the build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+
+  # Publishes python packages.
+  #
+  # Only runs on tag pushes.
+  publish_to_pypi:
+    name: Publish package to PyPi
+    needs:
+      - test
+      - build
+    if: ${{ github.event_name == 'push' && startsWith(github.event.ref, 'refs/tags') }}
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/yuio
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v5
+        with:
+          name: python-package-distributions
+          path: dist/
+      - name: Publish to pypi
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          attestations: false
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          prerelease: ${{ fromJSON(needs.build.outputs.is-pre-release) }}
+          draft: ${{ fromJSON(needs.build.outputs.is-unreleased) }}
+          body: |
+            ## Changelog
+
+            ${{ needs.build.outputs.changelog-text }}
+
+            [See release on PyPi](${{ needs.build.outputs.link }})
