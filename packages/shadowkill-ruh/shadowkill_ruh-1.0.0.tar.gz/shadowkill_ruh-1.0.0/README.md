@@ -1,0 +1,186 @@
+# 🕶️ ShadowKill
+
+**Audio-triggered panic system that instantly eradicates digital evidence and establishes workplace credibility**
+
+![Version](https://img.shields.io/badge/version-1.0.0-blue)
+![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
+![License](https://img.shields.io/badge/license-MIT-green)
+
+---
+
+## 🎯 What is ShadowKill?
+
+ShadowKill is a discreet desktop guardian that listens for a **double-knock** on your desk and instantly:
+- ✅ Closes ALL browser tabs (Chrome, Edge, Firefox, Brave, Opera)
+- ✅ Kills browser processes completely
+- ✅ Opens a professional Excel spreadsheet (`Work_Report_2024.xlsx`)
+
+Perfect for maintaining professional appearances when unexpected visitors arrive! 😎
+
+---
+
+## 📥 Download & Installation
+
+### Option 1: Download Executable (Recommended)
+1. Download `ShadowKill.exe` from the [Releases](https://github.com/rushanhaque/Shadow-chat/releases) page
+2. Place it in any folder on your computer
+3. Double-click to run - **no installation required!**
+
+### Option 2: Run from Source
+```bash
+# Clone the repository
+git clone https://github.com/rushanhaque/Shadow-chat.git
+cd ShadowKill
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Run the script
+python shadow_kill.py
+```
+
+---
+
+## 🚀 How to Use
+
+1. **Launch ShadowKill.exe** (or run `python shadow_kill.py`)
+2. **Grant microphone access** when prompted
+3. **Double-knock your desk** quickly (within 1 second between knocks)
+4. **Watch the magic happen!** 🎩✨
+
+### Controls
+- **Ctrl+C** - Stop the application
+- **Double Knock** - Trigger panic mode
+
+### Console Output
+```
+========================================
+           SHADOW KILL          
+========================================
+Threshold: 0.5
+Target file: Work_Report_2024.xlsx
+Listening for a QUICK DOUBLE KNOCK on the desk...
+----------------------------------------
+Press Ctrl+C to stop.
+```
+
+---
+
+## ⚙️ Configuration
+
+Edit `shadow_kill.py` to customize behavior:
+
+```python
+THRESHOLD = 0.5      # Volume threshold (increase if too sensitive)
+COOLDOWN = 1.5       # Cooldown after activation (seconds)
+KNOCK_WINDOW = 1.0   # Max time between two knocks (seconds)
+BROWSERS = ["chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.exe"]
+OFFICE_FILE = "Work_Report_2024.xlsx"  # File to open
+```
+
+### Adjusting Sensitivity
+If the app is **too sensitive** (triggering from background noise):
+- Increase `THRESHOLD` to `0.7` or higher
+
+If it's **not sensitive enough**:
+- Decrease `THRESHOLD` to `0.3` or lower
+- Knock harder on your desk
+
+---
+
+## 🛡️ Privacy & Security
+
+- **100% Local** - No data leaves your computer
+- **No Internet Required** - Works completely offline
+- **Open Source** - Inspect the code yourself
+- **Microphone Only** - Only listens for knock patterns
+
+### Antivirus False Positives
+Some antivirus software may flag the `.exe` as suspicious (common with PyInstaller apps). This is a **false positive** because:
+- The app monitors system processes
+- It kills processes (browsers)
+- It's packaged as a single executable
+
+**Solutions:**
+1. Add `ShadowKill.exe` to your antivirus exclusions
+2. Run from source code instead
+3. Build the executable yourself using `pyinstaller ShadowKill.spec`
+
+---
+
+## 📋 System Requirements
+
+- **OS**: Windows 10/11 (64-bit)
+- **Microphone**: Any working microphone
+- **RAM**: 100MB minimum
+- **Storage**: 25MB for executable
+
+---
+
+## 🔧 Troubleshooting
+
+### "Could not start audio stream"
+**Solution:** Check microphone permissions in Windows Settings
+1. Settings → Privacy → Microphone
+2. Enable microphone access for desktop apps
+
+### Excel file doesn't open
+**Solution:** Ensure `Work_Report_2024.xlsx` is in the same folder as the executable
+
+### Browsers don't close
+**Solution:** Run as Administrator (right-click → Run as administrator)
+
+### App triggers too easily
+**Solution:** Increase `THRESHOLD` in configuration
+
+---
+
+## 🏗️ Building from Source
+
+Want to build your own executable?
+
+```bash
+# Install PyInstaller
+pip install pyinstaller
+
+# Build the executable
+pyinstaller --clean ShadowKill.spec
+
+# Find your .exe in the dist/ folder
+```
+
+---
+
+## 📜 License
+
+MIT License - Feel free to use, modify, and distribute!
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome! Please:
+1. Fork the repository
+2. Create a feature branch
+3. Submit a pull request
+
+---
+
+## ⚠️ Disclaimer
+
+This tool is intended for **personal productivity** and **privacy management**. The author is not responsible for any misuse. Always comply with your workplace policies and local laws.
+
+---
+
+## 📞 Support
+
+Having issues? 
+- Check the [Troubleshooting](#-troubleshooting) section
+- Open an [Issue](https://github.com/rushanhaque/Shadow-chat/issues)
+- Contact: [Your Email/Social Media]
+
+---
+
+**Made with 💻 by Rushan Ul Haque**
+
+*Stay professional. Stay ready. Stay in control.* 🕶️
