@@ -1,0 +1,144 @@
+import os
+import sys
+import geopandas as gpd
+
+try:
+    import rpy2.robjects as robjects
+    from rpy2.robjects import pandas2ri
+    from rpy2.robjects.packages import importr
+    from rpy2.robjects.conversion import localconverter
+    HAS_RPY2 = True
+except ImportError:
+    HAS_RPY2 = False
+    print("Warning: rpy2 is not installed. specialized plotting functions will not work.")
+
+def check_r_environment():
+    """
+    Checks if R and required R packages (ggplot2, tmap, ggspatial, sf) are installed.
+    """
+    if not HAS_RPY2:
+        return False, "rpy2 is not installed."
+    
+    required_packages = ['ggplot2', 'tmap', 'ggspatial', 'sf']
+    missing_packages = []
+    
+    utils = importr('utils')
+    
+    for pkg in required_packages:
+        if not robjects.r.require(pkg)[0]:
+            missing_packages.append(pkg)
+            
+    if missing_packages:
+        return False, f"Missing R packages: {', '.join(missing_packages)}"
+        
+    return True, "All requirements met."
+
+def install_r_packages():
+    """
+    Installs the necessary R packages for mapping.
+    """
+    if not HAS_RPY2:
+        print("Cannot install R packages because rpy2 is missing.")
+        return
+
+    utils = importr('utils')
+    packnames = ['ggplot2', 'tmap', 'ggspatial', 'sf', 'dplyr']
+    
+    print("Installing R packages... This may take a while.")
+    utils.install_packages(robjects.StrVector(packnames))
+    print("R packages installed.")
+
+def gdf_to_r_sf(gdf):
+    """
+    Converts a GeoPandas DataFrame to an R sf object.
+    Assumes the gdf is properly formatted.
+    """
+    # This is a bit complex directly, simpler approach is writing to temp file
+    # or using specialized conversion. For robustness, let's use a temp shapefile/geojson approach
+    # as robust rpy2 conversion can be tricky with geometries.
+    import tempfile
+    
+    temp_dir = tempfile.mkdtemp()
+    temp_file = os.path.join(temp_dir, 'data.geojson')
+    gdf.to_file(temp_file, driver='GeoJSON')
+    
+    sf = importr('sf')
+    return sf.read_sf(temp_file)
+
+def ggplot_map(data, title="Map", output_file="map.png"):
+    """
+    Create a static publication-quality map using ggplot2.
+    
+    Args:
+        data: GeoPandas DataFrame or path to vector file.
+        title (str): Map title.
+        output_file (str): Path to save the output image.
+    """
+    if not HAS_RPY2:
+        print("rpy2 is required for this function.")
+        return
+
+    if isinstance(data, str):
+        sf = importr('sf')
+        r_data = sf.read_sf(data)
+    elif isinstance(data, gpd.GeoDataFrame):
+        r_data = gdf_to_r_sf(data)
+    else:
+        print("Unsupported data type.")
+        return
+
+    ggplot2 = importr('ggplot2')
+    ggspatial = importr('ggspatial')
+    
+    # Construct the plot
+    # Python's rpy2 syntax for: ggplot(data) + geom_sf() + ...
+    
+    pp = ggplot2.ggplot(r_data) + \
+         ggplot2.geom_sf(fill="lightblue", color="black", size=0.2) + \
+         ggplot2.ggtitle(title) + \
+         ggplot2.theme_bw() + \
+         ggspatial.annotation_scale(location="bl", width_hint=0.5) + \
+         ggspatial.annotation_north_arrow(location="tl", which_north="true", 
+                                          style=ggspatial.north_arrow_fancy_orienteering)
+
+    print(f"Saving map to {output_file}...")
+    ggplot2.ggsave(output_file, plot=pp, width=10, height=8, dpi=300)
+    print("Done.")
+
+def tmap_map(data, title="Map", output_file="map.png"):
+    """
+    Create a thematic map using tmap.
+    
+    Args:
+        data: GeoPandas DataFrame or path to vector file.
+        title (str): Map title.
+        output_file (str): Path to save the output image.
+    """
+    if not HAS_RPY2:
+        print("rpy2 is required for this function.")
+        return
+
+    if isinstance(data, str):
+        sf = importr('sf')
+        r_data = sf.read_sf(data)
+    elif isinstance(data, gpd.GeoDataFrame):
+        r_data = gdf_to_r_sf(data)
+    else:
+        print("Unsupported data type.")
+        return
+
+    tmap = importr('tmap')
+    
+    # tmap_mode("plot")
+    tmap.tmap_mode("plot")
+    
+    # tm_shape(data) + tm_polygons() + tm_layout(...)
+    tm = tmap.tm_shape(r_data) + \
+         tmap.tm_polygons(col="blue", alpha=0.5) + \
+         tmap.tm_layout(title=title, frame=True) + \
+         tmap.tm_scale_bar(position=robjects.StrVector(["left", "bottom"])) + \
+         tmap.tm_compass(position=robjects.StrVector(["right", "top"]))
+
+    print(f"Saving map to {output_file}...")
+    tmap.tmap_save(tm, filename=output_file, width=10, height=8, dpi=300)
+    print("Done.")
