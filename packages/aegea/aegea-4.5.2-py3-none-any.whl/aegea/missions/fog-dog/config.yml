@@ -1,0 +1,31 @@
+build_ami:
+  base_ami_product: com.ubuntu.cloud:server:16.04:amd64
+  rootfs_skel_dirs:
+    $append: rootfs.skel
+
+build_image:
+  packages:
+    $extend:
+      - bwa
+      - ncbi-blast+
+      - csh
+      - xvfb
+      - x11vnc
+      - mysql-client
+      - flex
+      - bison
+      - bison-doc
+      - python-scipy
+      - python-biom-format
+      - prodigal
+      - bsdtar
+      # TODO: libmotif4
+  commands:
+    $extend:
+      - "pip install MicrobeCensus"
+      - "git clone --depth 1 https://github.com/Koonkie/MetaPathways_Python_Koonkie.3.0.git /opt/metapathways"
+      - "cd /opt/metapathways; git submodule update --init executables/source/trnascan; make executables/linux executables/linux/trnascan-1.4"
+      - "cd /opt/metapathways; git submodule update --init executables/source/FAST; make -j executables/linux executables/linux/fastal"
+      - "cd /opt/metapathways; git clone https://github.com/kishori82/MetaPathways_rpkm executables/source/rpkm; make executables/linux executables/linux/rpkm"
+      - "cd /opt/metapathways/executables/linux; for i in blast{n,p} bwa makeblastdb prodigal; do ln -s /usr/bin/$i; done"
+      - "find /opt/metapathways -name template_config.txt | xargs sed -i -e 's|/home/sgeadmin/Koonkie/MetaPathways_Python_Koonkie.3.0|/opt/metapathways|g' -e 's|/home/sgeadmin/MetaPathways/databases|/opt/metapathways/MetaPathways_DBs|g'"

@@ -1,0 +1,825 @@
+# This configuration file (aegea/base_config.yml) is the source of configuration defaults for aegea. In order of
+# increasing precedence, configuration is ingested from this file, the site-wide config file /etc/aegea/config.yml, the
+# user config file ~/.config/aegea/config.yml (created the first time aegea runs), any files listed in the
+# colon-delimited variable AEGEA_CONFIG_FILE, and command-line options. See
+# https://github.com/kislyuk/aegea#configuration-management for more information.
+
+# The contents of arrays in build_image (such as build_image.commands) get added to the configuration for both
+# build_docker_image and build_ami.
+build_image:
+  commands:
+    - "rm -f /usr/lib/python*/EXTERNALLY-MANAGED"
+    - "update-locale LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8"
+    - "pip3 install boto3==1.35.14 awscli==1.34.14 miniwdl==1.12.1"
+  packages:
+    - language-pack-en
+    - iptables-persistent
+    - debian-goodies
+    - bridge-utils
+    - pixz
+    - cryptsetup-bin
+    - mdadm
+    - btrfs-progs
+    - libffi-dev
+    - libssl-dev
+    - libxml2-dev
+    - libxslt1-dev
+    - libyaml-dev
+    - libcurl4-openssl-dev
+    - libjemalloc-dev
+    - libzip-dev
+    - libsnappy-dev
+    - liblz4-dev
+    - libgmp-dev
+    - libmpfr-dev
+    - libsqlite3-dev
+    - htop
+    - pydf
+    - jq
+    - httpie
+    - python3-dev
+    - python3-cffi
+    - python3-pip
+    - python3-setuptools
+    - python3-wheel
+    - python3-requests
+    - python3-yaml
+    - nfs-common
+    - unzip
+    - zstd
+    - build-essential
+    - cmake
+    - libtool
+    - autoconf
+    - ruby
+    - sysstat
+    - numactl
+    - nvme-cli
+    - gdebi-core
+    - sqlite3
+    - moreutils
+    - curl
+    - wget
+    - git
+    - aria2
+    - sift
+    - ripgrep
+    - fd-find
+    - ca-certificates
+    - apt-transport-https
+    - software-properties-common
+    - bat
+    - fluent-bit
+
+build_docker_image:
+  base_image: ubuntu:24.04
+  rootfs_skel_dirs:
+    - auto
+  commands:
+    - "echo aegea docker image builder"
+  packages:
+    - bsdtar
+  cloud_config_data: {}
+
+build_ami:
+  tags: {}
+  base_ami: auto
+  base_ami_distribution: Ubuntu:24.04
+  architecture: x86_64
+  default_builder_instance_type:
+    x86_64: c7a.xlarge
+    arm64: c7g.xlarge
+  rootfs_skel_dirs:
+    - auto
+  packages:
+    - squid-deb-proxy
+    - libhdf5-dev
+    - libboost-dev
+    - fail2ban
+    - byobu
+    - keychain
+    - colordiff
+    - nmap
+    - emacs-nox
+    - docker.io
+  commands:
+    - "ln -sf /lib/systemd/system/awslogs.service /etc/systemd/system/multi-user.target.wants"
+    - "ln -sf /lib/systemd/system/docker-event-relay.service /etc/systemd/system/multi-user.target.wants"
+    - "ln -sf /lib/systemd/system/efs.service /etc/systemd/system/remote-fs.target.wants"
+    - "ln -sf /lib/systemd/system/format-ephemeral-storage.service /etc/systemd/system/sysinit.target.wants"
+    - "IMDS=http://169.254.169.254/latest; TOKEN=$(curl -sX PUT $IMDS/api/token -H X-aws-ec2-metadata-token-ttl-seconds:90); echo region=$(curl -sH X-aws-ec2-metadata-token:$TOKEN $IMDS/meta-data/placement/region) >> /etc/aws.conf"
+    - "sed -i -e '/cloudconfig/ d' /etc/fstab"
+    - "sed -i -e '/^PermitRootLogin/ s/.*/PermitRootLogin no/' /etc/ssh/sshd_config"
+    - "update-grub"
+    - "grub-install /dev/xvda"
+    - "rm -f /usr/lib/python*/EXTERNALLY-MANAGED"
+    - "pip3 install boto3==1.35.14 awscli==1.34.14 miniwdl==1.12.1"
+    - "activate-global-python-argcomplete"
+    - "dpkg-reconfigure debconf -f noninteractive -p critical"
+    - "systemctl mask apport.service apt-daily.service apt-daily-upgrade.service"
+    - "apt-get remove --yes popularity-contest postfix"
+    - "chmod -x /etc/update-motd.d/10-help-text /etc/update-motd.d/50-motd-news"
+    - "apt-get autoremove --yes"
+    - "apt-get clean --yes"
+    - "find /etc/cron.* -type f -not -name .placeholder -and -not -name logrotate -and -not -name fstrim -delete"
+    - "truncate -s 0 /var/log/syslog"
+  cloud_config_data:
+    apt:
+      sources:
+        rstudio:
+          source: "deb https://cloud.r-project.org/bin/linux/ubuntu $RELEASE-cran40"
+          keyid: E298A3A825C0D65DFD57CBB651716619E084DAB9
+        fluentbit:
+          source: "deb https://packages.fluentbit.io/ubuntu/$RELEASE $RELEASE main"
+          keyid: C3C0A28534B9293EAF51FABD9F9DDC083888C1CD
+  cloud_init_timeout_seconds: 900
+  cloud_init_poll_interval_seconds: 8
+
+# Name your Route 53 private DNS zone here. By default, aegea will register instances' names in this zone. For example,
+# when running `aegea launch test`, the `test` instance will be registered as `test.aegea`. To disable DNS registration,
+# use `aegea launch --no-dns`.
+dns:
+  private_zone: aegea.
+
+# The CIDR and subnet prefix configuration here is only used by aegea when a default VPC is not found in your account in
+# a given region that you have logged in to. AWS automatically creates a default VPC the first time you access a
+# region. That VPC always has CIDR 172.31.0.0/16 with /20 subnets.
+vpc:
+  cidr:
+    us-east-1: 10.0.0.0/16
+    us-east-2: 10.1.0.0/16
+    us-west-1: 10.2.0.0/16
+    us-west-2: 10.3.0.0/16
+    ap-northeast-1: 10.4.0.0/16
+    ap-northeast-2: 10.5.0.0/16
+    ap-northeast-3: 10.14.0.0/16
+    ap-southeast-1: 10.6.0.0/16
+    ap-southeast-2: 10.7.0.0/16
+    ap-south-1: 10.8.0.0/16
+    ca-central-1: 10.9.0.0/16
+    eu-west-1: 10.10.0.0/16
+    eu-west-2: 10.11.0.0/16
+    eu-west-3: 10.15.0.0/16
+    eu-central-1: 10.12.0.0/16
+    eu-north-1: 10.16.0.0/16
+    sa-east-1: 10.13.0.0/16
+    af-south-1: 10.17.0.0/16
+  subnet_prefix: 20
+  enable_dns_support: true
+  enable_dns_hostnames: true
+  map_public_ip_on_launch: true
+  assign_ipv6_address_on_creation: true
+  avoid_az_ids:
+    - use1-az3 # This AZ does not offer many modern instance types
+
+ls:
+  resource: ec2
+  subresource: Instance
+  sort_by: launch_time
+  columns:
+    - id
+    - state
+    - instance_type
+    - launch_time
+    - public_dns_name
+    - image_id
+    - tags
+    - iam_instance_profile
+    - security_groups
+    - state_reason
+    - instance_lifecycle
+    # - subnet.availability_zone - throws an error if the instance does not have a subnet (is not running)
+
+iam_users:
+  resource: iam
+  subresource: User
+  columns:
+    - cur
+    - name
+    - user_id
+    - create_date
+    - password_last_used
+    - groups
+    - policies
+    - mfa
+    - access_keys
+
+iam_groups:
+  resource: iam
+  subresource: Group
+  columns:
+    - name
+    - group_id
+    - create_date
+    - users
+    - policies
+
+iam_roles:
+  resource: iam
+  subresource: Role
+  columns:
+    - name
+    - role_id
+    - create_date
+    - instance_profiles
+    - policies
+
+iam_policies:
+  resource: iam
+  subresource: Policy
+  columns:
+    - policy_name
+    - arn
+    - description
+    - create_date
+    - update_date
+    - attachment_count
+  sort_by: attachment_count
+
+ebs_create:
+  tags:
+    - managedBy=aegea
+
+ebs_ls:
+  resource: ec2
+  subresource: Volume
+  sort_by: create_time
+  columns:
+    - id
+    - size
+    - volume_type
+    - iops
+    - encrypted
+    - state
+    - create_time
+    - attachments
+    - availability_zone
+    - tags
+
+ebs_snapshots:
+  resource: ec2
+  subresource: Snapshot
+  columns:
+    - id
+    - description
+    - volume
+    - volume_size
+    - state
+    - progress
+    - encrypted
+    - owner_id
+    - start_time
+    - tags
+
+s3:
+  default_encryption_config: '{"Rules": [{"ApplyServerSideEncryptionByDefault": {"SSEAlgorithm": "AES256"}}]}'
+
+s3_buckets:
+  resource: s3
+  subresource: Bucket
+  columns:
+    - name
+    - creation_date
+    - LocationConstraint
+    - NumberOfObjects
+    - Encryption
+    - BucketSizeBytes
+    - Standard
+    - StandardIA
+    - OneZoneIA
+    - ReducedRedundancy
+    - GlacierInstantRetrieval
+    - Glacier
+    - DeepArchive
+    - IntelligentTieringFA
+    - IntelligentTieringIA
+    - IntelligentTieringAA
+    - IntelligentTieringAIA
+    - IntelligentTieringDAA
+
+s3_versions:
+  columns:
+    - key
+    - is_latest
+    - last_modified
+    - size
+    - storage_class
+    - version_id
+
+images:
+  resource: ec2
+  subresource: Image
+  columns:
+    - id
+    - name
+    - description
+    - creation_date
+    - public
+    - virtualization_type
+    - state
+    - tags
+  sort_by: creation_date
+
+security_groups:
+  resource: ec2
+  subresource: SecurityGroup
+  columns:
+    - id
+    - group_name
+    - description
+    - rule
+    - proto
+    - vpc_id
+    - peer_description
+
+acls:
+  resource: ec2
+  subresource: NetworkAcl
+  columns:
+    - id
+    - associations
+    - entries
+    - is_default
+    - vpc_id
+
+clusters:
+  columns:
+    - clusterName
+    - clusterArn
+    - status
+    - registeredContainerInstancesCount
+    - runningTasksCount
+    - pendingTasksCount
+
+tasks:
+  columns:
+    - taskArn
+    - taskDefinitionArn
+    - clusterArn
+    - lastStatus
+    - desiredStatus
+    - createdAt
+    - overrides
+
+ecr_ls:
+  columns:
+    - repositoryName
+    - repositoryUri
+    - registryId
+    - imageTags
+    - imageDigest
+    - imagePushedAt
+    - imageSizeInBytes
+    - policy
+
+ecs_clusters:
+  columns:
+    - clusterName
+    - status
+    - registeredContainerInstancesCount
+    - runningTasksCount
+    - pendingTasksCount
+    - activeServicesCount
+    - tags
+
+ecs_tasks:
+  columns:
+    - taskArn
+    - clusterArn
+    - taskDefinitionArn
+    - containerInstanceArn
+    - lastStatus
+    - desiredStatus
+    - cpu
+    - memory
+    - startedBy
+    - version
+    - stoppedReason
+    - stopCode
+    - createdAt
+    - launchType
+
+ecs_run:
+  user: "0"
+  image: ubuntu:24.04
+  fargate_cpu: "1 vCPU"
+  fargate_memory: "2 GB"
+  # See https://docs.aws.amazon.com/AmazonECS/latest/developerguide/platform_versions.html
+  fargate_platform_version: "1.4.0"
+
+sirs:
+  columns:
+    - SpotInstanceRequestId
+    - CreateTime
+    - SpotPrice
+    - LaunchSpecification.InstanceType
+    - State
+    - Status.Message
+    - InstanceId
+
+sfrs:
+  columns:
+    - SpotFleetRequestId
+    - SpotFleetRequestState
+    - SpotFleetRequestConfig.TargetCapacity
+    - SpotFleetRequestConfig.ExcessCapacityTerminationPolicy
+    - SpotFleetRequestConfig.AllocationStrategy
+    - CreateTime
+    - SpotFleetRequestConfig.ValidFrom
+    - SpotFleetRequestConfig.ValidUntil
+    - SpotFleetRequestConfig.ClientToken
+  sort_by: CreateTime
+
+subnets:
+  resource: ec2
+  subresource: Subnet
+  sort_by: vpc_id
+  columns:
+    - id
+    - vpc_id
+    - availability_zone
+    - cidr_block
+    - default_for_az
+    - map_public_ip_on_launch
+    - assign_ipv6_address_on_creation
+    - state
+    - tags
+
+tables:
+  resource: dynamodb
+  subresource: Table
+  columns:
+    - name
+    - key_schema
+    - attribute_definitions
+    - item_count
+    - provisioned_throughput
+    - creation_date_time
+    - table_size_bytes
+    - table_status
+
+efs_ls:
+  columns:
+    - Name
+    - FileSystemId
+    - SizeInBytes
+    - CreationTime
+    - LifeCycleState
+    - Tags
+  mount_target_columns:
+    - MountTargetId
+    - SubnetId
+    - IpAddress
+    - NetworkInterfaceId
+
+alarms:
+  columns:
+    - alarm_name
+    - alarm_description
+    - metric_name
+    - comparison_operator
+    - threshold
+    - statistic
+    - state_value
+    - state_updated_timestamp
+    - alarm_actions
+
+billing_configure:
+  billing_reports_bucket: "{account_id}-billing-reports"
+
+billing_ls:
+  columns:
+    - lineItem/UsageStartDate
+    - lineItem/UsageEndDate
+    - lineItem/ProductCode
+    - lineItem/UsageType
+    - lineItem/Operation
+    - lineItem/ResourceId
+    - lineItem/UsageAmount
+    - lineItem/UnblendedRate
+    - lineItem/UnblendedCost
+    - lineItem/BlendedRate
+    - lineItem/BlendedCost
+    - lineItem/LineItemDescription
+    - resourceTags/aws:createdBy
+
+limits:
+  columns:
+    - AttributeName
+    - AttributeValues
+
+cmks:
+  columns:
+    - KeyArn
+    - KeyId
+    - AliasName
+
+rds_ls:
+  columns:
+    - DBClusterIdentifier
+    - DBClusterParameterGroup
+    - DBClusterArn
+    - Status
+    - Engine
+    - EngineMode
+    - EngineVersion
+    - MasterUsername
+    - Endpoint
+    - Port
+    - DeletionProtection
+    - tags
+
+rds_instances:
+  columns:
+    - DBName
+    - Engine
+    - EngineVersion
+    - MultiAZ
+    - AvailabilityZone
+    - AllocatedStorage
+    - MasterUsername
+    - DBInstanceClass
+    - StorageType
+    - DBSecurityGroups
+    - Endpoint
+    - DBInstanceStatus
+    - CopyTagsToSnapshot
+    - DBInstanceIdentifier
+    - tags
+
+rds_snapshots:
+  columns:
+    - DBSnapshotIdentifier
+    - DBInstanceIdentifier
+    - SnapshotCreateTime
+    - SnapshotType
+    - Status
+    - PercentProgress
+    - Encrypted
+    - MasterUsername
+    - tags
+
+rds_create:
+  engine: postgres
+  storage: 20
+  storage_type: gp2
+  db_instance_class: db.t2.large
+
+rds_restore:
+  storage: 20
+  storage_type: gp2
+  db_instance_class: db.t2.large
+
+elb_ls:
+  columns:
+    - LoadBalancerName
+    - type
+    - DNSName
+    - alias
+    - InstanceId
+    - Target
+    - TargetHealth
+    - State
+    - Description
+    - SecurityGroups
+
+flow_logs_ls:
+  columns:
+    - FlowLogId
+    - ResourceId
+    - CreationTime
+    - LogGroupName
+    - TrafficType
+    - FlowLogStatus
+    - DeliverLogsErrorMessage
+
+certificates:
+  columns:
+    - CertificateArn
+    - DomainName
+
+batch_queues:
+  columns:
+    - jobQueueName
+    - jobQueueArn
+    - priority
+    - state
+    - status
+    - statusReason
+
+batch_create_compute_environment:
+  type: MANAGED
+  compute_type: FARGATE_SPOT
+  max_vcpus: 64
+  # The following parameters are not applicable (and ignored) for Fargate CEs
+  # Valid instance types values: "optimal", family name, type name
+  min_vcpus: 0
+  desired_vcpus: 2
+  instance_types: [m5d, c5d, r5d]
+#  ecs_container_instance_ami_tags:
+#    AegeaMission: "ecs-container-instance"
+
+batch_submit:
+  user: "0"
+  default_memory_mb: 4096
+  job_role: aegea.batch.worker
+  platform_capabilities:
+    - EC2
+  default_job_role_iam_policies:
+    - AmazonEC2ReadOnlyAccess
+    - AmazonS3ReadOnlyAccess
+
+batch_terminate:
+  reason: "Terminated by aegea"
+
+batch_compute_environments:
+  columns:
+    - computeEnvironmentName
+    - computeEnvironmentArn
+    - type
+    - state
+    - status
+    - statusReason
+    - computeResources.type
+    - computeResources.minvCpus
+    - computeResources.desiredvCpus
+    - computeResources.maxvCpus
+    - computeResources.instanceTypes
+
+batch_ls:
+  sort_by: createdAt
+  columns:
+    - jobId
+    - jobName
+    - createdAt
+    - status
+    - statusReason
+    - jobDefinition
+    - parameters
+    - container.image
+    - container.environment
+    - container.vcpus
+    - container.memory
+    - dependsOn
+
+sfn_state_machines:
+  columns:
+    - name
+    - stateMachineArn
+    - type
+    - creationDate
+
+sfn_ls:
+  columns:
+    - name
+    - executionArn
+    - status
+    - startDate
+    - stopDate
+
+sfn_history:
+  columns:
+    - name
+    - type
+    - id
+    - timestamp
+    - elapsed
+    - details
+
+lambda_ls:
+  columns:
+    - FunctionName
+    - Runtime
+    - Role
+    - Handler
+    - CodeSize
+    - Description
+    - Timeout
+    - MemorySize
+    - LastModified
+
+lambda_event_source_mappings:
+  columns:
+    - UUID
+    - BatchSize
+    - EventSourceArn
+    - FunctionArn
+    - LastModified
+    - LastProcessingResult
+    - State
+    - StateTransitionReason
+
+secrets_ls:
+  columns:
+    - Name
+    - Description
+    - KmsKeyId
+    - LastChangedDate
+    - LastAccessedDate
+    - RotationEnabled
+    - RotationLambdaARN
+    - LastRotatedDate
+    - ARN
+    - Tags
+
+cloudtrail_ls:
+  columns:
+    - Name
+    - TrailARN
+    - S3BucketName
+    - S3KeyPrefix
+    - CloudWatchLogsLogGroupArn
+    - HasCustomEventSelectors
+
+launch:
+  instance_type: t3a.micro
+  tags: []
+  storage: []
+  commands: []
+  packages: []
+  security_groups: []
+  rootfs_skel_dirs:
+    - auto
+  cloud_config_data: {}
+  manage_iam: true
+  iam_role: aegea.launch
+  iam_policies:
+    - IAMReadOnlyAccess
+    - AmazonEC2ContainerRegistryReadOnly
+    - AmazonElasticFileSystemReadOnlyAccess
+    - AmazonElasticFileSystemClientFullAccess
+    - AWSOpsWorksCloudWatchLogs
+    - AmazonSSMManagedInstanceCore
+  amazon_linux_release: 2023
+
+ssh:
+  server_alive_interval: 15
+  server_alive_count_max: 20
+  use_kms_auth: True
+
+scp:
+  use_kms_auth: True
+
+pricing:
+  max_cache_age_days: 30
+  columns:
+    - product.productFamily
+    - location
+    - unit
+    - pricePerUnit.USD
+    - description
+  columns_AmazonEC2:
+    - instanceType
+    - vcpu
+    - memory
+    - storage
+    - networkPerformance
+  filters_AmazonEC2:
+    - ["operatingSystem", "Linux"]
+    - ["tenancy", "Shared"]
+    - ["capacitystatus", "used"]
+    - ["preInstalledSw", "NA"]
+  sort_by_AmazonEC2: instanceType
+  columns_AmazonRDS:
+    - databaseEngine
+    - instanceType
+    - vcpu
+    - memory
+    - storage
+    - networkPerformance
+  columns_spot:
+    - AvailabilityZone
+    - InstanceType
+    - ProductDescription
+    - SpotPrice
+    - Timestamp
+
+cost:
+  granularity: DAILY
+  min_total: 1
+
+cost_forecast:
+  granularity: DAILY
+  metric: AMORTIZED_COST
+
+managed_iam_groups:
+  aegea.launch:
+    - AmazonEC2FullAccess
+    - CloudWatchLogsReadOnlyAccess
+    - IAMReadOnlyAccess
+    - AmazonSSMManagedInstanceCore
+    - {"action": ["iam:PassRole", "route53:*"], "resource": "*"}
+  aegea.batch.submit:
+    - CloudWatchLogsReadOnlyAccess
+    - IAMReadOnlyAccess
+    - AmazonEC2ContainerRegistryFullAccess
+    - {"action": ["iam:PassRole", "batch:*"], "resource": "*"}
+#  aegea.batch.worker:
+#  aegea.build_ami:
+#  aegea.secrets.put:
+
+log_level: "INFO"
+partition: "aws"
+
+audit:
+  email: null
