@@ -1,0 +1,195 @@
+[build-system]
+requires = ["setuptools>=61.2", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sepal-ui"
+version = "3.0.1"
+description = "Wrapper for ipyvuetify widgets to unify the display of voila dashboards in SEPAL platform"
+keywords = ["UI", "Python", "widget", "sepal"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Build Tools",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+requires-python = ">=3.10"
+dependencies = [
+    # building widgets
+    "tomli",
+    "ipykernel",
+    "ipyvuetify",
+    "markdown",
+    "ipyleaflet>=0.14.0",  # to have access to data member in edition
+    # earthengine management
+    "earthengine-api>1.6.0",
+    # to create a module
+    "colorama",
+    "pipreqs",
+    # read local data
+    "rioxarray",
+    "dask",  # used by rioxarray in the inspector
+    "geopandas>=0.14.0",
+    "matplotlib",
+    "jupyter-server-proxy", # required for localtileserver
+    "planet>=2.0,<3.0",
+    "pyarrow",
+    "localtileserver>=0.10.1", # first version with rio-tiler v7 support
+    "pygaul>=0.4.2", # GAUL 2024 with iso3_code and gaul0_code columns
+    "pygadm>=0.5.0", # use the class implementation
+    # miscellaneous
+    "python-box",
+    "tqdm",
+    "Deprecated>=1.2.14",
+    "anyascii",  # to decode international names with non latin characters
+    "natsort",
+    "typing-extensions",
+    "solara", 
+    "ee-client>=2.5.0", # supports caching
+    "colorlog",
+    "reactivex"
+]
+
+[[project.authors]]
+name = "Pierrick Rambaud"
+email = "pierrick.rambaud49@gmail.com"
+
+[project.license]
+text = "MIT"
+
+[project.readme]
+file = "README.rst"
+content-type = "text/x-rst"
+
+[project.urls]
+Homepage = "https://github.com/12rambau/sepal_ui"
+Download = "https://github.com/12rambau/sepal_ui/archive/v_${metadata:version}.tar.gz"
+
+[project.optional-dependencies]
+dev = [
+    "pre-commit>=2.18.0",
+    "commitizen",
+    "nox",
+    "tomli",
+    "jupyter",
+    "voila",
+    "mypy",
+    "colorlog"
+]
+test = [
+    "pytest",
+    "pytest-sugar",
+    "pytest-icdiff",
+    "pytest-cov",
+    "pytest-deadfixtures",
+    "Flake8-pyproject",
+    "nbmake",
+    "pytest-regressions",
+    "tomli",
+    "colorlog"
+]
+doc = [
+    "sphinx",
+    "jupyter-sphinx",
+    "pydata-sphinx-theme",
+    "sphinx-notfound-page",
+    "sphinx-copybutton",
+    "m2r2>=0.3.3",
+    "sphinxcontrib-autoprogram",
+    "sphinx-favicon>=1.0.1",
+    "tomli",
+    "lxml_html_clean",
+]
+
+[project.scripts]
+module_deploy = "sepal_ui.bin.module_deploy:main"
+module_factory = "sepal_ui.bin.module_factory:main"
+module_l10n = "sepal_ui.bin.module_l10n:main"
+module_theme = "sepal_ui.bin.module_theme:main"
+module_venv = "sepal_ui.bin.module_venv:main"
+activate_venv = "sepal_ui.bin.activate_venv:main"
+sepal_ipyvuetify = "sepal_ui.bin.sepal_ipyvuetify:main"
+entry_point = "sepal_ui.bin.entry_point:main"
+
+[tool.setuptools]
+include-package-data = false
+license-files = ["LICENSE.txt"]
+
+[tool.setuptools.packages.find]
+include = ["sepal_ui*"]
+exclude = ["docs*", "tests*"]
+
+[tool.setuptools.package-data]
+sepal_ui = [
+    "data/*",
+    "message/**/*",
+    "frontend/**/*",
+    "templates/**/*",
+    "sepalwidgets/vue/*",
+    "solara/common/assets/*",
+    "templates/**/.*"
+]
+
+[tool.commitizen]
+changelog_file = "CHANGELOG.md"
+changelog_incremental = true
+tag_format = "v$major.$minor.$patch$prerelease"
+update_changelog_on_bump = false
+version = "3.0.1"
+version_files = [
+    "pyproject.toml:version",
+    "sepal_ui/__init__.py:__version__"
+]
+
+[tool.pytest.ini_options]
+testpaths = "tests"
+
+[tool.ruff]
+ignore-init-module-imports = true
+fix = true
+select = ["E", "F", "W", "I", "D", "RUF"]
+ignore = [
+    "E501",  # line too long | Black take care of it
+    "W605",  # invalid escape sequence | we escape specific characters for sphinx
+    "D200", # One-line docstring should fit on one line | too late
+    "D101", # Missing docstring in public class | set it in __init__
+    "D417", #  Missing argument descriptions in the docstring | seems buggy TODO
+
+]
+
+# init file are here to hide the internal structure to the user of the lib
+exclude = ["*/__init__.py", "docs/source/conf.py", "tests/**/*.yml"]
+
+[tool.ruff.flake8-quotes]
+docstring-quotes = "double"
+
+[tool.ruff.pydocstyle]
+convention = "google"
+
+[tool.ruff.per-file-ignores]
+"*/__init__.py" = ["F403"] # unable to detect undefined names | hide internal structure
+"setup.py" = ["D100"] # nothing to see there
+
+[tool.coverage.run]
+source = ["sepal_ui"]
+omit = [
+    "sepal_ui/*/__init__.py",
+    "sepal_ui/scripts/messages.py",
+    "sepal_ui/reclassify/parameters.py",
+]
+
+[tool.doc8]
+ignore = ["D001"] # we follow a 1 line = 1 paragraph style
+ignore-path-errors = ["docs/source/index.rst;D000"]
+
+[tool.licensecheck]
+using = "PEP631:test;dev;doc"
+
+[tool.codespell]
+skip = 'CHANGELOG.md,sepal_ui/message/**/*.json,sepal_ui/data/gaul_iso.json'
+
+[tool.black]
+line-length = 100
