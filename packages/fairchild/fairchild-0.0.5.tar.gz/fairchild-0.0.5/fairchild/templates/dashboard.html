@@ -1,0 +1,1625 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Fairchild</title>
+    <style>
+      :root {
+        --bg-primary: #0f172a;
+        --bg-secondary: #1e293b;
+        --bg-hover: #334155;
+        --border-color: #334155;
+        --text-primary: #f8fafc;
+        --text-secondary: #e2e8f0;
+        --text-muted: #94a3b8;
+        --text-dim: #64748b;
+        --chart-grid: #334155;
+        --chart-edge: #475569;
+      }
+
+      [data-theme="light"] {
+        --bg-primary: #f8fafc;
+        --bg-secondary: #ffffff;
+        --bg-hover: #f1f5f9;
+        --border-color: #e2e8f0;
+        --text-primary: #0f172a;
+        --text-secondary: #1e293b;
+        --text-muted: #64748b;
+        --text-dim: #94a3b8;
+        --chart-grid: #e2e8f0;
+        --chart-edge: #94a3b8;
+      }
+
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background: var(--bg-primary);
+        color: var(--text-secondary);
+        line-height: 1.5;
+        transition:
+          background 0.2s,
+          color 0.2s;
+      }
+      .container {
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 2rem;
+      }
+
+      .header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 2rem;
+      }
+      h1 {
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: var(--text-primary);
+      }
+      h2 {
+        font-size: 1rem;
+        font-weight: 500;
+        margin-bottom: 1rem;
+        color: var(--text-muted);
+      }
+
+      .theme-toggle {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        padding: 0.5rem;
+        cursor: pointer;
+        color: var(--text-muted);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.875rem;
+      }
+      .theme-toggle:hover {
+        background: var(--bg-hover);
+        color: var(--text-primary);
+      }
+      .theme-toggle svg {
+        width: 18px;
+        height: 18px;
+      }
+
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 1rem;
+        margin-bottom: 2rem;
+      }
+      .stat {
+        background: var(--bg-secondary);
+        border-radius: 8px;
+        padding: 1.25rem;
+        border: 1px solid var(--border-color);
+      }
+      .stat-value {
+        font-size: 2rem;
+        font-weight: 700;
+        color: var(--text-primary);
+      }
+      .stat-label {
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        color: var(--text-dim);
+        margin-top: 0.25rem;
+      }
+      .stat.available .stat-value {
+        color: #22c55e;
+      }
+      .stat.running .stat-value {
+        color: #3b82f6;
+      }
+      .stat.completed .stat-value {
+        color: #10b981;
+      }
+      .stat.failed .stat-value {
+        color: #f59e0b;
+      }
+      .stat.discarded .stat-value {
+        color: #ef4444;
+      }
+
+      .section {
+        margin-bottom: 2rem;
+      }
+      .section-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+      }
+      .section-header h2 {
+        margin-bottom: 0;
+      }
+
+      .tabs {
+        display: flex;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+      }
+      .tab {
+        padding: 0.5rem 1rem;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        cursor: pointer;
+        color: var(--text-muted);
+        font-size: 0.875rem;
+      }
+      .tab:hover {
+        background: var(--bg-hover);
+      }
+      .tab.active {
+        background: #3b82f6;
+        border-color: #3b82f6;
+        color: white;
+      }
+      .tabs-small {
+        margin-bottom: 0;
+      }
+      .tabs-small .tab {
+        padding: 0.25rem 0.625rem;
+        font-size: 0.75rem;
+      }
+      .tab-count {
+        display: inline-block;
+        background: rgba(203, 213, 225, 0.4);
+        padding: 0.125rem 0.375rem;
+        border-radius: 4px;
+        font-size: 0.7rem;
+        margin-left: 0.25rem;
+      }
+      .tab.active .tab-count {
+        background: rgba(255, 255, 255, 0.4);
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 0.75rem 1rem;
+        border-bottom: 1px solid var(--border-color);
+        font-size: 0.875rem;
+      }
+      th {
+        background: var(--bg-secondary);
+        color: var(--text-muted);
+        font-weight: 500;
+        text-transform: uppercase;
+        font-size: 0.75rem;
+      }
+      tr:hover {
+        background: var(--bg-secondary);
+      }
+
+      .badge {
+        display: inline-block;
+        padding: 0.25rem 0.5rem;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        font-weight: 500;
+      }
+      .badge.available {
+        background: #166534;
+        color: #bbf7d0;
+      }
+      .badge.running {
+        background: #1d4ed8;
+        color: #bfdbfe;
+      }
+      .badge.scheduled {
+        background: #6b21a8;
+        color: #e9d5ff;
+      }
+      .badge.completed {
+        background: #115e59;
+        color: #99f6e4;
+      }
+      .badge.failed {
+        background: #92400e;
+        color: #fde68a;
+      }
+      .badge.discarded {
+        background: #991b1b;
+        color: #fecaca;
+      }
+
+      .mono {
+        font-family: "SF Mono", Monaco, monospace;
+        font-size: 0.8rem;
+      }
+      .truncate {
+        max-width: 200px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .job-link {
+        color: #3b82f6;
+        text-decoration: none;
+      }
+      .job-link:hover {
+        text-decoration: underline;
+      }
+
+      .queues {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 1rem;
+      }
+      .queue-card {
+        background: var(--bg-secondary);
+        border-radius: 8px;
+        padding: 1rem;
+        border: 1px solid var(--border-color);
+      }
+      .queue-name {
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+        color: var(--text-primary);
+      }
+      .queue-stats {
+        display: flex;
+        gap: 1rem;
+        flex-wrap: wrap;
+      }
+      .queue-stat {
+        font-size: 0.875rem;
+      }
+      .queue-stat span {
+        color: var(--text-dim);
+      }
+
+      .chart-container {
+        background: var(--bg-secondary);
+        border-radius: 8px;
+        padding: 1.5rem;
+        border: 1px solid var(--border-color);
+        margin-bottom: 2rem;
+      }
+      .chart-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+      }
+      .chart-legend {
+        display: flex;
+        gap: 1.5rem;
+        font-size: 0.75rem;
+      }
+      .chart-legend-item {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+      .chart-legend-color {
+        width: 12px;
+        height: 12px;
+        border-radius: 2px;
+      }
+      #timeseries-chart {
+        width: 100%;
+        height: 200px;
+      }
+
+      .chart-tooltip {
+        position: absolute;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        padding: 0.5rem 0.75rem;
+        font-size: 0.75rem;
+        pointer-events: none;
+        z-index: 100;
+        opacity: 0;
+        transition: opacity 0.15s;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      }
+      .chart-tooltip.visible {
+        opacity: 1;
+      }
+      .chart-tooltip-time {
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: 0.25rem;
+      }
+      .chart-tooltip-row {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        color: var(--text-secondary);
+      }
+      .chart-tooltip-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 2px;
+      }
+      .chart-tooltip-value {
+        margin-left: auto;
+        font-weight: 500;
+      }
+
+      /* Enqueue Modal */
+      .modal-overlay {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 1000;
+        align-items: center;
+        justify-content: center;
+      }
+      .modal-overlay.open {
+        display: flex;
+      }
+      .modal {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        padding: 1.5rem;
+        width: 100%;
+        max-width: 500px;
+        max-height: 90vh;
+        overflow-y: auto;
+      }
+      .modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.5rem;
+      }
+      .modal-title {
+        font-size: 1.25rem;
+        font-weight: 600;
+        color: var(--text-primary);
+      }
+      .modal-close {
+        background: none;
+        border: none;
+        color: var(--text-muted);
+        cursor: pointer;
+        padding: 0.25rem;
+        font-size: 1.5rem;
+        line-height: 1;
+      }
+      .modal-close:hover {
+        color: var(--text-primary);
+      }
+      .form-group {
+        margin-bottom: 1rem;
+      }
+      .form-label {
+        display: block;
+        font-size: 0.875rem;
+        font-weight: 500;
+        color: var(--text-secondary);
+        margin-bottom: 0.5rem;
+      }
+      .form-input,
+      .form-select,
+      .form-textarea {
+        width: 100%;
+        padding: 0.625rem 0.75rem;
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        color: var(--text-primary);
+        font-size: 0.875rem;
+        font-family: inherit;
+      }
+      .form-input:focus,
+      .form-select:focus,
+      .form-textarea:focus {
+        outline: none;
+        border-color: #3b82f6;
+      }
+      .form-textarea {
+        min-height: 100px;
+        font-family: "SF Mono", Monaco, monospace;
+        font-size: 0.8rem;
+        resize: vertical;
+      }
+      .form-hint {
+        font-size: 0.75rem;
+        color: var(--text-dim);
+        margin-top: 0.25rem;
+      }
+      .form-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1rem;
+      }
+      .form-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.75rem;
+        margin-top: 1.5rem;
+      }
+      .btn {
+        padding: 0.625rem 1rem;
+        border-radius: 6px;
+        font-size: 0.875rem;
+        font-weight: 500;
+        cursor: pointer;
+        border: 1px solid transparent;
+      }
+      .btn-secondary {
+        background: var(--bg-primary);
+        border-color: var(--border-color);
+        color: var(--text-secondary);
+      }
+      .btn-secondary:hover {
+        background: var(--bg-hover);
+      }
+      .btn-primary {
+        background: #3b82f6;
+        color: white;
+      }
+      .btn-primary:hover {
+        background: #2563eb;
+      }
+      .btn-primary:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      .form-error {
+        color: #ef4444;
+        font-size: 0.875rem;
+        margin-top: 0.5rem;
+      }
+      .form-success {
+        color: #22c55e;
+        font-size: 0.875rem;
+        margin-top: 0.5rem;
+      }
+      .enqueue-btn {
+        background: #3b82f6;
+        border: none;
+        color: white;
+        padding: 0.5rem 1rem;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 0.875rem;
+        font-weight: 500;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+      .enqueue-btn:hover {
+        background: #2563eb;
+      }
+      .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+      }
+
+      /* Workers section */
+      .workers-table {
+        width: 100%;
+        border-collapse: collapse;
+        background: var(--bg-secondary);
+        border-radius: 8px;
+        overflow: hidden;
+        border: 1px solid var(--border-color);
+      }
+      .workers-table th,
+      .workers-table td {
+        text-align: left;
+        padding: 0.75rem 1rem;
+        border-bottom: 1px solid var(--border-color);
+        font-size: 0.875rem;
+      }
+      .workers-table th {
+        background: var(--bg-secondary);
+        color: var(--text-muted);
+        font-weight: 500;
+        text-transform: uppercase;
+        font-size: 0.75rem;
+      }
+      .workers-table tr:last-child td {
+        border-bottom: none;
+      }
+      .workers-table tr:hover td {
+        background: var(--bg-hover);
+      }
+      .worker-queues {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.375rem;
+      }
+      .worker-queue-tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        padding: 0.125rem 0.5rem;
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        font-size: 0.75rem;
+        color: var(--text-secondary);
+      }
+      .worker-queue-tag .slots {
+        color: var(--text-dim);
+      }
+      .btn-pause {
+        padding: 0.375rem 0.75rem;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        font-weight: 500;
+        cursor: pointer;
+        border: 1px solid transparent;
+        background: #92400e;
+        color: #fde68a;
+      }
+      .btn-pause:hover {
+        background: #78350f;
+      }
+      .btn-resume {
+        padding: 0.375rem 0.75rem;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        font-weight: 500;
+        cursor: pointer;
+        border: 1px solid transparent;
+        background: #166534;
+        color: #bbf7d0;
+      }
+      .btn-resume:hover {
+        background: #14532d;
+      }
+      .btn-pause:disabled,
+      .btn-resume:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      .worker-state {
+        display: inline-block;
+        padding: 0.25rem 0.5rem;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        font-weight: 500;
+      }
+      .worker-state.running {
+        background: #166534;
+        color: #bbf7d0;
+      }
+      .worker-state.idle {
+        background: #374151;
+        color: #9ca3af;
+      }
+      .worker-state.paused {
+        background: #92400e;
+        color: #fde68a;
+      }
+      .worker-state.stale {
+        background: #991b1b;
+        color: #fecaca;
+      }
+      .no-workers {
+        text-align: center;
+        padding: 2rem;
+        color: var(--text-dim);
+        background: var(--bg-secondary);
+        border-radius: 8px;
+        border: 1px solid var(--border-color);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <h1>Fairchild</h1>
+        <div class="header-actions">
+          <button class="enqueue-btn" onclick="openEnqueueModal()">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+            Enqueue Job
+          </button>
+          <button
+            class="theme-toggle"
+            onclick="toggleTheme()"
+            title="Toggle theme"
+          >
+            <svg
+              id="theme-icon-dark"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"
+              />
+            </svg>
+            <svg
+              id="theme-icon-light"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              style="display: none"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"
+              />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="stats" id="stats"></div>
+
+      <div class="section">
+        <div class="chart-container">
+          <div class="chart-header">
+            <h2 style="margin-bottom: 0">Jobs per Minute (Last 60 min)</h2>
+            <div class="chart-legend">
+              <div class="chart-legend-item">
+                <div
+                  class="chart-legend-color"
+                  style="background: #3b82f6"
+                ></div>
+                <span>Queued</span>
+              </div>
+              <div class="chart-legend-item">
+                <div
+                  class="chart-legend-color"
+                  style="background: #10b981"
+                ></div>
+                <span>Completed</span>
+              </div>
+              <div class="chart-legend-item">
+                <div
+                  class="chart-legend-color"
+                  style="background: #ef4444"
+                ></div>
+                <span>Failed</span>
+              </div>
+            </div>
+          </div>
+          <div style="position: relative">
+            <canvas id="timeseries-chart"></canvas>
+            <div class="chart-tooltip" id="chart-tooltip">
+              <div class="chart-tooltip-time" id="tooltip-time"></div>
+              <div class="chart-tooltip-row">
+                <div
+                  class="chart-tooltip-dot"
+                  style="background: #3b82f6"
+                ></div>
+                <span>Queued</span>
+                <span class="chart-tooltip-value" id="tooltip-queued">0</span>
+              </div>
+              <div class="chart-tooltip-row">
+                <div
+                  class="chart-tooltip-dot"
+                  style="background: #10b981"
+                ></div>
+                <span>Completed</span>
+                <span class="chart-tooltip-value" id="tooltip-completed"
+                  >0</span
+                >
+              </div>
+              <div class="chart-tooltip-row">
+                <div
+                  class="chart-tooltip-dot"
+                  style="background: #ef4444"
+                ></div>
+                <span>Failed</span>
+                <span class="chart-tooltip-value" id="tooltip-failed">0</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>Queues</h2>
+        <div class="queues" id="queues"></div>
+      </div>
+
+      <div class="section">
+        <div class="section-header">
+          <h2>Recent Jobs</h2>
+          <div class="tabs tabs-small" id="jobs-tabs">
+            <div class="tab active" data-state="">
+              All <span class="tab-count" id="jobs-count-all">0</span>
+            </div>
+            <div class="tab" data-state="available">
+              Available
+              <span class="tab-count" id="jobs-count-available">0</span>
+            </div>
+            <div class="tab" data-state="running">
+              Running <span class="tab-count" id="jobs-count-running">0</span>
+            </div>
+            <div class="tab" data-state="completed">
+              Completed
+              <span class="tab-count" id="jobs-count-completed">0</span>
+            </div>
+            <div class="tab" data-state="failed">
+              Failed <span class="tab-count" id="jobs-count-failed">0</span>
+            </div>
+            <div class="tab" data-state="discarded">
+              Discarded
+              <span class="tab-count" id="jobs-count-discarded">0</span>
+            </div>
+          </div>
+        </div>
+        <table id="jobs-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Task</th>
+              <th>Queue</th>
+              <th>State</th>
+              <th>Attempts</th>
+              <th>Created</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="section">
+        <div class="section-header">
+          <h2>Workers</h2>
+          <div class="tabs tabs-small" id="worker-tabs">
+            <div class="tab active" data-worker-state="">
+              All <span class="tab-count" id="worker-count-all">0</span>
+            </div>
+            <div class="tab" data-worker-state="running">
+              Running <span class="tab-count" id="worker-count-running">0</span>
+            </div>
+            <div class="tab" data-worker-state="idle">
+              Idle <span class="tab-count" id="worker-count-idle">0</span>
+            </div>
+            <div class="tab" data-worker-state="paused">
+              Paused <span class="tab-count" id="worker-count-paused">0</span>
+            </div>
+            <div class="tab" data-worker-state="stale">
+              Stale <span class="tab-count" id="worker-count-stale">0</span>
+            </div>
+          </div>
+        </div>
+        <div id="workers"></div>
+      </div>
+    </div>
+
+    <!-- Enqueue Job Modal -->
+    <div class="modal-overlay" id="enqueue-modal">
+      <div class="modal">
+        <div class="modal-header">
+          <h2 class="modal-title">Enqueue Job</h2>
+          <button class="modal-close" onclick="closeEnqueueModal()">
+            &times;
+          </button>
+        </div>
+        <form id="enqueue-form" onsubmit="submitEnqueueForm(event)">
+          <div class="form-group">
+            <label class="form-label" for="enqueue-task">Task</label>
+            <select
+              class="form-select"
+              id="enqueue-task"
+              required
+              onchange="onTaskSelected()"
+            >
+              <option value="">Select a task...</option>
+            </select>
+            <div class="form-hint" id="enqueue-task-params"></div>
+            <div
+              class="form-hint"
+              id="enqueue-task-docstring"
+              style="
+                margin-top: 0.5rem;
+                white-space: pre-wrap;
+                color: var(--text-secondary);
+              "
+            ></div>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="enqueue-args"
+              >Arguments (JSON)</label
+            >
+            <textarea
+              class="form-textarea"
+              id="enqueue-args"
+              placeholder='{&#10;  "key": "value"&#10;}'
+            >
+{}</textarea
+            >
+            <div class="form-hint">JSON object with task arguments</div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" for="enqueue-priority">Priority</label>
+              <input
+                class="form-input"
+                type="number"
+                id="enqueue-priority"
+                min="0"
+                max="9"
+                placeholder="0-9 (lower = higher)"
+              />
+              <div class="form-hint">Optional, uses task default</div>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="enqueue-scheduled"
+                >Schedule For</label
+              >
+              <input
+                class="form-input"
+                type="datetime-local"
+                id="enqueue-scheduled"
+              />
+              <div class="form-hint">Optional, runs immediately if empty</div>
+            </div>
+          </div>
+          <div id="enqueue-message"></div>
+          <div class="form-actions">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              onclick="closeEnqueueModal()"
+            >
+              Cancel
+            </button>
+            <button type="submit" class="btn btn-primary" id="enqueue-submit">
+              Enqueue
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <script>
+      // Theme management
+      function getSystemTheme() {
+        return window.matchMedia("(prefers-color-scheme: light)").matches
+          ? "light"
+          : "dark";
+      }
+
+      function getStoredTheme() {
+        return localStorage.getItem("fairchild-theme");
+      }
+
+      function setTheme(theme) {
+        document.documentElement.setAttribute("data-theme", theme);
+        localStorage.setItem("fairchild-theme", theme);
+        updateThemeIcon(theme);
+      }
+
+      function updateThemeIcon(theme) {
+        const darkIcon = document.getElementById("theme-icon-dark");
+        const lightIcon = document.getElementById("theme-icon-light");
+        if (theme === "light") {
+          darkIcon.style.display = "none";
+          lightIcon.style.display = "block";
+        } else {
+          darkIcon.style.display = "block";
+          lightIcon.style.display = "none";
+        }
+      }
+
+      function toggleTheme() {
+        const current =
+          document.documentElement.getAttribute("data-theme") ||
+          getSystemTheme();
+        const next = current === "light" ? "dark" : "light";
+        setTheme(next);
+        // Re-render charts with new colors
+        fetchTimeseries();
+      }
+
+      // Initialize theme
+      const storedTheme = getStoredTheme();
+      if (storedTheme) {
+        setTheme(storedTheme);
+      } else {
+        const systemTheme = getSystemTheme();
+        document.documentElement.setAttribute("data-theme", systemTheme);
+        updateThemeIcon(systemTheme);
+      }
+
+      // Listen for system theme changes
+      window
+        .matchMedia("(prefers-color-scheme: light)")
+        .addEventListener("change", (e) => {
+          if (!getStoredTheme()) {
+            const newTheme = e.matches ? "light" : "dark";
+            document.documentElement.setAttribute("data-theme", newTheme);
+            updateThemeIcon(newTheme);
+            fetchTimeseries();
+          }
+        });
+
+      function getChartColors() {
+        const style = getComputedStyle(document.documentElement);
+        return {
+          grid: style.getPropertyValue("--chart-grid").trim() || "#334155",
+          edge: style.getPropertyValue("--chart-edge").trim() || "#475569",
+          text: style.getPropertyValue("--text-dim").trim() || "#64748b",
+        };
+      }
+
+      let currentState = "";
+      let currentWorkerState = "";
+
+      async function fetchStats() {
+        const res = await fetch("/api/stats");
+        const stats = await res.json();
+
+        const order = [
+          "available",
+          "running",
+          "scheduled",
+          "completed",
+          "failed",
+          "discarded",
+        ];
+        const container = document.getElementById("stats");
+        container.innerHTML = order
+          .map(
+            (state) => `
+                <div class="stat ${state}">
+                    <div class="stat-value">${stats[state] || 0}</div>
+                    <div class="stat-label">${state}</div>
+                </div>
+            `,
+          )
+          .join("");
+
+        // Update job tab counts
+        const total = order.reduce(
+          (sum, state) => sum + (stats[state] || 0),
+          0,
+        );
+        document.getElementById("jobs-count-all").textContent = total;
+        document.getElementById("jobs-count-available").textContent =
+          stats.available || 0;
+        document.getElementById("jobs-count-running").textContent =
+          stats.running || 0;
+        document.getElementById("jobs-count-completed").textContent =
+          stats.completed || 0;
+        document.getElementById("jobs-count-failed").textContent =
+          stats.failed || 0;
+        document.getElementById("jobs-count-discarded").textContent =
+          stats.discarded || 0;
+      }
+
+      async function fetchQueues() {
+        const res = await fetch("/api/queues");
+        const queues = await res.json();
+
+        const container = document.getElementById("queues");
+        container.innerHTML = Object.entries(queues)
+          .map(
+            ([name, stats]) => `
+                <div class="queue-card">
+                    <div class="queue-name">${name}</div>
+                    <div class="queue-stats">
+                        ${Object.entries(stats)
+                          .map(
+                            ([state, count]) => `
+                            <div class="queue-stat"><span>${state}:</span> ${count}</div>
+                        `,
+                          )
+                          .join("")}
+                    </div>
+                </div>
+            `,
+          )
+          .join("");
+      }
+
+      function formatTimeAgo(iso) {
+        if (!iso) return "-";
+        const d = new Date(iso);
+        const now = new Date();
+        const diffMs = now - d;
+        const diffSec = Math.floor(diffMs / 1000);
+
+        if (diffSec < 60) {
+          return `${diffSec}s ago`;
+        } else if (diffSec < 3600) {
+          const mins = Math.floor(diffSec / 60);
+          return `${mins}m ago`;
+        } else {
+          return formatTime(iso);
+        }
+      }
+
+      async function fetchWorkers(filterState = "") {
+        const res = await fetch("/api/workers");
+        const workers = await res.json();
+
+        const container = document.getElementById("workers");
+
+        // Calculate display state for each worker and filter
+        const workersWithState = workers.map((worker) => {
+          const displayState =
+            worker.state === "running" && worker.active_jobs === 0
+              ? "idle"
+              : worker.state;
+          return { ...worker, displayState };
+        });
+
+        // Update counts in tabs
+        const counts = {
+          all: workersWithState.length,
+          running: 0,
+          idle: 0,
+          paused: 0,
+          stale: 0,
+        };
+        workersWithState.forEach((w) => {
+          if (counts[w.displayState] !== undefined) {
+            counts[w.displayState]++;
+          }
+        });
+        document.getElementById("worker-count-all").textContent = counts.all;
+        document.getElementById("worker-count-running").textContent =
+          counts.running;
+        document.getElementById("worker-count-idle").textContent = counts.idle;
+        document.getElementById("worker-count-paused").textContent =
+          counts.paused;
+        document.getElementById("worker-count-stale").textContent =
+          counts.stale;
+
+        const filteredWorkers = filterState
+          ? workersWithState.filter((w) => w.displayState === filterState)
+          : workersWithState;
+
+        if (filteredWorkers.length === 0) {
+          const message = filterState
+            ? `No ${filterState} workers`
+            : "No workers running";
+          container.innerHTML = `<div class="no-workers">${message}</div>`;
+          return;
+        }
+
+        const rows = filteredWorkers
+          .map((worker) => {
+            // Parse queues - handle both object and string (double-encoded) cases
+            let queues = worker.queues || {};
+            if (typeof queues === "string") {
+              try {
+                queues = JSON.parse(queues);
+              } catch (e) {
+                queues = {};
+              }
+            }
+
+            const queueTags = Object.entries(queues)
+              .map(
+                ([name, slots]) =>
+                  `<span class="worker-queue-tag">${name} <span class="slots">×${slots}</span></span>`,
+              )
+              .join("");
+
+            const isPaused = worker.state === "paused";
+            const actionBtn = isPaused
+              ? `<button class="btn-resume" onclick="resumeWorker('${worker.id}')">Resume</button>`
+              : `<button class="btn-pause" onclick="pauseWorker('${worker.id}')">Pause</button>`;
+
+            const displayState = worker.displayState;
+
+            const timeAgo = formatTimeAgo(worker.last_heartbeat_at);
+            const fullTime = worker.last_heartbeat_at
+              ? new Date(worker.last_heartbeat_at).toLocaleString()
+              : "";
+
+            return `
+            <tr>
+              <td class="mono">${worker.hostname}</td>
+              <td><span class="worker-state ${displayState}">${displayState}</span></td>
+              <td><div class="worker-queues">${queueTags || "-"}</div></td>
+              <td>${worker.active_jobs}</td>
+              <td class="mono" title="${fullTime}">${timeAgo}</td>
+              <td>${actionBtn}</td>
+            </tr>
+          `;
+          })
+          .join("");
+
+        container.innerHTML = `
+          <table class="workers-table">
+            <thead>
+              <tr>
+                <th>Hostname</th>
+                <th>State</th>
+                <th>Queues</th>
+                <th>Active Jobs</th>
+                <th>Last Heartbeat</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        `;
+      }
+
+      async function pauseWorker(workerId) {
+        try {
+          const res = await fetch(`/api/workers/${workerId}/pause`, {
+            method: "POST",
+          });
+          if (res.ok) {
+            fetchWorkers();
+          } else {
+            const data = await res.json();
+            alert(data.error || "Failed to pause worker");
+          }
+        } catch (err) {
+          alert("Error pausing worker: " + err.message);
+        }
+      }
+
+      async function resumeWorker(workerId) {
+        try {
+          const res = await fetch(`/api/workers/${workerId}/resume`, {
+            method: "POST",
+          });
+          if (res.ok) {
+            fetchWorkers();
+          } else {
+            const data = await res.json();
+            alert(data.error || "Failed to resume worker");
+          }
+        } catch (err) {
+          alert("Error resuming worker: " + err.message);
+        }
+      }
+
+      async function fetchJobs(state = "") {
+        const url = state ? `/api/jobs?state=${state}` : "/api/jobs";
+        const res = await fetch(url);
+        const jobs = await res.json();
+
+        const tbody = document.querySelector("#jobs-table tbody");
+        tbody.innerHTML = jobs
+          .map(
+            (job) => `
+                <tr>
+                    <td class="mono"><a href="/jobs/${job.id}" class="job-link">${job.id}</a></td>
+                    <td class="truncate">${job.task_name}</td>
+                    <td>${job.queue}</td>
+                    <td><span class="badge ${job.state}">${job.state}</span></td>
+                    <td>${job.attempt}/${job.max_attempts}</td>
+                    <td class="mono">${formatTime(job.inserted_at)}</td>
+                </tr>
+            `,
+          )
+          .join("");
+      }
+
+      function formatTime(iso) {
+        if (!iso) return "-";
+        const d = new Date(iso);
+        return d.toLocaleTimeString();
+      }
+
+      // Tab handling for jobs
+      document.querySelectorAll(".tab[data-state]").forEach((tab) => {
+        tab.addEventListener("click", () => {
+          document
+            .querySelectorAll(".tab[data-state]")
+            .forEach((t) => t.classList.remove("active"));
+          tab.classList.add("active");
+          currentState = tab.dataset.state;
+          fetchJobs(currentState);
+        });
+      });
+
+      // Tab handling for workers
+      document.querySelectorAll(".tab[data-worker-state]").forEach((tab) => {
+        tab.addEventListener("click", () => {
+          document
+            .querySelectorAll(".tab[data-worker-state]")
+            .forEach((t) => t.classList.remove("active"));
+          tab.classList.add("active");
+          currentWorkerState = tab.dataset.workerState;
+          fetchWorkers(currentWorkerState);
+        });
+      });
+
+      // Chart rendering
+      async function fetchTimeseries() {
+        const res = await fetch("/api/timeseries");
+        const data = await res.json();
+        renderChart(data);
+      }
+
+      // Store chart data for tooltip
+      let chartData = { inserted: [], completed: [], failed: [], times: [] };
+      let chartLayout = { padding: {}, barWidth: 0, width: 0 };
+
+      function renderChart(data) {
+        const canvas = document.getElementById("timeseries-chart");
+        const ctx = canvas.getContext("2d");
+        const dpr = window.devicePixelRatio || 1;
+
+        // Set canvas size
+        const rect = canvas.getBoundingClientRect();
+        canvas.width = rect.width * dpr;
+        canvas.height = rect.height * dpr;
+        ctx.scale(dpr, dpr);
+
+        const width = rect.width;
+        const height = rect.height;
+        const padding = { top: 20, right: 20, bottom: 30, left: 50 };
+        const chartWidth = width - padding.left - padding.right;
+        const chartHeight = height - padding.top - padding.bottom;
+
+        // Generate last 60 minutes
+        const now = new Date();
+        now.setSeconds(0, 0);
+        const minutes = [];
+        const times = [];
+        for (let i = 59; i >= 0; i--) {
+          const d = new Date(now.getTime() - i * 60000);
+          minutes.push(d.toISOString().slice(0, 16) + ":00+00:00");
+          times.push(d);
+        }
+
+        // Extract values
+        const inserted = minutes.map((m) => data.inserted[m] || 0);
+        const completed = minutes.map((m) => data.completed[m] || 0);
+        const failed = minutes.map((m) => data.failed[m] || 0);
+
+        // Store for tooltip
+        chartData = { inserted, completed, failed, times };
+        const barWidth = Math.max(2, chartWidth / 60 - 2);
+        chartLayout = { padding, barWidth, width };
+
+        // Calculate max for scaling
+        const maxVal = Math.max(1, ...inserted, ...completed, ...failed);
+
+        // Clear canvas
+        ctx.clearRect(0, 0, width, height);
+
+        // Get theme-aware colors
+        const colors = getChartColors();
+
+        // Draw grid lines
+        ctx.strokeStyle = colors.grid;
+        ctx.lineWidth = 1;
+        const gridLines = 4;
+        for (let i = 0; i <= gridLines; i++) {
+          const y = padding.top + (chartHeight / gridLines) * i;
+          ctx.beginPath();
+          ctx.moveTo(padding.left, y);
+          ctx.lineTo(width - padding.right, y);
+          ctx.stroke();
+
+          // Y-axis labels
+          const val = Math.round(maxVal * (1 - i / gridLines));
+          ctx.fillStyle = colors.text;
+          ctx.font = "11px -apple-system, sans-serif";
+          ctx.textAlign = "right";
+          ctx.fillText(val.toString(), padding.left - 8, y + 4);
+        }
+
+        // Draw x-axis labels (every 15 min)
+        ctx.textAlign = "center";
+        for (let i = 0; i < 60; i += 15) {
+          const x = padding.left + (chartWidth / 59) * i;
+          const d = new Date(now.getTime() - (59 - i) * 60000);
+          const label = d.toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+          ctx.fillText(label, x, height - 8);
+        }
+
+        // Draw bars (stacked)
+        for (let i = 0; i < 60; i++) {
+          const x = padding.left + (chartWidth / 60) * i + 1;
+
+          let y = padding.top + chartHeight;
+
+          // Failed (bottom, red)
+          if (failed[i] > 0) {
+            const h = (failed[i] / maxVal) * chartHeight;
+            ctx.fillStyle = "#ef4444";
+            ctx.fillRect(x, y - h, barWidth, h);
+            y -= h;
+          }
+
+          // Completed (middle, green)
+          if (completed[i] > 0) {
+            const h = (completed[i] / maxVal) * chartHeight;
+            ctx.fillStyle = "#10b981";
+            ctx.fillRect(x, y - h, barWidth, h);
+            y -= h;
+          }
+
+          // Inserted (top, blue)
+          if (inserted[i] > 0) {
+            const h = (inserted[i] / maxVal) * chartHeight;
+            ctx.fillStyle = "#3b82f6";
+            ctx.fillRect(x, y - h, barWidth, h);
+          }
+        }
+      }
+
+      // Chart tooltip handling
+      const chartCanvas = document.getElementById("timeseries-chart");
+      const tooltip = document.getElementById("chart-tooltip");
+
+      chartCanvas.addEventListener("mousemove", (e) => {
+        const rect = chartCanvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+
+        // Calculate which bar we're over
+        const { padding, barWidth, width } = chartLayout;
+        const chartWidth = width - padding.left - padding.right;
+        const barIndex = Math.floor((x - padding.left) / (chartWidth / 60));
+
+        if (barIndex >= 0 && barIndex < 60 && chartData.times.length > 0) {
+          const time = chartData.times[barIndex];
+          const queued = chartData.inserted[barIndex] || 0;
+          const completed = chartData.completed[barIndex] || 0;
+          const failed = chartData.failed[barIndex] || 0;
+
+          // Update tooltip content
+          document.getElementById("tooltip-time").textContent =
+            time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+          document.getElementById("tooltip-queued").textContent = queued;
+          document.getElementById("tooltip-completed").textContent = completed;
+          document.getElementById("tooltip-failed").textContent = failed;
+
+          // Position tooltip
+          let tooltipX = e.clientX - rect.left + 10;
+          let tooltipY = e.clientY - rect.top - 10;
+
+          // Keep tooltip in bounds
+          const tooltipRect = tooltip.getBoundingClientRect();
+          if (tooltipX + tooltipRect.width > rect.width) {
+            tooltipX = e.clientX - rect.left - tooltipRect.width - 10;
+          }
+          if (tooltipY < 0) {
+            tooltipY = e.clientY - rect.top + 20;
+          }
+
+          tooltip.style.left = tooltipX + "px";
+          tooltip.style.top = tooltipY + "px";
+          tooltip.classList.add("visible");
+        } else {
+          tooltip.classList.remove("visible");
+        }
+      });
+
+      chartCanvas.addEventListener("mouseleave", () => {
+        tooltip.classList.remove("visible");
+      });
+
+      // Initial load and refresh
+      async function refresh() {
+        await Promise.all([
+          fetchStats(),
+          fetchQueues(),
+          fetchWorkers(currentWorkerState),
+          fetchJobs(currentState),
+          fetchTimeseries(),
+        ]);
+      }
+
+      refresh();
+      setInterval(refresh, 30000);
+
+      // Update worker heartbeat times every second
+      setInterval(() => {
+        const cells = document.querySelectorAll(".workers-table td[title]");
+        cells.forEach((cell) => {
+          const fullTime = cell.getAttribute("title");
+          if (fullTime) {
+            const iso = new Date(fullTime).toISOString();
+            cell.textContent = formatTimeAgo(iso);
+          }
+        });
+      }, 1000);
+
+      // Enqueue modal
+      let taskRegistry = {};
+
+      async function loadTasks() {
+        const res = await fetch("/api/tasks");
+        const tasks = await res.json();
+        const select = document.getElementById("enqueue-task");
+
+        // Clear existing options except the placeholder
+        select.innerHTML = '<option value="">Select a task...</option>';
+        taskRegistry = {};
+
+        tasks.forEach((task) => {
+          taskRegistry[task.name] = task;
+          const option = document.createElement("option");
+          option.value = task.name;
+          option.textContent = `${task.name} (queue: ${task.queue})`;
+          select.appendChild(option);
+        });
+      }
+
+      function onTaskSelected() {
+        const taskName = document.getElementById("enqueue-task").value;
+        const paramsEl = document.getElementById("enqueue-task-params");
+        const docstringEl = document.getElementById("enqueue-task-docstring");
+        const argsEl = document.getElementById("enqueue-args");
+
+        if (!taskName || !taskRegistry[taskName]) {
+          paramsEl.innerHTML = "";
+          docstringEl.textContent = "";
+          return;
+        }
+
+        const task = taskRegistry[taskName];
+        const params = task.params || [];
+
+        // Show docstring if available
+        docstringEl.textContent = task.docstring || "";
+
+        if (params.length === 0) {
+          paramsEl.innerHTML = "No arguments required";
+          argsEl.value = "{}";
+          return;
+        }
+
+        // Build parameter description
+        const paramStrs = params.map((p) => {
+          let str = `<strong>${p.name}</strong>`;
+          if (p.type) str += `: ${p.type}`;
+          if (!p.required)
+            str += ` (optional, default: ${JSON.stringify(p.default)})`;
+          return str;
+        });
+        paramsEl.innerHTML = "Parameters: " + paramStrs.join(", ");
+
+        // Generate template JSON with required params
+        const template = {};
+        params.forEach((p) => {
+          if (p.required) {
+            if (p.type === "str") template[p.name] = "";
+            else if (p.type === "int" || p.type === "float")
+              template[p.name] = 0;
+            else if (p.type === "bool") template[p.name] = false;
+            else if (p.type === "list") template[p.name] = [];
+            else if (p.type === "dict") template[p.name] = {};
+            else template[p.name] = null;
+          }
+        });
+        argsEl.value = JSON.stringify(template, null, 2);
+      }
+
+      function openEnqueueModal() {
+        loadTasks();
+        document.getElementById("enqueue-modal").classList.add("open");
+        document.getElementById("enqueue-message").innerHTML = "";
+        document.getElementById("enqueue-task-params").innerHTML = "";
+      }
+
+      function closeEnqueueModal() {
+        document.getElementById("enqueue-modal").classList.remove("open");
+        document.getElementById("enqueue-form").reset();
+        document.getElementById("enqueue-args").value = "{}";
+        document.getElementById("enqueue-message").innerHTML = "";
+        document.getElementById("enqueue-task-params").innerHTML = "";
+        document.getElementById("enqueue-task-docstring").textContent = "";
+      }
+
+      // Close modal on overlay click
+      document
+        .getElementById("enqueue-modal")
+        .addEventListener("click", (e) => {
+          if (e.target.classList.contains("modal-overlay")) {
+            closeEnqueueModal();
+          }
+        });
+
+      // Close modal on Escape key
+      document.addEventListener("keydown", (e) => {
+        if (
+          e.key === "Escape" &&
+          document.getElementById("enqueue-modal").classList.contains("open")
+        ) {
+          closeEnqueueModal();
+        }
+      });
+
+      async function submitEnqueueForm(e) {
+        e.preventDefault();
+        const messageEl = document.getElementById("enqueue-message");
+        const submitBtn = document.getElementById("enqueue-submit");
+
+        const task = document.getElementById("enqueue-task").value;
+        const argsText = document.getElementById("enqueue-args").value;
+        const priority = document.getElementById("enqueue-priority").value;
+        const scheduled = document.getElementById("enqueue-scheduled").value;
+
+        // Validate JSON
+        let args;
+        try {
+          args = JSON.parse(argsText);
+          if (typeof args !== "object" || Array.isArray(args)) {
+            throw new Error("Arguments must be a JSON object");
+          }
+        } catch (err) {
+          messageEl.innerHTML = `<div class="form-error">Invalid JSON: ${err.message}</div>`;
+          return;
+        }
+
+        // Build request body
+        const body = { task, args };
+        if (priority !== "") {
+          body.priority = parseInt(priority, 10);
+        }
+        if (scheduled) {
+          body.scheduled_at = new Date(scheduled).toISOString();
+        }
+
+        // Submit
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Enqueueing...";
+
+        try {
+          const res = await fetch("/api/jobs", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+
+          const data = await res.json();
+
+          if (!res.ok) {
+            messageEl.innerHTML = `<div class="form-error">${data.error || "Failed to enqueue job"}</div>`;
+            return;
+          }
+
+          // Redirect to the job page
+          window.location.href = `/jobs/${data.id}`;
+        } catch (err) {
+          messageEl.innerHTML = `<div class="form-error">Error: ${err.message}</div>`;
+        } finally {
+          submitBtn.disabled = false;
+          submitBtn.textContent = "Enqueue";
+        }
+      }
+    </script>
+  </body>
+</html>
