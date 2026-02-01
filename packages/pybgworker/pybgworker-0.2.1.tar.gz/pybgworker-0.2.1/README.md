@@ -1,0 +1,184 @@
+# PyBgWorker
+
+A lightweight, production-ready background task framework for Python.
+
+PyBgWorker provides a durable SQLite-backed task queue, cron scheduling,
+rate limiting, retries, and structured observability — all without external
+infrastructure.
+
+It is designed to be simple, reliable, and easy to deploy.
+
+---
+
+## ✨ Features
+
+- Persistent SQLite task queue
+- Multi-worker safe execution
+- Retry + failure handling
+- Crash isolation via subprocess
+- Cron scheduler for recurring jobs
+- JSON structured logging
+- Task duration tracking
+- Rate limiting (overload protection)
+- Heartbeat monitoring
+- CLI inspect / retry / purge / cancel
+- Production-safe worker loop
+
+---
+
+## 🚀 Installation
+
+```bash
+pip install pybgworker
+```
+
+---
+
+## 🧠 Basic Usage
+
+### Define a task
+
+```python
+from pybgworker.task import task
+
+@task(name="add")
+def add(a, b):
+    return a + b
+```
+
+### Enqueue a task
+
+```python
+add.delay(1, 2)
+```
+
+---
+
+## ▶ Run worker
+
+```bash
+python -m pybgworker.cli run --app example
+```
+
+---
+
+## ⏰ Cron Scheduler
+
+Run recurring tasks:
+
+```python
+from pybgworker.scheduler import cron
+from pybgworker.task import task
+
+@task(name="heartbeat_task")
+@cron("*/1 * * * *")
+def heartbeat():
+    print("alive")
+```
+
+Cron runs automatically inside the worker.
+
+---
+
+## 📊 JSON Logging
+
+All worker events are structured JSON:
+
+```json
+{"event":"task_start","task_id":"..."}
+{"event":"task_success","duration":0.12}
+```
+
+This enables:
+
+- monitoring
+- analytics
+- alerting
+- observability pipelines
+
+---
+
+## 🚦 Rate Limiting
+
+Protect infrastructure from overload:
+
+```python
+RATE_LIMIT = 5  # tasks per second
+```
+
+Ensures predictable execution under heavy load.
+
+---
+
+## 🔍 CLI Commands
+
+Inspect queue:
+
+```bash
+python -m pybgworker.cli inspect
+```
+
+Retry failed task:
+
+```bash
+python -m pybgworker.cli retry <task_id>
+```
+
+Cancel task:
+
+```bash
+python -m pybgworker.cli cancel <task_id>
+```
+
+Purge queued tasks:
+
+```bash
+python -m pybgworker.cli purge
+```
+
+---
+
+## 🧪 Observability
+
+PyBgWorker logs:
+
+- worker start
+- cron events
+- task start
+- success
+- retry
+- failure
+- timeout
+- crash
+- heartbeat errors
+
+All machine-readable.
+
+---
+
+## 🎯 Design Goals
+
+- zero external dependencies
+- SQLite durability
+- safe multiprocessing
+- operator-friendly CLI
+- production observability
+- infrastructure protection
+
+---
+
+## 📌 Roadmap
+
+Future upgrades may include:
+
+- dashboard web UI
+- metrics endpoint
+- Redis backend
+- workflow pipelines
+- cluster coordination
+
+---
+
+## 📄 License
+
+MIT License
