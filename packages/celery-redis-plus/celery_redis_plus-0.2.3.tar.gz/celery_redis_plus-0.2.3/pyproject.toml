@@ -1,0 +1,142 @@
+[project]
+name = "celery-redis-plus"
+version = "0.2.3"
+description = "Enhanced Kombu Redis transport for Celery"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.13"
+keywords = ["celery", "redis", "message-queue", "priority-queue", "kombu"]
+authors = [{ name = "Oliver Haas", email = "ohaas@e1plus.de" }]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: System :: Distributed Computing",
+  "Typing :: Typed",
+]
+dependencies = ["celery>=5.5.0", "kombu>=5.5.0"]
+
+[project.optional-dependencies]
+redis = ["redis>=7.1.0,<8"]
+hiredis = ["redis[hiredis]>=7.1.0,<8"]
+valkey = ["valkey>=6.1.0,<7"]
+libvalkey = ["valkey[libvalkey]>=6.1.0,<7"]
+
+[project.urls]
+Homepage = "https://github.com/oliverhaas/celery-redis-plus"
+Documentation = "https://oliverhaas.github.io/celery-redis-plus/"
+Repository = "https://github.com/oliverhaas/celery-redis-plus.git"
+
+[project.entry-points."kombu.transport"]
+"redis+celery-redis-plus" = "celery_redis_plus.transport:Transport"
+valkey = "celery_redis_plus.transport:Transport"
+valkeys = "celery_redis_plus.transport:Transport"
+
+[dependency-groups]
+dev = [
+  "celery-types-ng==0.25.6",
+  "pre-commit==4.5.1",
+  "pytest==9.0.2",
+  "pytest-cov==7.0.0",
+  "pytest-xdist>=3.8.0",
+  "redis[hiredis]==7.1.0",
+  "ruff==0.14.13",
+  "testcontainers==4.14.0",
+  "ty==0.0.14",
+  "valkey[libvalkey]==6.1.1",
+]
+docs = ["mkdocs==1.6.1", "mkdocs-material==9.7.1", "mike==2.1.3"]
+
+[build-system]
+requires = ["hatchling==1.28.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["celery_redis_plus"]
+
+[tool.hatch.build.targets.sdist]
+include = ["celery_redis_plus"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py314"
+extend-exclude = ["docs"]
+
+[tool.ruff.lint]
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+explicit-preview-rules = true
+fixable = ["ALL"]
+ignore = [
+  "ANN401",  # Any needed for untyped Celery/Kombu APIs
+  "ARG001",  # Signal handlers and overrides have required signatures
+  "ARG002",
+  "C901",    # Some functions are inherently complex
+  "COM812",  # Conflicts with ruff-format
+  "D",       # Docstring rules are too extensive
+  "E5",      # 120 char limit is sufficient
+  "EM101",   # Extracting exception messages to variables hurts readability
+  "EM102",
+  "FBT001",  # Boolean traps - too many violations, breaks compatibility
+  "FBT002",
+  "N802",    # Naming follows kombu conventions
+  "N806",
+  "PLC0415", # Lazy imports for optional dependencies
+  "PLR1704", # Redefining argument in context manager
+  "PYI024",  # namedtuple usage follows kombu patterns
+  "RUF005",  # Tuple concatenation is clearer
+  "RUF015",  # Readability over micro-optimization
+  "RUF059",  # Keep unused variables explicit
+  "SLF001",  # Private member access needed for kombu/redis-py internals
+  "TRY003",  # Long exception messages are fine
+]
+preview = true
+select = ["ALL"]
+unfixable = []
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = [
+  "ANN",     # Type annotations not required in tests
+  "ARG001",  # Pytest fixtures appear as unused arguments
+  "ARG002",
+  "BLE001",  # Blind exceptions acceptable for test result collection
+  "D",       # Docstrings not required in tests
+  "PLR0913", # Too many arguments in test fixtures
+  "PLR0915", # Long test functions acceptable
+  "PLR2004", # Magic values in tests are fine
+  "PLW0603", # Global statements for test state tracking
+  "S101",    # assert in tests
+  "S311",    # Pseudo-random ok for tests (not cryptographic)
+  "T201",    # Print statements useful in manual tests
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-m 'not manual'"
+markers = [
+  "unit: marks tests as unit tests",
+  "integration: marks tests as integration tests",
+  "manual: marks tests as manual-only (excluded from normal runs, run with: pytest -m manual)",
+]
+
+[tool.coverage.run]
+concurrency = ["thread"]
+branch = true
+source = ["celery_redis_plus"]
+omit = ["*/__init__.py"]
+
+[tool.coverage.report]
+exclude_lines = [
+  "pragma: no cover",
+  "if TYPE_CHECKING:",
+  "raise NotImplementedError",
+]
+
+[tool.ty.rules]
+# Ignore warnings about unused type: ignore comments (compatibility with other tools)
+unused-ignore-comment = "ignore"
+# Conditional redis/valkey imports create union types that ty can't verify are non-None at runtime
+possibly-missing-attribute = "ignore"
+unsupported-base = "ignore"
