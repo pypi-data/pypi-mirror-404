@@ -1,0 +1,272 @@
+Metadata-Version: 2.4
+Name: seeme
+Version: 0.40.0
+Summary: No-Code/Low Code AI Platform: Innovate. Integrate. Iterate.
+Home-page: https://seeme.ai
+Author: Jan Van de Poel
+Author-email: jan.vandepoel@seeme.ai
+License: Apache
+Classifier: Development Status :: 5 - Production/Stable
+Classifier: Intended Audience :: Developers
+Classifier: Intended Audience :: Education
+Classifier: Intended Audience :: Science/Research
+Classifier: License :: OSI Approved :: Apache Software License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3 :: Only
+Classifier: Programming Language :: Python :: 3.7
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Topic :: Scientific/Engineering :: Artificial Intelligence
+Requires-Python: >=3.7.0
+Description-Content-Type: text/markdown
+Requires-Dist: requests>=2.18.4
+Requires-Dist: requests-toolbelt==0.10.1
+Requires-Dist: python-dotenv
+Requires-Dist: pydantic<3.0.0,>=2.0.0
+Requires-Dist: urllib3==1.26.15
+Requires-Dist: pandas
+Provides-Extra: storage
+Requires-Dist: dill; extra == "storage"
+Provides-Extra: search
+Requires-Dist: bm25s; extra == "search"
+Requires-Dist: numba; extra == "search"
+Provides-Extra: documents
+Requires-Dist: pypdf; extra == "documents"
+Requires-Dist: python-docx; extra == "documents"
+Requires-Dist: pycryptodome; extra == "documents"
+Requires-Dist: nltk; extra == "documents"
+Requires-Dist: sentence-transformers; extra == "documents"
+Provides-Extra: ollama
+Requires-Dist: ollama; extra == "ollama"
+Requires-Dist: instructor; extra == "ollama"
+Provides-Extra: vllm
+Requires-Dist: vllm; extra == "vllm"
+Provides-Extra: web
+Requires-Dist: beautifulsoup4; extra == "web"
+Provides-Extra: all
+Requires-Dist: dill; extra == "all"
+Requires-Dist: bm25s; extra == "all"
+Requires-Dist: pypdf; extra == "all"
+Requires-Dist: python-docx; extra == "all"
+Requires-Dist: pycryptodome; extra == "all"
+Requires-Dist: ollama; extra == "all"
+Requires-Dist: instructor; extra == "all"
+Requires-Dist: vllm; extra == "all"
+Requires-Dist: nltk; extra == "all"
+Requires-Dist: beautifulsoup4; extra == "all"
+Requires-Dist: sentence-transformers; extra == "all"
+Dynamic: author
+Dynamic: author-email
+Dynamic: classifier
+Dynamic: description
+Dynamic: description-content-type
+Dynamic: home-page
+Dynamic: license
+Dynamic: provides-extra
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary
+
+# Welcome to SeeMe.ai
+
+SeeMe.ai is a no/low code AI platform aiming to be the simplest way you create, use, and share AI.
+
+You can use SeeMe.ai without any code to automate the full AI lifecycle of your datasets and models. 
+
+The Python SDK gives easy access to all of your datasets, models, jobs, ... on the platform.
+
+# Installation
+
+```bash
+$ pip install seeme
+```
+
+# Getting started
+
+```Python
+from seeme import Client
+
+cl = Client()
+
+# -- Registration --
+
+my_username =    # example: "my_username"
+my_email =       # example: "jan.vandepoel@seeme.ai"
+my_password =    # example: "supersecurepassword"
+my_firstname =   # example: "Jan"
+my_name =        # example: "Van de Poel"
+
+cl.register(
+    username=my_username, 
+    email=my_email, 
+    password=my_password, 
+    firstname=my_firstname, 
+    name=my_name
+)
+
+# -- Log in --
+
+cl.login(username, password)
+
+# -- Log out --
+
+cl.logout()
+
+```
+
+# Datasets
+
+Manage the entire lifecyle of your datasets:
+
+* create
+* manage
+* version
+* label
+* annotate
+* import/export
+
+```Python
+
+from seeme import Dataset, DatasetContentType
+
+# -- Get datasets --
+datasets = cl.get_datasets()
+
+my_dataset = Dataset(
+    name= "Cloud classifier",
+    description= "Classify clouds from pictures",
+    default_splits= True, # If `True`, adds 'train', 'valid', and 'test' default_splits
+    content_type= DatasetContentType.IMAGES,
+    multi_label= False
+}
+
+my_dataset = cl.create_dataset(my_dataset)
+```
+
+Checkout the [dataset documentation](https://docs.seeme.ai/python-sdk/#datasets) to see all possibilities and detailed guides.
+
+# Models
+
+Manage the entire lifecycle of your AI models:
+
+* create
+* manage
+* version
+* converst
+* predicti
+* import/export
+
+```Python
+from seeme import Model, Framework, ApplicationType
+
+# -- Get models --
+models = cl.get_models()
+
+# -- Application ID --
+application_id = cl.get_application_id(
+    base_framework=Framework.PYTORCH,
+    framework=Framework.FASTAI,
+    base_framework_version=str(torch.__version__),
+    framework_version=str(fastai.__version__),
+    application=ApplicationType.IMAGE_CLASSIFICATION
+)
+
+# -- Create model --
+model_name = "Cloud classifier"
+description = "Classify clouds from images"
+
+my_model = Model(
+    name= model_name,
+    description= description,
+    application_id= application_id,
+    auto_convert= True # Automatically converts your model to ONNX, CoreML, and TensorFlow Lite.
+)
+
+my_model = cl.create_model(my_model)
+
+model_file_location = "my_exported_model.pkl"
+
+cl.upload_model(my_model.id, model_file_location)
+
+image_location = "my_image.png"
+
+cl.inference(my_model.id, image_location)
+```
+
+Checkout the [model] documentation](https://docs.seeme.ai/python-sdk/#models) to see all possibilities and detailed guides.
+
+# Jobs
+
+Schedule training, validation, and model conversion jobs with a simple command:
+
+```Python
+
+from seeme import Job, JobItem, JobType, ValueType
+
+jobs = cl.get_jobs()
+
+job = Job(
+    name= "v3 image classifier",
+    description= "A new dataset for an improved model",
+    application_id= application_id,
+    job_type= JobType.TRAINING,
+    dataset_id= dataset_id,
+    dataset_version_id= datset_version_id,
+    model_id= model_id,
+    model_version_id= model_version_id,
+    items= [
+      JobItem(
+        name= "image_size",
+        value= "224",
+        value_type= ValueType.INT
+      ),
+      JobItem(
+        name= "arch",
+        value= "resnet50",
+        value_type= ValueType.TEXT
+      )
+    ]
+)
+
+```
+
+# Applications
+
+[SeeMe.ai](https://seeme.ai) automates the full lifecycle of data and models for a wide range of AI applications, such as:
+
+- image classification
+- object detection
+- structured data
+- language models
+- multi lingual text classification
+- object character recognition (OCR)
+- named entity recognition (NER)
+
+for a number of AI frameworks and their versions:
+
+- [fastai](https://fast.ai)
+- [ONNX](https://onnxruntime.ai)
+- [Core ML](https://developer.apple.com/documentation/coreml)
+- [TensorFlow Lite](https://www.tensorflow.org/lite)
+- [PyTorch](https://pytorch.org)
+- [Yolo v4](https://github.com/AlexeyAB/darknet)
+- [Spacy](https://spacy.io/)
+- [Tesseract](https://github.com/tesseract-ocr/tesseract)
+- [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR)
+- [Llama-cpp-python](https://github.com/abetlen/llama-cpp-python)
+
+For a full list of frameworks and their versions:
+
+```python
+# -- Get applications --
+all_applications = cl.get_applications()
+
+print(all_applications)
+```
+
+# SDK Documentation
+
+For more detailed SDK documentation see https://docs.seeme.ai.
