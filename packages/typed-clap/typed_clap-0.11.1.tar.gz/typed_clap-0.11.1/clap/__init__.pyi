@@ -1,0 +1,140 @@
+from collections.abc import Callable, Sequence
+from typing import Any, Optional, TypeVar, Union, dataclass_transform, overload
+
+from clap.api import Parser
+from clap.core import (
+    ArgAction,
+    AutoFlag,
+    Group,
+    NargsType,
+    long,
+    short,
+)
+from clap.help import HelpTemplate
+from clap.styling import AnsiColor, ColorChoice, Style, Styles
+
+__all__ = [
+    "AnsiColor",
+    "ArgAction",
+    "ColorChoice",
+    "Group",
+    "HelpTemplate",
+    "Parser",
+    "Style",
+    "Styles",
+    "arg",
+    "command",
+    "long",
+    "short",
+    "subcommand",
+]
+
+T = TypeVar("T")
+
+# TODO: Add overloads that return `Optional[Any]` based on the `required`,
+# `default`, and `num_args`.
+def arg[U](
+    short_or_long: Optional[AutoFlag] = None,
+    long_or_short: Optional[AutoFlag] = None,
+    /,
+    *,
+    short: Optional[Union[str, bool]] = None,
+    long: Optional[Union[str, bool]] = None,
+    aliases: Optional[Sequence[str]] = None,
+    group: Optional[Group] = None,
+    action: Optional[Union[type, ArgAction]] = None,
+    num_args: Optional[NargsType] = None,
+    default_missing_value: Optional[U] = None,
+    default_value: Optional[U] = None,
+    choices: Optional[Sequence[str]] = None,
+    required: Optional[bool] = ...,
+    help: Optional[str] = ...,
+    long_help: Optional[str] = ...,
+    value_name: Optional[str] = None,
+    deprecated: bool = False,
+) -> Any: ...
+
+@overload
+@dataclass_transform()
+def command[T](cls: type[T], /) -> type[T]: ...
+
+@overload
+@dataclass_transform()
+def command(
+    *,
+    name: str = ...,
+    version: Optional[str] = None,
+    long_version: Optional[str] = None,
+    usage: Optional[str] = ...,
+    about: Optional[str] = ...,
+    long_about: Optional[str] = ...,
+    after_help: Optional[str] = None,
+    after_long_help: Optional[str] = ...,
+    before_help: Optional[str] = None,
+    before_long_help: Optional[str] = ...,
+    subcommand_help_heading: str = ...,
+    subcommand_value_name: str = ...,
+    color: ColorChoice = ...,
+    styles: Optional[Styles] = ...,
+    help_template: Optional[str] = ...,
+    max_term_width: Optional[int] = ...,
+    propagate_version: bool = False,
+    disable_version_flag: bool = False,
+    disable_help_flag: bool = False,
+    prefix_chars: str = "-",
+    fromfile_prefix_chars: Optional[str] = None,
+    conflict_handler: str = ...,
+    allow_abbrev: bool = True,
+    exit_on_error: bool = True,
+) -> Callable[[type[T]], type[T]]: ...
+
+@overload
+@dataclass_transform()
+def subcommand[T](cls: type[T], /) -> type[T]: ...
+
+@overload
+@dataclass_transform()
+def subcommand[T](
+    *,
+    name: str = ...,
+    version: Optional[str] = None,
+    long_version: Optional[str] = None,
+    aliases: Sequence[str] = ...,
+    usage: Optional[str] = ...,
+    about: Optional[str] = ...,
+    long_about: Optional[str] = ...,
+    before_help: Optional[str] = None,
+    before_long_help: Optional[str] = ...,
+    after_help: Optional[str] = None,
+    after_long_help: Optional[str] = ...,
+    subcommand_help_heading: Optional[str] = ...,
+    subcommand_value_name: Optional[str] = ...,
+    color: Optional[ColorChoice] = ...,
+    help_styles: Optional[Styles] = ...,
+    help_template: Optional[str] = ...,
+    max_term_width: Optional[int] = ...,
+    propagate_version: bool = False,
+    disable_version_flag: bool = False,
+    disable_help_flag: bool = False,
+    prefix_chars: str = "-",
+    fromfile_prefix_chars: Optional[str] = None,
+    conflict_handler: str = ...,
+    allow_abbrev: bool = ...,
+    exit_on_error: bool = ...,
+    deprecated: bool = False,
+) -> Callable[[type[T]], type[T]]: ...
+
+@overload
+@dataclass_transform()
+def group[T](cls: type[T], /) -> type[T]: ...
+
+@overload
+@dataclass_transform()
+def group[T](
+    *,
+    title: Optional[str] = None,
+    about: Optional[str] = None,
+    long_about: Optional[str] = None,
+    required: bool = False,
+    multiple: bool = True,
+) -> Callable[[type[T]], type[T]]: ...

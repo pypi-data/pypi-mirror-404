@@ -1,0 +1,550 @@
+import argparse
+import sys
+from enum import EnumType
+from types import UnionType
+from typing import Any, Optional, Union, get_args, get_origin, get_type_hints
+
+from clap.core import (
+    Arg,
+    ArgAction,
+    ArgType,
+    Command,
+    Group,
+    long,
+    short,
+    to_kebab_case,
+)
+from clap.diagnostics import Diagnostics
+from clap.help import HelpRenderer, extract_docstrings, get_help_from_docstring
+from clap.styling import AnsiColor, Style
+
+_SUBCOMMAND_MARKER = "__typed-clap.subcommand-marker__"
+_GROUP_MARKER = "__typed-clap.group-marker__"
+_COMMAND_DATA = "__typed-clap.command-data__"
+_GROUP_DATA = "__typed-clap.group-data__"
+_ATTR_DEFAULTS = "__typed-clap.attr-defaults__"
+_PARSER = "__typed-clap.parser__"
+
+_HELP_DEST = "0h"  # anything that is not a valid identifier
+_VERSION_DEST = "0v"
+
+
+class ClapArgParser(argparse.ArgumentParser):
+    def __init__(self, command: Command, **kwargs):
+        self.command = command
+        self.help_renderer = HelpRenderer(command)
+        # override usage for argparse error messages
+        kwargs["usage"] = self.help_renderer.format_usage()
+        super().__init__(**kwargs, add_help=False)
+
+    def print_version(self, use_long: bool):
+        if use_long:
+            version = self.command.long_version or self.command.version
+            print(f"{self.command.name} {version}")
+        else:
+            version = self.command.version or self.command.long_version
+            print(f"{self.command.name} {version}")
+        sys.exit(0)
+
+    def print_nice_help(self, use_long: bool):
+        self.help_renderer.set_use_long(use_long)
+        self.help_renderer.render()
+        sys.exit(0)
+
+
+def is_subcommand(cls: type) -> bool:
+    return getattr(cls, _SUBCOMMAND_MARKER, False)
+
+
+def is_group(cls: type) -> bool:
+    return getattr(cls, _GROUP_MARKER, False)
+
+
+def contains_subcommands(types: list[type]) -> bool:
+    flag = None
+    for ty in types:
+        if is_subcommand(ty):
+            if flag is False:
+                raise TypeError(Diagnostics.TypeContainsSubcommandEtAl)
+            flag = True
+        else:
+            if flag is True:
+                raise TypeError(Diagnostics.TypeContainsSubcommandEtAl)
+            flag = False
+    return bool(flag)
+
+
+def parse_type_hint(type_hint: Any, optional: bool = False) -> ArgType.Base:
+    if type(type_hint) is type:
+        if is_subcommand(type_hint):
+            return ArgType.SubcommandDest(optional, [type_hint])
+        if is_group(type_hint):
+            return ArgType.GroupDest(optional, type_hint)
+        if type_hint is type(None):
+            raise TypeError
+        return ArgType.SimpleType(type_hint, optional)
+    if type(type_hint) is EnumType:
+        return ArgType.Enum(optional, type_hint)
+    origin = get_origin(type_hint)
+    types = get_args(type_hint)
+    if origin is Union or origin is UnionType:
+        subcommands = []
+        for ty in types:
+            if ty is type(None):
+                optional = True
+            else:
+                subcommands.append(ty)
+        if contains_subcommands(subcommands):
+            return ArgType.SubcommandDest(optional, subcommands)
+        if len(types) != 2 or not optional:
+            raise TypeError(Diagnostics.UnionOnlyForSubcommands)
+        if type(None) is types[0]:
+            return parse_type_hint(types[1], True)
+        if type(None) is types[1]:
+            return parse_type_hint(types[0], True)
+    if origin is list:
+        return ArgType.List(types[0], optional)
+    if origin is tuple:
+        for ty in types:
+            if ty != (types[0]):
+                raise TypeError(Diagnostics.UnimplementedFeatures.HeterogeneousTuples)
+        return ArgType.Tuple(types[0], optional, len(types))
+    raise TypeError(Diagnostics.TypeHintParsingFailed)
+
+
+def set_flags(arg: Arg, field_name: str, prefix_chars: str):
+    """Sets short and long flags of the argument."""
+    if arg.short == short:
+        arg.short = prefix_chars[0] + field_name[0].lower()
+    elif isinstance(arg.short, str):
+        if arg.short[0] not in prefix_chars:
+            arg.short = prefix_chars[0] + arg.short
+        if len(arg.short) != 2 or arg.short[1] in prefix_chars:
+            raise ValueError(Diagnostics.InvalidFlag)
+
+    if arg.long == long:
+        arg.long = 2 * prefix_chars[0] + to_kebab_case(field_name)
+    elif isinstance(arg.long, str) and arg.long[0] not in prefix_chars:
+        arg.long = 2 * prefix_chars[0] + arg.long
+
+
+def set_type_dependent_kwargs(arg: Arg):
+    match arg.ty:
+        case ArgType.SimpleType(t):
+            if t is bool:
+                if arg.action is None:
+                    arg.action = ArgAction.SetTrue
+            else:
+                if arg.action is None:
+                    arg.action = ArgAction.Set
+        case ArgType.Enum(enum=enum, choice_to_enum_member=choice_to_enum_member):
+            if arg.action is None:
+                arg.action = ArgAction.Set
+
+            arg.choices = list(choice_to_enum_member.keys())
+            # FIXME: This is extremely ugly.
+            # Note: Before rewriting, implement something like ValueEnum,
+            #       so that a custom name can be provided.
+            arg.choices_help = extract_docstrings(enum)
+            for choice, enum_member in choice_to_enum_member.items():
+                enum_member = enum_member.name
+                if enum_member in arg.choices_help:
+                    arg.choices_help[choice] = arg.choices_help[enum_member]
+                    del arg.choices_help[enum_member]
+
+            if isinstance(arg.default_value, enum):
+                for choice, enum_member in choice_to_enum_member.items():
+                    if enum_member == arg.default_value:
+                        arg.default_value = choice  # set default to a string for help message
+                        break
+        case ArgType.List(t, optional):
+            if arg.action is None:
+                if not arg.is_positional():
+                    arg.action = ArgAction.Append
+                    return
+                if arg.num_args is None:
+                    arg.num_args = "*"
+                if optional:
+                    match arg.num_args:
+                        case 0 | "?" | '*': ...
+                        case "+":
+                            arg.num_args = "*"
+                        case _:
+                            raise TypeError(Diagnostics.UnimplementedFeatures.CustomNumArgs)
+        case ArgType.Tuple(t, _, n):
+            if arg.action is None:
+                arg.action = ArgAction.Set
+            if (num_args := arg.num_args) is not None:
+                if num_args != n:
+                    raise TypeError(Diagnostics.InvalidNumArgs.format(n=n, num_args=num_args))
+            else:
+                arg.num_args = n
+        case _:
+            raise TypeError(Diagnostics.UnknownError)
+
+
+def set_default_and_required(arg: Arg):
+    assert arg.ty is not None
+    optional_type_hint = arg.ty.optional
+
+    match arg.action:
+        case ArgAction.Append:
+            if not optional_type_hint and not arg.default_value:
+                arg.default_value = []
+        case ArgAction.Count:
+            if arg.default_value is None:
+                arg.default_value = 0
+            if optional_type_hint:
+                raise TypeError(Diagnostics.CountActionNeverNone)
+        case ArgAction.Set:
+            if arg.required is not None:
+                if arg.required and optional_type_hint:
+                    raise TypeError(Diagnostics.RequiredTrueNeverNone)
+                return
+            if arg.default_value is not None:
+                if optional_type_hint:
+                    raise TypeError(Diagnostics.DefaultValueNeverNone)
+                if arg.is_positional():
+                    arg.num_args = "?"
+                    arg.required = None
+                else:
+                    arg.required = False
+            if arg.default_value is None:
+                if not optional_type_hint:
+                    if arg.num_args not in ("?", "*"):
+                        arg.required = True
+                    else:
+                        arg.required = False
+                        if isinstance(arg.ty, ArgType.List):
+                            arg.default_value = []
+                else:
+                    arg.required = False
+                if arg.is_positional():
+                    if optional_type_hint:
+                        arg.num_args = "?"
+                    arg.required = None
+        case ArgAction.SetFalse:
+            if optional_type_hint:
+                raise TypeError(Diagnostics.SetFalseNeverNone)
+            if arg.default_value is None:
+                arg.default_value = True
+        case ArgAction.SetTrue:
+            if optional_type_hint:
+                raise TypeError(Diagnostics.SetTrueNeverNone)
+            if arg.default_value is None:
+                arg.default_value = False
+        case _:
+            pass
+
+
+def set_value_name(arg: Arg, field_name: str):
+    if arg.value_name is None:
+        arg.value_name = field_name.upper()
+
+    match arg.num_args:
+        case "?":
+            arg.value_name = f"[{arg.value_name}]"
+        case "*":
+            arg.value_name = f"[<{arg.value_name}>...]"
+        case "+":
+            arg.value_name = f"<{arg.value_name}>..."
+        case int(n):
+            arg.value_name = " ".join(f"<{arg.value_name}>" for _ in range(n))
+        case None:
+            match arg.action:
+                case ArgAction.Set | ArgAction.Append:
+                    arg.value_name = f"<{arg.value_name}>"
+                case _:
+                    arg.value_name = None
+
+
+def add_argument(
+    arg: Arg,
+    ty: ArgType.Base,
+    command: Command,
+    field_name: str,
+    prefix: str,
+    docstrings: dict[str, str],
+):
+    arg.ty = ty
+    arg.dest = prefix + field_name
+    if (docstring := docstrings.get(field_name)) is not None:
+        help, long_help = get_help_from_docstring(docstring)
+        if arg.help is None:
+            arg.help = help
+        if arg.long_help is None:
+            arg.long_help = long_help
+
+    set_flags(arg, field_name, command.prefix_chars)
+
+    set_type_dependent_kwargs(arg)
+
+    set_default_and_required(arg)
+
+    set_value_name(arg, field_name)
+
+    command.field_to_arg[field_name] = arg
+
+    if (group := arg.group) is not None:
+        command.group_to_args[group].append(arg)
+
+
+def configure_subcommands(
+    ty: ArgType.SubcommandDest,
+    command: Command,
+    value: Any,
+    field_name: str,
+    command_path: str,
+):
+    if command.subcommand_dest is not None:
+        raise TypeError(Diagnostics.SubcommandDestAlreadySet.format(field=command.subcommand_dest))
+    if value is not None and not any(isinstance(value, sc_ty) for sc_ty in ty.subcommands):
+        raise TypeError(
+            Diagnostics.SubcommandDestInvalidType.format(field=field_name, value=value)
+        )
+    command.subcommand_required = not ty.optional
+    command.subcommand_dest = field_name
+    # if dest is not provided to add_subparsers(), argparse does not give the
+    # command name, and if a subcommand shares a flag name with the command and
+    # the flag is provided for both of them, argparse simply overwrites it in
+    # the output (argparse.Namespace)
+    command.subparser_dest = command_path + field_name
+    for cmd in ty.subcommands:
+        subcommand = create_command(cmd, command_path, command)
+        name = subcommand.name
+        command.subcommands[name] = subcommand
+
+
+def configure_group_args(
+    ty: ArgType.GroupDest,
+    command: Command,
+    value: Any,
+    field_name: str,
+    group_path: str,
+):
+    if value is not None and not isinstance(value, ty.group_class):
+        raise TypeError(Diagnostics.GroupDestInvalidType.format(field=field_name, value=value))
+
+    group_cls = ty.group_class
+    group: Group = getattr(group_cls, _GROUP_DATA)
+    docstrings: dict[str, str] = extract_docstrings(group_cls)
+
+    attrs = getattr(group_cls, _ATTR_DEFAULTS, {})
+    for name, attr in attrs.items():
+        setattr(group_cls, name, attr)
+
+    command.field_to_group_cls[field_name] = group_cls
+    command.group_to_args[group] = []
+
+    type_hints = get_type_hints(group_cls)
+    group_path += field_name + "."
+
+    for field_name, type_hint in type_hints.items():
+        arg_ty = parse_type_hint(type_hint)
+        arg_value = getattr(group_cls, field_name, None)
+
+        if isinstance(arg_ty, ArgType.GroupDest):
+            raise TypeError(Diagnostics.UnimplementedFeatures.NestedGroups)
+
+        if arg_value is not None and not isinstance(arg_value, Arg):
+            raise TypeError(Diagnostics.GroupCanOnlyHaveArgs.format(value=arg_value))
+
+        arg = arg_value or Arg()
+        arg.group = group
+        add_argument(arg, arg_ty, command, field_name, group_path, docstrings)
+
+
+def create_command(cls: type, command_path: str = "", parent: Optional[Command] = None) -> Command:
+    command: Command = getattr(cls, _COMMAND_DATA)
+    docstrings: dict[str, str] = extract_docstrings(cls)
+    attrs = getattr(cls, _ATTR_DEFAULTS)
+    for name, attr in attrs.items():
+        setattr(cls, name, attr)
+
+    if parent:
+        parent.propagate_subcommand(command)
+
+    if getattr(cls, _SUBCOMMAND_MARKER, False):
+        command_path += command.name + "."
+        command.subcommand_class = cls
+
+    # terrible but better than a useless traceback
+    def print_error(e):
+        error_style = Style().fg_color(AnsiColor.Red).bold()
+        bold_style = Style().bold()
+        print(f"{error_style}Error[clap]:{error_style:#} {bold_style}{e}{bold_style:#}")
+
+    for field_name, value in cls.__dict__.items():
+        if isinstance(group := value, Group):
+            if group in command.group_to_args:
+                print_error(Diagnostics.DuplicateGroupTitle.format(title=group.title))
+                print(f"\n    {field_name} = {value}")
+                sys.exit(1)
+            if (docstring := docstrings.get(field_name)) is not None:
+                about, long_about = get_help_from_docstring(docstring)
+                if group.about is None:
+                    group.about = about
+                if group.long_about is None:
+                    group.about = long_about
+            command.group_to_args[group] = []
+        if isinstance(arg := value, Arg) and arg.action in (
+            ArgAction.Help,
+            ArgAction.HelpShort,
+            ArgAction.HelpLong,
+            ArgAction.Version,
+        ):
+            # no processing to be done
+            command.field_to_arg[command_path + field_name] = arg
+
+    type_hints = get_type_hints(cls)
+
+    for field_name, type_hint in type_hints.items():
+        value = getattr(cls, field_name, None)
+        try:
+            ty = parse_type_hint(type_hint)
+            if isinstance(ty, ArgType.SubcommandDest):
+                configure_subcommands(ty, command, value, field_name, command_path)
+            elif isinstance(ty, ArgType.GroupDest):
+                configure_group_args(ty, command, value, field_name, command_path)
+            elif isinstance(value, Group):
+                continue  # already handled in the previous loop
+            else:
+                if value is not None and not isinstance(value, Arg):
+                    raise TypeError(Diagnostics.InvalidValue.format(value=value))
+                arg = value or Arg()
+                add_argument(arg, ty, command, field_name, command_path, docstrings)
+        except TypeError as e:
+            print_error(e)
+            print(f"\n    {field_name}: {type_hint} = {value}")
+            sys.exit(1)
+
+    if not command.disable_help_flag:
+        command.field_to_arg[command_path + _HELP_DEST] = Arg(
+            action=ArgAction.Help, dest=_HELP_DEST, short="-h", long="--help", help="Print help"
+        )
+
+    if not command.disable_version_flag and (command.version or command.long_version):
+        command.field_to_arg[command_path + _VERSION_DEST] = Arg(
+            action=ArgAction.Version,
+            dest=_VERSION_DEST,
+            short="-V",
+            long="--version",
+            help="Print version",
+        )
+
+    setattr(cls, _COMMAND_DATA, command)
+    return command
+
+
+def configure_parser(parser: ClapArgParser, command: Command):
+    for arg in command.field_to_arg.values():
+        if (group := arg.group) is not None and not group.multiple:
+            continue
+        parser.add_argument(*arg.get_argparse_flags(), **arg.get_argparse_kwargs())
+
+    for group, args in command.group_to_args.items():
+        if not group.multiple:
+            mutex_group = parser.add_mutually_exclusive_group(required=group.required)
+            for arg in args:
+                mutex_group.add_argument(*arg.get_argparse_flags(), **arg.get_argparse_kwargs())
+
+    if command.contains_subcommands():
+        subparsers = parser.add_subparsers(
+            dest=command.subparser_dest, required=command.subcommand_required
+        )
+        for subcommand in command.subcommands.values():
+            parser = subparsers.add_parser(command=subcommand, **subcommand.get_parser_kwargs())
+            configure_parser(parser, subcommand)
+
+
+def create_parser(cls: type):
+    command = create_command(cls)
+    parser = ClapArgParser(command, **command.get_parser_kwargs())
+    configure_parser(parser, command)
+    return parser
+
+
+def transform_value(value: Any, arg: Arg) -> Any:
+    """Transform a parsed value based on its argument type."""
+    match arg.ty:
+        case ArgType.List(_, optional):
+            if value is None and arg.extend_default is not None:
+                return arg.extend_default
+            if optional and arg.is_positional():
+                if value == []:
+                    return None
+                if isinstance(value, list) and all(v is None for v in value):
+                    return None
+        case ArgType.Tuple():
+            if value is not None:
+                return tuple(value)
+        case ArgType.Enum(choice_to_enum_member=choice_to_enum_member):
+            if isinstance(value, str):
+                return choice_to_enum_member[value]
+        case _: ...
+    return value
+
+
+def apply_group_args(
+    args: dict[str, Any],
+    group_cls: type,
+    command: Command,
+    group_prefix: str,
+) -> Any:
+    group_instance: Any = object.__new__(group_cls)
+    for attr_name, value in args.items():
+        if not attr_name.startswith(group_prefix):
+            continue
+        value = transform_value(value, command.field_to_arg[attr_name[len(group_prefix):]])
+        setattr(group_instance, attr_name[len(group_prefix):], value)
+    return group_instance
+
+
+def apply_parsed_args(args: dict[str, Any], instance: Any):
+    command: Command = getattr(instance, _COMMAND_DATA)
+    subcommand_args: dict[str, Any] = {}
+
+    for attr_name, value in args.items():
+        if (dot_idx := attr_name.find(".")) != -1:
+            if group_cls := command.field_to_group_cls.get(attr_name[:dot_idx], None):
+                setattr(
+                    instance,
+                    attr_name[:dot_idx],
+                    apply_group_args(args, group_cls, command, attr_name[: dot_idx + 1]),
+                )
+                continue
+            subcommand_args[attr_name[dot_idx + 1:]] = value
+        else:
+            if attr_name == command.subcommand_dest:
+                continue
+            value = transform_value(value, command.field_to_arg[attr_name])
+            setattr(instance, attr_name, value)
+
+    # no subcommands
+    if command.subcommand_dest is None:
+        return
+
+    # If an alias is used, argparse gives that instead of the subcommand name
+    subcommand_alias = args[command.subcommand_dest]
+
+    # subcommand not provided
+    if subcommand_alias is None:
+        if not hasattr(instance, command.subcommand_dest):
+            setattr(instance, command.subcommand_dest, None)
+        return
+
+    subcommand_name: Optional[str] = None
+    if subcommand_alias in command.subcommands:
+        subcommand_name = subcommand_alias
+    else:
+        for name, subcommand in command.subcommands.items():
+            if subcommand_alias in subcommand.aliases:
+                subcommand_name = name
+    assert subcommand_name is not None
+
+    # only one subcommand can be provided
+    cls = command.subcommands[subcommand_name].subcommand_class
+    assert cls is not None
+    subcommand_instance: Any = object.__new__(cls)
+    apply_parsed_args(subcommand_args, subcommand_instance)
+    setattr(instance, command.subcommand_dest, subcommand_instance)

@@ -1,0 +1,493 @@
+import argparse
+import re
+from collections.abc import Sequence
+from dataclasses import dataclass, field
+from enum import Enum, EnumType, StrEnum, auto
+from types import MappingProxyType
+from typing import Any, Literal, Optional, Self, Union, cast, override
+
+from clap.diagnostics import Diagnostics
+from clap.styling import ColorChoice, Styles
+
+
+class AutoFlag(Enum):
+    Short = auto()
+    """Generate short from the first character in the case-converted field name.
+
+    Alias: [`short`][clap.short].
+    """
+    Long = auto()
+    """Generate long from the case-converted field name.
+
+    Alias: [`long`][clap.long].
+    """
+
+
+class ArgAction(StrEnum):
+    Set = "store"
+    """When encountered, store the associated value(s).
+
+    Example:
+
+    ```python
+    import clap
+    from clap import ArgAction, long
+
+    @clap.command
+    class Cli(clap.Parser):
+        output: str = arg(long, action=ArgAction.Set)
+
+    cli = Cli.parse(["--output", "file.txt"])
+    assert cli.output == "file.txt"
+    ```
+    """
+    SetTrue = "store_true"
+    """When encountered, act as if [`True`][] was encountered on the command-line.
+
+    Example:
+
+    ```python
+    import clap
+    from clap import ArgAction, long
+
+    @clap.command
+    class Cli(clap.Parser):
+        verbose: bool = arg(long, action=ArgAction.SetTrue)
+
+    cli = Cli.parse(["--verbose"])
+    assert cli.verbose == True
+
+    cli = Cli.parse([])
+    assert cli.verbose == False
+    ```
+    """
+    SetFalse = "store_false"
+    """When encountered, act as if [`False`][] was encountered on the command-line.
+
+    Example:
+
+    ```python
+    import clap
+    from clap import ArgAction, long
+
+    @clap.command
+    class Cli(clap.Parser):
+        quiet: bool = arg(long, action=ArgAction.SetFalse)
+
+    cli = Cli.parse(["--quiet"])
+    assert cli.quiet == False
+
+    cli = Cli.parse([])
+    assert cli.quiet == True
+    ```
+    """
+    Append = "append"
+    """When encountered, store the associated value(s) in a [`list`][].
+
+    Example:
+
+    ```python
+    import clap
+    from clap import ArgAction, long
+
+    @clap.command
+    class Cli(clap.Parser):
+        files: list[str] = arg(long, action=ArgAction.Append)
+
+    cli = Cli.parse(["--files", "a.txt", "--files", "b.txt"])
+    assert cli.files == ["a.txt", "b.txt"]
+
+    cli = Cli.parse([])
+    assert cli.files == []
+    ```
+    """
+    Count = "count"
+    """When encountered, increment an [`int`][] counter starting from `0`.
+
+    Example:
+
+    ```python
+    import clap
+    from clap import ArgAction, short
+
+    @clap.command
+    class Cli(clap.Parser):
+        verbose: int = arg(short, action=ArgAction.Count)
+
+    cli = Cli.parse(["-vvv"])
+    assert cli.verbose == 3
+
+    cli = Cli.parse([])
+    assert cli.verbose == 0
+    ```
+    """
+
+    class Version(argparse.Action):
+        """When encountered, display version information.
+
+        Depending on the flag, `long_version` may be shown.
+        """
+
+        @override
+        def __init__(self, option_strings, dest, **kwargs):
+            super().__init__(option_strings, dest, nargs=0)
+
+        @override
+        def __call__(self, parser, namespace, values, option_string=None):
+            from .parser import ClapArgParser
+
+            parser = cast(ClapArgParser, parser)
+            if isinstance(option_string, str) and len(option_string) == 2:
+                parser.print_version(use_long=False)
+            else:
+                parser.print_version(use_long=True)
+
+    class Help(argparse.Action):
+        """When encountered, display help information.
+
+        Depending on the flag, `long_help` may be shown.
+        """
+
+        def __init__(self, option_strings: Sequence[str], dest: str, **_):
+            super().__init__(option_strings, dest, nargs=0)
+
+        @override
+        def __call__(self, parser, namespace, values, option_string: Optional[str] = None):
+            from .parser import ClapArgParser
+
+            parser = cast(ClapArgParser, parser)
+            if isinstance(option_string, str) and len(option_string) == 2:
+                parser.print_nice_help(use_long=False)
+            else:
+                parser.print_nice_help(use_long=True)
+
+    class HelpShort(argparse.Action):
+        """When encountered, display short help information."""
+
+        def __init__(self, option_strings: Sequence[str], dest: str, **_):
+            super().__init__(option_strings, dest, nargs=0)
+
+        @override
+        def __call__(self, parser, namespace, values, option_string: Optional[str] = None):
+            from .parser import ClapArgParser
+
+            cast(ClapArgParser, parser).print_nice_help(use_long=False)
+
+    class HelpLong(argparse.Action):
+        """When encountered, display long help information."""
+
+        def __init__(self, option_strings: Sequence[str], dest: str, **_):
+            super().__init__(option_strings, dest, nargs=0)
+
+        @override
+        def __call__(self, parser, namespace, values, option_string: Optional[str] = None):
+            from .parser import ClapArgParser
+
+            cast(ClapArgParser, parser).print_nice_help(use_long=True)
+
+
+short = AutoFlag.Short
+"""Generate short from the first character in the case-converted field name."""
+long = AutoFlag.Long
+"""Generate long from the case-converted field name."""
+
+type NargsType = Union[Literal["?", "*", "+"], int]
+
+
+def to_kebab_case(name: str) -> str:
+    name = name.replace("_", "-")                           # foo_bar -> foo-bar
+    name = re.sub(r"([a-z])([A-Z])", r"\1-\2", name)        # FooBar -> Foo-Bar
+    name = re.sub(r"([a-zA-Z])([0-9])", r"\1-\2", name)     # A1 -> A-1
+    name = re.sub(r"([0-9])([a-zA-Z])", r"\1-\2", name)     # 1A -> 1-A
+    name = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1-\2", name)  # HTTPSConnection -> HTTPS-Connection
+    name = name.lower()
+    name = re.sub(r"-+", "-", name)
+    return name.strip("-")
+
+
+class ArgType:
+    @dataclass(slots=True)
+    class Base:
+        ty: type
+        optional: bool
+
+    @dataclass(slots=True)
+    class SimpleType(Base): ...
+
+    @dataclass(slots=True)
+    class Enum(Base):
+        enum: EnumType
+        ty: type = field(init=False)
+        members: MappingProxyType[str, EnumType] = field(init=False)
+        choice_to_enum_member: dict[str, Any] = field(init=False)
+
+        def __post_init__(self):
+            self.ty = str
+            self.members = self.enum.__members__
+            choices = list(map(to_kebab_case, self.members.keys()))
+            try:
+                self.choice_to_enum_member = dict(zip(choices, self.members.values(), strict=True))
+            except ValueError:
+                raise TypeError(Diagnostics.CannotExtractEnumChoices) from None
+
+    @dataclass(slots=True)
+    class List(Base): ...
+
+    @dataclass(slots=True)
+    class Tuple(Base):
+        n: int
+
+    @dataclass(slots=True)
+    class SubcommandDest(Base):
+        subcommands: list[type]
+        ty: type = field(init=False)
+
+        # TODO: this is ugly; figure out a better pattern matching scheme
+        def __post_init__(self):
+            self.ty = type(None)
+
+    @dataclass(slots=True)
+    class GroupDest(Base):
+        """Represents a field that holds an argument group class."""
+
+        group_class: type
+        ty: type = field(init=False)
+
+        def __post_init__(self):
+            self.ty = type(None)
+
+
+@dataclass(slots=True)
+class Group:
+    """Family of related [arguments][clap.core.Arg].
+
+    Example:
+
+    ```python
+    from pathlib import Path
+
+    import clap
+    from clap import Group, arg
+
+    @clap.command
+    class Cli(clap.Parser):
+        output_options = Group(title="Output Options")
+        \"""Configure output settings.\"""
+        output_dir: Path = arg(long="output", group=output_options, value_name="DIR")
+        \"""Path to output directory\"""
+    ```
+    """
+
+    title: Optional[str] = None
+    """The title for the argument group in the help output."""
+    about: Optional[str] = None
+    """The group's description for the short help (`-h`).
+
+    If [`Group.long_about`][clap.Group.long_about] is not specified,
+    this message will be displayed for `--help`.
+    """
+    long_about: Optional[str] = None
+    """The group's description for the long help (`--help`).
+
+    If not set, [`Group.about`][clap.Group.about] will be used for long help in
+    addition to short help (`-h`).
+    """
+    required: bool = False
+    """Require an argument from the group to be present when parsing. See note below.
+
+    Note: Currently, it only works when `multiple = False`.
+    """
+    multiple: bool = True
+    """Allows more than one of the Args in this group to be used."""
+
+    def __post_init__(self):
+        if self.required and self.multiple:
+            raise TypeError(Diagnostics.UnimplementedFeatures.GroupRequiredTrue)
+
+    @override
+    def __hash__(self):
+        return hash(id(self))
+
+
+@dataclass(slots=True)
+class Arg:
+    short: Optional[Union[AutoFlag, str]] = None
+    """The short flag."""
+    long: Optional[Union[AutoFlag, str]] = None
+    """The long flag."""
+    help: Optional[str] = None
+    long_help: Optional[str] = None
+    value_name: Optional[str] = None
+    aliases: Sequence[str] = field(default_factory=list)
+    """Flags in addition to `short` and `long`."""
+    ty: Optional[ArgType.Base] = None
+    """Stores type information for the argument."""
+    group: Optional[Group] = None
+    """The group containing the argument."""
+
+    action: Optional[Union[ArgAction, type]] = None
+    num_args: Optional[NargsType] = None
+    default_missing_value: Optional[Any] = None
+    default_value: Optional[Any] = None
+    choices: Optional[Sequence[str]] = None
+    choices_help: Optional[dict[str, str]] = None
+    required: Optional[bool] = None
+    deprecated: Optional[bool] = None
+    dest: Optional[str] = None
+    extend_default: Optional[Any] = None
+    """argparse has a "bug" where the values get appended to the default value
+    list if the extend action is used. This is a workaround for that."""
+
+    def is_positional(self) -> bool:
+        return not self.short and not self.long
+
+    def get_argparse_flags(self) -> list[str]:
+        if self.is_positional():
+            assert self.dest is not None
+            return [self.dest]
+        flags: list[str] = []
+        if self.short:
+            flags.append(cast(str, self.short))
+        if self.long:
+            flags.append(cast(str, self.long))
+        flags.extend(self.aliases)
+        return flags
+
+    def get_argparse_kwargs(self) -> dict[str, Any]:
+        kwargs: dict[str, Any] = {}
+
+        kwargs.update({
+            k: v
+            for k, v in {
+                "nargs": self.num_args,
+                "const": self.default_missing_value,
+                "choices": self.choices or None,
+                "required": self.required,
+                "default": self.default_value,
+                "deprecated": self.deprecated,
+                "metavar": self.value_name,
+                "dest": self.dest,
+            }.items()
+            if v is not None
+        })
+
+        if self.ty is not None:
+            kwargs["type"] = self.ty.ty
+
+        if self.is_positional():
+            kwargs.pop("dest")
+
+        if self.action in (ArgAction.Count, ArgAction.SetTrue, ArgAction.SetFalse):
+            kwargs.pop("type")
+
+        kwargs["action"] = self.action
+
+        if self.action == ArgAction.Append:
+            match self.num_args:
+                case None: ...
+                case 0:
+                    kwargs["action"] = "append_const"
+                    kwargs.pop("type")
+                    kwargs.pop("nargs")
+                case _:
+                    kwargs["action"] = "extend"
+                    if self.default_value is not None:
+                        self.extend_default = self.default_value
+                        kwargs["default"] = None
+
+        if self.num_args == 0 and self.action == ArgAction.Set:
+            kwargs["action"] = "store_const"
+            kwargs.pop("type")
+            kwargs.pop("nargs")
+
+        if (action := kwargs["action"]) in ArgAction:
+            kwargs["action"] = str(action)
+
+        # argparse does not add an argument to the `Namespace` it returns
+        # unless it has a default (which can be `None`)
+        kwargs.setdefault("default", None)
+
+        return kwargs
+
+
+@dataclass(slots=True)
+class Command:
+    name: str
+    aliases: Sequence[str] = field(default_factory=list)
+    usage: Optional[str] = None
+    author: Optional[str] = None
+    version: Optional[str] = None
+    long_version: Optional[str] = None
+    about: Optional[str] = None
+    long_about: Optional[str] = None
+    before_help: Optional[str] = None
+    before_long_help: Optional[str] = None
+    after_help: Optional[str] = None
+    after_long_help: Optional[str] = None
+    subcommand_help_heading: str = "Commands"
+    subcommand_value_name: str = "COMMAND"
+    color: Optional[ColorChoice] = None
+    styles: Optional[Styles] = None
+    help_template: Optional[str] = None
+    max_term_width: Optional[int] = None
+    propagate_version: bool = False
+    disable_version_flag: bool = False
+    disable_help_flag: bool = False
+    prefix_chars: str = "-"
+    fromfile_prefix_chars: Optional[str] = None
+    conflict_handler: Optional[str] = None
+    allow_abbrev: Optional[bool] = None
+    exit_on_error: Optional[bool] = None
+    deprecated: Optional[bool] = None
+
+    field_to_arg: dict[str, Arg] = field(default_factory=dict)
+    field_to_group_cls: dict[str, type] = field(default_factory=dict)
+    group_to_args: dict[Group, list[Arg]] = field(default_factory=dict)
+
+    subcommand_class: Optional[type] = None
+    """Contains the class if it is a subcommand."""
+
+    subcommands: dict[str, Self] = field(default_factory=dict)
+    subcommand_dest: Optional[str] = None
+    subparser_dest: Optional[str] = None
+    subcommand_required: bool = False
+
+    def is_subcommand(self) -> bool:
+        return self.subcommand_class is not None
+
+    def propagate_subcommand(self, sc: Self):
+        sc.color = sc.color or self.color
+        sc.styles = sc.styles or self.styles
+        sc.help_template = sc.help_template or self.help_template
+        sc.max_term_width = sc.max_term_width or self.max_term_width
+        if self.propagate_version and not (sc.version or sc.long_version):
+            sc.version = self.version
+            sc.long_version = self.long_version
+
+    def contains_subcommands(self) -> bool:
+        return self.subcommand_dest is not None
+
+    def get_parser_kwargs(self) -> dict[str, Any]:
+        kwargs: dict[str, Any] = {}
+
+        if self.is_subcommand():
+            kwargs["name"] = self.name
+        else:
+            kwargs["prog"] = self.name
+
+        kwargs.update({
+            k: v
+            for k, v in {
+                "usage": self.usage,
+                "prefix_chars": self.prefix_chars,
+                "fromfile_prefix_chars": self.fromfile_prefix_chars,
+                "conflict_handler": self.conflict_handler,
+                "allow_abbrev": self.allow_abbrev,
+                "exit_on_error": self.exit_on_error,
+                "deprecated": self.deprecated,
+                "aliases": self.aliases or None,
+            }.items()
+            if v is not None
+        })
+
+        return kwargs
