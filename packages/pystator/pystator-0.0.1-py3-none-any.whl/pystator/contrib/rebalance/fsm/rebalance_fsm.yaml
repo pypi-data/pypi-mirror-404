@@ -1,0 +1,153 @@
+# Rebalance Workflow FSM (contrib)
+# Portfolio rebalancing workflow state machine
+
+meta:
+  version: "1.0.0"
+  machine_name: "rebalance_workflow"
+  description: "Portfolio rebalancing workflow state machine"
+  strict_mode: true
+
+states:
+  - name: TARGETS_RECEIVED
+    type: initial
+    description: "Target weights received, starting rebalance"
+    on_enter:
+      - log_rebalance_started
+      - validate_target_weights
+
+  - name: POSITIONS_FETCHED
+    type: stable
+    description: "Current positions retrieved from broker"
+    on_enter:
+      - log_positions_fetched
+
+  - name: ORDERS_CALCULATED
+    type: stable
+    description: "Rebalance orders calculated, ready for execution"
+    on_enter:
+      - notify_orders_ready
+
+  - name: AWAITING_APPROVAL
+    type: stable
+    description: "Waiting for manual approval to execute orders"
+    timeout:
+      seconds: 3600.0
+      destination: APPROVAL_TIMEOUT
+    on_enter:
+      - notify_approval_required
+
+  - name: ORDERS_SUBMITTED
+    type: stable
+    description: "Orders submitted, waiting for fills"
+    on_enter:
+      - log_orders_submitted
+
+  - name: COMPLETED
+    type: terminal
+    description: "Rebalance completed successfully"
+    on_enter:
+      - log_rebalance_complete
+      - notify_rebalance_complete
+      - record_completion_time
+
+  - name: FAILED
+    type: terminal
+    description: "Rebalance failed"
+    on_enter:
+      - log_error
+      - notify_failure
+
+  - name: APPROVAL_TIMEOUT
+    type: terminal
+    description: "Approval window expired"
+    on_enter:
+      - log_approval_timeout
+      - notify_approval_timeout
+
+  - name: CANCELED
+    type: terminal
+    description: "Rebalance canceled by user"
+    on_enter:
+      - log_rebalance_canceled
+
+transitions:
+  - trigger: fetch_positions
+    source: TARGETS_RECEIVED
+    dest: POSITIONS_FETCHED
+    description: "Fetch current positions from broker"
+    actions:
+      - fetch_current_positions
+
+  - trigger: calculate_orders
+    source: POSITIONS_FETCHED
+    dest: ORDERS_CALCULATED
+    description: "Calculate orders needed for rebalance"
+    actions:
+      - compute_rebalance_orders
+
+  - trigger: request_approval
+    source: ORDERS_CALCULATED
+    dest: AWAITING_APPROVAL
+    description: "Request manual approval for orders"
+    guards:
+      - requires_approval
+
+  - trigger: auto_approve
+    source: ORDERS_CALCULATED
+    dest: ORDERS_SUBMITTED
+    description: "Auto-approve and submit orders"
+    guards:
+      - auto_approval_enabled
+    actions:
+      - submit_orders
+
+  - trigger: approved
+    source: AWAITING_APPROVAL
+    dest: ORDERS_SUBMITTED
+    description: "Manual approval received, submitting orders"
+    actions:
+      - record_approval
+      - submit_orders
+
+  - trigger: skip_no_orders
+    source: ORDERS_CALCULATED
+    dest: COMPLETED
+    description: "No orders needed, portfolio already balanced"
+    guards:
+      - no_orders_needed
+
+  - trigger: all_orders_complete
+    source: ORDERS_SUBMITTED
+    dest: COMPLETED
+    description: "All orders filled or canceled"
+    guards:
+      - all_orders_terminal
+
+  - trigger: error
+    source:
+      - TARGETS_RECEIVED
+      - POSITIONS_FETCHED
+      - ORDERS_CALCULATED
+      - ORDERS_SUBMITTED
+    dest: FAILED
+    description: "Error occurred during rebalance"
+    actions:
+      - store_error_details
+
+  - trigger: cancel
+    source:
+      - TARGETS_RECEIVED
+      - POSITIONS_FETCHED
+      - ORDERS_CALCULATED
+      - AWAITING_APPROVAL
+    dest: CANCELED
+    description: "User canceled rebalance"
+    actions:
+      - cancel_pending_orders
+
+  - trigger: rejected
+    source: AWAITING_APPROVAL
+    dest: CANCELED
+    description: "Manual approval rejected"
+    actions:
+      - log_rejection
