@@ -1,0 +1,33 @@
+# ///////////////////////////////////////////////////////////////
+# EZPL - CLI Commands Module
+# Project: ezpl
+# ///////////////////////////////////////////////////////////////
+
+"""
+CLI Commands module for Ezpl logging framework.
+
+This module contains all CLI command implementations.
+"""
+
+from __future__ import annotations
+
+# ///////////////////////////////////////////////////////////////
+# IMPORTS
+# ///////////////////////////////////////////////////////////////
+# Local imports
+from .config import config_group
+from .info import info_command
+from .logs import logs_group
+from .version import version_command
+
+# ///////////////////////////////////////////////////////////////
+# PUBLIC API
+# ///////////////////////////////////////////////////////////////
+
+__all__ = [
+    # CLI command groups
+    "logs_group",
+    "config_group",
+    "version_command",
+    "info_command",
+]
