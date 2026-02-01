@@ -1,0 +1,248 @@
+Metadata-Version: 2.4
+Name: terminaluse
+Version: 0.0.0
+Summary: 
+Requires-Python: >=3.12
+Classifier: Intended Audience :: Developers
+Classifier: Operating System :: MacOS
+Classifier: Operating System :: Microsoft :: Windows
+Classifier: Operating System :: OS Independent
+Classifier: Operating System :: POSIX
+Classifier: Operating System :: POSIX :: Linux
+Classifier: Programming Language :: Python
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Programming Language :: Python :: 3.14
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Classifier: Typing :: Typed
+Requires-Dist: aiohttp (>=3.10.10,<4.0.0)
+Requires-Dist: claude-agent-sdk (>=0.1.17,<0.2.0)
+Requires-Dist: fastapi (>=0.115.0,<0.116.0)
+Requires-Dist: httpx (>=0.21.2)
+Requires-Dist: jinja2 (>=3.1.3,<4.0.0)
+Requires-Dist: jsonref (>=1.1.0,<2.0.0)
+Requires-Dist: jsonschema (>=4.23.0,<5.0.0)
+Requires-Dist: opentelemetry-api (>=1.20.0)
+Requires-Dist: opentelemetry-instrumentation-fastapi (>=0.44b0)
+Requires-Dist: opentelemetry-instrumentation-httpx (>=0.44b0)
+Requires-Dist: opentelemetry-sdk (>=1.20.0)
+Requires-Dist: pydantic (>=1.9.2)
+Requires-Dist: pydantic-core (>=2.18.2)
+Requires-Dist: python-on-whales (>=0.73.0,<0.74.0)
+Requires-Dist: python-ulid (>=3.0.0,<4.0.0)
+Requires-Dist: pyyaml (>=6.0.2,<7.0.0)
+Requires-Dist: pyzstd (>=0.16.0,<0.17.0)
+Requires-Dist: questionary (>=2.0.1,<3.0.0)
+Requires-Dist: rich (>=13.9.2,<14.0.0)
+Requires-Dist: temporalio (>=1.18.2,<2.0.0)
+Requires-Dist: tenacity (>=8.0.0,<9.0.0)
+Requires-Dist: typer (>=0.16,<0.17)
+Requires-Dist: typing_extensions (>=4.0.0)
+Requires-Dist: uvicorn (>=0.31.1,<0.32.0)
+Requires-Dist: yaspin (>=3.1.0,<4.0.0)
+Project-URL: Repository, https://github.com/terminal-use/monorepo
+Description-Content-Type: text/markdown
+
+# Terminaluse Python Library
+
+[![fern shield](https://img.shields.io/badge/%F0%9F%8C%BF-Built%20with%20Fern-brightgreen)](https://buildwithfern.com?utm_source=github&utm_medium=github&utm_campaign=readme&utm_source=https%3A%2F%2Fgithub.com%2Fterminal-use%2Fpython-sdk)
+[![pypi](https://img.shields.io/pypi/v/terminaluse)](https://pypi.python.org/pypi/terminaluse)
+
+The Terminaluse Python library provides convenient access to the Terminaluse APIs from Python.
+
+## Table of Contents
+
+- [Installation](#installation)
+- [Reference](#reference)
+- [Usage](#usage)
+- [Async Client](#async-client)
+- [Exception Handling](#exception-handling)
+- [Streaming](#streaming)
+- [Advanced](#advanced)
+  - [Access Raw Response Data](#access-raw-response-data)
+  - [Retries](#retries)
+  - [Timeouts](#timeouts)
+  - [Custom Client](#custom-client)
+- [Contributing](#contributing)
+
+## Installation
+
+```sh
+pip install terminaluse
+```
+
+## Reference
+
+A full reference for this library is available [here](https://github.com/terminal-use/python-sdk/blob/HEAD/./reference.md).
+
+## Usage
+
+Instantiate and use the client with the following:
+
+```python
+from terminaluse import TerminaluseApi
+
+client = TerminaluseApi(
+    agent_api_key="YOUR_AGENT_API_KEY",
+    token="YOUR_TOKEN",
+    base_url="https://yourhost.com/path/to/api",
+)
+client.telemetry.agent_metrics_ingest(
+    resource_metrics=[{"key": "value"}],
+)
+```
+
+## Async Client
+
+The SDK also exports an `async` client so that you can make non-blocking calls to our API. Note that if you are constructing an Async httpx client class to pass into this client, use `httpx.AsyncClient()` instead of `httpx.Client()` (e.g. for the `httpx_client` parameter of this client).
+
+```python
+import asyncio
+
+from terminaluse import AsyncTerminaluseApi
+
+client = AsyncTerminaluseApi(
+    agent_api_key="YOUR_AGENT_API_KEY",
+    token="YOUR_TOKEN",
+    base_url="https://yourhost.com/path/to/api",
+)
+
+
+async def main() -> None:
+    await client.telemetry.agent_metrics_ingest(
+        resource_metrics=[{"key": "value"}],
+    )
+
+
+asyncio.run(main())
+```
+
+## Exception Handling
+
+When the API returns a non-success status code (4xx or 5xx response), a subclass of the following error
+will be thrown.
+
+```python
+from terminaluse.core.api_error import ApiError
+
+try:
+    client.telemetry.agent_metrics_ingest(...)
+except ApiError as e:
+    print(e.status_code)
+    print(e.body)
+```
+
+## Streaming
+
+The SDK supports streaming responses, as well, the response will be a generator that you can loop over.
+
+```python
+from terminaluse import TerminaluseApi
+
+client = TerminaluseApi(
+    agent_api_key="YOUR_AGENT_API_KEY",
+    token="YOUR_TOKEN",
+    base_url="https://yourhost.com/path/to/api",
+)
+response = client.tasks.stream_by_name(
+    task_name="task_name",
+)
+for chunk in response.data:
+    yield chunk
+```
+
+## Advanced
+
+### Access Raw Response Data
+
+The SDK provides access to raw response data, including headers, through the `.with_raw_response` property.
+The `.with_raw_response` property returns a "raw" client that can be used to access the `.headers` and `.data` attributes.
+
+```python
+from terminaluse import TerminaluseApi
+
+client = TerminaluseApi(
+    ...,
+)
+response = client.telemetry.with_raw_response.agent_metrics_ingest(...)
+print(response.headers)  # access the response headers
+print(response.data)  # access the underlying object
+with client.tasks.with_raw_response.stream_by_name(...) as response:
+    print(response.headers)  # access the response headers
+    for chunk in response.data:
+        print(chunk)  # access the underlying object(s)
+```
+
+### Retries
+
+The SDK is instrumented with automatic retries with exponential backoff. A request will be retried as long
+as the request is deemed retryable and the number of retry attempts has not grown larger than the configured
+retry limit (default: 2).
+
+A request is deemed retryable when any of the following HTTP status codes is returned:
+
+- [408](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/408) (Timeout)
+- [429](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/429) (Too Many Requests)
+- [5XX](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500) (Internal Server Errors)
+
+Use the `max_retries` request option to configure this behavior.
+
+```python
+client.telemetry.agent_metrics_ingest(..., request_options={
+    "max_retries": 1
+})
+```
+
+### Timeouts
+
+The SDK defaults to a 60 second timeout. You can configure this with a timeout option at the client or request level.
+
+```python
+
+from terminaluse import TerminaluseApi
+
+client = TerminaluseApi(
+    ...,
+    timeout=20.0,
+)
+
+
+# Override timeout for a specific method
+client.telemetry.agent_metrics_ingest(..., request_options={
+    "timeout_in_seconds": 1
+})
+```
+
+### Custom Client
+
+You can override the `httpx` client to customize it for your use-case. Some common use-cases include support for proxies
+and transports.
+
+```python
+import httpx
+from terminaluse import TerminaluseApi
+
+client = TerminaluseApi(
+    ...,
+    httpx_client=httpx.Client(
+        proxy="http://my.test.proxy.example.com",
+        transport=httpx.HTTPTransport(local_address="0.0.0.0"),
+    ),
+)
+```
+
+## Contributing
+
+While we value open-source contributions to this SDK, this library is generated programmatically.
+Additions made directly to this library would have to be moved over to our generation code,
+otherwise they would be overwritten upon the next generated release. Feel free to open a PR as
+a proof of concept, but know that we will not be able to merge it as-is. We suggest opening
+an issue first to discuss with us!
+
+On the other hand, contributions to the README are always very welcome!
+

@@ -1,0 +1,97 @@
+# Agent Manifest Configuration
+# ---------------------------
+# This file defines how your agent should be built and deployed.
+
+# Build Configuration
+# ------------------
+# The build config defines what gets packaged into your agent's Docker image.
+#
+# When building:
+# 1. All files from include_paths are collected into a build context
+# 2. The context is filtered by dockerignore rules
+# 3. The Dockerfile uses this context to build your agent's image
+# 4. The image is pushed to a registry and used to run your agent
+build:
+  context:
+    # Root directory for the build context
+    root: ../  # Keep this as the default root
+
+    # Paths to include in the Docker build context
+    # Must include your agent's directory (your custom agent code)
+    include_paths:
+      - {{ project_path_from_build_root }}
+
+    # Path to your agent's Dockerfile
+    # Relative to the root directory
+    dockerfile: {{ project_path_from_build_root }}/Dockerfile
+
+    # Path to your agent's .dockerignore
+    # Filters unnecessary files from the build context
+    dockerignore: {{ project_path_from_build_root }}/.dockerignore
+
+
+# Agent Configuration
+# -----------------
+agent:
+  # Unique identifier for your agent (namespace/name format)
+  # Example: 'acme-corp/my-agent'
+  name: {{ agent_name }}
+
+  # Description of what your agent does
+  description: {{ description }}
+
+  # SDK type for agent runtime
+  sdk_type: claude_agent_sdk
+
+  # Temporal workflow configuration
+  # This enables your agent to run as a Temporal workflow for long-running tasks
+  temporal:
+    enabled: true
+    workflows:
+      # Name of the workflow class
+      # Must match the @workflow.defn name in your workflow.py
+      - name: {{ workflow_name }}
+
+        # Queue name for task distribution
+        # Used by Temporal to route tasks to your agent
+        # Convention: <agent_name>_task_queue
+        queue_name: {{ queue_name }}
+
+    # Optional: Health check port for temporal worker
+    # Defaults to 80 if not specified
+    # health_check_port: 80
+
+
+# Deployment Configuration
+# -----------------------
+# Environment-specific settings for production and preview branches.
+# The CLI resolves which config to use based on the branch being deployed.
+deployment:
+  # Production environment (main branch)
+  production:
+    replicaCount: 1
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "2Gi"
+      limits:
+        cpu: "1000m"
+        memory: "2Gi"
+    # Task stickiness during version transitions:
+    # - true: Running tasks stay on old version until complete (safer for long-running tasks)
+    # - false: Running tasks migrate immediately to new version (faster rollout)
+    # Default: true for production
+    areTasksSticky: true
+
+  # Preview environment (feature branches)
+  preview:
+    replicaCount: 1
+    resources:
+      requests:
+        cpu: "250m"
+        memory: "2Gi"
+      limits:
+        cpu: "500m"
+        memory: "2Gi"
+    # Default: false for preview (faster iteration)
+    areTasksSticky: false
