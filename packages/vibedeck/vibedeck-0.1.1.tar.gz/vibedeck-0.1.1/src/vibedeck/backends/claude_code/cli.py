@@ -1,0 +1,136 @@
+"""Claude Code CLI interaction.
+
+Handles building commands for the Claude Code CLI tool and managing
+session indexing.
+"""
+
+from __future__ import annotations
+
+import shutil
+from pathlib import Path
+
+from ..protocol import CommandSpec
+
+
+CLI_COMMAND = "claude"
+CLI_INSTALL_INSTRUCTIONS = "Install with: npm install -g @anthropic-ai/claude-code"
+
+
+def is_cli_available() -> bool:
+    """Check if the Claude CLI is installed and available.
+
+    Returns:
+        True if the 'claude' command is found in PATH.
+    """
+    return shutil.which(CLI_COMMAND) is not None
+
+
+def ensure_session_indexed(session_id: str) -> None:
+    """Ensure a session is in Claude's session index so --resume works.
+
+    Claude uses ~/.claude/session-env/<session-id>/ directories as its index.
+    Sessions created externally (via -p mode) don't get indexed automatically.
+
+    Args:
+        session_id: Session ID to ensure is indexed.
+    """
+    session_env_dir = Path.home() / ".claude" / "session-env" / session_id
+    session_env_dir.mkdir(parents=True, exist_ok=True)
+
+
+def build_send_command(
+    session_id: str,
+    message: str,
+    skip_permissions: bool = False,
+    output_format: str | None = None,
+    add_dirs: list[str] | None = None,
+) -> CommandSpec:
+    """Build the CLI command to send a message to an existing session.
+
+    Args:
+        session_id: Session to send to.
+        message: Message text.
+        skip_permissions: Skip permission prompts.
+        output_format: Output format (e.g., "stream-json" for permission detection).
+        add_dirs: Additional directories to allow access to.
+
+    Returns:
+        CommandSpec with args and message as stdin.
+    """
+    # Use stdin for message to avoid issues with messages starting with '-'
+    cmd = [CLI_COMMAND, "-p", "--resume", session_id]
+    if add_dirs:
+        for d in add_dirs:
+            cmd.extend(["--add-dir", d])
+    if output_format:
+        # --verbose is required when using --output-format with -p
+        cmd.extend(["--output-format", output_format, "--verbose"])
+    if skip_permissions:
+        cmd.append("--dangerously-skip-permissions")
+    return CommandSpec(args=cmd, stdin=message)
+
+
+def build_fork_command(
+    session_id: str,
+    message: str,
+    skip_permissions: bool = False,
+    output_format: str | None = None,
+    add_dirs: list[str] | None = None,
+) -> CommandSpec:
+    """Build the CLI command to fork a session with conversation history.
+
+    Args:
+        session_id: Session to fork from.
+        message: Initial message for forked session.
+        skip_permissions: Skip permission prompts.
+        output_format: Output format (e.g., "stream-json" for permission detection).
+        add_dirs: Additional directories to allow access to.
+
+    Returns:
+        CommandSpec with args and message as stdin.
+    """
+    # Use stdin for message to avoid issues with messages starting with '-'
+    cmd = [CLI_COMMAND, "-p", "--resume", session_id, "--fork-session"]
+    if add_dirs:
+        for d in add_dirs:
+            cmd.extend(["--add-dir", d])
+    if output_format:
+        # --verbose is required when using --output-format with -p
+        cmd.extend(["--output-format", output_format, "--verbose"])
+    if skip_permissions:
+        cmd.append("--dangerously-skip-permissions")
+    return CommandSpec(args=cmd, stdin=message)
+
+
+def build_new_session_command(
+    message: str,
+    skip_permissions: bool = False,
+    model: str | None = None,
+    output_format: str | None = None,
+    add_dirs: list[str] | None = None,
+) -> CommandSpec:
+    """Build the CLI command to start a new session.
+
+    Args:
+        message: Initial message.
+        skip_permissions: Skip permission prompts.
+        model: Model to use (e.g., "opus", "sonnet", "haiku").
+        output_format: Output format (e.g., "stream-json" for permission detection).
+        add_dirs: Additional directories to allow access to.
+
+    Returns:
+        CommandSpec with args and message as stdin.
+    """
+    # Use stdin for message to avoid issues with messages starting with '-'
+    cmd = [CLI_COMMAND, "-p"]
+    if add_dirs:
+        for d in add_dirs:
+            cmd.extend(["--add-dir", d])
+    if model:
+        cmd.extend(["--model", model])
+    if output_format:
+        # --verbose is required when using --output-format with -p
+        cmd.extend(["--output-format", output_format, "--verbose"])
+    if skip_permissions:
+        cmd.append("--dangerously-skip-permissions")
+    return CommandSpec(args=cmd, stdin=message)

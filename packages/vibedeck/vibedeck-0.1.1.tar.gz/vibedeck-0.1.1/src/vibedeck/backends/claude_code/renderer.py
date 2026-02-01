@@ -1,0 +1,282 @@
+"""Message rendering for Claude Code sessions.
+
+Renders Claude Code session messages to HTML for display in the browser.
+"""
+
+from __future__ import annotations
+
+import html
+import json
+
+from ..shared.rendering import (
+    macros,
+    render_markdown_text,
+    render_user_text,
+    is_json_like,
+    format_json,
+    make_msg_id,
+    render_git_commits,
+)
+from .pricing import calculate_message_cost, estimate_output_tokens_from_content
+
+# Re-export set_github_repo for backward compatibility
+from ..shared.rendering import set_github_repo  # noqa: F401
+
+
+def render_todo_write(tool_input: dict, tool_id: str) -> str:
+    """Render TodoWrite tool calls."""
+    todos = tool_input.get("todos", [])
+    if not todos:
+        return ""
+    return macros.todo_list(todos, tool_id)
+
+
+def render_write_tool(tool_input: dict, tool_id: str) -> str:
+    """Render Write tool calls with file path header and content preview."""
+    file_path = tool_input.get("file_path", "Unknown file")
+    content = tool_input.get("content", "")
+    return macros.write_tool(file_path, content, tool_id)
+
+
+def render_edit_tool(tool_input: dict, tool_id: str) -> str:
+    """Render Edit tool calls with diff-like old/new display."""
+    file_path = tool_input.get("file_path", "Unknown file")
+    old_string = tool_input.get("old_string", "")
+    new_string = tool_input.get("new_string", "")
+    replace_all = tool_input.get("replace_all", False)
+    return macros.edit_tool(file_path, old_string, new_string, replace_all, tool_id)
+
+
+def render_bash_tool(tool_input: dict, tool_id: str) -> str:
+    """Render Bash tool calls with command as plain text."""
+    command = tool_input.get("command", "")
+    description = tool_input.get("description", "")
+    return macros.bash_tool(command, description, tool_id)
+
+
+def render_read_tool(tool_input: dict, tool_id: str) -> str:
+    """Render Read tool calls with file path header and JSON details."""
+    file_path = tool_input.get("file_path", "Unknown file")
+    offset = tool_input.get("offset")
+    limit = tool_input.get("limit")
+    input_json = json.dumps(tool_input, indent=2, ensure_ascii=False)
+    return macros.read_tool(file_path, offset, limit, input_json, tool_id)
+
+
+def render_content_block(block: dict) -> str:
+    """Render a single content block to HTML."""
+    if not isinstance(block, dict):
+        return f"<p>{html.escape(str(block))}</p>"
+
+    block_type = block.get("type", "")
+
+    if block_type == "image":
+        source = block.get("source", {})
+        media_type = source.get("media_type", "image/png")
+        data = source.get("data", "")
+        return macros.image_block(media_type, data)
+
+    elif block_type == "thinking":
+        content_html = render_markdown_text(block.get("thinking", ""))
+        return macros.thinking(content_html)
+
+    elif block_type == "text":
+        content_html = render_markdown_text(block.get("text", ""))
+        return macros.assistant_text(content_html)
+
+    elif block_type == "tool_use":
+        tool_name = block.get("name", "Unknown tool")
+        tool_input = block.get("input", {})
+        tool_id = block.get("id", "")
+
+        if tool_name == "TodoWrite":
+            return render_todo_write(tool_input, tool_id)
+        if tool_name == "Write":
+            return render_write_tool(tool_input, tool_id)
+        if tool_name == "Edit":
+            return render_edit_tool(tool_input, tool_id)
+        if tool_name == "Bash":
+            return render_bash_tool(tool_input, tool_id)
+        if tool_name == "Read":
+            return render_read_tool(tool_input, tool_id)
+
+        # Generic tool rendering
+        description = tool_input.get("description", "")
+        display_input = {k: v for k, v in tool_input.items() if k != "description"}
+        input_json = json.dumps(display_input, indent=2, ensure_ascii=False)
+        return macros.tool_use(tool_name, description, input_json, tool_id)
+
+    elif block_type == "tool_result":
+        content = block.get("content", "")
+        is_error = block.get("is_error", False)
+
+        # Check for git commits and render with styled cards
+        if isinstance(content, str):
+            commit_html = render_git_commits(content)
+            if commit_html:
+                content_html = commit_html
+            else:
+                content_html = f"<pre>{html.escape(content)}</pre>"
+        elif isinstance(content, list):
+            # Check if this is a list containing image blocks (from Read tool on images)
+            content_parts = []
+            for item in content:
+                if isinstance(item, dict) and item.get("type") == "image":
+                    source = item.get("source", {})
+                    media_type = source.get("media_type", "image/png")
+                    data = source.get("data", "")
+                    content_parts.append(macros.image_block(media_type, data))
+                elif isinstance(item, dict) and item.get("type") == "text":
+                    # Text blocks within tool results
+                    text = item.get("text", "")
+                    content_parts.append(f"<pre>{html.escape(text)}</pre>")
+                else:
+                    # Fallback: render as JSON
+                    content_parts.append(format_json(item))
+            content_html = "".join(content_parts)
+        elif is_json_like(content):
+            content_html = format_json(content)
+        else:
+            content_html = format_json(content)
+
+        return macros.tool_result(content_html, is_error)
+
+    else:
+        return format_json(block)
+
+
+def is_tool_result_message(message_data: dict) -> bool:
+    """Check if a user message contains only tool results."""
+    content = message_data.get("content", [])
+    if not isinstance(content, list):
+        return False
+    return all(
+        isinstance(block, dict) and block.get("type") == "tool_result"
+        for block in content
+    )
+
+
+def render_user_message_content(message_data: dict) -> str:
+    """Render user message content to HTML."""
+    content = message_data.get("content", "")
+    if isinstance(content, str):
+        if is_json_like(content):
+            return macros.user_content(format_json(content))
+        return macros.user_content(render_user_text(content))
+    elif isinstance(content, list):
+        return "".join(render_content_block(block) for block in content)
+    return f"<p>{html.escape(str(content))}</p>"
+
+
+def render_assistant_message(message_data: dict) -> str:
+    """Render assistant message content to HTML."""
+    content = message_data.get("content", [])
+    if not isinstance(content, list):
+        return f"<p>{html.escape(str(content))}</p>"
+    return "".join(render_content_block(block) for block in content)
+
+
+def render_message(entry: dict) -> str:
+    """Render a single message entry to HTML.
+
+    Standalone function for backward compatibility.
+
+    Args:
+        entry: A parsed JSONL entry with type, timestamp, and message keys
+
+    Returns:
+        HTML string for the message, or empty string if invalid
+    """
+    log_type = entry.get("type")
+    message_data = entry.get("message", {})
+    timestamp = entry.get("timestamp", "")
+
+    if not message_data:
+        return ""
+
+    usage = None
+    model = None
+    if log_type == "user":
+        content_html = render_user_message_content(message_data)
+        # Check if this is a tool result message
+        if is_tool_result_message(message_data):
+            role_class, role_label = "tool-reply", "Tool reply"
+        else:
+            role_class, role_label = "user", "User"
+    elif log_type == "assistant":
+        content_html = render_assistant_message(message_data)
+        role_class, role_label = "assistant", "Assistant"
+        # Extract usage data for assistant messages and calculate cost
+        usage = message_data.get("usage", {})
+        model = message_data.get("model")
+        if usage:
+            usage = dict(usage)  # Make a copy to avoid mutating the original
+            usage["cost"] = calculate_message_cost(usage, model)
+    else:
+        return ""
+
+    if not content_html.strip():
+        return ""
+
+    msg_id = make_msg_id(timestamp)
+    return macros.message(
+        role_class, role_label, msg_id, timestamp, content_html, usage, model
+    )
+
+
+class ClaudeCodeRenderer:
+    """Message renderer for Claude Code sessions.
+
+    Tracks content accumulation per message.id since Claude Code writes
+    streaming chunks as separate JSONL entries. Estimates output tokens
+    from content since the recorded output_tokens values are unreliable.
+    """
+
+    def __init__(self) -> None:
+        # Track accumulated content per message.id for token estimation
+        # Structure: msg_id -> list of content blocks
+        self._content_by_msg: dict[str, list] = {}
+
+    def render_message(self, entry: dict) -> str:
+        """Render a single message entry to HTML.
+
+        For assistant messages, tracks content across all entries with the same
+        message.id and estimates output tokens from the accumulated content.
+
+        Args:
+            entry: A parsed JSONL entry with type, timestamp, and message keys
+
+        Returns:
+            HTML string for the message, or empty string if invalid
+        """
+        log_type = entry.get("type")
+
+        # For assistant messages, accumulate content and estimate tokens
+        if log_type == "assistant":
+            message_data = entry.get("message", {})
+            msg_id = message_data.get("id")
+            usage = message_data.get("usage", {})
+            content = message_data.get("content", [])
+
+            if msg_id and usage:
+                # Accumulate content for this message
+                if msg_id not in self._content_by_msg:
+                    self._content_by_msg[msg_id] = []
+                if content:
+                    self._content_by_msg[msg_id].extend(content)
+
+                # Estimate output tokens from accumulated content
+                estimated_output = estimate_output_tokens_from_content(
+                    self._content_by_msg[msg_id]
+                )
+
+                # Create modified entry with estimated output_tokens
+                modified_entry = dict(entry)
+                modified_message = dict(message_data)
+                modified_usage = dict(usage)
+                modified_usage["output_tokens"] = estimated_output
+                modified_message["usage"] = modified_usage
+                modified_entry["message"] = modified_message
+                return render_message(modified_entry)
+
+        return render_message(entry)
