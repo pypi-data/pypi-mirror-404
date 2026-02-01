@@ -1,0 +1,235 @@
+# OneTool Default Snippets Library
+# Load via: include: [snippets.yaml] (falls back to bundled)
+
+snippets:
+
+  # ============================================================================
+  # BRAVE SEARCH (brv_)
+  # ============================================================================
+
+  brv:
+    description: Batch search using Brave (pipe-separated queries)
+    params:
+      q: { description: "Pipe-separated search queries" }
+      count: { default: 10, description: "Results per query" }
+    body: |
+      brave.search_batch(queries=[{% for item in q.split('|') %}"{{ item.strip() }}"{% if not loop.last %}, {% endif %}{% endfor %}], count={{ count }})
+
+
+  brv_research:
+    description: Search web and extract structured findings
+    params:
+      q: { description: "Topic to research" }
+      count: { default: 10, description: "Number of sources" }
+    body: |
+      results = brave.search(query="{{ q }}", count={{ count }})
+      llm.transform(input=results, prompt="Extract key findings as bullet points with sources")
+
+
+
+  # ============================================================================
+  # CONTEXT7 DOCS (c7_)
+  # ============================================================================
+
+  c7:
+    description: Fetch library documentation for a topic
+    params:
+      q: { default: "", description: "Topic to search for (e.g., 'hooks', 'routing')" }
+      lib: { description: "Library name or key (e.g., 'react', 'next.js', 'vercel/next.js')" }
+    body: |
+      context7.doc(library_key="{{ lib }}", topic="{{ q }}", mode="info")
+
+  c7_lib:
+    description: Search for a library to get its key
+    params:
+      q: { description: "Library name to search for (e.g., 'react', 'fastapi')" }
+    body: |
+      context7.search(query="{{ q }}")
+
+  c7_eg:
+    description: Fetch code examples from library docs
+    params:
+      lib: { description: "Library key in org/repo format (e.g., 'facebook/react')" }
+      q: { description: "Feature/API to get examples for" }
+    body: |
+      context7.doc(library_key="{{ lib }}", topic="{{ q }}", mode="code")
+
+  # ============================================================================
+  # GROUND SEARCH (g_)
+  # ============================================================================
+  g:
+    description: Batch search using Gemini grounding (pipe-separated queries)
+    params:
+      q: { description: "Pipe-separated search queries" }
+      tech: { default: "", description: "Technology stack context" }
+      focus: { default: "general", description: "Focus mode: general, code, documentation, troubleshooting" }
+    body: |
+      ground.search_batch(queries=[{% for item in q.split('|') %}"{{ item.strip() }}"{% if not loop.last %}, {% endif %}{% endfor %}], context="{{ tech }}", focus="{{ focus }}")
+
+  g_reddit:
+    description: Find community discussions on a topic
+    params:
+      q: { description: "Topic to discuss" }
+      subreddit: { default: "", description: "Specific subreddit" }
+    body: |
+      ground.reddit(query="{{ q }}"{% if subreddit %}, subreddit="{{ subreddit }}"{% endif %})
+
+  # ============================================================================
+  # RIPGREP (rg_)
+  # ============================================================================
+
+  rg:
+    description: Search files with ripgrep
+    params:
+      p: { description: "Regex pattern to search for" }
+      path: { default: ".", description: "Search path" }
+      glob: { default: "", description: "File glob filter (e.g., '*.py', '*.{ts,tsx}')" }
+      ft: { default: "", description: "File type filter (py, ts, js, etc.)" }
+      ctx: { default: 0, description: "Lines of context before/after match" }
+      count: { default: "", description: "Max matching lines to return" }
+    body: |
+      ripgrep.search(pattern="{{ p }}", path="{{ path }}"{% if glob %}, glob="{{ glob }}"{% endif %}{% if ft %}, file_type="{{ ft }}"{% endif %}{% if ctx %}, context={{ ctx }}{% endif %}{% if count %}, max_results={{ count }}{% endif %})
+
+  rg_count:
+    description: Count pattern occurrences by file
+    params:
+      p: { description: "Pattern to count" }
+      ft: { default: "", description: "File type filter (py, ts, etc.)" }
+    body: |
+      {% if ft %}ripgrep.count(pattern="{{ p }}", file_type="{{ ft }}"){% else %}ripgrep.count(pattern="{{ p }}"){% endif %}
+
+  # ============================================================================
+  # PACKAGE (pkg_)
+  # ============================================================================
+
+  pkg:
+    description: Audit project dependencies against latest registry versions
+    params:
+      path: { default: ".", description: "Project directory path" }
+    body: |
+      package.audit(path="{{ path }}")
+
+  pkg_npm:
+    description: Check latest npm package versions
+    params:
+      packages: { description: "Comma-separated package names" }
+    body: |
+      package.npm(packages=[{% for pkg in packages.split(',') %}"{{ pkg.strip() }}"{% if not loop.last %}, {% endif %}{% endfor %}])
+
+  pkg_pypi:
+    description: Check latest PyPI package versions
+    params:
+      packages: { description: "Comma-separated package names" }
+    body: |
+      package.pypi(packages=[{% for pkg in packages.split(',') %}"{{ pkg.strip() }}"{% if not loop.last %}, {% endif %}{% endfor %}])
+
+  pkg_model:
+    description: Search OpenRouter for AI models
+    params:
+      q: { default: "", description: "Search term (claude, gpt-4)" }
+      provider: { default: "", description: "Filter by provider" }
+    body: |
+      package.models(query="{{ q }}", provider="{{ provider }}", limit=10)
+
+  # ============================================================================
+  # WEB FETCH (web_)
+  # ============================================================================
+  web:
+    description: Fetch multiple URLs concurrently
+    params:
+      u: { description: "Pipe-separated URLs to fetch" }
+      f: { default: "markdown", description: "Output format: text, markdown, json" }
+      links: { default: false, description: "Include hyperlinks" }
+      max: { default: "", description: "Max length per URL" }
+    body: |
+      web.fetch_batch(urls=[{% for url in u.split('|') %}"{{ url.strip() }}"{% if not loop.last %}, {% endif %}{% endfor %}], output_format="{{ f }}", include_links={{ links }}{% if max %}, max_length={{ max }}{% endif %})
+
+  web_data:
+    description: Extract structured data from a web page
+    params:
+      u: { description: "URL to fetch" }
+      schema: { description: "What to extract (e.g., 'prices as {item, price}')" }
+    body: |
+      content = web.fetch(url="{{ u }}", include_tables=True)
+      llm.transform(input=content, prompt="Extract {{ schema }} as YAML")
+
+  web_summary:
+    description: Fetch and summarize a web page
+    params:
+      u: { description: "URL to fetch" }
+      focus: { default: "", description: "What to focus on" }
+    body: |
+      content = web.fetch(url="{{ u }}", output_format="markdown", fast=True)
+      llm.transform(input=content, prompt="Summarize this page concisely{% if focus %}, focusing on {{ focus }}{% endif %}")
+  # ============================================================================
+  # FIRECRAWL (f_)
+  # ============================================================================
+
+  f:
+    description: Batch search using Firecrawl (pipe-separated queries)
+    params:
+      q: { description: "Pipe-separated search queries" }
+      count: { default: 10, description: "Results per query" }
+    body: |
+      results = {}
+      for query in [{% for item in q.split('|') %}"{{ item.strip() }}"{% if not loop.last %}, {% endif %}{% endfor %}]:
+          results[query] = firecrawl.search(query=query, limit={{ count }})
+      results
+
+  f_fetch:
+    description: Fetch a page using Firecrawl scrape
+    params:
+      u: { required: true, description: "URL to fetch" }
+    body: |
+      firecrawl.scrape(url="{{ u }}")
+
+  # ============================================================================
+  # GITHUB (gh_)
+  # ============================================================================
+
+  gh:
+    description: Search GitHub repositories and return URLs/info for multiple pages
+    params:
+      q: { description: "GitHub search query" }
+      count: { default: 1, description: "Number of pages to fetch (30 results per page)" }
+    body: |
+      import json
+      results = []
+      for page in range(1, {{ count }} + 1):
+          r = github.search_repositories(query="{{ q }}", page=page, perPage=30)
+          data = json.loads(r) if isinstance(r, str) else r
+          for repo in data.get("items", []):
+              results.append({
+                  "name": repo["full_name"],
+                  "url": repo["html_url"],
+                  "description": repo.get("description") or "",
+                  "stars": repo.get("stargazers_count", 0),
+                  "updated": repo.get("updated_at", "")[:10]
+              })
+      {"total": len(results), "repos": results}
+
+
+  # ============================================================================
+  # INTERNAL TOOLS (ot_)
+  # ============================================================================
+  ot_reload:
+    description: Reload OneTool configuration and tools
+    body: |
+      ot.reload()
+
+  
+  ot_status:
+    description: Show system health and configuration
+    params: {}
+    body: |
+      {"health": ot.health(), "config": ot.config()}
+
+  ot_notify:
+    description: Notify external processes of LLM progress
+    params:
+      topic: { default: "status", description: "Status updates" }
+      msg:
+          required: true
+          description: "Status message"
+    body: |
+      ot.notify(topic="status:{{ topic }}", message="{{ msg }}")
