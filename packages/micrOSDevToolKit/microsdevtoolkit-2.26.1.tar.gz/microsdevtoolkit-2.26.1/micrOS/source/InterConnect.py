@@ -1,0 +1,274 @@
+"""
+Module is responsible for device-device communication
+dedicated to micrOS framework.
+Built-in-function:
+- Socket InterConnect interface
+- ESPNow redirection
+
+Designed by 
+    Marcell Ban aka BxNxM
+    Kristof Kasza aka KKristof452
+"""
+
+from socket import getaddrinfo, SOCK_STREAM
+from re import compile as re_compile
+from json import loads
+from binascii import hexlify
+from uasyncio import open_connection
+
+from Debug import syslog
+from Config import cfgget
+from Server import Server
+from Tasks import NativeTask
+
+if cfgget('espnow'):
+    from Espnow import ESPNowSS
+else:
+    ESPNowSS = None
+
+
+class InterCon:
+    CONN_MAP: dict[str, str] = {}   # hostname: IP address pairs
+    NO_ESPNOW: list[str] = []       # disabled ESPNow hostname list (cache for fallback speed-up)
+    PORT = cfgget('socport')
+
+    def __init__(self):
+        self.reader = None
+        self.writer = None
+        self.auth_pwd = str.encode(cfgget('appwd'))        # Convert to bytes
+        self.task = NativeTask()
+
+    @staticmethod
+    def validate_ipv4(str_in):
+        pattern = re_compile(r'^(\d|[1-9]\d|1\d\d|2[0-4]\d|25[0-5])\.(\d|[1-9]\d|1\d\d|2[0-4]\d|25[0-5])\.(\d|[1-9]\d|1\d\d|2[0-4]\d|25[0-5])\.(\d|[1-9]\d|1\d\d|2[0-4]\d|25[0-5])$')
+        return bool(pattern.match(str_in))
+
+    async def send_cmd(self, host:str, cmd:list):
+        """
+        Async Main method to implement device-device communication with
+        - dhcp host resolve and IP caching
+        - async connection with prompt check and command query and result handling (via Task cache/output)
+        :param host: hostname or IP address to connect with
+        :param cmd: command string to server socket shell
+        """
+        hostname = None
+        # Check if host is a hostname (example.local) and resolve its IP address
+        if not InterCon.validate_ipv4(host):
+            hostname = host
+            # Lookup hostname without .domain (sub-hostname matching)
+            if '.' not in hostname:
+                _hosts = list([d for d in InterCon.CONN_MAP if hostname in d])
+                if len(_hosts) > 0:
+                    hostname = _hosts[0]
+            # Retrieve IP address by hostname.domain dynamically
+            if InterCon.CONN_MAP.get(hostname, None) is None:
+                try:
+                    addr_info = getaddrinfo(host, InterCon.PORT, 0, SOCK_STREAM)
+                    host = addr_info[-1][4][0]
+                except OSError as e:
+                    Server.reply_all(f"[intercon] NoHost: {e}")
+                    syslog(f"[intercon] send_cmd {host} oserr: {e}")
+                    return ''
+            else:
+                # Restore IP from cache by hostname
+                host = InterCon.CONN_MAP[hostname]
+        # If IP address is available, send msg to the endpoint
+        if InterCon.validate_ipv4(host):
+            try:
+                # Create socket object
+                self.reader, self.writer = await open_connection(host, InterCon.PORT)
+                # Send command over TCP/IP
+                output = await self.__run_command(cmd, hostname)
+            except OSError as e:
+                Server.reply_all(f"[intercon] NoHost: {e}")
+                syslog(f"[intercon] send_cmd {host} oserr: {e}")
+                output = None
+            finally:
+                if self.writer:
+                    self.writer.close()
+                    await self.writer.wait_closed()
+
+            # Cache successful connection data (hostname:IP)
+            if hostname is not None:
+                # In case of valid communication, store device IP; otherwise, set IP to None
+                InterCon.CONN_MAP[hostname] = None if output is None else host
+            # None: ServerBusy(or \0) or Prompt mismatch (auto delete cached IP), STR: valid comm. output
+            return output
+        syslog(f"[ERR][intercon] Invalid host: {host}")
+        return ''
+
+    async def __run_command(self, cmd:list, hostname:str):
+        """
+        Implements receive data on open connection, command query and result collection
+        :param cmd: command string to server socket shell
+        :param hostname: hostname for prompt checking
+        Return None here will trigger retry mechanism... + deletes cached IP
+        """
+        data, prompt = await self.__receive_data()
+        if "Connection is busy. Bye!" in prompt:
+            return None
+        # Compare prompt |node01 $| with hostname 'node01.local'
+        if hostname is None or prompt is None or str(prompt).replace('$', '').strip() == str(hostname).split('.')[0]:
+            # Run command on validated device
+            self.writer.write(str.encode(' '.join(cmd)))
+            await self.writer.drain()
+            data, _ = await self.__receive_data(prompt=prompt)
+            if data == '\0':
+                return None
+            # Successful data receive, return data
+            return data
+        # Skip command run: prompt and host not the same!
+        Server.reply_all(f"[intercon] prompt mismatch, hostname: {hostname} prompt: {prompt}")
+        return None
+
+    async def __auth_handshake(self, prompt):
+        try:
+            self.writer.write(self.auth_pwd)
+            await self.writer.drain()
+            data, prompt = await self.__receive_data(prompt=prompt)
+        except Exception as e:
+            syslog(f'[intercon][ERR] Auth: {e}')
+            data = 'AuthFailed'
+        if 'AuthOk' in data:
+            return True             # AuthOk
+        return False                # AuthFailed
+
+    async def __receive_data(self, prompt=None) -> tuple[str, str]:
+        """
+        Implements data receive loop until prompt / [configure] / Bye!
+        :param prompt: socket shell prompt
+        """
+        data = ""
+        # Collect answer data
+        while True:
+            try:
+                last_data = await self.reader.read(128)
+                if not last_data:
+                    break
+                last_data = last_data.decode('utf-8').strip()
+                # First data is prompt, get it
+                prompt = last_data.strip() if prompt is None else prompt
+                data += last_data
+                # Detect auth mode - pre-prompt: [password]
+                if prompt.strip().startswith('[password]'):
+                    prompt = prompt.replace('[password]', '').strip()
+                    if not await self.__auth_handshake(prompt=prompt):
+                        break       # AUTH FAILED
+                # Wait for prompt or special cases (conf, exit)
+                if prompt in data.strip() or '[configure]' in data or "Bye!" in last_data:
+                    break
+                #print(f"prompt: {prompt}, data: {data}")
+            except OSError:
+                break
+        data = data.replace(prompt, '').replace('\n', ' ')
+        return data, prompt
+
+    async def auto_espnow_handshake(self, host:str) -> dict:
+        """
+        [1] Check espnow.server running on host
+        [2] Get MAC address for host (from system info)
+        [3] Execute ESPNowSS.handshake
+        """
+        response = await self.send_cmd(host, ["task", "list", ">json"])
+        if not response:
+            return {None: f"[ERR] ESPNow auto handshake: task list >>{host}: {response}"}
+
+        active_tasks = loads(response).get("active")
+        if active_tasks and "espnow.server" in active_tasks:
+            response = await self.send_cmd(host, ["system", "info", ">json"])
+            if not response:
+                return {None: "[ERR] ESPNow auto handshake: system info"}
+            try:
+                host_mac = loads(response).get("mac")
+            except Exception as ex:
+                return {None: f"[ERR] ESPNow auto handshake: {ex}"}
+
+            return ESPNowSS().handshake(host_mac)
+
+        if not InterCon.validate_ipv4(host):
+            InterCon.NO_ESPNOW.append(str(host).split(".")[0])   # host.local -> host
+        return {None: f"ESPNow auto handshake: espnow disabled on host {host}"}
+
+
+async def _socket_send_cmd(host:str, cmd:list, com_obj:InterCon) -> None:
+    """
+    Async send command wrapper for further async task integration and sync send_cmd usage (main)
+    :param host: hostname / IP address
+    :param cmd: command string to server socket shell
+    :param com_obj: InterCon object to utilize send_cmd method and task status updates
+    """
+    # Send command
+    for _ in range(0, 2):                           # Retry mechanism
+        out = await com_obj.send_cmd(host, cmd)     # Send CMD
+        if out is not None:                         # Retry mechanism
+            break
+        await com_obj.task.feed(sleep_ms=100)       # Retry mechanism
+    com_obj.task.out = '' if out is None else out
+
+
+async def _send_cmd(host:str, cmd:list|str, com_obj:InterCon):
+    """
+    Top level InterConnect callback function
+        [1] node01.domain -> ESPNow, Socket
+                (domain: .local, .net, etc.)
+        [2] node01 -> ESPNow, Socket fallback in case found in InterConnect cache
+        [3] IP address -> Socket
+    """
+    with com_obj.task:
+        if ESPNowSS:
+            # [1] ESPNow Active
+            name = str(host).split(".")[0]   # host.local -> host
+            if name not in InterCon.NO_ESPNOW and name in list(ESPNowSS().devices.values()):
+                com_obj.task.out = "Redirected to ESPNow"
+                if isinstance(cmd, list):
+                    cmd = ' '.join(cmd)
+                # Send command and retrieve result
+                sender = ESPNowSS().send(peer=name, msg=cmd)
+                sender_task = NativeTask.TASKS.get(list(sender.keys())[0])
+                result = await sender_task.await_result(timeout=10)
+                if result != "Timeout has beed exceeded":
+                    # Successful command execution
+                    com_obj.task.out = result                       # Output mirroring: Child -> Parent
+                    sender_task.out = "Redirected to ParentTask"    # Remove redundant data in embedded mode
+                    return
+
+        # Handle legacy string input
+        if isinstance(cmd, str):
+            cmd = cmd.split()
+        # [1][2] Socket send (default and fallback)
+        await _socket_send_cmd(host, cmd, com_obj)
+
+        if ESPNowSS and name not in InterCon.NO_ESPNOW:
+            # [3] Automatic ESPNow handshake
+            verdict = await com_obj.auto_espnow_handshake(host)
+            if list(verdict.keys())[0] is None:
+                syslog(str(list(verdict.values())[0]))
+
+
+def send_cmd(host:str, cmd:list|str) -> dict:
+    """
+    Top level InterConnect send task creation
+        Handles ESPNow and socket communication
+    """
+    def _tagify():
+        nonlocal host, cmd
+        _mod = cmd[0]
+        if InterCon.validate_ipv4(host):
+            return f"{'.'.join(host.split('.')[-2:])}.{_mod}"
+        target = ".".join(host.split(".")[0:-1]) if "." in host else host
+        return f"{target}.{_mod}"
+
+    com_obj = InterCon()
+    task_id = f"con.{_tagify()}"            # CHECK TASK ID CONFLICT
+    return com_obj.task.create(callback=_send_cmd(host, cmd, com_obj), tag=task_id)
+
+
+def host_cache() -> dict:
+    """
+    Dump InterCon connection cache
+    """
+    if ESPNowSS is None:
+        return InterCon.CONN_MAP
+    all_devs = dict({name:hexlify(mac, ':').decode() for mac, name in ESPNowSS().devices.items()})
+    all_devs.update(InterCon.CONN_MAP)
+    return all_devs
