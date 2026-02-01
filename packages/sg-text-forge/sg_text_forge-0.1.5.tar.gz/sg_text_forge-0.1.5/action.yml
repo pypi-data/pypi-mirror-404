@@ -1,0 +1,147 @@
+name: text-forge
+description: Build/publish a Markdown chapter collection into multiple formats (MkDocs site, EPUB, combined markdown)
+
+inputs:
+  mkdocs_config:
+    description: Path to mkdocs.yml
+    required: false
+    default: mkdocs.yml
+  docs_dir:
+    description: MkDocs docs_dir (where markdown lives)
+    required: false
+    default: text/ru
+  site_dir:
+    description: Output directory for MkDocs site
+    required: false
+    default: public/ru
+  build_dir:
+    description: Build artifacts directory
+    required: false
+    default: build
+  strict:
+    description: Run mkdocs build with --strict
+    required: false
+    default: 'true'
+  copy_artifacts_into_docs:
+    description: Copy EPUB + combined markdown into site_dir root after mkdocs build
+    required: false
+    default: 'true'
+  cover_image:
+    description: Optional cover image path (relative to content repo)
+    required: false
+    default: ''
+  create_root_redirect:
+    description: Create public/index.html redirecting to /ru/
+    required: false
+    default: 'true'
+  redirect_target:
+    description: Redirect target for public/index.html
+    required: false
+    default: /ru/
+  ensure_full_git_history:
+    description: Fetch full git history if checkout is shallow (improves revision date accuracy)
+    required: false
+    default: 'true'
+  use_github_token_for_committers:
+    description: Export github.token as MKDOCS_GIT_COMMITTERS_APIKEY for mkdocs-git-committers-plugin-2
+    required: false
+    default: 'true'
+  committers_token:
+    description: Optional token to use for mkdocs-git-committers-plugin-2 (overrides github.token)
+    required: false
+    default: ''
+
+outputs:
+  combined_md:
+    description: Path to combined markdown output
+    value: ${{ steps.paths.outputs.combined_md }}
+  pandoc_md:
+    description: Path to pandoc-normalized markdown output
+    value: ${{ steps.paths.outputs.pandoc_md }}
+  epub:
+    description: Path to generated EPUB
+    value: ${{ steps.paths.outputs.epub }}
+
+runs:
+  using: composite
+  steps:
+    - id: paths
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "combined_md=${{ inputs.build_dir }}/text_combined.md" >> "$GITHUB_OUTPUT"
+        echo "pandoc_md=${{ inputs.build_dir }}/pandoc.md" >> "$GITHUB_OUTPUT"
+        echo "epub=${{ inputs.build_dir }}/text_book.epub" >> "$GITHUB_OUTPUT"
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install text-forge package
+      shell: bash
+      run: |
+        set -euo pipefail
+        python -m pip install --upgrade pip
+        # Install text-forge from current action path (for development/testing)
+        # In production, this would be: pip install text-forge==VERSION
+        python -m pip install "${{ github.action_path }}"
+
+    - name: Set up Pandoc
+      uses: r-lib/actions/setup-pandoc@v2
+
+    - name: Build EPUB (stages 1-3)
+      shell: bash
+      run: |
+        set -euo pipefail
+        text-forge epub --config="${{ inputs.mkdocs_config }}" --build-dir="${{ inputs.build_dir }}"
+
+    - name: Configure git-committers token
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [ -n "${{ inputs.committers_token }}" ]; then
+          echo "MKDOCS_GIT_COMMITTERS_APIKEY=${{ inputs.committers_token }}" >> "$GITHUB_ENV"
+        elif [ "${{ inputs.use_github_token_for_committers }}" = "true" ]; then
+          echo "MKDOCS_GIT_COMMITTERS_APIKEY=${{ github.token }}" >> "$GITHUB_ENV"
+        fi
+
+    - name: Ensure full git history
+      if: ${{ inputs.ensure_full_git_history == 'true' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        IS_SHALLOW=$(git rev-parse --is-shallow-repository 2>/dev/null || echo false)
+        if [ "$IS_SHALLOW" = "true" ]; then
+          echo "Repository is shallow; fetching full history for accurate revision dates."
+          git fetch --prune --unshallow --tags || true
+        fi
+
+    - name: Build site (with artifacts copy and redirect)
+      shell: bash
+      run: |
+        set -euo pipefail
+        STRICT_FLAG="--strict"
+        if [ "${{ inputs.strict }}" != "true" ]; then
+          STRICT_FLAG="--no-strict"
+        fi
+        
+        COPY_FLAG="--copy-artifacts"
+        if [ "${{ inputs.copy_artifacts_into_docs }}" != "true" ]; then
+          COPY_FLAG="--no-copy-artifacts"
+        fi
+        
+        REDIRECT_FLAG="--create-redirect"
+        if [ "${{ inputs.create_root_redirect }}" != "true" ]; then
+          REDIRECT_FLAG="--no-create-redirect"
+        fi
+        
+        text-forge build \
+          --config="${{ inputs.mkdocs_config }}" \
+          --build-dir="${{ inputs.build_dir }}" \
+          --site-dir="${{ inputs.site_dir }}" \
+          $STRICT_FLAG \
+          $COPY_FLAG \
+          $REDIRECT_FLAG \
+          --redirect-target="${{ inputs.redirect_target }}"
