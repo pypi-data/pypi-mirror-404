@@ -1,0 +1,266 @@
+name: Auto-release
+
+# This workflow automatically creates releases and publishes them to PyPI.
+#
+# Workflow token setup:
+# To trigger the docs workflow automatically, this workflow uses a Personal Access Token (PAT)
+# for git operations. The GITHUB_TOKEN cannot trigger other workflows (security feature).
+#
+# Setup instructions:
+# 1. Create a PAT at https://github.com/settings/tokens with 'repo' and 'workflow' scopes
+# 2. Add it as a repository secret named WORKFLOW_PAT
+# 3. The checkout step will use WORKFLOW_PAT if available, falling back to GITHUB_TOKEN
+#
+# When WORKFLOW_PAT is used, the git push will trigger the docs workflow automatically.
+
+on:
+    # Automatic patch release after tests pass on main.
+    # This triggers whenever the "Tests" workflow completes.
+    # The job-level `if` condition ensures we only release when:
+    # 1. Tests passed (conclusion == 'success')
+    # 2. It was a push event (not a PR) - i.e., code was merged to main
+    workflow_run:
+        workflows: ['Tests']
+        types:
+            - completed
+        branches:
+            - main
+
+    # Manual release for minor/major versions.
+    # To cut a new release, navigate to the Actions section of the repo
+    # and select this workflow (Auto-release) on the right hand side.
+    # Then, click "Run workflow" and select major, minor, or patch.
+    workflow_dispatch:
+        inputs:
+            version_name:
+                description: 'One of major, minor, or patch'
+                required: true
+                type: choice
+                options:
+                    - major
+                    - minor
+                    - patch
+
+permissions:
+    contents: write
+    id-token: write
+
+env:
+    DEFAULT_VERSION_NAME: patch
+
+jobs:
+    release:
+        name: Create a new release
+        runs-on: ubuntu-latest
+        # Run if:
+        # 1. Manual trigger (workflow_dispatch), OR
+        # 2. Automatic trigger where deploy passed AND it was a push (not PR)
+        if: |
+            github.event_name == 'workflow_dispatch' ||
+            (github.event.workflow_run.conclusion == 'success' &&
+             github.event.workflow_run.event == 'push')
+
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v6
+              with:
+                  fetch-depth: 0
+                  fetch-tags: true
+                  token: ${{ secrets.WORKFLOW_PAT || secrets.GITHUB_TOKEN }}
+
+            - name: Pull latest commits of main branch
+              run: |
+                  git checkout main
+                  git pull
+
+            - name: Check if already released
+              id: check_release
+              run: |
+                  CURRENT_COMMIT=$(git rev-parse HEAD)
+                  echo "Current commit: $CURRENT_COMMIT"
+                  if git tag --points-at $CURRENT_COMMIT | grep -q "^v"; then
+                    echo "already_released=true" >> $GITHUB_OUTPUT
+                    echo "This commit already has a release tag. Will skip release."
+                    git tag --points-at $CURRENT_COMMIT
+                  else
+                    echo "already_released=false" >> $GITHUB_OUTPUT
+                    echo "No release tag found. Proceeding with release."
+                  fi
+
+            - name: Setup Python environment
+              if: steps.check_release.outputs.already_released == 'false'
+              uses: actions/setup-python@v6
+              with:
+                  python-version: '3.12'
+
+            - name: Install uv
+              if: steps.check_release.outputs.already_released == 'false'
+              uses: astral-sh/setup-uv@v7
+
+            - name: Set version name
+              if: steps.check_release.outputs.already_released == 'false'
+              run: echo "VERSION_NAME=${{ github.event.inputs.version_name || env.DEFAULT_VERSION_NAME }}" >> $GITHUB_ENV
+
+            - name: Store current version number
+              if: steps.check_release.outputs.already_released == 'false'
+              run: echo "current_version=$(uv version --short)" >> $GITHUB_ENV
+
+            - name: Dry run uv version bump
+              if: steps.check_release.outputs.already_released == 'false'
+              run: uv version --bump ${{ env.VERSION_NAME }} --dry-run --verbose
+
+            - name: Store new version number
+              if: steps.check_release.outputs.already_released == 'false'
+              run: echo "version_number=$(uv version --bump ${{ env.VERSION_NAME }} --dry-run --short)" >> $GITHUB_ENV
+
+            - name: Display new version number
+              if: steps.check_release.outputs.already_released == 'false'
+              run: |
+                  echo "version_name: ${{ env.VERSION_NAME }}"
+                  echo "version_number: v${{ env.version_number }}"
+
+            - name: Ensure repo status is clean
+              if: steps.check_release.outputs.already_released == 'false'
+              run: git status
+
+            - name: Configure Git
+              if: steps.check_release.outputs.already_released == 'false'
+              run: |
+                  git config user.name github-actions
+                  git config user.email github-actions@github.com
+
+            - name: Setup pixi
+              if: steps.check_release.outputs.already_released == 'false'
+              uses: prefix-dev/setup-pixi@v0.9.3
+              with:
+                  run-install: false
+
+            - name: Install llamabot
+              if: steps.check_release.outputs.already_released == 'false'
+              run: uv tool install llamabot[cli]
+
+            - name: Run uv version bump
+              if: steps.check_release.outputs.already_released == 'false'
+              run: uv version --bump ${{ env.VERSION_NAME }} --verbose
+
+            - name: Update pixi lockfile
+              if: steps.check_release.outputs.already_released == 'false'
+              run: pixi lock
+
+            - name: Create version tag
+              if: steps.check_release.outputs.already_released == 'false'
+              run: git tag -a "v${{ env.version_number }}" -m "Release v${{ env.version_number }}"
+
+            - name: Write release notes
+              if: steps.check_release.outputs.already_released == 'false'
+              env:
+                  OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+              run: |
+                  llamabot configure default-model --model-name="gpt-4.1-mini"
+                  llamabot git write-release-notes --release-notes-dir docs/releases/posts --version "v${{ env.version_number }}"
+                  # Verify the release notes file was created
+                  if [ ! -f "docs/releases/posts/v${{ env.version_number }}.md" ]; then
+                    echo "Error: llamabot git write-release-notes did not create docs/releases/posts/v${{ env.version_number }}.md"
+                    echo "This indicates llamabot failed or the file was not generated."
+                    exit 1
+                  fi
+                  echo "Release notes file created: docs/releases/posts/v${{ env.version_number }}.md"
+
+            - name: Add blog frontmatter to release notes
+              if: steps.check_release.outputs.already_released == 'false'
+              run: |
+                  uv run add_frontmatter.py
+                  echo "Frontmatter added to docs/releases/posts/v${{ env.version_number }}.md"
+
+            - name: Run pre-commit to fix any formatting issues
+              if: steps.check_release.outputs.already_released == 'false'
+              run: uvx pre-commit run --all-files || uvx pre-commit run --all-files
+
+            - name: Stage all changes for commit
+              if: steps.check_release.outputs.already_released == 'false'
+              run: |
+                  git add .
+                  git status
+
+            - name: Commit version bump, release notes, and lock file
+              if: steps.check_release.outputs.already_released == 'false'
+              run: |
+                  git commit -m "Bump version: ${{ env.current_version }} → ${{ env.version_number }}
+
+                  Add release notes for v${{ env.version_number }}"
+
+            - name: Verify tag creation
+              if: steps.check_release.outputs.already_released == 'false'
+              run: git tag | grep "v${{ env.version_number }}"
+
+            - name: Build package
+              if: steps.check_release.outputs.already_released == 'false'
+              run: uv build --sdist --wheel
+
+            - name: Check if version exists on PyPI
+              if: steps.check_release.outputs.already_released == 'false'
+              id: check_pypi
+              shell: bash
+              run: |
+                  OUTPUT=$(uvx --with httpx python << 'EOF'
+                  import sys
+                  import httpx
+
+                  try:
+                      response = httpx.get('https://pypi.org/pypi/canvas-chat/json', timeout=10)
+                      response.raise_for_status()
+                      data = response.json()
+                      version = '${{ env.version_number }}'
+
+                      if version in data.get('releases', {}):
+                          print(f'Version {version} already on PyPI - skipping publish')
+                          print('version_exists=true')
+                      else:
+                          print(f'Version {version} not on PyPI - safe to publish')
+                          print('version_exists=false')
+                  except Exception as e:
+                      print(f'Error checking PyPI: {e}')
+                      print('Proceeding with publish attempt (will fail if version exists)')
+                      print('version_exists=false')
+                  EOF
+                  )
+
+                  if echo "$OUTPUT" | grep -q "version_exists=true"; then
+                    echo "version_exists=true" >> $GITHUB_OUTPUT
+                  else
+                    echo "version_exists=false" >> $GITHUB_OUTPUT
+                  fi
+                  echo "PyPI check complete. version_exists=${{ steps.check_pypi.outputs.version_exists }}"
+
+            - name: Publish package (trusted publishing)
+              if: |
+                  steps.check_release.outputs.already_released == 'false' &&
+                  steps.check_pypi.outputs.version_exists != 'true'
+              run: uv publish --trusted-publishing always
+
+            - name: Push changes with tags
+              if: steps.check_release.outputs.already_released == 'false'
+              run: |
+                  git push && git push --tags
+
+            - name: Verify release notes file exists before creating release
+              if: steps.check_release.outputs.already_released == 'false'
+              run: |
+                  if [ ! -f "docs/releases/posts/v${{ env.version_number }}.md" ]; then
+                    echo "Error: Release notes file docs/releases/posts/v${{ env.version_number }}.md does not exist"
+                    echo "This should have been created in the 'Write release notes' step."
+                    exit 1
+                  fi
+                  echo "Release notes file verified: docs/releases/posts/v${{ env.version_number }}.md"
+
+            - name: Create release in GitHub repo
+              if: steps.check_release.outputs.already_released == 'false'
+              uses: ncipollo/release-action@v1
+              with:
+                  bodyFile: 'docs/releases/posts/v${{ env.version_number }}.md'
+                  token: ${{ secrets.GITHUB_TOKEN }}
+                  tag: v${{ env.version_number }}
+
+            - name: Ensure complete
+              if: steps.check_release.outputs.already_released == 'false'
+              run: echo "Auto-release complete!"
