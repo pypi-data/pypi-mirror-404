@@ -1,0 +1,67 @@
+using 为常用字 in 测试.实用.通用.库_常用字
+using json
+
+// 不包含常用字, 比如"广"
+// ⻖和⻏分别为左/右耳朵旁
+// 形近码异问题: 辶⻌不同!
+一笔 = "乚"
+二笔 = "刂冫匚𠆢亠⺆勹亻辶⻌廴冖讠⻖⻏"
+三笔 = "氵彡丬口囗扌忄饣彳宀艹纟犭彐"
+四笔 = "灬歹𤣩𠃜龵⺼攵"
+五笔 = "疒𢀖矢衤钅⺲皿覀缶耒糸𧾷癶"
+常用部首 = 一笔 + 二笔 + 三笔 + 四笔 + 五笔
+
+// 数据中, 部首 礻为"示"
+// 数据来源：http://git.chise.org/gitweb/?p=chise/ids.git;a=blob_plain;f=IDS-UCS-Basic.txt;hb=HEAD
+源数据 = open("测试/实用/字/IDS-UCS-Basic.txt", 'rt', encoding="utf-8")
+所有行 = 源数据.read().split("\n")
+源数据.close()
+
+带部首的字 = {:}
+拆字 = {:}
+无法拆的字 = []
+for 行 in 所有行 {
+  字段 = 行.split("\t")
+
+  // 暂时只考察两部分构成的字
+  continue if len(字段) != 3
+  字 = 字段[1]
+  信息 = 字段[2]
+  if 为常用字(字) and 字 != 信息 {
+    字型 = 信息[0]
+    部分 = []
+    都为常用字 = true
+    for i in 1..<len(信息) {
+      if !为常用字(信息[i]) {
+        if 常用部首.find(信息[i]) >= 0 {
+          部首 = 信息[i]
+          if 带部首的字.get(部首) {
+            带部首的字[部首].append(字)
+          } else {
+            带部首的字[部首] = [字]
+          }
+        } else {
+          都为常用字 = false
+          无法拆的字.append(字)
+          break
+        }
+      }
+      部分.append(信息[i])
+    }
+    拆字[字] = {"字型": 字型, "部分": 部分} if 都为常用字
+  }
+}
+常用字数据 = open('测试/实用/字/常用字拆字.json', 'w', encoding="utf-8")
+json.dump(拆字, 常用字数据, ensure_ascii=false, indent = 4)
+常用字数据.close()
+
+print(str(len(无法拆的字)) + "".join(无法拆的字))
+/*
+for 部首 in 带部首的字 {
+  println(部首 + " -> " + str(带部首的字[部首]))
+}
+for 部首 in 常用部首 {
+  if !带部首的字.get(部首) {
+    print(部首)
+  }
+}*/
