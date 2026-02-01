@@ -1,0 +1,267 @@
+# langchain-builtsimple
+
+LangChain integration for [Built-Simple](https://built-simple.ai) research APIs, providing easy access to PubMed and ArXiv scientific literature.
+
+[![PyPI version](https://badge.fury.io/py/langchain-builtsimple.svg)](https://pypi.org/project/langchain-builtsimple/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+## Features
+
+- **PubMed Retriever & Tool** - Search 4.5M+ peer-reviewed biomedical articles
+- **ArXiv Retriever & Tool** - Search 2.7M+ preprints in physics, math, CS, and ML
+- **Combined Retriever** - Search both sources simultaneously
+- **RAG-ready** - Documents include full metadata for citations
+- **Agent-compatible** - Tools work with LangChain agents out of the box
+
+## What Data is Included
+
+### PubMed Documents
+- **page_content**: Title + abstract (default) OR **full article text** (with `include_full_text=True`)
+- **metadata**:
+  - `pmid` - PubMed ID
+  - `title` - Article title
+  - `journal` - Journal name
+  - `pub_year` - Publication year
+  - `doi` - DOI identifier
+  - `url` - Link to PubMed
+  - `has_full_text` - Boolean indicating if full text was fetched
+  - `full_text_length` - Character count when available
+
+**🔥 FULL TEXT AVAILABLE!** Unlike most research APIs, Built-Simple provides complete article text:
+
+```python
+# Get full articles (15K-70K chars each!)
+retriever = BuiltSimplePubMedRetriever(limit=5, include_full_text=True)
+docs = retriever.invoke("cancer immunotherapy")
+
+for doc in docs:
+    print(f"Full text: {len(doc.page_content)} chars")  # ~15,000-70,000!
+```
+
+### ArXiv Documents
+- **page_content**: Title + authors + abstract
+- **metadata**:
+  - `arxiv_id` - ArXiv ID (e.g., "2301.12345")
+  - `title` - Paper title
+  - `authors` - Author list
+  - `year` - Publication year
+  - `url` - ArXiv page link
+  - `pdf_url` - Direct PDF link
+
+⚠️ **Abstracts only** - Full PDFs are not downloaded. Use `pdf_url` to fetch if needed.
+
+## Installation
+
+```bash
+pip install langchain-builtsimple
+```
+
+For development with examples:
+```bash
+pip install langchain-builtsimple[dev]
+```
+
+## Quick Start
+
+### Basic Retrieval
+
+```python
+from langchain_builtsimple import BuiltSimplePubMedRetriever, BuiltSimpleArxivRetriever
+
+# Search PubMed
+pubmed = BuiltSimplePubMedRetriever(limit=5)
+docs = pubmed.invoke("CRISPR gene therapy")
+
+for doc in docs:
+    print(f"Title: {doc.metadata['title']}")
+    print(f"Journal: {doc.metadata['journal']}")
+    print(f"URL: {doc.metadata['url']}\n")
+
+# Search ArXiv
+arxiv = BuiltSimpleArxivRetriever(limit=5)
+docs = arxiv.invoke("transformer neural networks")
+
+for doc in docs:
+    print(f"Title: {doc.metadata['title']}")
+    print(f"Authors: {doc.metadata['authors']}")
+    print(f"ArXiv ID: {doc.metadata['arxiv_id']}\n")
+```
+
+### RAG Chain with ChatOpenAI
+
+```python
+from langchain_builtsimple import BuiltSimplePubMedRetriever
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.runnables import RunnablePassthrough
+
+# Create retriever
+retriever = BuiltSimplePubMedRetriever(limit=5)
+
+# Format documents for context
+def format_docs(docs):
+    return "\n\n".join(
+        f"[{i+1}] {doc.metadata['title']} ({doc.metadata.get('pub_year', 'N/A')})\n{doc.page_content}"
+        for i, doc in enumerate(docs)
+    )
+
+# Create RAG prompt
+prompt = ChatPromptTemplate.from_template("""
+Answer the question based on the following research papers. 
+Cite papers by number [1], [2], etc.
+
+Papers:
+{context}
+
+Question: {question}
+
+Answer:""")
+
+# Build chain
+llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+
+chain = (
+    {"context": retriever | format_docs, "question": RunnablePassthrough()}
+    | prompt
+    | llm
+    | StrOutputParser()
+)
+
+# Ask a question
+answer = chain.invoke("What are the latest developments in CAR-T cell therapy?")
+print(answer)
+```
+
+### Agent with Research Tools
+
+```python
+from langchain_builtsimple import BuiltSimplePubMedTool, BuiltSimpleArxivTool
+from langchain_openai import ChatOpenAI
+from langchain.agents import AgentExecutor, create_tool_calling_agent
+from langchain_core.prompts import ChatPromptTemplate
+
+# Create tools
+tools = [
+    BuiltSimplePubMedTool(),  # For biomedical research
+    BuiltSimpleArxivTool(),   # For CS/ML/physics papers
+]
+
+# Create agent
+llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+
+prompt = ChatPromptTemplate.from_messages([
+    ("system", """You are a research assistant with access to scientific databases.
+    Use pubmed_search for medical/biological topics.
+    Use arxiv_search for AI/ML/physics/math topics.
+    Always cite your sources."""),
+    ("human", "{input}"),
+    ("placeholder", "{agent_scratchpad}"),
+])
+
+agent = create_tool_calling_agent(llm, tools, prompt)
+executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+
+# Run agent
+response = executor.invoke({
+    "input": "Find recent papers on using transformers for drug discovery"
+})
+print(response["output"])
+```
+
+## API Reference
+
+### Retrievers
+
+All retrievers inherit from `langchain_core.retrievers.BaseRetriever` and return `List[Document]`.
+
+#### BuiltSimplePubMedRetriever
+
+```python
+BuiltSimplePubMedRetriever(
+    base_url: str = "https://pubmed.built-simple.ai",
+    limit: int = 10,
+    timeout: float = 30.0
+)
+```
+
+**Document Metadata:**
+- `source`: "pubmed"
+- `pmid`: PubMed ID
+- `title`: Paper title
+- `journal`: Journal name
+- `pub_year`: Publication year
+- `doi`: DOI (if available)
+- `url`: Link to PubMed page
+
+#### BuiltSimpleArxivRetriever
+
+```python
+BuiltSimpleArxivRetriever(
+    base_url: str = "https://arxiv.built-simple.ai",
+    limit: int = 10,
+    timeout: float = 30.0
+)
+```
+
+**Document Metadata:**
+- `source`: "arxiv"
+- `arxiv_id`: ArXiv identifier
+- `title`: Paper title
+- `authors`: List of author names
+- `year`: Publication year
+- `url`: Link to ArXiv page
+
+#### BuiltSimpleResearchRetriever
+
+Searches both PubMed and ArXiv, interleaving results.
+
+```python
+BuiltSimpleResearchRetriever(
+    pubmed_url: str = "https://pubmed.built-simple.ai",
+    arxiv_url: str = "https://arxiv.built-simple.ai",
+    limit_per_source: int = 5,
+    timeout: float = 30.0
+)
+```
+
+### Tools
+
+All tools inherit from `langchain_core.tools.BaseTool` and can be used with LangChain agents.
+
+#### BuiltSimplePubMedTool
+
+- **Name:** `pubmed_search`
+- **Description:** Search PubMed for peer-reviewed biomedical literature
+- **Input:** `query` (str), `limit` (int, default=5)
+
+#### BuiltSimpleArxivTool
+
+- **Name:** `arxiv_search`  
+- **Description:** Search ArXiv for preprints in physics, math, CS, ML
+- **Input:** `query` (str), `limit` (int, default=5)
+
+#### BuiltSimpleResearchTool
+
+- **Name:** `research_search`
+- **Description:** Search both PubMed and ArXiv simultaneously
+- **Input:** `query` (str), `limit` (int, default=5)
+
+## Examples
+
+See the `examples/` directory for complete working examples:
+
+- `basic_retrieval.py` - Simple retriever usage
+- `rag_chain.py` - RAG chain with ChatOpenAI
+- `agent_with_tools.py` - Agent with research tools
+
+## License
+
+MIT License - see [LICENSE](LICENSE) for details.
+
+## Links
+
+- [Built-Simple](https://built-simple.ai)
+- [PubMed API](https://pubmed.built-simple.ai)
+- [ArXiv API](https://arxiv.built-simple.ai)
+- [LangChain](https://langchain.com)
