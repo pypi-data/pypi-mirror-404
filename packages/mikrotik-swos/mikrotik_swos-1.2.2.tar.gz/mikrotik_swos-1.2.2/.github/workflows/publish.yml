@@ -1,0 +1,55 @@
+name: Publish to PyPI
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/mikrotik-swos
+    permissions:
+      id-token: write  # Required for trusted publishing
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Required for setuptools-scm to get version from tags
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install build setuptools-scm
+
+      - name: Build package
+        run: python -m build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+      - name: Clear GitHub badge cache
+        run: |
+          # Wait for PyPI to index and badge services to update
+          # (reduces this if you want faster workflow, but may show stale badges)
+          sleep 60
+
+          # Fetch README from GitHub to get camo URLs
+          README_HTML=$(curl -s -H "Accept: application/vnd.github.v3.html" \
+            "https://api.github.com/repos/${{ github.repository }}/readme")
+
+          # Extract and purge all camo.githubusercontent.com URLs
+          echo "$README_HTML" | grep -o 'https://camo.githubusercontent.com/[^"]*' | while read url; do
+            echo "Purging cache for: $url"
+            curl -s -X PURGE "$url"
+          done
+
+          echo "Badge cache cleared successfully"
