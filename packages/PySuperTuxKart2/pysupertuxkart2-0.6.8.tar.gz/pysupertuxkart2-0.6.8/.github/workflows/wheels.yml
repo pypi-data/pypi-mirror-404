@@ -1,0 +1,123 @@
+name: Wheels
+
+on:
+  release:
+    types: [created]
+
+env:
+  FORCE_COLOR: 3
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build_sdist:
+    name: Build SDist
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+        fetch-depth: 0
+
+    - name: Build SDist
+      run: pipx run build --sdist
+
+    - name: Check metadata
+      run: pipx run twine check dist/*
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: sdist-artifact
+        path: dist/*.tar.gz
+
+  generate-wheels-matrix:
+    name: Generate wheels matrix
+    runs-on: ubuntu-latest
+    outputs:
+      include: ${{ steps.set-matrix.outputs.include }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cibuildwheel
+        run: pipx install cibuildwheel==2.20.0
+      # Use macos-13 
+      - id: set-matrix
+        run: |
+          MATRIX=$(
+            for p in "macos universal2 macos-latest" "linux x86_64 ubuntu-latest" "windows AMD64 windows-latest"; do set -- $p; cibuildwheel --print-build-identifiers --platform $1 --arch $2 | egrep -v "(^pp|musl|^cp38|^cp39)" | jq -nRc '{"only": inputs, "os": "'$3'", "arch": "'$2'" }'; done | jq -sc
+          )
+          echo "include=$MATRIX" >> $GITHUB_OUTPUT          
+
+  build_wheels:
+    name: Build ${{ matrix.only }}
+    needs: generate-wheels-matrix
+    strategy:
+      matrix:
+        include: ${{ fromJson(needs.generate-wheels-matrix.outputs.include) }}
+    runs-on: ${{ matrix.os }}
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+        fetch-depth: 0
+
+    - uses: pypa/cibuildwheel@v3.2.0
+      with:
+        only: ${{ matrix.only }}
+      env:
+        # Download dependencies for manylinux (use AlmaLinux 9 to get shaderc)
+        CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_34
+        CIBW_BEFORE_ALL_LINUX: |
+          yum -y install cmake bluez-libs-devel openssl-devel libcurl-devel freetype-devel harfbuzz-devel libjpeg-turbo-devel libogg-devel libpng-devel libvorbis-devel openal-soft-devel SDL2-devel libshaderc-devel
+
+        # Download dependencies for MacOS
+        # ... and try to get rid of Mono
+        MACOSX_DEPLOYMENT_TARGET: 10.11
+        CIBW_BEFORE_ALL_MACOS: |
+          curl  -L  "https://github.com/supertuxkart/dependencies/releases/download/preview/dependencies-macosx.tar.xz"  | tar -xv
+          sudo rm -rf /Library/Frameworks/Mono.framework
+        
+          # ... and use the path dependency libraries when delocating
+        CIBW_REPAIR_WHEEL_COMMAND_MACOS: >
+          DYLD_LIBRARY_PATH=$(pwd)/dependencies-macosx/lib delocate-wheel --require-archs {delocate_archs} -w {dest_dir} -v {wheel}
+        
+        # Download dependencies for windows
+        CIBW_BEFORE_ALL_WINDOWS: |
+          curl.exe -L -o dependencies-win-x86_64.zip https://github.com/supertuxkart/dependencies/releases/download/preview/dependencies-win-x86_64.zip && unzip dependencies-win-x86_64.zip 
+
+      
+    - name: Verify clean directory
+      run: git diff --exit-code
+      shell: bash
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: wheels-${{ matrix.only }}
+        path: wheelhouse/*.whl
+
+
+  upload_all:
+    name: Upload if release
+    needs: [build_wheels, build_sdist]
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    # if: github.event_name == 'release' && github.event.action == 'published'
+
+    steps:
+    - name: Download sdist artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: sdist-artifact
+        path: dist
+
+    - name: Download all wheel artifacts
+      uses: actions/download-artifact@v4
+      with:
+        pattern: wheels-*
+        path: dist
+        merge-multiple: true
+
+    - uses: pypa/gh-action-pypi-publish@release/v1
