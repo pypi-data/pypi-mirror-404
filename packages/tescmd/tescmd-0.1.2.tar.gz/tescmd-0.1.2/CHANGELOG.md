@@ -1,0 +1,69 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [0.1.2] - 2025-01-31
+
+### Added
+
+- **Universal read-command caching** — every read command is now transparently cached with tiered TTLs (STATIC 1h, SLOW 5m, DEFAULT 1m, FAST 30s); bots can call tescmd as often as needed — within the TTL window, responses are instant and free
+- **Generic cache key scheme** — `generic_cache_key(scope, identifier, endpoint, params)` generates scope-aware keys (`vin`, `site`, `account`, `partner`) for any API endpoint
+- **`cached_api_call()` helper** — unified async helper that handles cache lookup, fetch, serialisation (Pydantic/dict/list/scalar), and storage for all non-vehicle-state read commands
+- **Site-scoped cache invalidation** — `invalidate_cache_for_site()` clears energy site entries after write commands; `invalidate_cache_for_vin()` now also clears generic vin-scoped keys
+- **`cache clear` options** — `--site SITE_ID` and `--scope {account,partner}` flags for targeted cache clearing alongside existing `--vin`
+- **Partner endpoints** — `partner public-key`, `partner telemetry-error-vins`, `partner telemetry-errors` for partner account data (require client credentials)
+- **Billing endpoints** — `billing history`, `billing sessions`, `billing invoice` for Supercharger charging data
+- **Cross-platform file permissions** — `_internal/permissions.py` provides `secure_file()` using `chmod 0600` on Unix and `icacls` on Windows
+- **Token store file backend** — `_FileBackend` with atomic writes and restricted permissions as fallback when keyring is unavailable
+- **Spec-driven Fleet API validation** — `scripts/validate_fleet_api.py` validates implementation against `spec/fleet_api_spec.json` using AST introspection
+- **6 missing Fleet API commands** — added `managed_charging_set_amps`, `managed_charging_set_location`, `managed_charging_set_schedule`, `add_charge_schedule`, `remove_charge_schedule`, `clear_charge_schedules`
+- **Configurable display units** — `--units metric` flag switches all display values to °C/km/bar; individual env vars (`TESLA_TEMP_UNIT`, `TESLA_DISTANCE_UNIT`, `TESLA_PRESSURE_UNIT`) for granular control
+
+### Fixed
+
+- Aligned schedule/departure command parameters with Tesla Go SDK (correct param names and types)
+- Fixed energy endpoint paths to match Fleet API spec
+- Fixed Rich markup escaping bug in command output
+- Aligned command parameters (3 param gaps) with Go SDK specs
+
+### Changed
+
+- Response cache documentation in CLAUDE.md expanded to cover universal caching, TTL tiers, and generic cache key scheme
+
+## [0.1.1]
+
+### Added
+
+- **`status` command** — `tescmd status` shows current configuration, auth, cache, and key status at a glance
+- **Retry option in wake prompt** — when a vehicle is asleep, the interactive prompt now offers `[R] Retry` alongside `[W] Wake via API` and `[C] Cancel`, allowing users to wake the vehicle for free via the Tesla app and retry without restarting the command
+- **Key enrollment** — `tescmd key enroll <VIN>` sends the public key to the vehicle and guides the user through Tesla app approval with interactive [C]heck/[R]esend/[Q]uit prompt, `--wait` auto-polling, and JSON mode support
+- **Tier enforcement** — readonly tier now blocks write commands with a clear error and upgrade guidance (`tescmd setup`)
+- **Vehicle Command Protocol** — ECDH session management, HMAC-SHA256 command signing, and protobuf RoutableMessage encoding for the `signed_command` endpoint; commands are automatically signed when keys are available (`command_protocol=auto`)
+- **SignedCommandAPI** — composition wrapper that transparently routes signed commands through the Vehicle Command Protocol while falling back to unsigned REST for `wake_up` and unknown commands
+- **`command_protocol` setting** — `auto` (default), `signed`, or `unsigned` to control command routing; configurable via `TESLA_COMMAND_PROTOCOL` env var
+- **Enrollment step in setup wizard** — full-tier setup now offers to enroll the key on a vehicle after key generation
+- **Friendly command output** — all vehicle commands now display descriptive success messages (e.g. "Climate control turned on.", "Doors locked.") instead of bare "OK"
+- **E2E test script** — `scripts/e2e_test.py` provides interactive end-to-end command testing against a live vehicle with per-command confirmation, category filtering, and destructive-command skipping
+
+## [0.1.0]
+
+### Added
+
+- OAuth2 PKCE authentication with browser-based login flow
+- Vehicle state queries: battery, charge, climate, drive, location, doors, windows, trunks, tire pressure
+- Vehicle commands: charge start/stop/limit/schedule, climate on/off/set/seats/wheel, lock/unlock, sentry, trunk/frunk, windows, media, navigation, software updates, HomeLink, speed limits, PIN management
+- Energy products: Powerwall live status, site info, backup reserve, operation mode, storm mode, TOU settings, charging history, calendar history, grid config
+- User account: profile info, region, orders, feature config
+- Vehicle sharing: add/remove drivers, create/redeem/revoke invites
+- Rich terminal output with tables, panels, and status indicators
+- JSON output mode for scripting and agent integration
+- Configurable display units (F/C, mi/km, PSI/bar)
+- Response caching with configurable TTL for API cost reduction
+- Cost-aware wake confirmation (interactive prompt or `--wake` flag)
+- Multi-profile configuration support
+- EC key generation and Tesla Developer Portal registration
+- Raw API access (`raw get`, `raw post`) for uncovered endpoints
+- First-run setup wizard with Fleet Telemetry cost guidance
