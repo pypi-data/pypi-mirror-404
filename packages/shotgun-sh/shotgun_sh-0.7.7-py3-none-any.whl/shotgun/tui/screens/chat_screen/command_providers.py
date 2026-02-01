@@ -1,0 +1,376 @@
+from collections.abc import AsyncGenerator
+from typing import TYPE_CHECKING, cast
+
+from textual.command import DiscoveryHit, Hit, Provider
+
+from shotgun.codebase.models import CodebaseGraph
+from shotgun.settings import settings
+from shotgun.tui.screens.chat_screen.hint_message import HintMessage
+from shotgun.tui.screens.model_picker import ModelPickerScreen
+from shotgun.tui.screens.provider_config import ProviderConfigScreen
+
+if TYPE_CHECKING:
+    from shotgun.tui.screens.chat import ChatScreen
+
+
+def _is_openai_compat_mode() -> bool:
+    """Check if OpenAI-compatible mode is active."""
+    return bool(settings.openai_compat.base_url)
+
+
+class UsageProvider(Provider):
+    """Command provider for agent mode switching."""
+
+    @property
+    def chat_screen(self) -> "ChatScreen":
+        from shotgun.tui.screens.chat import ChatScreen
+
+        return cast(ChatScreen, self.screen)
+
+    async def discover(self) -> AsyncGenerator[DiscoveryHit, None]:
+        """Provide default mode switching commands when palette opens."""
+        yield DiscoveryHit(
+            "Show usage",
+            self.chat_screen.action_show_usage,
+            help="Display usage information for the current session",
+        )
+
+    async def search(self, query: str) -> AsyncGenerator[Hit, None]:
+        """Search for mode commands."""
+        matcher = self.matcher(query)
+
+        async for discovery_hit in self.discover():
+            score = matcher.match(discovery_hit.text or "")
+            if score > 0:
+                yield Hit(
+                    score,
+                    matcher.highlight(discovery_hit.text or ""),
+                    discovery_hit.command,
+                    help=discovery_hit.help,
+                )
+
+
+class ContextProvider(Provider):
+    """Command provider for showing conversation context analysis."""
+
+    @property
+    def chat_screen(self) -> "ChatScreen":
+        from shotgun.tui.screens.chat import ChatScreen
+
+        return cast(ChatScreen, self.screen)
+
+    async def discover(self) -> AsyncGenerator[DiscoveryHit, None]:
+        """Provide context command when palette opens."""
+        yield DiscoveryHit(
+            "Show context",
+            self.chat_screen.action_show_context,
+            help="Display conversation context composition and statistics",
+        )
+
+    async def search(self, query: str) -> AsyncGenerator[Hit, None]:
+        """Search for context command."""
+        matcher = self.matcher(query)
+
+        async for discovery_hit in self.discover():
+            score = matcher.match(discovery_hit.text or "")
+            if score > 0:
+                yield Hit(
+                    score,
+                    matcher.highlight(discovery_hit.text or ""),
+                    discovery_hit.command,
+                    help=discovery_hit.help,
+                )
+
+
+class ProviderSetupProvider(Provider):
+    """Command palette entries for provider configuration."""
+
+    @property
+    def chat_screen(self) -> "ChatScreen":
+        from shotgun.tui.screens.chat import ChatScreen
+
+        return cast(ChatScreen, self.screen)
+
+    def open_provider_config(self) -> None:
+        """Show the provider configuration screen."""
+        self.chat_screen.app.push_screen(ProviderConfigScreen())
+
+    def open_model_picker(self) -> None:
+        """Show the model picker screen."""
+        self.chat_screen.app.push_screen(
+            ModelPickerScreen(), callback=self.chat_screen.handle_model_selected
+        )
+
+    async def discover(self) -> AsyncGenerator[DiscoveryHit, None]:
+        # Hide provider/model commands when using OpenAI-compatible endpoint
+        if _is_openai_compat_mode():
+            return
+
+        yield DiscoveryHit(
+            "Open Provider Setup",
+            self.open_provider_config,
+            help="⚙️ Manage API keys for available providers",
+        )
+        yield DiscoveryHit(
+            "Select AI Model",
+            self.open_model_picker,
+            help="🤖 Choose which AI model to use",
+        )
+
+    async def search(self, query: str) -> AsyncGenerator[Hit, None]:
+        # Hide provider/model commands when using OpenAI-compatible endpoint
+        if _is_openai_compat_mode():
+            return
+
+        matcher = self.matcher(query)
+
+        title = "Open Provider Setup"
+        score = matcher.match(title)
+        if score > 0:
+            yield Hit(
+                score,
+                matcher.highlight(title),
+                self.open_provider_config,
+                help="⚙️ Manage API keys for available providers",
+            )
+
+        title = "Select AI Model"
+        score = matcher.match(title)
+        if score > 0:
+            yield Hit(
+                score,
+                matcher.highlight(title),
+                self.open_model_picker,
+                help="🤖 Choose which AI model to use",
+            )
+
+
+class CodebaseCommandProvider(Provider):
+    """Command palette entries for codebase management."""
+
+    @property
+    def chat_screen(self) -> "ChatScreen":
+        from shotgun.tui.screens.chat import ChatScreen
+
+        return cast(ChatScreen, self.screen)
+
+    async def discover(self) -> AsyncGenerator[DiscoveryHit, None]:
+        yield DiscoveryHit(
+            "Codebase: Delete Codebase Index",
+            self.chat_screen.delete_codebase_command,
+            help="Delete an existing codebase index",
+        )
+        yield DiscoveryHit(
+            "Codebase: Index Codebase",
+            self.chat_screen.index_codebase_command,
+            help="Index a repository into the codebase graph",
+        )
+
+    async def search(self, query: str) -> AsyncGenerator[Hit, None]:
+        matcher = self.matcher(query)
+        commands = [
+            (
+                "Codebase: Delete Codebase Index",
+                self.chat_screen.delete_codebase_command,
+                "Delete an existing codebase index",
+            ),
+            (
+                "Codebase: Index Codebase",
+                self.chat_screen.index_codebase_command,
+                "Index a repository into the codebase graph",
+            ),
+        ]
+        for title, callback, help_text in commands:
+            score = matcher.match(title)
+            if score > 0:
+                yield Hit(score, matcher.highlight(title), callback, help=help_text)
+
+
+class DeleteCodebasePaletteProvider(Provider):
+    """Provider that lists indexed codebases for deletion."""
+
+    @property
+    def chat_screen(self) -> "ChatScreen":
+        from shotgun.tui.screens.chat import ChatScreen
+
+        return cast(ChatScreen, self.screen)
+
+    async def _codebases(self) -> list[CodebaseGraph]:
+        try:
+            result = await self.chat_screen.codebase_sdk.list_codebases()
+        except Exception as exc:  # pragma: no cover - defensive UI path
+            self.chat_screen.agent_manager.add_hint_message(
+                HintMessage(message=f"❌ Unable to load codebases: {exc}")
+            )
+            return []
+        return result.graphs
+
+    async def discover(self) -> AsyncGenerator[DiscoveryHit, None]:
+        graphs = await self._codebases()
+        for graph in graphs:
+            title = f"Delete {graph.name}"
+            help_text = f"{graph.graph_id} • {graph.repo_path}"
+            yield DiscoveryHit(
+                title,
+                lambda graph_id=graph.graph_id: self.chat_screen.delete_codebase_from_palette(
+                    graph_id
+                ),
+                help=help_text,
+            )
+
+    async def search(self, query: str) -> AsyncGenerator[Hit, None]:
+        matcher = self.matcher(query)
+        graphs = await self._codebases()
+        for graph in graphs:
+            display = f"{graph.name} ({graph.graph_id[:8]})"
+            score = matcher.match(display)
+            if score > 0:
+                yield Hit(
+                    score,
+                    matcher.highlight(display),
+                    lambda graph_id=graph.graph_id: self.chat_screen.delete_codebase_from_palette(
+                        graph_id
+                    ),
+                    help=graph.repo_path,
+                )
+
+
+class UnifiedCommandProvider(Provider):
+    """Unified command provider with all commands in alphabetical order."""
+
+    @property
+    def chat_screen(self) -> "ChatScreen":
+        from shotgun.tui.screens.chat import ChatScreen
+
+        return cast(ChatScreen, self.screen)
+
+    def open_provider_config(self) -> None:
+        """Show the provider configuration screen."""
+        self.chat_screen.app.push_screen(ProviderConfigScreen())
+
+    def open_model_picker(self) -> None:
+        """Show the model picker screen."""
+        self.chat_screen.app.push_screen(
+            ModelPickerScreen(), callback=self.chat_screen.handle_model_selected
+        )
+
+    async def discover(self) -> AsyncGenerator[DiscoveryHit, None]:
+        """Provide commands in alphabetical order when palette opens."""
+        is_compat_mode = _is_openai_compat_mode()
+
+        # Alphabetically ordered commands
+        yield DiscoveryHit(
+            "Clear Conversation",
+            self.chat_screen.action_clear_conversation,
+            help="Clear the entire conversation history",
+        )
+        yield DiscoveryHit(
+            "Codebase: Delete Codebase Index",
+            self.chat_screen.delete_codebase_command,
+            help="Delete an existing codebase index",
+        )
+        yield DiscoveryHit(
+            "Codebase: Index Codebase",
+            self.chat_screen.index_codebase_command,
+            help="Index a repository into the codebase graph",
+        )
+        yield DiscoveryHit(
+            "Compact Conversation",
+            self.chat_screen.action_compact_conversation,
+            help="Reduce conversation size by compacting message history",
+        )
+        # Hide provider/model commands when using OpenAI-compatible endpoint
+        if not is_compat_mode:
+            yield DiscoveryHit(
+                "Open Provider Setup",
+                self.open_provider_config,
+                help="⚙️ Manage API keys for available providers",
+            )
+            yield DiscoveryHit(
+                "Select AI Model",
+                self.open_model_picker,
+                help="🤖 Choose which AI model to use",
+            )
+        yield DiscoveryHit(
+            "Share specs to workspace",
+            self.chat_screen.share_specs_command,
+            help="📤 Upload .shotgun/ files to share with your team",
+        )
+        yield DiscoveryHit(
+            "Show context",
+            self.chat_screen.action_show_context,
+            help="Display conversation context composition and statistics",
+        )
+        yield DiscoveryHit(
+            "Show usage",
+            self.chat_screen.action_show_usage,
+            help="Display usage information for the current session",
+        )
+
+    async def search(self, query: str) -> AsyncGenerator[Hit, None]:
+        """Search for commands in alphabetical order."""
+        matcher = self.matcher(query)
+        is_compat_mode = _is_openai_compat_mode()
+
+        # Define all commands in alphabetical order
+        commands = [
+            (
+                "Clear Conversation",
+                self.chat_screen.action_clear_conversation,
+                "Clear the entire conversation history",
+            ),
+            (
+                "Codebase: Delete Codebase Index",
+                self.chat_screen.delete_codebase_command,
+                "Delete an existing codebase index",
+            ),
+            (
+                "Codebase: Index Codebase",
+                self.chat_screen.index_codebase_command,
+                "Index a repository into the codebase graph",
+            ),
+            (
+                "Compact Conversation",
+                self.chat_screen.action_compact_conversation,
+                "Reduce conversation size by compacting message history",
+            ),
+            (
+                "Share specs to workspace",
+                self.chat_screen.share_specs_command,
+                "📤 Upload .shotgun/ files to share with your team",
+            ),
+            (
+                "Show context",
+                self.chat_screen.action_show_context,
+                "Display conversation context composition and statistics",
+            ),
+            (
+                "Show usage",
+                self.chat_screen.action_show_usage,
+                "Display usage information for the current session",
+            ),
+        ]
+
+        # Add provider/model commands only when NOT in OpenAI-compatible mode
+        if not is_compat_mode:
+            commands.insert(
+                4,  # After "Compact Conversation"
+                (
+                    "Open Provider Setup",
+                    self.open_provider_config,
+                    "⚙️ Manage API keys for available providers",
+                ),
+            )
+            commands.insert(
+                5,  # After "Open Provider Setup"
+                (
+                    "Select AI Model",
+                    self.open_model_picker,
+                    "🤖 Choose which AI model to use",
+                ),
+            )
+
+        for title, callback, help_text in commands:
+            score = matcher.match(title)
+            if score > 0:
+                yield Hit(score, matcher.highlight(title), callback, help=help_text)
