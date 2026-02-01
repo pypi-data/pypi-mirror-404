@@ -1,0 +1,307 @@
+"""Constraint evaluation for IOPS parameter combinations."""
+
+from typing import Dict, Any, List, Tuple, Optional, Set, TYPE_CHECKING
+from dataclasses import dataclass
+import logging
+import math
+import ast
+import os
+import re
+
+from iops.config.models import ConstraintConfig, ConfigValidationError
+
+if TYPE_CHECKING:
+    from iops.execution.matrix import ExecutionInstance
+
+
+@dataclass
+class ConstraintViolation:
+    """Record of a constraint violation."""
+    constraint_name: str
+    execution_id: int
+    rule: str
+    vars: Dict[str, Any]
+    violation_policy: str
+    message: str
+
+
+def extract_constraint_variables(rule: str) -> Set[str]:
+    """
+    Extract variable names referenced in a constraint rule.
+
+    Args:
+        rule: The constraint rule expression (Python-style)
+
+    Returns:
+        Set of variable names referenced in the rule
+    """
+    refs: Set[str] = set()
+
+    # Parse as Python expression for direct variable references
+    try:
+        tree = ast.parse(rule, mode='eval')
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Name):
+                refs.add(node.id)
+    except SyntaxError:
+        # If not valid Python, try regex fallback
+        # Match word characters that look like variable names
+        refs.update(re.findall(r'\b([a-zA-Z_][a-zA-Z0-9_]*)\b', rule))
+
+    # Filter out known functions/builtins
+    builtins = {
+        'min', 'max', 'abs', 'round', 'floor', 'ceil',
+        'int', 'float', 'str', 'bool',
+        'True', 'False', 'true', 'false', 'None',
+        'and', 'or', 'not', 'in',
+    }
+    return refs - builtins
+
+
+def classify_constraints(
+    constraints: List[ConstraintConfig],
+    swept_var_names: Set[str],
+    derived_var_names: Set[str],
+) -> Tuple[List[ConstraintConfig], List[ConstraintConfig]]:
+    """
+    Classify constraints into early (swept-only) and late (may use derived vars).
+
+    Early constraints can be evaluated before derived expressions are computed,
+    which prevents errors like division by zero in derived expressions when
+    the swept variable combination is invalid.
+
+    Args:
+        constraints: List of all constraints
+        swept_var_names: Names of swept variables
+        derived_var_names: Names of derived variables (have expr, no sweep)
+
+    Returns:
+        (early_constraints, late_constraints):
+            - early_constraints: Constraints that only reference swept variables
+            - late_constraints: Constraints that reference at least one derived variable
+    """
+    early_constraints = []
+    late_constraints = []
+
+    for constraint in constraints:
+        rule_vars = extract_constraint_variables(constraint.rule)
+
+        # Check if any referenced variable is derived
+        uses_derived = bool(rule_vars & derived_var_names)
+
+        if uses_derived:
+            late_constraints.append(constraint)
+        else:
+            early_constraints.append(constraint)
+
+    return early_constraints, late_constraints
+
+
+def evaluate_constraint(
+    constraint: ConstraintConfig,
+    instance_vars: Dict[str, Any]
+) -> Tuple[bool, Optional[str]]:
+    """
+    Evaluate a constraint rule against parameter values.
+
+    Args:
+        constraint: The constraint configuration with rule expression
+        instance_vars: Dictionary of all variable values for this instance
+
+    Returns:
+        (is_valid, error_message):
+            - is_valid: True if constraint passes, False if violated
+            - error_message: None if valid, description of violation otherwise
+    """
+    rule = constraint.rule.strip()
+
+    # Evaluate as Python expression with restricted builtins
+    # Same pattern as _eval_expr from matrix.py
+    allowed_funcs = {
+        "min": min,
+        "max": max,
+        "abs": abs,
+        "round": round,
+        "floor": math.floor,
+        "ceil": math.ceil,
+        "int": int,
+        "float": float,
+    }
+
+    try:
+        # Evaluate the rule expression with variables in context
+        # Include os_env for environment variable access in constraints
+        eval_context = {**allowed_funcs, **instance_vars, "os_env": dict(os.environ)}
+        result = eval(rule, {"__builtins__": {}}, eval_context)
+
+        # Rule should evaluate to a boolean
+        if not isinstance(result, bool):
+            # Try to convert to bool
+            result = bool(result)
+
+        if result:
+            # Constraint satisfied
+            return True, None
+        else:
+            # Constraint violated
+            msg = f"Constraint '{constraint.name}' violated: {rule}"
+            if constraint.description:
+                msg += f" ({constraint.description})"
+            return False, msg
+
+    except NameError as e:
+        # Variable not found in context
+        raise ConfigValidationError(
+            f"Constraint '{constraint.name}' references undefined variable: {e}"
+        ) from e
+    except Exception as e:
+        # Other evaluation errors
+        raise ConfigValidationError(
+            f"Error evaluating constraint '{constraint.name}' with rule '{rule}': {e}"
+        ) from e
+
+
+def check_constraints_for_vars(
+    vars_dict: Dict[str, Any],
+    constraints: List[ConstraintConfig],
+) -> Tuple[bool, List[Tuple[ConstraintConfig, str]]]:
+    """
+    Check if a variable dict satisfies all constraints.
+
+    This is useful for checking constraints before creating an ExecutionInstance,
+    e.g., in Bayesian optimization where we want to validate suggested points.
+
+    Args:
+        vars_dict: Dictionary of variable values to check
+        constraints: List of constraints to evaluate
+
+    Returns:
+        (is_valid, violations):
+            - is_valid: True if all constraints pass (or only have "warn" policy)
+            - violations: List of (constraint, error_message) tuples for failed constraints
+
+    Note:
+        - "skip" violations make is_valid=False
+        - "error" violations raise ConfigValidationError immediately
+        - "warn" violations are recorded but don't affect is_valid
+    """
+    if not constraints:
+        return True, []
+
+    violations = []
+    is_valid = True
+
+    for constraint in constraints:
+        passed, error_msg = evaluate_constraint(constraint, vars_dict)
+
+        if not passed:
+            violations.append((constraint, error_msg or f"Constraint {constraint.name} failed"))
+
+            if constraint.violation_policy == "error":
+                raise ConfigValidationError(
+                    f"{error_msg}\nVariables: {vars_dict}"
+                )
+            elif constraint.violation_policy == "skip":
+                is_valid = False
+            # "warn" doesn't affect is_valid
+
+    return is_valid, violations
+
+
+def filter_execution_matrix(
+    instances: List["ExecutionInstance"],
+    constraints: List[ConstraintConfig],
+    logger: Optional[logging.Logger] = None
+) -> Tuple[List["ExecutionInstance"], List["ExecutionInstance"], List[ConstraintViolation]]:
+    """
+    Filter execution instances based on constraints.
+
+    For each instance:
+    - Evaluate all constraints against instance.vars
+    - Handle violations based on violation_policy:
+        - "skip": Remove instance from kept list, add to skipped list with metadata
+        - "error": Raise ConfigValidationError immediately
+        - "warn": Log warning but keep instance
+
+    Args:
+        instances: List of ExecutionInstance objects to filter
+        constraints: List of constraints to apply
+        logger: Optional logger for warnings and info messages
+
+    Returns:
+        (kept_instances, skipped_instances, violations):
+            - kept_instances: List of instances that pass all constraints
+            - skipped_instances: List of instances skipped due to constraint violations
+              (with metadata: __skipped, __skip_reason, __skip_message)
+            - violations: List of ConstraintViolation records
+
+    Raises:
+        ConfigValidationError: If any constraint has violation_policy="error" and is violated
+    """
+    if not constraints:
+        return instances, [], []
+
+    if logger is None:
+        logger = logging.getLogger(__name__)
+
+    kept_instances = []
+    skipped_instances = []
+    all_violations = []
+
+    for instance in instances:
+        # Get all variables (base + derived) for this instance
+        instance_vars = instance.vars
+
+        # Track if this instance should be kept
+        keep_instance = True
+        skip_message = None
+
+        # Evaluate all constraints for this instance
+        for constraint in constraints:
+            is_valid, error_msg = evaluate_constraint(constraint, instance_vars)
+
+            if not is_valid:
+                # Constraint violated
+                violation = ConstraintViolation(
+                    constraint_name=constraint.name,
+                    execution_id=instance.execution_id,
+                    rule=constraint.rule,
+                    vars=instance_vars.copy(),
+                    violation_policy=constraint.violation_policy,
+                    message=error_msg or f"Constraint {constraint.name} failed"
+                )
+                all_violations.append(violation)
+
+                # Handle based on violation policy
+                if constraint.violation_policy == "error":
+                    # Fail immediately
+                    raise ConfigValidationError(
+                        f"{error_msg}\n"
+                        f"Execution ID {instance.execution_id}: {instance_vars}"
+                    )
+                elif constraint.violation_policy == "skip":
+                    # Mark this instance to be filtered out
+                    keep_instance = False
+                    skip_message = error_msg
+                    logger.debug(
+                        f"Skipping execution {instance.execution_id}: {error_msg}"
+                    )
+                else:  # violation_policy == "warn"
+                    # Log warning but keep instance
+                    # Note: violation_policy validation is handled by loader.py
+                    logger.warning(
+                        f"Execution {instance.execution_id}: {error_msg}. "
+                        f"Proceeding anyway (violation_policy=warn)."
+                    )
+
+        # Keep instance if no "skip" violations occurred
+        if keep_instance:
+            kept_instances.append(instance)
+        else:
+            # Add skip metadata to the instance
+            instance.metadata["__skipped"] = True
+            instance.metadata["__skip_reason"] = "constraint"
+            instance.metadata["__skip_message"] = skip_message
+            skipped_instances.append(instance)
+
+    return kept_instances, skipped_instances, all_violations

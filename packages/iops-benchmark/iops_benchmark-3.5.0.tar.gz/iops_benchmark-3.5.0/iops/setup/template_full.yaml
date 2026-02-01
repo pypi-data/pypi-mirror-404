@@ -1,0 +1,778 @@
+# =============================================================================
+# IOPS Benchmark Configuration Template (SLURM-Ready)
+# =============================================================================
+#
+# This is a comprehensive template showing all available IOPS configuration options.
+# Copy this file and customize it for your benchmark needs.
+#
+# Quick Start:
+#   1. Edit the configuration to match your needs
+#   2. Validate: iops my_benchmark.yaml --check_setup
+#   3. Dry run: iops my_benchmark.yaml --dry-run
+#   4. Execute: iops my_benchmark.yaml
+#
+# Documentation: https://lgouveia.gitlabpages.inria.fr/iops/reference/yaml-schema/ 
+# =============================================================================
+
+
+# =============================================================================
+# BENCHMARK CONFIGURATION
+# =============================================================================
+benchmark:
+  # Required: Name of the benchmark (used in logs and job names)
+  name: "IOR Benchmark"
+
+  # Optional: Description of what this benchmark measures
+  description: "A benchmark to measure I/O performance using the IOR tool"
+
+  # Required: Working directory where all run outputs will be stored
+  # Structure: <workdir>/run_NNN/runs/ and <workdir>/run_NNN/logs/
+  workdir: "/path/to/your/workdir"
+
+  # Optional: Cache file for storing execution results
+  # When --use-cache is specified, results are reused if parameters match
+  # Set this to enable caching across multiple runs
+  cache_file: "/path/to/your/cache.db"
+
+  # Optional: Number of repetitions for each test case (default: 1)
+  repetitions: 3
+
+  # Required: Test selection strategy
+  # Options:
+  #   - "exhaustive": Test all parameter combinations (full factorial sweep)
+  #   - "random": Randomly sample N configurations from parameter space
+  #   - "bayesian": Intelligent optimization using Bayesian methods (fewer tests)
+  # When to use:
+  #   - exhaustive: Small parameter spaces, need complete coverage
+  #   - random: Large parameter spaces, quick exploration, budget constraints
+  #   - bayesian: Expensive evaluations, smooth objective functions
+  
+  search_method: "exhaustive"
+  
+  # Uncomment to enable random sampling:
+  #search_method: "random"  
+  # random_config:
+  #   # Option 1: Explicit number of samples (mutually exclusive with percentage)
+  #   n_samples: 20  # Sample exactly 20 random configurations
+  #
+  #   # Option 2: Percentage of total space (mutually exclusive with n_samples)
+  #   # percentage: 0.1  # Sample 10% of parameter space
+  #
+  #   # Optional: behavior when n_samples >= total_space (default: true)
+  #   fallback_to_exhaustive: true  # Use full space if sample >= total
+
+  # Uncomment to enable Bayesian optimization:
+  # (Defaults are empirically tuned: ~90% of optimal with 20 iterations vs ~79% for random)
+  #search_method: "bayesian"
+  # bayesian_config:
+  #   objective_metric: "metric"  # REQUIRED: Metric to optimize (must match a metric from parser)
+  #   objective: "maximize"       # "minimize" or "maximize" (default: "minimize")
+  #   n_iterations: 20            # Total configurations to evaluate (default: 20)
+  #   n_initial_points: 5         # Random samples before guided search (default: 5)
+  #   acquisition_func: "EI"      # "EI" (default), "PI", or "LCB"
+  #   base_estimator: "RF"        # "RF" (default, most consistent), "GP", "ET", "GBRT"
+  #   xi: 0.01                    # Exploration-exploitation for EI/PI (default: 0.01)
+  #   kappa: 1.96                 # Exploration parameter for LCB (default: 1.96)
+  #   early_stop_on_convergence: false  # Stop when optimizer converges (default: false)
+  #   convergence_patience: 3     # Consecutive convergences before stopping (default: 3)
+  #   xi_boost_factor: 5.0        # xi multiplier when stuck to encourage exploration (default: 5.0)
+  #
+  # Surrogate Models:
+  #   - RF: Random Forest (default) - Most consistent, handles categorical/mixed spaces well
+  #   - ET: Extra Trees - Similar to RF, slightly higher variance
+  #   - GP: Gaussian Process - Best for continuous spaces, struggles with categoricals
+  #   - GBRT: Gradient Boosted Regression Trees
+  
+
+
+  # Required: Execution backend
+  # Options:
+  #   - "local": Run scripts locally using subprocess
+  #   - "slurm": Submit jobs to SLURM cluster via sbatch
+
+  # executor: "local"
+
+  executor: "slurm"
+
+  # ===========================================================================
+  # SLURM-ONLY CONFIGURATION
+  # ===========================================================================
+  # The following options only apply when executor: "slurm"
+  # ===========================================================================
+
+  # ---------------------------------------------------------------------------
+  # EXECUTOR OPTIONS (optional)
+  # ---------------------------------------------------------------------------
+  # Customize commands used for job management.
+  # Commands are templates that support {job_id} placeholder for runtime substitution.
+  # Useful when running on systems with command wrappers or custom SLURM installations.
+  # ---------------------------------------------------------------------------
+  # slurm_options:
+  #   commands:
+  #     # Submit command (default: "sbatch")
+  #     submit: "sbatch"
+  #
+  #     # Command to query job status (default: "squeue -j {job_id} --noheader --format=%T")
+  #     # The {job_id} placeholder is replaced with the actual job ID at runtime
+  #     status: "squeue -j {job_id} --noheader --format=%T"
+  #
+  #     # Command to get job information (default: "scontrol show job {job_id}")
+  #     info: "scontrol show job {job_id}"
+  #
+  #     # Command to cancel jobs (default: "scancel {job_id}")
+  #     cancel: "scancel {job_id}"
+  #
+  #   # Polling interval in seconds for SLURM job status checks (default: 30)
+  #   # Controls how often IOPS queries job status during wait_and_collect
+  #   poll_interval: 30
+  #
+  #   # -------------------------------------------------------------------------
+  #   # SINGLE-ALLOCATION MODE (optional)
+  #   # -------------------------------------------------------------------------
+  #   # Run all tests within ONE SLURM allocation instead of submitting individual
+  #   # jobs per test. This reduces job submission overhead and is useful for:
+  #   #   - HPC systems with job limits or long queue wait times
+  #   #   - Running many small tests efficiently
+  #   #   - Reducing scheduler load
+  #   #
+  #   # In single-allocation mode:
+  #   #   - IOPS submits ONE sbatch job using your allocation_script
+  #   #   - Tests run via: srun --jobid=<id> --overlap bash script.sh
+  #   #   - Each test's stdout/stderr is still captured separately
+  #   #   - Caching, parsing, and folder structure work identically
+  #   #   - Individual script #SBATCH directives are ignored
+  #   #
+  #   # IOPS injects: shebang (if missing), job-name, output/error paths,
+  #   # and a sleep command to keep the allocation alive.
+  #   #
+  #   # Script requirements:
+  #   #   - No #SBATCH directives needed (allocation_script controls resources)
+  #   #   - Load modules in the script (srun starts a fresh shell)
+  #   #   - For MPI programs, use the 'mpi:' block in scripts (see below)
+  #   # -------------------------------------------------------------------------
+  #   allocation:
+  #     # Allocation mode: "single" or "per-test" (default)
+  #     mode: "single"
+  #
+  #     # Per-test timeout in seconds (default: 3600)
+  #     # If a test exceeds this timeout, it is marked as failed
+  #     test_timeout: 300
+  #
+  #     # SBATCH directives for the allocation (required when mode="single")
+  #     # Include all resource requests: nodes, time, partition, account, etc.
+  #     allocation_script: |
+  #       #SBATCH --nodes=8
+  #       #SBATCH --time=02:00:00
+  #       #SBATCH --partition=batch
+  #       #SBATCH --account=myaccount
+  #       #SBATCH --exclusive
+  #       #SBATCH --constraint=ib
+
+  # ---------------------------------------------------------------------------
+  # BUDGET CONFIGURATION (optional)
+  # ---------------------------------------------------------------------------
+  # Control resource usage with core-hour budgets.
+  # Execution stops when budget is exhausted.
+  # ---------------------------------------------------------------------------
+
+  # Maximum CPU core-hours budget
+  # Can be overridden with --max-core-hours CLI argument
+  # max_core_hours: 1000
+
+  # Jinja expression to compute cores used per execution
+  # Used with max_core_hours for budget tracking
+  # Examples:
+  #   - "{{ ntasks }}" - total tasks across all nodes
+  #   - "{{ nodes * processes_per_node }}" - explicit calculation
+  # cores_expr: "{{ ntasks }}"
+
+  # Estimated execution time per test in seconds
+  # Used for dry-run budget analysis and scheduling estimates
+  # Can be overridden with --estimated-time CLI argument (supports scenarios: "120,240,360")
+  # estimated_time_seconds: 300
+
+  # ===========================================================================
+  # END SLURM-ONLY CONFIGURATION
+  # ===========================================================================
+
+  # Optional: Random seed for reproducible random operations (default: None)
+  # Used by random and bayesian search methods
+  random_seed: 42
+
+  # Optional: Variables to exclude from cache key computation
+  # Useful for path-based derived variables that shouldn't affect caching
+  # Example: ["summary_file", "output_path"] - paths vary but don't affect results
+  cache_exclude_vars: ["summary_file"]
+
+  # Optional: Probe configuration for system monitoring and execution tracking
+  # Probes are features that collect additional information during execution.
+  # All probes are enabled by default except resource_sampling which requires opt-in.
+  probes:
+    # system_snapshot: Collect system info from compute nodes (default: true)
+    # When enabled, IOPS injects a probe that collects:
+    #   - hostname, cpu_model, cpu_cores, memory_kb, kernel, os
+    #   - InfiniBand devices (ib_devices)
+    #   - Parallel filesystems (Lustre, GPFS, BeeGFS, etc.)
+    # System info is aggregated in __iops_run_metadata.json and displayed in HTML reports
+    system_snapshot: true
+
+    # execution_index: Write metadata files for 'iops find' command (default: true)
+    # When enabled, IOPS writes __iops_index.json, __iops_params.json, and __iops_status.json
+    # files that enable the 'iops find' command to list and filter executions.
+    # Set to false if file I/O overhead is a concern (e.g., interference with benchmarks)
+    execution_index: true
+
+    # resource_sampling: Enable resource tracing during execution (default: false)
+    # When enabled, IOPS samples CPU utilization (per-core) and memory usage during benchmark
+    # execution. A background sampler runs with low priority (nice) to minimize interference.
+    # Output files:
+    #   - Per-execution: __iops_trace_<hostname>.csv (one per node)
+    #   - Run-level: __iops_resource_summary.csv (aggregated metrics with all vars)
+    # The summary CSV enables heatmap analysis correlating parameters with resource footprint.
+    # resource_sampling: true
+
+    # sampling_interval: Sampling interval for resource tracing in seconds (default: 1.0)
+    # Lower values provide finer granularity but generate more data.
+    # Only used when resource_sampling is enabled.
+    # sampling_interval: 0.5
+
+  # Optional: Create all execution folders upfront at run start (default: false)
+  # When enabled, IOPS creates all exec_XXXX folders before execution begins, including
+  # folders for tests that will be skipped (due to constraints or planner selection).
+  # Benefits:
+  #   - Full visibility into parameter space from the start
+  #   - SKIPPED tests are visible in 'iops find' and watch mode
+  #   - Better debugging of constraints and planner behavior
+  # When disabled (default), folders are created lazily as tests execute.
+  # create_folders_upfront: true
+
+  # Optional: Variables to test exhaustively at each search point
+  # For Bayesian/random search: these variables are fully expanded for each selected point
+  # Use case: Analyze the impact of specific variables (e.g., ost_num) across all values
+  #           while using intelligent search for other variables
+  # Example: With search_method="bayesian" and exhaustive_vars=["ost_num"]:
+  #   - Bayesian optimizer selects (nodes=4, block_size=64)
+  #   - IOPS tests all ost_num values: (4, 64, ost_num=1), (4, 64, ost_num=2), etc.
+  # For exhaustive search: this has no effect (all combinations already tested)
+  # exhaustive_vars: ["ost_num"]
+
+  # Optional: Variables to include in analysis reports
+  # When using --report, only these variables will be used in plots
+  # Useful when you have string variables that shouldn't be plotted
+  # If omitted, all numeric swept variables are included
+  report_vars: ["nodes", "processes_per_node", "volume_size_gb"]
+
+ 
+
+
+# =============================================================================
+# VARIABLES CONFIGURATION
+# =============================================================================
+# Define parameters that will be swept or computed during execution.
+# Each variable has:
+#   - type: int | float | str | bool
+#   - sweep: defines how values vary (for swept variables)
+#   - expr: computation from other variables (for derived variables)
+#
+# Variable types:
+#   - Swept: Parameter values to test (generates execution matrix)
+#   - Derived: Computed from other variables using expressions
+#
+# All variables are available in Jinja2 templates as {{ variable_name }}
+# =============================================================================
+vars:
+  # ---------------------------------------------------------------------------
+  # SWEPT VARIABLES (define parameter space)
+  # ---------------------------------------------------------------------------
+
+  # Example: Number of compute nodes
+  nodes:
+    type: int
+    sweep:
+      mode: list  # Options: list | range
+      values: [4, 8, 32]
+      # For range mode:
+      # mode: range
+      # start: 1
+      # end: 64
+      # step: 1
+
+  # Example: MPI processes per node
+  processes_per_node:
+    type: int
+    sweep:
+      mode: list
+      values: [8, 16, 32]
+
+  # Example: Data volume size
+  volume_size_gb:
+    type: int
+    sweep:
+      mode: list
+      values: [32, 64, 128]
+
+  # Example: String parameter (e.g., different paths or configurations)
+  # Useful for testing across different file systems or OST configurations
+  ost_count:
+    type: int
+    sweep:
+      mode: list
+      values: [1, 2,  4, 8]
+
+  # ---------------------------------------------------------------------------
+  # CONDITIONAL VARIABLES (swept only when condition is true)
+  # ---------------------------------------------------------------------------
+  # Use 'when' to make a swept variable conditional on another variable.
+  # When condition is false, the variable uses the 'default' value instead.
+  # This eliminates redundant test combinations where the variable is irrelevant.
+  #
+  # Example: use_compression controls whether compression_level is swept
+  # Without conditional: 2 * 3 = 6 combinations
+  # With conditional: 3 (when true) + 1 (when false) = 4 combinations
+  # ---------------------------------------------------------------------------
+
+  # Uncomment to enable conditional variable example:
+  # use_compression:
+  #   type: bool
+  #   sweep:
+  #     mode: list
+  #     values: [true, false]
+  #
+  # compression_level:
+  #   type: int
+  #   sweep:
+  #     mode: list
+  #     values: [1, 5, 9]
+  #   when: "use_compression"    # Only sweep when use_compression is true
+  #   default: 0                 # Use 0 when use_compression is false
+  #
+  # More complex condition example:
+  # advanced_option:
+  #   type: int
+  #   sweep:
+  #     mode: list
+  #     values: [1, 2, 4]
+  #   when: "nodes > 4 and processes_per_node >= 8"
+  #   default: 1
+
+  # ---------------------------------------------------------------------------
+  # DERIVED VARIABLES (computed from other variables)
+  # ---------------------------------------------------------------------------
+  # Expression syntax:
+  #   - Jinja2: "{{ var1 + var2 }}"
+  #   - Python: "var1 * 2 + var2"
+  #   - Functions: min(), max(), round(), floor(), ceil()
+  # ---------------------------------------------------------------------------
+
+  # Example: Extract number from path string
+  ost_path:
+    type: str
+    expr: "/beegfs/user/ior_{{ ost_count }}"
+
+  # Example: Compute block size based on volume and process count
+  block_size_mb:
+    type: int
+    expr: "(volume_size_gb * 1024) // (nodes * processes_per_node)" # '//' needs to garantee integer division
+
+  # Example: Total MPI tasks
+  ntasks:
+    type: int
+    expr: "{{ nodes * processes_per_node }}"
+
+  # Example: Per-execution output file path
+  # Uses special variables: execution_dir, execution_id, repetition
+  summary_file:
+    type: str
+    expr: "{{ execution_dir }}/summary_{{ execution_id }}_{{ repetition }}.json"
+
+
+# Optional: Constraints to validate parameter combinations before execution
+# Filters invalid configurations using Python expressions
+# violation_policy: "skip" (filter out), "error" (fail), "warn" (log warning)
+# constraints:
+#   - name: "block_transfer_alignment"
+#     rule: "block_size_mb % transfer_size == 0"
+#     violation_policy: "skip"
+#   - name: "max_processes"
+#     rule: "ntasks <= 256"
+#     violation_policy: "warn"
+
+
+# =============================================================================
+# COMMAND CONFIGURATION
+# =============================================================================
+# The benchmark command to execute. Uses Jinja2 templating.
+# Available in templates:
+#   - All variables from 'vars' section: {{ variable_name }}
+#   - {{ execution_id }} - unique ID for each execution
+#   - {{ repetition }} - current repetition number (1-based)
+#   - {{ execution_dir }} - per-execution working directory
+#   - {{ workdir }} - base working directory
+#
+# Jinja2 features available:
+#   - Conditionals: {% if condition %} ... {% endif %}
+#   - Loops: {% for item in list %} ... {% endfor %}
+#   - Filters: {{ value | default('fallback') }}
+#   - Note: Spaces REQUIRED inside {% %} tags
+# =============================================================================
+command:
+  # The command template - can be multiline using YAML '>' or '|' syntax
+  template: >
+    ior -w -b {{ block_size_mb }}mb -t 1mb
+    -O summaryFile={{ summary_file }} -O summaryFormat=JSON
+    -o {{ ost_path }}/output.ior
+
+
+
+  # Optional: User-defined labels to attach to results
+  # These appear in output as labels.* columns
+  # (metadata.* is reserved for IOPS internal fields)
+  labels:
+    operation: "write"
+    filestrategy: "shared-file"
+    spatiality: "contiguous"
+
+
+# =============================================================================
+# SCRIPTS CONFIGURATION
+# =============================================================================
+# Define execution scripts (SLURM submission, parsing, etc.)
+# Supports:
+#   - External script files: script_template: path/to/script.sh
+#   - Embedded scripts: script_template: | (inline YAML multiline string)
+#
+# This template uses embedded scripts for portability. You can also reference
+# external script files by replacing the embedded content with a file path.
+# Use 'iops generate --examples' to get example scripts you can customize.
+# =============================================================================
+scripts:
+  # Script name (can define multiple scripts)
+  - name: "ior"
+
+    # ---------------------------------------------------------------------------
+    # MPI CONFIGURATION (optional, single-allocation mode only)
+    # ---------------------------------------------------------------------------
+    # Simplifies MPI launching in single-allocation mode by automatically:
+    #   - Adding SLURM_NODEID check (only node 0 runs mpirun)
+    #   - Constructing NODELIST from SLURM_JOB_NODELIST
+    #   - Adding mpirun flags (--oversubscribe, --mca plm rsh, etc.)
+    #   - Passing environment variables specified in pass_env
+    #
+    # When 'mpi:' is configured, IOPS wraps your script with MPI launch logic.
+    # Your script just needs {{ command.template }} - IOPS handles the rest.
+    # ---------------------------------------------------------------------------
+    # mpi:
+    #   launcher: "mpirun"           # "mpirun" (default) or "srun"
+    #   nodes: "{{ nodes }}"         # Variable, number, or "all" (default)
+    #   ppn: "{{ ppn }}"             # Processes per node (required)
+    #   pass_env:                    # Env vars to pass (default: PATH, LD_LIBRARY_PATH)
+    #     - LD_PRELOAD               # Add any custom vars your script exports
+    #     - MY_CUSTOM_VAR
+    #   extra_options:               # Additional launcher flags
+    #     - "--mca btl tcp,self"
+
+    # ---------------------------------------------------------------------------
+    # SCRIPT TEMPLATE
+    # ---------------------------------------------------------------------------
+    # The script to execute. Can be:
+    #   - Embedded (inline YAML string) - used here for portability
+    #   - External file path: script_template: path/to/script.sh
+    # ---------------------------------------------------------------------------
+    script_template: |
+      #!/bin/bash
+
+      #SBATCH --job-name=iops_{{ execution_id }}
+      #SBATCH --ntasks={{ ntasks }}
+      #SBATCH --nodes={{ nodes }}
+      #SBATCH --ntasks-per-node={{ processes_per_node }}
+      #SBATCH --time=04:00:00
+      #SBATCH --chdir={{ execution_dir }}
+      #SBATCH -o batch%j.out
+      #SBATCH -e batch%j.err
+      #SBATCH --exclusive
+
+      # Uncomment and customize these SLURM directives as needed:
+      # #SBATCH --partition=your_partition
+      # #SBATCH --constraint=your_constraint
+      # #SBATCH --account=your_account
+      # #SBATCH --qos=your_qos
+
+      # Load required modules (customize for your cluster)
+      module purge
+      module load mpi
+
+      # Log SLURM allocation info
+      echo "=== SLURM Allocation ==="
+      echo "Nodes: $SLURM_JOB_NUM_NODES"
+      echo "Tasks: $SLURM_NTASKS"
+      echo "========================"
+
+      # Execute the benchmark command
+      mpirun {{ command.template }}
+
+    # ---------------------------------------------------------------------------
+    # POST-EXECUTION SCRIPT (optional)
+    # ---------------------------------------------------------------------------
+    # Runs after the main script completes (success or failure)
+    # Useful for cleanup, notifications, or logging
+    # ---------------------------------------------------------------------------
+    post:
+      script: |
+        #!/bin/bash
+        echo "Job completed at $(date)"
+        echo "Summary file: {{ summary_file }}"
+
+    # ---------------------------------------------------------------------------
+    # PARSER CONFIGURATION
+    # ---------------------------------------------------------------------------
+    # Defines how to extract metrics from output files
+    # ---------------------------------------------------------------------------
+    parser:
+      # File to parse (typically a variable pointing to the output)
+      file: "{{ summary_file }}"
+
+      # List of metrics to extract
+      # Each metric name must be returned by the parser script
+      metrics:
+        - name: bwMiB       # Bandwidth in MiB/s
+        # Add more metrics as needed:
+        # - name: iops      # I/O operations per second
+        # - name: latency   # Average latency
+        # - name: runtime   # Total execution time
+
+      # ---------------------------------------------------------------------------
+      # PARSER SCRIPT
+      # ---------------------------------------------------------------------------
+      # Python script to parse output files. Can be:
+      #   - Embedded (inline YAML string) - used here for portability
+      #   - External file path: parser_script: path/to/parser.py
+      # Must define: def parse(file_path: str) -> dict
+      # ---------------------------------------------------------------------------
+      parser_script: |
+        import json
+
+        def parse(file_path: str):
+            """
+            Parse IOR JSON output and extract metrics.
+
+            Args:
+                file_path: Path to the output file to parse
+
+            Returns:
+                dict: Metrics dictionary with keys matching 'metrics' list above
+            """
+            with open(file_path, "r") as f:
+                data = json.load(f)
+
+            tests = data.get("tests", [])
+            if not tests:
+                raise ValueError("No tests found in IOR JSON")
+
+            results = tests[0].get("Results", [])
+            if not results:
+                raise ValueError("No Results found in IOR JSON")
+
+            # Find write operation (or use first result)
+            write_res = next(
+                (r for r in results if str(r.get("access", "")).lower() == "write"),
+                results[0],
+            )
+
+            return {"bwMiB": write_res.get("bwMiB")}
+
+
+# =============================================================================
+# OUTPUT CONFIGURATION
+# =============================================================================
+# Define how results should be stored
+# Results are always appended to the output file (schema evolution supported)
+# =============================================================================
+output:
+  sink:
+    # Output format: csv | parquet | sqlite
+    type: csv
+
+    # Optional: Output path (supports Jinja2 templating)
+    # Defaults: csv -> {{ workdir }}/results.csv
+    #           parquet -> {{ workdir }}/results.parquet
+    #           sqlite -> {{ workdir }}/results.db
+    # path: "{{ workdir }}/results.csv"
+
+    # Optional: Exclude specific fields from output
+    # Dot notation for nested fields: benchmark.name, vars.nodes, metrics.bwMiB
+    # Wildcards supported: "vars.*", "metadata.*", "metrics.*", "benchmark.*", "execution.*"
+    # Note: execution.execution_id and execution.repetition are protected and always included
+    # Useful for removing verbose fields like descriptions
+    exclude: ["benchmark.description"]
+
+    # Optional: Table name (only for sqlite type)
+    table: results
+
+
+# =============================================================================
+# REPORTING CONFIGURATION (optional)
+# =============================================================================
+# Automatic HTML report generation with interactive plots
+# Manual: iops --report /path/to/workdir/run_NNN
+# Custom: iops --report /path/to/workdir/run_NNN --report-config report.yaml
+# Docs: https://lgouveia.gitlabpages.inria.fr/iops/user-guide/reporting/
+# =============================================================================
+# reporting:
+#   enabled: false  # Auto-generate report after execution (default: false)
+#   output_filename: "analysis_report.html"
+#
+#   # Optional: Customize plot appearance
+#   theme:
+#     style: "plotly_white"  # plotly, plotly_dark, ggplot2, seaborn, simple_white
+#     colors: ["#3498db", "#e74c3c", "#2ecc71"]
+#
+#   # Optional: Control report sections (all true by default unless noted)
+#   sections:
+#     test_summary: true
+#     best_results: true
+#     variable_impact: true
+#     bayesian_evolution: true           # Optimization progress (Bayesian only)
+#     bayesian_parameter_evolution: false # Parameter exploration plot (default: false)
+#     custom_plots: true
+#
+#   # Optional: Best results configuration
+#   best_results:
+#     top_n: 5              # Number of top configurations to show
+#     show_command: true    # Include rendered command
+#     min_samples: 3        # Minimum repetitions required (filters unreliable results)
+#
+#   # Optional: Per-metric custom plots
+#   # Plot types: line, bar, scatter, heatmap, box, violin, surface_3d, execution_scatter, coverage_heatmap, parallel_coordinates
+#   metrics:
+#     bwMiB:
+#       plots:
+#         - type: "execution_scatter"    # Shows each execution with all vars on hover
+#         - type: "line"
+#           x_var: "block_size_mb"
+#           group_by: "nodes"
+#         - type: "heatmap"
+#           x_var: "nodes"
+#           y_var: "processes_per_node"
+#         - type: "coverage_heatmap"     # Multi-variable coverage matrix
+#           row_vars: ["nodes", "processes_per_node"]  # Required: variables for rows (multi-level supported)
+#           col_var: "volume_size_gb"    # Required: variable for columns
+#           aggregation: "mean"          # Options: mean, median, count, std, min, max
+#
+#   # Optional: Default plots for metrics without custom config
+#   # execution_scatter is automatically included in legacy mode
+#   default_plots:
+#     - type: "execution_scatter"        # Each point = one execution, hover shows all vars
+#     - type: "bar"
+#       per_variable: true
+#       show_error_bars: true
+
+
+
+
+# =============================================================================
+# ADDITIONAL NOTES
+# =============================================================================
+#
+# Jinja2 Template Variables (available in all templates):
+#   - {{ execution_id }}          - Unique execution identifier
+#   - {{ repetition }}            - Current repetition number (1-based)
+#   - {{ execution_dir }}         - Per-execution working directory
+#   - {{ workdir }}               - Base working directory
+#   - {{ os_env.VAR_NAME }}       - System environment variables (e.g., os_env.HOME)
+#   - {{ vars.variable_name }}    - Any variable from 'vars' section
+#   - {{ labels.key }}            - Any label from 'command.labels'
+#   - {{ command.template }}      - The rendered command
+#   - {{ benchmark.name }}        - Benchmark name
+#
+# Jinja2 Advanced Features:
+#
+#   1. CONDITIONALS (if/else):
+#      {% if condition %} ... {% endif %}
+#      {% if condition %} ... {% else %} ... {% endif %}
+#      {% if condition %} ... {% elif other %} ... {% else %} ... {% endif %}
+#
+#      Example - Conditional command options:
+#        command:
+#          template: >
+#            benchmark --input data.bin
+#            {% if use_compression %} --compress {% endif %}
+#            {% if nodes > 4 %} --large-mode {% endif %}
+#            --output {{ output_file }}
+#
+#      Example - Conditional SLURM directives:
+#        script_template: |
+#          #!/bin/bash
+#          #SBATCH --job-name=iops_{{ execution_id }}
+#          #SBATCH --nodes={{ nodes }}
+#          {% if nodes > 4 %}
+#          #SBATCH --time=04:00:00
+#          #SBATCH --partition=large
+#          {% else %}
+#          #SBATCH --time=01:00:00
+#          {% endif %}
+#
+#   2. LOOPS (for):
+#      {% for item in list %} ... {% endfor %}
+#
+#      Example - Load multiple modules:
+#        {% for mod in ['mpi', 'ior', 'hdf5'] %}module load {{ mod }}; {% endfor %}
+#
+#      Example - Generate multiple input files:
+#        {% for i in range(3) %} --file{{ i }} input{{ i }}.dat {% endfor %}
+#
+#   3. FILTERS (transform values):
+#      {{ value | filter }}
+#      {{ value | filter(arg) }}
+#
+#      Common filters:
+#        - {{ var | default('fallback') }}   - Use default if undefined
+#        - {{ name | upper }}                - Convert to uppercase
+#        - {{ name | lower }}                - Convert to lowercase
+#        - {{ path | basename }}             - Extract filename from path
+#        - {{ num | round(2) }}              - Round to 2 decimal places
+#        - {{ num | abs }}                   - Absolute value
+#
+#      Example:
+#        output_file: "{{ custom_path | default('/default/path') }}/results.csv"
+#
+#   4. CRITICAL SYNTAX REQUIREMENT:
+#      **Spaces are REQUIRED inside {% %} tags:**
+#        - Correct: {% if condition %}
+#        - Wrong:   {%if condition%}    (causes TemplateSyntaxError)
+#
+#      **Spaces in {{ }} are optional but recommended:**
+#        - Both work: {{ var }} and {{var}}
+#        - Recommended: {{ var }}
+#
+#   5. OPERATORS:
+#      - Comparison: ==, !=, <, >, <=, >=
+#      - Logical: and, or, not
+#      - Membership: in, not in
+#
+#      Example:
+#        {% if nodes > 1 and processes_per_node >= 4 %} --parallel {% endif %}
+#
+# Special Features:
+#   - Cache: Use --use_cache to reuse results from previous runs
+#   - Dry-run: Use --dry-run to preview execution without running tests
+#   - Budget: Set max_core_hours and cores_expr for resource limits
+#   - Reports: Use --report /path/to/run_NNN to generate HTML analysis
+#   - Validation: Use --check_setup to validate configuration without execution
+#
+# Working Directory Structure:
+#   <workdir>/
+#   ├── run_001/
+#   │   ├── runs/
+#   │   │   ├── exec_0001/
+#   │   │   │   └── repetition_001/
+#   │   │   │       ├── run_ior.sh       # Generated script
+#   │   │   │       ├── stdout           # Job stdout
+#   │   │   │       ├── stderr           # Job stderr
+#   │   │   │       └── batch12345.out   # SLURM output
+#   │   │   └── ...
+#   │   ├── logs/
+#   │   │   └── iops.log                 # IOPS framework log
+#   │   └── __iops_run_metadata.json            # Run metadata for reports
+#   └── results.csv                      # Results output
+#
+# =============================================================================
