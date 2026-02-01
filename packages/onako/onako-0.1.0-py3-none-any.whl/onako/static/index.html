@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#1a1a1a">
+    <title>Onako</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background: #1a1a1a;
+            color: #e0e0e0;
+            min-height: 100dvh;
+        }
+        header {
+            padding: 16px;
+            padding-top: max(16px, env(safe-area-inset-top));
+            border-bottom: 1px solid #333;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        header h1 { font-size: 18px; font-weight: 600; }
+        #new-task-btn {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .task-list { padding: 8px; }
+        .task-item {
+            padding: 12px;
+            border-bottom: 1px solid #2a2a2a;
+            cursor: pointer;
+        }
+        .task-item:hover { background: #222; }
+        .task-item .task-id { font-size: 12px; color: #888; }
+        .task-item .task-prompt {
+            font-size: 14px;
+            margin-top: 4px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .task-item .task-meta {
+            font-size: 12px;
+            color: #888;
+            margin-top: 4px;
+        }
+        .status-running { color: #22c55e; }
+        .status-done { color: #888; }
+        .empty-state {
+            text-align: center;
+            color: #666;
+            padding: 48px 16px;
+            font-size: 14px;
+        }
+        #connection-banner {
+            display: none;
+            background: #ef4444;
+            color: white;
+            text-align: center;
+            padding: 6px;
+            font-size: 12px;
+        }
+
+        #detail-view { display: none; flex-direction: column; height: 100dvh; }
+        #detail-view.active { display: flex; }
+        #list-view.hidden { display: none; }
+        #detail-header {
+            padding: 12px 16px;
+            padding-top: max(12px, env(safe-area-inset-top));
+            border-bottom: 1px solid #333;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        #back-btn {
+            background: none;
+            border: none;
+            color: #3b82f6;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        #kill-btn {
+            background: #ef4444;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        #kill-btn.hidden { display: none; }
+        #output {
+            padding: 12px;
+            font-family: "SF Mono", "Menlo", "Monaco", monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            word-break: break-all;
+            line-height: 1.4;
+            overflow-y: auto;
+            flex: 1;
+        }
+        #message-bar {
+            padding: 8px;
+            padding-bottom: max(8px, env(safe-area-inset-bottom));
+            border-top: 1px solid #333;
+            display: flex;
+            flex-shrink: 0;
+            gap: 8px;
+            align-items: center;
+        }
+        #message-input {
+            flex: 1;
+            min-width: 0;
+            background: #2a2a2a;
+            border: 1px solid #444;
+            color: #e0e0e0;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 16px;
+            -webkit-appearance: none;
+        }
+        #send-btn {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            flex-shrink: 0;
+            white-space: nowrap;
+        }
+
+        #modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.7);
+            z-index: 10;
+        }
+        #modal {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: #222;
+            padding: 16px;
+            padding-bottom: max(16px, env(safe-area-inset-bottom));
+            border-radius: 12px 12px 0 0;
+            z-index: 11;
+            display: none;
+        }
+        #modal textarea {
+            width: 100%;
+            background: #2a2a2a;
+            border: 1px solid #444;
+            color: #e0e0e0;
+            padding: 12px;
+            border-radius: 6px;
+            font-size: 14px;
+            resize: vertical;
+            min-height: 80px;
+            font-family: inherit;
+        }
+        #modal input {
+            width: 100%;
+            background: #2a2a2a;
+            border: 1px solid #444;
+            color: #e0e0e0;
+            padding: 10px 12px;
+            border-radius: 6px;
+            font-size: 14px;
+            margin-top: 8px;
+        }
+        #modal button {
+            width: 100%;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div id="connection-banner">Connection lost. Retrying...</div>
+
+    <!-- List View -->
+    <div id="list-view">
+        <header>
+            <h1>Onako</h1>
+            <button id="new-task-btn">+ New Task</button>
+        </header>
+        <div class="task-list" id="task-list"></div>
+    </div>
+
+    <!-- Detail View -->
+    <div id="detail-view">
+        <div id="detail-header">
+            <button id="back-btn">&larr; Back</button>
+            <span id="detail-task-id"></span>
+            <button id="kill-btn">Kill</button>
+        </div>
+        <div id="output"></div>
+        <div id="message-bar">
+            <input id="message-input" type="text" placeholder="Send a message...">
+            <button id="send-btn">Send</button>
+        </div>
+    </div>
+
+    <!-- New Task Modal -->
+    <div id="modal-overlay"></div>
+    <div id="modal">
+        <textarea id="prompt-input" placeholder="What do you want done?"></textarea>
+        <input id="workdir-input" type="text" placeholder="Working directory (optional)">
+        <button id="submit-task-btn">Start Task</button>
+    </div>
+
+    <script>
+        const API = '';
+        let currentTaskId = null;
+        let currentTaskStatus = null;
+        let pollInterval = null;
+
+        function timeAgo(dateStr) {
+            if (!dateStr) return '';
+            const seconds = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
+            if (seconds < 60) return 'just now';
+            const minutes = Math.floor(seconds / 60);
+            if (minutes < 60) return `${minutes}m ago`;
+            const hours = Math.floor(minutes / 60);
+            if (hours < 24) return `${hours}h ago`;
+            const days = Math.floor(hours / 24);
+            return `${days}d ago`;
+        }
+
+        function showConnectionError(show) {
+            document.getElementById('connection-banner').style.display = show ? 'block' : 'none';
+        }
+
+        async function loadTasks() {
+            try {
+                const res = await fetch(`${API}/tasks`);
+                const tasks = (await res.json()).filter(t => t.status === 'running');
+                const list = document.getElementById('task-list');
+                if (tasks.length === 0) {
+                    list.innerHTML = '<div class="empty-state">No tasks running</div>';
+                } else {
+                    list.innerHTML = tasks.map(t => `
+                        <div class="task-item" onclick="showTask('${t.id}')">
+                            <div class="task-id">${t.id}</div>
+                            <div class="task-prompt">${escapeHtml(t.prompt)}</div>
+                            <div class="task-meta">
+                                <span class="status-${t.status}">${t.status}</span>
+                                ${t.started_at ? ' &middot; ' + timeAgo(t.started_at) : ''}
+                            </div>
+                        </div>
+                    `).join('');
+                }
+                showConnectionError(false);
+            } catch (e) {
+                showConnectionError(true);
+            }
+        }
+
+        async function showTask(id) {
+            currentTaskId = id;
+            currentTaskStatus = null;
+            document.getElementById('list-view').classList.add('hidden');
+            document.getElementById('detail-view').classList.add('active');
+            document.getElementById('detail-task-id').textContent = id;
+            document.getElementById('kill-btn').classList.remove('hidden');
+            await refreshOutput();
+            pollInterval = setInterval(refreshOutput, 3000);
+        }
+
+        async function refreshOutput() {
+            if (!currentTaskId) return;
+            try {
+                const res = await fetch(`${API}/tasks/${currentTaskId}`);
+                if (!res.ok) return;
+                const data = await res.json();
+                const el = document.getElementById('output');
+                const wasAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 50;
+                el.textContent = data.output || '(no output yet)';
+                if (wasAtBottom) el.scrollTop = el.scrollHeight;
+                showConnectionError(false);
+
+                // Stop polling and hide kill button when task is done
+                if (data.status === 'done' && currentTaskStatus !== 'done') {
+                    currentTaskStatus = 'done';
+                    document.getElementById('kill-btn').classList.add('hidden');
+                    if (pollInterval) {
+                        clearInterval(pollInterval);
+                        pollInterval = null;
+                    }
+                }
+            } catch (e) {
+                showConnectionError(true);
+            }
+        }
+
+        function showList() {
+            currentTaskId = null;
+            currentTaskStatus = null;
+            if (pollInterval) clearInterval(pollInterval);
+            pollInterval = null;
+            document.getElementById('detail-view').classList.remove('active');
+            document.getElementById('list-view').classList.remove('hidden');
+            loadTasks();
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById('message-input');
+            const msg = input.value.trim();
+            if (!msg || !currentTaskId) return;
+            try {
+                await fetch(`${API}/tasks/${currentTaskId}/message`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({message: msg}),
+                });
+                input.value = '';
+            } catch (e) {
+                showConnectionError(true);
+            }
+        }
+
+        async function killTask() {
+            if (!currentTaskId) return;
+            if (!confirm('Kill this task?')) return;
+            try {
+                await fetch(`${API}/tasks/${currentTaskId}`, {method: 'DELETE'});
+                showList();
+            } catch (e) {
+                showConnectionError(true);
+            }
+        }
+
+        function showModal() {
+            document.getElementById('modal').style.display = 'block';
+            document.getElementById('modal-overlay').style.display = 'block';
+            document.getElementById('prompt-input').focus();
+        }
+
+        function hideModal() {
+            document.getElementById('modal').style.display = 'none';
+            document.getElementById('modal-overlay').style.display = 'none';
+        }
+
+        async function submitTask() {
+            const prompt = document.getElementById('prompt-input').value.trim();
+            if (!prompt) return;
+            const workdir = document.getElementById('workdir-input').value.trim() || null;
+            const body = {prompt};
+            if (workdir) body.working_dir = workdir;
+            try {
+                const res = await fetch(`${API}/tasks`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(body),
+                });
+                const task = await res.json();
+                document.getElementById('prompt-input').value = '';
+                document.getElementById('workdir-input').value = '';
+                hideModal();
+                showTask(task.id);
+            } catch (e) {
+                showConnectionError(true);
+            }
+        }
+
+        function escapeHtml(s) {
+            const d = document.createElement('div');
+            d.textContent = s;
+            return d.innerHTML;
+        }
+
+        // Event listeners
+        document.getElementById('new-task-btn').addEventListener('click', showModal);
+        document.getElementById('modal-overlay').addEventListener('click', hideModal);
+        document.getElementById('submit-task-btn').addEventListener('click', submitTask);
+        document.getElementById('back-btn').addEventListener('click', showList);
+        document.getElementById('kill-btn').addEventListener('click', killTask);
+        document.getElementById('send-btn').addEventListener('click', sendMessage);
+        document.getElementById('message-input').addEventListener('keydown', e => {
+            if (e.key === 'Enter') sendMessage();
+        });
+        document.getElementById('prompt-input').addEventListener('keydown', e => {
+            if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') submitTask();
+        });
+
+        // Init
+        loadTasks();
+        setInterval(() => { if (!currentTaskId) loadTasks(); }, 10000);
+    </script>
+</body>
+</html>
