@@ -1,0 +1,1 @@
+Répertoire qui contient les fichiers utilisés par le projet QueryCraft pour certaines IA génératives qui nécéssitent des cookies.
