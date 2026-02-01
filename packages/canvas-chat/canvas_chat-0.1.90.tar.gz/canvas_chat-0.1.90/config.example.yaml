@@ -1,0 +1,208 @@
+# Canvas Chat Configuration Example
+#
+# This file demonstrates the configuration schema for canvas-chat.
+# Copy this file to `config.yaml` and customize it for your deployment.
+#
+# Two modes of operation:
+#
+# 1. Normal mode (users provide their own API keys via UI):
+#    uvx canvas-chat launch --config config.yaml
+#    - Pre-populates model list (users don't need to add models manually)
+#    - Plugins work
+#    - Users provide their own API keys in the settings UI
+#    - apiKeyEnvVar is optional (can be omitted)
+#
+# 2. Admin mode (server-side API keys, locked down):
+#    uvx canvas-chat launch --config config.yaml --admin-mode
+#    - Server-side API key management (users don't provide their own keys)
+#    - Settings UI is hidden
+#    - apiKeyEnvVar is required for each model
+#    - Plugins work
+#
+# IMPORTANT: This file should be committed to version control.
+# API keys and endpoints should be set via environment variables, NOT in this file.
+# This allows the same config.yaml to work across dev/test/prod environments.
+
+# ============================================================================
+# MODELS - Define LLM providers and models available to users
+# ============================================================================
+#
+# At least one model must be configured.
+#
+# In admin mode: apiKeyEnvVar is required (server-side keys)
+# In normal mode: apiKeyEnvVar is optional (users provide keys via UI)
+
+models:
+    # OpenAI models
+    - id: 'openai/gpt-4o'
+      name: 'GPT-4o'
+      apiKeyEnvVar: 'OPENAI_API_KEY'
+      contextWindow: 128000
+
+    - id: 'openai/gpt-4o-mini'
+      name: 'GPT-4o Mini'
+      apiKeyEnvVar: 'OPENAI_API_KEY'
+      contextWindow: 128000
+
+    - id: 'openai/o1'
+      name: 'O1'
+      apiKeyEnvVar: 'OPENAI_API_KEY'
+      contextWindow: 200000
+
+    # Anthropic models
+    - id: 'anthropic/claude-sonnet-4-20250514'
+      name: 'Claude Sonnet 4'
+      apiKeyEnvVar: 'ANTHROPIC_API_KEY'
+      contextWindow: 200000
+
+    - id: 'anthropic/claude-3-5-haiku-20241022'
+      name: 'Claude 3.5 Haiku'
+      apiKeyEnvVar: 'ANTHROPIC_API_KEY'
+      contextWindow: 200000
+
+    # Google models
+    - id: 'gemini/gemini-1.5-pro'
+      name: 'Gemini 1.5 Pro'
+      apiKeyEnvVar: 'GEMINI_API_KEY'
+      contextWindow: 2000000
+
+    # Groq models (fast inference)
+    - id: 'groq/llama-3.1-70b-versatile'
+      name: 'Llama 3.1 70B (Groq)'
+      apiKeyEnvVar: 'GROQ_API_KEY'
+      contextWindow: 128000
+
+    # Example: Local Ollama model
+    # - id: "ollama/llama3.2"
+    #   name: "Llama 3.2 (Local)"
+    #   apiKeyEnvVar: "OLLAMA_API_KEY"  # Can be a dummy value like "ollama"
+    #   endpointEnvVar: "OLLAMA_BASE_URL"  # Set to http://localhost:11434
+    #   contextWindow: 128000
+
+    # Example: Custom Azure OpenAI deployment
+    # - id: "azure/gpt-4-turbo"
+    #   name: "GPT-4 Turbo (Azure)"
+    #   apiKeyEnvVar: "AZURE_OPENAI_API_KEY"
+    #   endpointEnvVar: "AZURE_OPENAI_ENDPOINT"
+    #   contextWindow: 128000
+
+# ============================================================================
+# PLUGINS - Extend canvas-chat with custom features
+# ============================================================================
+#
+# Optional. Plugins can be JavaScript (.js), Python (.py), or both (paired).
+# Paths can be absolute or relative to this config file.
+# Plugins work in both normal and admin mode.
+#
+# Plugin formats:
+#   1. JavaScript-only: - path: ./plugins/my-plugin.js
+#                      OR - js: ./plugins/my-plugin.js
+#   2. Python-only:    - py: ./plugins/my_handler.py
+#   3. Paired:         - id: my-plugin
+#                        js: ./plugins/my-plugin.js
+#                        py: ./plugins/my_handler.py
+#
+# See docs/how-to/create-feature-plugins.md for complete plugin development guide.
+#
+# To test the plugin system with the example poll node:
+# 1. Uncomment the plugins section below
+# 2. Set an API key: export ANTHROPIC_API_KEY=sk-ant-...
+# 3. Normal mode: pixi run python -m canvas_chat launch --config config.example.yaml --port 7865
+#    OR Admin mode: pixi run python -m canvas_chat launch --config config.example.yaml --admin-mode --port 7865
+# 4. In browser console: app.createAndAddNode('poll', '', {data: {question: 'Favorite?', options: ['A', 'B']}})
+
+plugins:
+    # Example 1: JavaScript-only plugin (custom node type)
+    # - path: ./src/canvas_chat/static/js/example-plugins/poll.js
+    # OR
+    # - js: ./src/canvas_chat/static/js/example-plugins/poll.js
+
+    # Example 2: Paired plugin (JavaScript + Python)
+    # - id: my-plugin
+    #   js: ./plugins/my-feature.js
+    #   py: ./plugins/my_handler.py
+
+    # Example 3: Python-only plugin (backend handler)
+    # - py: ./plugins/my_backend_handler.py
+
+    # Add your custom plugins here:
+    # - path: ./plugins/my-custom-node.js
+    # - path: /absolute/path/to/plugin.js
+
+# ============================================================================
+# FIELD REFERENCE
+# ============================================================================
+#
+# models (required, array):
+#   - id (required, string): LiteLLM-compatible model identifier
+#       Format: provider/model-name
+#       Examples: "openai/gpt-4o", "anthropic/claude-3-5-sonnet-20241022"
+#
+#   - name (required, string): Display name shown in UI
+#
+#   - apiKeyEnvVar (optional in normal mode, required in admin mode, string):
+#       Environment variable name containing API key
+#       In admin mode: The actual key value is read from the environment at runtime
+#       In normal mode: Can be omitted; users provide keys via UI
+#
+#   - contextWindow (optional, integer): Token limit for context building
+#       Default: 128000
+#
+#   - endpointEnvVar (optional, string): Environment variable for custom API endpoint
+#       Used for self-hosted models (Ollama, vLLM) or Azure deployments
+#
+# plugins (optional, array):
+#   Format 1 (JavaScript-only):
+#     - path (string): Path to plugin JavaScript file
+#       OR
+#     - js (string): Path to plugin JavaScript file
+#
+#   Format 2 (Python-only):
+#     - py (string): Path to plugin Python file
+#
+#   Format 3 (Paired):
+#     - id (string): Unique plugin identifier
+#     - js (string): Path to plugin JavaScript file
+#     - py (string): Path to plugin Python file
+#
+#   Paths can be absolute or relative to this config file.
+#   JavaScript plugins must be ES modules that import from '/static/js/'
+#   Python plugins must extend plugin base classes (e.g., UrlFetchHandlerPlugin)
+#
+# ============================================================================
+# ENVIRONMENT VARIABLES
+# ============================================================================
+#
+# Set these environment variables before starting canvas-chat in admin mode:
+#
+# # Required for each model (admin mode only)
+# export OPENAI_API_KEY="sk-..."
+# export ANTHROPIC_API_KEY="sk-ant-..."
+# export GEMINI_API_KEY="..."
+# export GROQ_API_KEY="gsk_..."
+#
+# # Optional: Custom endpoints
+# export OLLAMA_BASE_URL="http://localhost:11434"
+# export AZURE_OPENAI_ENDPOINT="https://your-resource.openai.azure.com/"
+#
+# # Optional: Exa API for research features
+# export EXA_API_KEY="your-exa-api-key"
+#
+# Then run:
+#   # Normal mode (users provide keys):
+#   uvx canvas-chat launch --config config.yaml
+#
+#   # Admin mode (server-side keys):
+#   uvx canvas-chat launch --config config.yaml --admin-mode
+#
+# ============================================================================
+# SECURITY NOTES
+# ============================================================================
+#
+# 1. NEVER commit API keys to this file
+# 2. Use environment variables for all secrets
+# 3. Set appropriate file permissions: chmod 600 config.yaml
+# 4. Add config.yaml to .gitignore (but commit config.example.yaml)
+# 5. Use different environment variables for dev/test/prod
+#
+# See documentation for more details on deployment and plugin development.
