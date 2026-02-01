@@ -1,0 +1,1475 @@
+import signal
+import sys
+
+# Handle Ctrl+C gracefully before any other imports
+signal.signal(signal.SIGINT, lambda *_: sys.exit(130))
+
+import json
+import time
+import click
+import typer
+from pathlib import Path
+
+from .config import load_config, set_dotenv_path, set_url, URLParseError, _parse_opensearch_url
+from .formatting import format_timestamp
+from .opensearch.client import (
+	get_opensearch_client,
+	check_connection,
+	check_index,
+	OpenSearchError,
+	ConnectionFailedError,
+	DevlogsDisabledError,
+)
+from .opensearch.mappings import (
+	build_log_index_template,
+	get_template_names,
+	detect_schema_version,
+	get_schema_issues,
+	build_reindex_script,
+	SCHEMA_VERSION,
+)
+from .opensearch.queries import normalize_log_entries, search_logs, tail_logs, get_last_errors
+from .retention import cleanup_old_logs, get_retention_stats
+from .jenkins.cli import jenkins_app
+
+app = typer.Typer()
+app.add_typer(jenkins_app, name="jenkins")
+
+OLD_TEMPLATE_NAMES = ("devlogs-template", "devlogs-logs-template")
+
+# Common options for commands - these can be placed anywhere in the command line
+ENV_OPTION = typer.Option(None, "--env", help="Path to .env file to load")
+URL_OPTION = typer.Option(None, "--url", help="OpenSearch URL (e.g., https://user:pass@host:port/index)")
+
+
+def _apply_common_options(env: str = None, url: str = None):
+	"""Apply common options (--env, --url) to configure the client."""
+	if env:
+		set_dotenv_path(env)
+	if url:
+		set_url(url)
+
+
+# Global callback to handle --env flag before any command runs (for backwards compatibility)
+@app.callback(invoke_without_command=True)
+def main_callback(
+	ctx: typer.Context,
+	env: str = ENV_OPTION,
+	url: str = URL_OPTION,
+):
+	"""devlogs - Developer-focused logging with OpenSearch integration."""
+	_apply_common_options(env, url)
+
+
+def _format_features(features):
+	if not features:
+		return ""
+	if isinstance(features, dict):
+		items = sorted(features.items(), key=lambda item: str(item[0]))
+		parts = []
+		for key, value in items:
+			key_text = str(key)
+			if value is None:
+				value_text = "null"
+			else:
+				value_text = str(value)
+			parts.append(f"{key_text}={value_text}")
+		return f"[{' '.join(parts)}]" if parts else ""
+	return f"[{features}]"
+
+
+def require_opensearch(check_idx=True):
+	"""Get client and verify OpenSearch is accessible. Optionally check index exists."""
+	try:
+		cfg = load_config()
+		client = get_opensearch_client()
+		check_connection(client)
+		if check_idx:
+			check_index(client, cfg.index)
+	except URLParseError as e:
+		typer.echo(typer.style(f"Configuration error: {e}", fg=typer.colors.RED), err=True)
+		raise typer.Exit(1)
+	except OpenSearchError as e:
+		typer.echo(typer.style(f"Error: {e}", fg=typer.colors.RED), err=True)
+		raise typer.Exit(1)
+	return client, cfg
+
+
+def _delete_template_any_variant(client, template_name):
+	"""Attempt to delete both composable and legacy templates with the given name."""
+	errors = []
+	for variant_label, deleter in (
+		("composable", client.indices.delete_index_template),
+		("legacy", client.indices.delete_template),
+	):
+		try:
+			result = deleter(name=template_name)
+			if result:
+				return variant_label, []
+		except OpenSearchError as exc:
+			errors.append((variant_label, exc))
+		except Exception as exc:  # pragma: no cover - unexpected errors
+			errors.append((variant_label, exc))
+	return None, errors
+
+
+def _write_json_config(
+	path: Path,
+	root_key: str,
+	server_name: str,
+	server_config: dict,
+) -> str:
+	data = {}
+	if path.is_file():
+		try:
+			data = json.loads(path.read_text(encoding="utf-8"))
+		except json.JSONDecodeError as exc:
+			raise ValueError(f"{path} is not valid JSON: {exc}") from exc
+	if not isinstance(data, dict):
+		raise ValueError(f"{path} must contain a JSON object.")
+	servers = data.get(root_key)
+	if servers is None:
+		servers = {}
+		data[root_key] = servers
+	if not isinstance(servers, dict):
+		raise ValueError(f"{path} field '{root_key}' must be a JSON object.")
+	existing = servers.get(server_name)
+	if existing is not None:
+		if existing == server_config:
+			return "skipped"
+		raise ValueError(
+			f"{path} already defines '{server_name}' under '{root_key}'. Update it manually to avoid overwriting."
+		)
+	servers[server_name] = server_config
+	path.parent.mkdir(parents=True, exist_ok=True)
+	path.write_text(json.dumps(data, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
+	return "written"
+
+
+def _write_codex_config(path: Path, python_path: str) -> str:
+	import tomllib
+
+	block_lines = [
+		"[mcp_servers.devlogs]",
+		f'command = "{python_path}"',
+		'args = ["-m", "devlogs.mcp.server"]',
+	]
+	block = "\n".join(block_lines) + "\n"
+	desired = {
+		"command": python_path,
+		"args": ["-m", "devlogs.mcp.server"],
+	}
+
+	text = ""
+	if path.is_file():
+		text = path.read_text(encoding="utf-8")
+		if text.strip():
+			try:
+				data = tomllib.loads(text)
+			except tomllib.TOMLDecodeError as exc:
+				raise ValueError(f"{path} is not valid TOML: {exc}") from exc
+		else:
+			data = {}
+		if not isinstance(data, dict):
+			raise ValueError(f"{path} must contain a TOML table.")
+		existing = data.get("mcp_servers", {}).get("devlogs")
+		if existing is not None:
+			if (
+				isinstance(existing, dict)
+				and existing.get("command") == desired["command"]
+				and existing.get("args") == desired["args"]
+			):
+				return "skipped"
+			raise ValueError(
+				f"{path} already defines mcp_servers.devlogs. Update it manually to avoid overwriting."
+			)
+		if text and not text.endswith("\n"):
+			text += "\n"
+	path.parent.mkdir(parents=True, exist_ok=True)
+	separator = "\n" if text else ""
+	path.write_text(text + separator + block, encoding="utf-8")
+	return "written"
+
+
+def _check_schema_compatibility(client, index: str) -> tuple[int | None, list[str]]:
+	"""Check index schema compatibility and return (version, issues)."""
+	try:
+		mapping = client.indices.get_mapping(index=index)
+		version = detect_schema_version(mapping)
+		issues = get_schema_issues(mapping) if version != SCHEMA_VERSION else []
+		return version, issues
+	except Exception:
+		return None, []
+
+
+def _perform_upgrade(client, cfg, source_index: str) -> bool:
+	"""Upgrade index to v2 schema by reindexing.
+
+	Returns True on success, False on failure.
+	"""
+	import uuid
+
+	target_index = f"{source_index}-v2-{uuid.uuid4().hex[:8]}"
+	template_body = build_log_index_template(cfg.index)
+
+	typer.echo(f"Creating new index '{target_index}' with v2 schema...")
+	try:
+		client.indices.create(index=target_index, body=template_body["template"])
+	except Exception as e:
+		typer.echo(typer.style(f"Error creating target index: {e}", fg=typer.colors.RED), err=True)
+		return False
+
+	typer.echo(f"Reindexing from '{source_index}' to '{target_index}'...")
+	typer.echo(typer.style("This may take a while for large indices...", dim=True))
+
+	reindex_body = {
+		"source": {"index": source_index},
+		"dest": {"index": target_index},
+		"script": {
+			"source": build_reindex_script(),
+			"lang": "painless",
+		},
+	}
+
+	try:
+		result = client.indices.reindex(body=reindex_body)
+		total = result.get("total", 0)
+		created = result.get("created", 0)
+		updated = result.get("updated", 0)
+		failures = result.get("failures", [])
+
+		if failures:
+			typer.echo(typer.style(f"Warning: {len(failures)} documents failed to reindex", fg=typer.colors.YELLOW))
+			for failure in failures[:3]:
+				typer.echo(f"  - {failure}", err=True)
+			if len(failures) > 3:
+				typer.echo(f"  ... and {len(failures) - 3} more", err=True)
+
+		typer.echo(f"Reindexed {total} documents ({created} created, {updated} updated)")
+	except Exception as e:
+		typer.echo(typer.style(f"Error during reindex: {e}", fg=typer.colors.RED), err=True)
+		typer.echo(f"The partial index '{target_index}' may need to be cleaned up manually.")
+		return False
+
+	# Delete old index and rename new one
+	typer.echo(f"Removing old index '{source_index}'...")
+	try:
+		client.indices.delete(index=source_index)
+	except Exception as e:
+		typer.echo(typer.style(f"Error deleting old index: {e}", fg=typer.colors.RED), err=True)
+		typer.echo(f"New index is available at '{target_index}'. Manual cleanup may be needed.")
+		return False
+
+	# Create alias or new index with original name pointing to data
+	typer.echo(f"Creating new index '{source_index}' with v2 schema...")
+	try:
+		client.indices.create(index=source_index, body=template_body["template"])
+	except Exception as e:
+		typer.echo(typer.style(f"Error creating new index: {e}", fg=typer.colors.RED), err=True)
+		typer.echo(f"Data is available at '{target_index}'.")
+		return False
+
+	# Reindex from temp to final
+	typer.echo(f"Moving data to '{source_index}'...")
+	reindex_final = {
+		"source": {"index": target_index},
+		"dest": {"index": source_index},
+	}
+	try:
+		client.indices.reindex(body=reindex_final)
+		client.indices.delete(index=target_index)
+	except Exception as e:
+		typer.echo(typer.style(f"Error finalizing: {e}", fg=typer.colors.RED), err=True)
+		typer.echo(f"Data may be split between '{source_index}' and '{target_index}'.")
+		return False
+
+	typer.echo(typer.style(f"Successfully upgraded '{source_index}' to v2 schema!", fg=typer.colors.GREEN))
+	return True
+
+
+@app.command()
+def init(
+	upgrade: bool = typer.Option(False, "--upgrade", help="Upgrade existing index to v2 schema if needed"),
+	env: str = ENV_OPTION,
+	url: str = URL_OPTION,
+):
+	"""Initialize OpenSearch indices and templates (idempotent).
+
+	Checks existing index for v2 schema compatibility. Use --upgrade to
+	automatically migrate data from v1 to v2 schema.
+	"""
+	_apply_common_options(env, url)
+	client, cfg = require_opensearch(check_idx=False)
+
+	# Check existing index schema
+	index_exists = client.indices.exists(index=cfg.index)
+	if index_exists:
+		version, issues = _check_schema_compatibility(client, cfg.index)
+		if version is not None:
+			typer.echo(f"Index '{cfg.index}' exists with schema v{version}")
+			if version == SCHEMA_VERSION:
+				typer.echo(typer.style("Schema is v2-compatible.", fg=typer.colors.GREEN))
+			else:
+				typer.echo(typer.style(f"Schema needs upgrade to v{SCHEMA_VERSION}.", fg=typer.colors.YELLOW))
+				if issues:
+					typer.echo("Issues found:")
+					for issue in issues:
+						typer.echo(f"  - {issue}")
+
+				if upgrade:
+					typer.echo("")
+					if not _perform_upgrade(client, cfg, cfg.index):
+						raise typer.Exit(1)
+				else:
+					typer.echo("")
+					typer.echo("Run with --upgrade to migrate data to v2 schema.")
+					typer.echo(typer.style(
+						"Warning: Upgrade will reindex all data. Back up your index first.",
+						fg=typer.colors.YELLOW,
+					))
+					raise typer.Exit(1)
+
+	# Create or update index templates
+	template_body = build_log_index_template(cfg.index)
+	template_name, legacy_template_name = get_template_names(cfg.index)
+
+	# Remove any conflicting templates before creating a new one
+	names_to_remove = {template_name, legacy_template_name}
+	names_to_remove.update(OLD_TEMPLATE_NAMES)
+	for name in names_to_remove:
+		variant, errors = _delete_template_any_variant(client, name)
+		if errors:
+			for variant_label, exc in errors:
+				typer.echo(
+					typer.style(
+						f"Warning: failed to remove {variant_label} template '{name}': {exc}",
+						fg=typer.colors.YELLOW,
+					),
+					err=True,
+				)
+	client.indices.put_index_template(name=template_name, body=template_body)
+
+	# Create initial index with explicit mappings if it doesn't exist
+	if not index_exists:
+		client.indices.create(index=cfg.index, body=template_body["template"])
+		typer.echo(f"Created index '{cfg.index}' with v{SCHEMA_VERSION} schema.")
+
+	typer.echo("OpenSearch indices and templates initialized.")
+
+
+@app.command()
+def initmcp(
+	agent: str = typer.Argument(
+		...,
+		help="Target agent: copilot, claude, codex, or all",
+	),
+):
+	"""Write MCP config for supported agents."""
+	agent_key = agent.strip().lower()
+	valid_agents = {"copilot", "claude", "codex", "all"}
+	if agent_key not in valid_agents:
+		typer.echo(typer.style(f"Error: Unknown agent '{agent}'.", fg=typer.colors.RED), err=True)
+		raise typer.Exit(1)
+
+	python_path = sys.executable
+	root = Path.cwd()
+	results = []
+
+	def _write_claude():
+		path = root / ".mcp.json"
+		config = {
+			"command": python_path,
+			"args": ["-m", "devlogs.mcp.server"],
+		}
+		status = _write_json_config(path, "mcpServers", "devlogs", config)
+		results.append((status, "Claude", path))
+
+	def _write_copilot():
+		path = root / ".vscode" / "mcp.json"
+		config = {
+			"command": python_path,
+			"args": ["-m", "devlogs.mcp.server"],
+		}
+		status = _write_json_config(path, "servers", "devlogs", config)
+		results.append((status, "Copilot", path))
+
+	def _write_codex():
+		path = Path("~/.codex/config.toml").expanduser()
+		status = _write_codex_config(path, python_path)
+		results.append((status, "Codex", path))
+
+	try:
+		if agent_key in {"claude", "all"}:
+			_write_claude()
+		if agent_key in {"copilot", "all"}:
+			_write_copilot()
+		if agent_key in {"codex", "all"}:
+			_write_codex()
+	except ValueError as exc:
+		typer.echo(typer.style(f"Error: {exc}", fg=typer.colors.RED), err=True)
+		raise typer.Exit(1)
+
+	for status, label, path in results:
+		if status == "written":
+			typer.echo(f"Wrote {label}: {path}")
+		else:
+			typer.echo(f"Skipped {label}: {path} already configured")
+
+@app.command()
+def refresh(
+	index: str = typer.Argument(None, help="Index name to refresh (defaults to configured index)"),
+	env: str = ENV_OPTION,
+	url: str = URL_OPTION,
+):
+	"""Force OpenSearch to index pending documents.
+
+	This makes recently indexed documents immediately searchable by forcing
+	a refresh of the index. Normally OpenSearch refreshes every 1 second,
+	but this command is useful when you need immediate visibility.
+
+	Examples:
+	  devlogs refresh              # Refresh the configured index
+	  devlogs refresh my-index     # Refresh a specific index
+	"""
+	_apply_common_options(env, url)
+	client, cfg = require_opensearch(check_idx=False)
+
+	index_to_refresh = index or cfg.index
+
+	if not client.indices.exists(index=index_to_refresh):
+		typer.echo(typer.style(f"Error: Index '{index_to_refresh}' does not exist.", fg=typer.colors.RED), err=True)
+		raise typer.Exit(1)
+
+	try:
+		client.indices.refresh(index=index_to_refresh)
+		typer.echo(typer.style(f"Refreshed index '{index_to_refresh}'.", fg=typer.colors.GREEN))
+	except OpenSearchError as e:
+		typer.echo(typer.style(f"Error: Failed to refresh index: {e}", fg=typer.colors.RED), err=True)
+		raise typer.Exit(1)
+
+
+@app.command()
+def diagnose(
+	env: str = ENV_OPTION,
+	url: str = URL_OPTION,
+):
+	"""Diagnose common devlogs setup issues."""
+	_apply_common_options(env, url)
+	import os
+	import tomllib
+	from . import config as config_module
+
+	errors = 0
+
+	def _emit(status: str, message: str) -> None:
+		nonlocal errors
+		label = {"ok": "OK", "warn": "WARN", "error": "ERROR"}[status]
+		color = {
+			"ok": typer.colors.GREEN,
+			"warn": typer.colors.YELLOW,
+			"error": typer.colors.RED,
+		}[status]
+		if status == "error":
+			errors += 1
+		typer.echo(f"{typer.style(f'[{label}]', fg=color)} {message}")
+
+	def _resolve_dotenv_path():
+		explicit = os.getenv("DOTENV_PATH")
+		if explicit:
+			return Path(explicit).expanduser(), "DOTENV_PATH"
+		custom = getattr(config_module, "_custom_dotenv_path", None)
+		if custom:
+			return Path(custom).expanduser(), "--env"
+		try:
+			from dotenv import find_dotenv
+		except ModuleNotFoundError:
+			return None, None
+		found = find_dotenv(usecwd=True)
+		if found:
+			return Path(found), "auto-discovered"
+		return None, None
+
+	def _env_has_devlogs_settings(env: dict) -> bool:
+		if not isinstance(env, dict):
+			return False
+		for key in env.keys():
+			if key == "DOTENV_PATH" or key.startswith("DEVLOGS_"):
+				return True
+		return False
+
+	def _args_has_mcp_module(args) -> bool:
+		if isinstance(args, list):
+			return "devlogs.mcp.server" in args
+		if isinstance(args, str):
+			return "devlogs.mcp.server" in args
+		return False
+
+	def _check_json_mcp(path: Path, root_key: str, label: str) -> None:
+		if not path.is_file():
+			_emit("warn", f"MCP ({label}): {path} not found")
+			return
+		try:
+			data = json.loads(path.read_text(encoding="utf-8"))
+		except json.JSONDecodeError as exc:
+			_emit("error", f"MCP ({label}): invalid JSON in {path}: {exc}")
+			return
+		if not isinstance(data, dict):
+			_emit("error", f"MCP ({label}): {path} must contain a JSON object")
+			return
+		servers = data.get(root_key)
+		if not isinstance(servers, dict):
+			_emit("warn", f"MCP ({label}): missing '{root_key}' in {path}")
+			return
+		server = servers.get("devlogs")
+		if not isinstance(server, dict):
+			_emit("warn", f"MCP ({label}): devlogs server not configured in {path}")
+			return
+		issues = []
+		if not server.get("command"):
+			issues.append("missing command")
+		if not _args_has_mcp_module(server.get("args")):
+			issues.append("missing devlogs.mcp.server args")
+		if not _env_has_devlogs_settings(server.get("env", {})):
+			issues.append("missing DOTENV_PATH or DEVLOGS_* env")
+		if issues:
+			_emit("warn", f"MCP ({label}): devlogs config incomplete in {path} ({', '.join(issues)})")
+		else:
+			_emit("ok", f"MCP ({label}): devlogs configured in {path}")
+
+	def _check_toml_mcp(path: Path, label: str) -> None:
+		if not path.is_file():
+			_emit("warn", f"MCP ({label}): {path} not found")
+			return
+		try:
+			data = tomllib.loads(path.read_text(encoding="utf-8"))
+		except tomllib.TOMLDecodeError as exc:
+			_emit("error", f"MCP ({label}): invalid TOML in {path}: {exc}")
+			return
+		if not isinstance(data, dict):
+			_emit("error", f"MCP ({label}): {path} must contain a TOML table")
+			return
+		servers = data.get("mcp_servers")
+		if not isinstance(servers, dict):
+			_emit("warn", f"MCP ({label}): missing 'mcp_servers' in {path}")
+			return
+		server = servers.get("devlogs")
+		if not isinstance(server, dict):
+			_emit("warn", f"MCP ({label}): devlogs server not configured in {path}")
+			return
+		issues = []
+		if not server.get("command"):
+			issues.append("missing command")
+		if not _args_has_mcp_module(server.get("args")):
+			issues.append("missing devlogs.mcp.server args")
+		if not _env_has_devlogs_settings(server.get("env", {})):
+			issues.append("missing DOTENV_PATH or DEVLOGS_* env")
+		if issues:
+			_emit("warn", f"MCP ({label}): devlogs config incomplete in {path} ({', '.join(issues)})")
+		else:
+			_emit("ok", f"MCP ({label}): devlogs configured in {path}")
+
+	typer.echo("Devlogs diagnostics:")
+
+	cfg = load_config()
+	dotenv_path, dotenv_source = _resolve_dotenv_path()
+	if dotenv_path:
+		if dotenv_path.is_file():
+			if cfg.enabled:
+				_emit("ok", f".env: {dotenv_path} ({dotenv_source})")
+			else:
+				_emit("warn", f".env: {dotenv_path} ({dotenv_source}) found, but no DEVLOGS_* settings detected")
+		else:
+			_emit("error", f".env: {dotenv_path} ({dotenv_source}) not found")
+	else:
+		if cfg.enabled:
+			_emit("warn", ".env: not found, using environment variables only")
+		else:
+			_emit("warn", ".env: not found and no DEVLOGS_* settings detected")
+
+	client = None
+	connection_ok = False
+	try:
+		client = get_opensearch_client()
+	except DevlogsDisabledError as exc:
+		_emit("error", f"OpenSearch: {exc}")
+	except OpenSearchError as exc:
+		_emit("error", f"OpenSearch: {exc}")
+	else:
+		try:
+			check_connection(client)
+			connection_ok = True
+			_emit("ok", f"OpenSearch: connected to {cfg.opensearch_host}:{cfg.opensearch_port}")
+		except OpenSearchError as exc:
+			_emit("error", f"OpenSearch: {exc}")
+
+	index_exists = False
+	if client and connection_ok:
+		try:
+			if client.indices.exists(index=cfg.index):
+				_emit("ok", f"Index: {cfg.index} exists")
+				index_exists = True
+			else:
+				_emit("error", f"Index: {cfg.index} does not exist (run 'devlogs init')")
+		except OpenSearchError as exc:
+			_emit("error", f"Index: {exc}")
+		except Exception as exc:
+			_emit("error", f"Index: unexpected error: {type(exc).__name__}: {exc}")
+	else:
+		_emit("warn", "Index: skipped (OpenSearch connection unavailable)")
+
+	if client and connection_ok and index_exists:
+		try:
+			response = client.count(index=cfg.index)
+			count = response.get("count", 0) if isinstance(response, dict) else 0
+			if count:
+				_emit("ok", f"Logs: found {count} entries")
+			else:
+				_emit("warn", "Logs: no entries found (index is empty)")
+		except OpenSearchError as exc:
+			_emit("error", f"Logs: {exc}")
+		except Exception as exc:
+			_emit("error", f"Logs: unexpected error: {type(exc).__name__}: {exc}")
+	else:
+		_emit("warn", "Logs: skipped (index unavailable)")
+
+	_check_json_mcp(Path.cwd() / ".mcp.json", "mcpServers", "Claude")
+	_check_json_mcp(Path.cwd() / ".vscode" / "mcp.json", "servers", "Copilot")
+	_check_toml_mcp(Path.home() / ".codex" / "config.toml", "Codex")
+
+	if errors:
+		raise typer.Exit(1)
+
+
+@app.command()
+def tail(
+	operation_id: str = typer.Option(None, "--operation", "-o"),
+	area: str = typer.Option(None, "--area"),
+	level: str = typer.Option(None, "--level"),
+	since: str = typer.Option(None, "--since"),
+	limit: int = typer.Option(20, "--limit"),
+	follow: bool = typer.Option(False, "--follow", "-f"),
+	verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose output"),
+	utc: bool = typer.Option(False, "--utc", help="Display timestamps in UTC instead of local time"),
+	env: str = ENV_OPTION,
+	url: str = URL_OPTION,
+):
+	"""Tail logs for a given area/operation."""
+	import urllib.error
+	import traceback
+
+	_apply_common_options(env, url)
+	client, cfg = require_opensearch()
+
+	def _verbose_echo(message, color=typer.colors.BLUE):
+		if verbose:
+			typer.echo(typer.style(message, fg=color), err=True)
+
+	def _log_doc_anomalies(docs):
+		bad_docs = 0
+		bad_entries = 0
+		for doc_index, doc in enumerate(docs):
+			if not isinstance(doc, dict):
+				bad_docs += 1
+				if bad_docs <= 3:
+					_verbose_echo(
+						f"Warning: doc #{doc_index} is {type(doc).__name__}: {doc!r}",
+						color=typer.colors.YELLOW,
+					)
+				continue
+			entries = doc.get("entries")
+			if isinstance(entries, list):
+				for entry_index, entry in enumerate(entries):
+					if not isinstance(entry, dict):
+						bad_entries += 1
+						if bad_entries <= 3:
+							_verbose_echo(
+								f"Warning: doc #{doc_index} entry #{entry_index} is {type(entry).__name__}: {entry!r}",
+								color=typer.colors.YELLOW,
+							)
+		if bad_docs or bad_entries:
+			_verbose_echo(
+				f"Anomalies detected: {bad_docs} non-dict docs, {bad_entries} non-dict entries",
+				color=typer.colors.YELLOW,
+			)
+
+	if verbose:
+		parts = []
+		if operation_id:
+			parts.append(f"operation={operation_id}")
+		if area:
+			parts.append(f"area={area}")
+		if level:
+			parts.append(f"level={level}")
+		if since:
+			parts.append(f"since={since}")
+		filter_text = " ".join(parts) if parts else "no filters"
+		_verbose_echo(f"Tailing index '{cfg.index}' ({filter_text}), limit={limit}, follow={follow}")
+
+	search_after = None
+	consecutive_errors = 0
+	max_errors = 3
+	first_poll = True
+
+	while True:
+		try:
+			_verbose_echo(f"Polling OpenSearch with cursor={search_after}")
+			docs, search_after = tail_logs(
+				client,
+				cfg.index,
+				operation_id=operation_id,
+				area=area,
+				level=level,
+				since=since,
+				limit=limit,
+				search_after=search_after,
+			)
+			_verbose_echo(f"Received {len(docs)} docs, next cursor={search_after}")
+			if verbose and docs:
+				sample = docs[0]
+				if isinstance(sample, dict):
+					keys = ", ".join(sorted(sample.keys()))
+					_verbose_echo(f"Sample doc keys: {keys}")
+				else:
+					_verbose_echo(f"Sample doc type: {type(sample).__name__}")
+				_log_doc_anomalies(docs)
+			try:
+				entries = normalize_log_entries(docs)
+			except Exception as e:
+				_verbose_echo(
+					f"normalize_log_entries failed: {type(e).__name__}: {e}",
+					color=typer.colors.RED,
+				)
+				if docs:
+					_verbose_echo(f"Sample doc repr: {docs[0]!r}", color=typer.colors.RED)
+				raise
+			_verbose_echo(f"Normalized {len(entries)} entries")
+			consecutive_errors = 0  # Reset on success
+		except (ConnectionFailedError, urllib.error.URLError) as e:
+			consecutive_errors += 1
+			if not follow or consecutive_errors >= max_errors:
+				typer.echo(typer.style(
+					f"Error: Lost connection to OpenSearch ({consecutive_errors} attempts)",
+					fg=typer.colors.RED
+				), err=True)
+				raise typer.Exit(1)
+			typer.echo(typer.style(
+				f"Connection error, retrying... ({consecutive_errors}/{max_errors})",
+				fg=typer.colors.YELLOW
+			), err=True)
+			time.sleep(2)
+			continue
+		except urllib.error.HTTPError as e:
+			typer.echo(typer.style(
+				f"Error: OpenSearch error: HTTP {e.code} - {e.reason}",
+				fg=typer.colors.RED
+			), err=True)
+			raise typer.Exit(1)
+		except OpenSearchError as e:
+			typer.echo(typer.style(
+				f"Error: {e}",
+				fg=typer.colors.RED
+			), err=True)
+			raise typer.Exit(1)
+		except Exception as e:
+			if verbose:
+				typer.echo(typer.style("Verbose stack trace:", fg=typer.colors.RED), err=True)
+				traceback.print_exc()
+			typer.echo(typer.style(
+				f"Error: Unexpected error: {type(e).__name__}: {e}",
+				fg=typer.colors.RED
+			), err=True)
+			raise typer.Exit(1)
+
+		if first_poll and not entries:
+			typer.echo(typer.style("No logs found.", dim=True), err=True)
+		first_poll = False
+
+		for entry_index, doc in enumerate(entries):
+			try:
+				timestamp = format_timestamp(doc.get("timestamp") or "", use_utc=utc)
+				entry_level = doc.get("level") or ""
+				entry_area = doc.get("area") or ""
+				entry_operation = doc.get("operation_id") or ""
+				message = doc.get("message") or ""
+				features = _format_features(doc.get("fields"))
+				if features:
+					typer.echo(f"{timestamp} {entry_level} {entry_area} {entry_operation} {features} {message}")
+				else:
+					typer.echo(f"{timestamp} {entry_level} {entry_area} {entry_operation} {message}")
+			except Exception as e:
+				_verbose_echo(
+					f"Failed rendering entry #{entry_index}: {type(e).__name__}: {e}",
+					color=typer.colors.RED,
+				)
+				_verbose_echo(f"Entry repr: {doc!r}", color=typer.colors.RED)
+				raise
+
+		if not follow:
+			break
+		time.sleep(2)
+
+
+@app.command()
+def search(
+	q: str = typer.Option("", "--q", help="Search query"),
+	area: str = typer.Option(None, "--area"),
+	level: str = typer.Option(None, "--level"),
+	operation_id: str = typer.Option(None, "--operation", "-o"),
+	since: str = typer.Option(None, "--since"),
+	limit: int = typer.Option(50, "--limit"),
+	follow: bool = typer.Option(False, "--follow", "-f"),
+	utc: bool = typer.Option(False, "--utc", help="Display timestamps in UTC instead of local time"),
+	env: str = ENV_OPTION,
+	url: str = URL_OPTION,
+):
+	"""Search logs for a query."""
+	import urllib.error
+
+	_apply_common_options(env, url)
+	client, cfg = require_opensearch()
+	search_after = None
+	consecutive_errors = 0
+	max_errors = 3
+	first_poll = True
+
+	while True:
+		try:
+			if follow:
+				docs, search_after = tail_logs(
+					client,
+					cfg.index,
+					query=q,
+					operation_id=operation_id,
+					area=area,
+					level=level,
+					since=since,
+					limit=limit,
+					search_after=search_after,
+				)
+			else:
+				docs = search_logs(
+					client,
+					cfg.index,
+					query=q,
+					area=area,
+					operation_id=operation_id,
+					level=level,
+					since=since,
+					limit=limit,
+				)
+			entries = normalize_log_entries(docs, limit=limit)
+			consecutive_errors = 0
+		except (ConnectionFailedError, urllib.error.URLError) as e:
+			consecutive_errors += 1
+			if not follow or consecutive_errors >= max_errors:
+				typer.echo(typer.style(
+					f"Error: Lost connection to OpenSearch ({consecutive_errors} attempts)",
+					fg=typer.colors.RED
+				), err=True)
+				raise typer.Exit(1)
+			typer.echo(typer.style(
+				f"Connection error, retrying... ({consecutive_errors}/{max_errors})",
+				fg=typer.colors.YELLOW
+			), err=True)
+			time.sleep(2)
+			continue
+		except urllib.error.HTTPError as e:
+			typer.echo(typer.style(
+				f"Error: OpenSearch error: HTTP {e.code} - {e.reason}",
+				fg=typer.colors.RED
+			), err=True)
+			raise typer.Exit(1)
+		except OpenSearchError as e:
+			typer.echo(typer.style(
+				f"Error: {e}",
+				fg=typer.colors.RED
+			), err=True)
+			raise typer.Exit(1)
+		except Exception as e:
+			typer.echo(typer.style(
+				f"Error: Unexpected error: {type(e).__name__}: {e}",
+				fg=typer.colors.RED
+			), err=True)
+			raise typer.Exit(1)
+
+		if first_poll and not entries:
+			typer.echo(typer.style("No logs found.", dim=True), err=True)
+		first_poll = False
+
+		for doc in entries:
+			timestamp = format_timestamp(doc.get("timestamp") or "", use_utc=utc)
+			entry_level = doc.get("level") or ""
+			entry_area = doc.get("area") or ""
+			entry_operation = doc.get("operation_id") or ""
+			message = doc.get("message") or ""
+			features = _format_features(doc.get("fields"))
+			if features:
+				typer.echo(f"{timestamp} {entry_level} {entry_area} {entry_operation} {features} {message}")
+			else:
+				typer.echo(f"{timestamp} {entry_level} {entry_area} {entry_operation} {message}")
+
+		if not follow:
+			break
+		time.sleep(2)
+
+
+@app.command()
+def last_error(
+	q: str = typer.Option("", "--q", help="Search query"),
+	area: str = typer.Option(None, "--area"),
+	operation_id: str = typer.Option(None, "--operation", "-o"),
+	since: str = typer.Option(None, "--since"),
+	until: str = typer.Option(None, "--until"),
+	limit: int = typer.Option(1, "--limit"),
+	utc: bool = typer.Option(False, "--utc", help="Display timestamps in UTC instead of local time"),
+	env: str = ENV_OPTION,
+	url: str = URL_OPTION,
+):
+	"""Show the most recent error/critical log entries."""
+	import urllib.error
+
+	_apply_common_options(env, url)
+	client, cfg = require_opensearch()
+
+	try:
+		docs = get_last_errors(
+			client,
+			cfg.index,
+			query=q,
+			area=area,
+			operation_id=operation_id,
+			since=since,
+			until=until,
+			limit=limit,
+		)
+		entries = normalize_log_entries(docs, limit=limit)
+	except (ConnectionFailedError, urllib.error.URLError) as e:
+		typer.echo(typer.style(
+			f"Error: Lost connection to OpenSearch ({e})",
+			fg=typer.colors.RED
+		), err=True)
+		raise typer.Exit(1)
+	except urllib.error.HTTPError as e:
+		typer.echo(typer.style(
+			f"Error: OpenSearch error: HTTP {e.code} - {e.reason}",
+			fg=typer.colors.RED
+		), err=True)
+		raise typer.Exit(1)
+	except OpenSearchError as e:
+		typer.echo(typer.style(
+			f"Error: {e}",
+			fg=typer.colors.RED
+		), err=True)
+		raise typer.Exit(1)
+	except Exception as e:
+		typer.echo(typer.style(
+			f"Error: Unexpected error: {type(e).__name__}: {e}",
+			fg=typer.colors.RED
+		), err=True)
+		raise typer.Exit(1)
+
+	if not entries:
+		typer.echo(typer.style("No errors found.", dim=True), err=True)
+		return
+
+	for doc in entries:
+		timestamp = format_timestamp(doc.get("timestamp") or "", use_utc=utc)
+		entry_level = doc.get("level") or ""
+		entry_area = doc.get("area") or ""
+		entry_operation = doc.get("operation_id") or ""
+		message = doc.get("message") or ""
+		features = _format_features(doc.get("fields"))
+		if features:
+			typer.echo(f"{timestamp} {entry_level} {entry_area} {entry_operation} {features} {message}")
+		else:
+			typer.echo(f"{timestamp} {entry_level} {entry_area} {entry_operation} {message}")
+
+
+@app.command()
+def cleanup(
+	dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be deleted without actually deleting"),
+	stats: bool = typer.Option(False, "--stats", help="Show retention statistics only"),
+	env: str = ENV_OPTION,
+	url: str = URL_OPTION,
+):
+	"""Clean up old logs based on retention policy.
+
+	Retention tiers:
+	- DEBUG logs: Deleted after DEVLOGS_RETENTION_DEBUG_HOURS (default: 6 hours)
+	- INFO logs: Deleted after DEVLOGS_RETENTION_INFO_DAYS (default: 7 days)
+	- WARNING/ERROR/CRITICAL: Deleted after DEVLOGS_RETENTION_WARNING_DAYS (default: 30 days)
+	"""
+	_apply_common_options(env, url)
+	client, cfg = require_opensearch()
+
+	if stats:
+		# Show retention statistics
+		stats_result = get_retention_stats(client, cfg)
+		typer.echo("Retention Statistics:")
+		typer.echo(f"  Total logs: {stats_result['total_logs']}")
+		typer.echo(f"  Hot tier (recent): {stats_result['hot_tier']}")
+		typer.echo()
+		typer.echo("Eligible for deletion:")
+		typer.echo(f"  DEBUG logs (older than {cfg.retention_debug_hours}h): {stats_result['eligible_for_deletion']['debug']}")
+		typer.echo(f"  INFO logs (older than {cfg.retention_info_days}d): {stats_result['eligible_for_deletion']['info']}")
+		typer.echo(f"  All logs (older than {cfg.retention_warning_days}d): {stats_result['eligible_for_deletion']['all']}")
+		return
+
+	# Run cleanup
+	if dry_run:
+		typer.echo("DRY RUN: No logs will be deleted")
+		typer.echo()
+
+	results = cleanup_old_logs(client, cfg, dry_run=dry_run)
+
+	action = "Would delete" if dry_run else "Deleted"
+	typer.echo(f"Cleanup results:")
+	typer.echo(f"  {action} {results['debug_deleted']} DEBUG logs (older than {cfg.retention_debug_hours}h)")
+	typer.echo(f"  {action} {results['info_deleted']} INFO logs (older than {cfg.retention_info_days}d)")
+	typer.echo(f"  {action} {results['warning_deleted']} WARNING+ logs (older than {cfg.retention_warning_days}d)")
+	typer.echo(f"  Total: {action} {results['debug_deleted'] + results['info_deleted'] + results['warning_deleted']} logs")
+
+	if not dry_run:
+		typer.echo(typer.style("Cleanup complete.", fg=typer.colors.GREEN))
+
+
+@app.command()
+def clean(
+	force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
+	env: str = ENV_OPTION,
+	url: str = URL_OPTION,
+):
+	"""Delete the devlogs index and templates (destructive)."""
+	_apply_common_options(env, url)
+	client, cfg = require_opensearch(check_idx=False)
+	template_name, legacy_template_name = get_template_names(cfg.index)
+	warning_text = (
+		"This action permanently deletes all devlogs data by removing the index and its templates."
+	)
+	typer.echo(typer.style("WARNING: " + warning_text, fg=typer.colors.RED, bold=True))
+	if not force:
+		confirmed = typer.confirm("Do you want to continue?")
+		if not confirmed:
+			typer.echo("Clean operation cancelled.")
+			raise typer.Exit(0)
+
+	status_code = 0
+
+	try:
+		if client.indices.exists(index=cfg.index):
+			client.indices.delete(index=cfg.index)
+			typer.echo(typer.style(f"Deleted index '{cfg.index}'.", fg=typer.colors.GREEN))
+		else:
+			typer.echo(typer.style(f"Index '{cfg.index}' not found.", fg=typer.colors.YELLOW))
+	except OpenSearchError as e:
+		typer.echo(
+			typer.style(f"Error deleting index '{cfg.index}': {e}", fg=typer.colors.RED),
+			err=True,
+		)
+		status_code = 1
+	except Exception as e:  # pragma: no cover - unexpected errors
+		typer.echo(
+			typer.style(f"Unexpected error deleting index '{cfg.index}': {e}", fg=typer.colors.RED),
+			err=True,
+		)
+		status_code = 1
+
+	all_template_names = [template_name, legacy_template_name, *OLD_TEMPLATE_NAMES]
+	for template in all_template_names:
+		variant, errors = _delete_template_any_variant(client, template)
+		if variant:
+			variant_label = "composable" if variant == "composable" else "legacy"
+			typer.echo(
+				typer.style(
+					f"Deleted {variant_label} template '{template}'.",
+					fg=typer.colors.GREEN,
+				),
+			)
+		elif errors:
+			for variant_label, exc in errors:
+				typer.echo(
+					typer.style(
+						f"Error deleting {variant_label} template '{template}': {exc}",
+						fg=typer.colors.RED,
+					),
+					err=True,
+				)
+			status_code = 1
+		else:
+			typer.echo(
+				typer.style(
+					f"Template '{template}' not found.",
+					fg=typer.colors.YELLOW,
+				),
+			)
+
+	if status_code != 0:
+		raise typer.Exit(status_code)
+
+	typer.echo(typer.style("Clean operation complete.", fg=typer.colors.GREEN))
+
+
+@app.command()
+def delete(
+	index: str = typer.Argument(None, help="Index name to delete (defaults to configured index)"),
+	force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
+	env: str = ENV_OPTION,
+	url: str = URL_OPTION,
+):
+	"""Delete a devlogs index.
+
+	This command permanently deletes an OpenSearch index. By default, it will prompt
+	for confirmation unless --force is used.
+
+	Examples:
+	  devlogs delete                    # Delete the configured index (with confirmation)
+	  devlogs delete my-index           # Delete a specific index (with confirmation)
+	  devlogs delete --force            # Delete without confirmation
+	  devlogs delete my-index --force   # Delete specific index without confirmation
+	"""
+	_apply_common_options(env, url)
+	client, cfg = require_opensearch(check_idx=False)
+
+	# Use configured index if none provided
+	index_to_delete = index or cfg.index
+
+	# Check if index exists
+	if not client.indices.exists(index=index_to_delete):
+		typer.echo(typer.style(f"Error: Index '{index_to_delete}' does not exist.", fg=typer.colors.RED), err=True)
+		raise typer.Exit(1)
+
+	# Prompt for confirmation unless --force is used
+	if not force:
+		typer.echo(f"You are about to delete index: {typer.style(index_to_delete, fg=typer.colors.YELLOW, bold=True)}")
+		typer.echo(typer.style("This action cannot be undone!", fg=typer.colors.RED, bold=True))
+		confirm = typer.confirm("Are you sure you want to continue?")
+		if not confirm:
+			typer.echo("Delete operation cancelled.")
+			raise typer.Exit(0)
+
+	# Delete the index
+	try:
+		client.indices.delete(index=index_to_delete)
+		typer.echo(typer.style(f"Successfully deleted index '{index_to_delete}'.", fg=typer.colors.GREEN))
+	except OpenSearchError as e:
+		typer.echo(typer.style(f"Error: Failed to delete index: {e}", fg=typer.colors.RED), err=True)
+		raise typer.Exit(1)
+
+
+@app.command()
+def demo(
+	duration: int = typer.Option(10, "--duration", "-t", help="Duration in seconds"),
+	count: int = typer.Option(50, "--count", "-n", help="Number of log entries to generate"),
+	env: str = ENV_OPTION,
+	url: str = URL_OPTION,
+):
+	"""Generate demo logs to illustrate devlogs capabilities."""
+	_apply_common_options(env, url)
+	from .demo import run_demo
+	run_demo(duration, count, require_opensearch)
+
+
+@app.command()
+def serve(
+	port: int = typer.Option(8888, "--port", "-p", help="Port to serve on"),
+	host: str = typer.Option("127.0.0.1", "--host", "-h", help="Host to bind to"),
+	reload: bool = typer.Option(False, "--reload", "-r", help="Enable auto-reload for development"),
+):
+	"""Start the web UI server."""
+	import uvicorn
+	uvicorn.run("devlogs.web.server:app", host=host, port=port, reload=reload)
+
+
+def _build_opensearch_url(scheme: str, host: str, port: int, user: str, password: str, index: str) -> str:
+	"""Build an OpenSearch URL from components, URL-encoding credentials."""
+	from urllib.parse import quote
+	# URL-encode username and password to handle special characters
+	encoded_user = quote(user, safe="") if user else ""
+	encoded_pass = quote(password, safe="") if password else ""
+	if encoded_user and encoded_pass:
+		auth = f"{encoded_user}:{encoded_pass}@"
+	elif encoded_user:
+		auth = f"{encoded_user}@"
+	else:
+		auth = ""
+	path = f"/{index}" if index else ""
+	return f"{scheme}://{auth}{host}:{port}{path}"
+
+
+def _format_env_output(scheme: str, host: str, port: int, user: str, password: str, index: str) -> str:
+	"""Format OpenSearch config as individual .env variables."""
+	lines = [
+		f"DEVLOGS_OPENSEARCH_HOST={host}",
+		f"DEVLOGS_OPENSEARCH_PORT={port}",
+	]
+	if user:
+		lines.append(f"DEVLOGS_OPENSEARCH_USER={user}")
+	if password:
+		lines.append(f"DEVLOGS_OPENSEARCH_PASS={password}")
+	if index:
+		lines.append(f"DEVLOGS_INDEX={index}")
+	return "\n".join(lines)
+
+
+@app.command()
+def initjenkins(
+	jenkinsfile: str = typer.Argument("Jenkinsfile", help="Path to Jenkinsfile to modify"),
+	credential_id: str = typer.Option("devlogs-opensearch-url", "--credential-id", "-c", help="Jenkins credential ID to use"),
+	env: str = ENV_OPTION,
+	url: str = URL_OPTION,
+):
+	"""Add devlogs configuration to an existing Jenkinsfile.
+
+	This command modifies an existing Jenkinsfile to add an options block
+	with the devlogs pipeline step configured to use a Jenkins credential.
+
+	After running this command, you need to create a Jenkins credential
+	of type "Secret text" with the OpenSearch URL.
+
+	Examples:
+	  devlogs initjenkins                        # Modify ./Jenkinsfile
+	  devlogs initjenkins path/to/Jenkinsfile    # Modify specific file
+	  devlogs initjenkins --credential-id my-cred  # Use custom credential ID
+	"""
+	import re
+
+	_apply_common_options(env, url)
+
+	jenkinsfile_path = Path(jenkinsfile)
+	if not jenkinsfile_path.is_file():
+		typer.echo(typer.style(f"Error: Jenkinsfile not found: {jenkinsfile_path}", fg=typer.colors.RED), err=True)
+		raise typer.Exit(1)
+
+	content = jenkinsfile_path.read_text(encoding="utf-8")
+
+	# Check if this looks like a declarative pipeline
+	if "pipeline" not in content:
+		typer.echo(typer.style("Error: File does not appear to be a declarative Jenkins pipeline.", fg=typer.colors.RED), err=True)
+		typer.echo("This command only supports declarative pipelines with a 'pipeline { }' block.", err=True)
+		raise typer.Exit(1)
+
+	# Check if devlogs is already configured
+	if "devlogs(" in content:
+		typer.echo(typer.style("Warning: Jenkinsfile already appears to have devlogs configuration.", fg=typer.colors.YELLOW))
+		typer.echo("Review the file manually to ensure correct configuration.")
+		raise typer.Exit(0)
+
+	options_line = f"        devlogs(credentialsId: '{credential_id}')"
+
+	modified = False
+	lines = content.split("\n")
+	result_lines = []
+	i = 0
+
+	# Track brace depth and whether we're inside pipeline block
+	in_pipeline = False
+	pipeline_brace_depth = 0
+	added_options = False
+
+	while i < len(lines):
+		line = lines[i]
+		result_lines.append(line)
+
+		# Detect entering pipeline block
+		if not in_pipeline and re.match(r'^\s*pipeline\s*\{', line):
+			in_pipeline = True
+			pipeline_brace_depth = 1
+			i += 1
+			continue
+
+		if in_pipeline:
+			# Count braces to track depth
+			pipeline_brace_depth += line.count('{') - line.count('}')
+
+			# Check for existing options block and add our line
+			if not added_options and re.match(r'^\s*options\s*\{', line):
+				result_lines.append(options_line)
+				added_options = True
+				modified = True
+
+			# If we hit stages and haven't added options, add it before stages
+			if re.match(r'^\s*stages\s*\{', line) and not added_options:
+				# Insert before the stages line
+				result_lines.pop()  # Remove the stages line we just added
+
+				result_lines.append("")
+				result_lines.append("    options {")
+				result_lines.append(options_line)
+				result_lines.append("    }")
+				added_options = True
+				modified = True
+
+				result_lines.append("")
+				result_lines.append(line)  # Re-add the stages line
+
+			# Exit pipeline tracking when we close the pipeline block
+			if pipeline_brace_depth == 0:
+				in_pipeline = False
+
+		i += 1
+
+	if not modified:
+		typer.echo(typer.style("Error: Could not find a suitable location to add devlogs configuration.", fg=typer.colors.RED), err=True)
+		typer.echo("Ensure the Jenkinsfile has a 'pipeline { stages { } }' structure.", err=True)
+		raise typer.Exit(1)
+
+	# Write the modified file
+	new_content = "\n".join(result_lines)
+	jenkinsfile_path.write_text(new_content, encoding="utf-8")
+
+	typer.echo(typer.style(f"Modified {jenkinsfile_path}", fg=typer.colors.GREEN))
+	typer.echo()
+	typer.echo("Added:")
+	typer.echo(f"  - Options: devlogs(credentialsId: '{credential_id}')")
+
+	# Print setup instructions
+	typer.echo()
+	typer.echo(typer.style("Next steps - Create Jenkins credential:", fg=typer.colors.CYAN, bold=True))
+	typer.echo("=" * 60)
+	typer.echo()
+	typer.echo("1. Go to Jenkins > Manage Jenkins > Credentials")
+	typer.echo("2. Select the appropriate domain (e.g., Global)")
+	typer.echo("3. Click 'Add Credentials'")
+	typer.echo("4. Configure:")
+	typer.echo(f"   - Kind: Secret text")
+	typer.echo(f"   - ID: {credential_id}")
+	typer.echo("   - Secret: <your OpenSearch URL>")
+	typer.echo()
+
+	# Try to load config and show the URL value
+	try:
+		cfg = load_config()
+		if cfg.enabled:
+			# Build the URL from config
+			credential_url = _build_opensearch_url(
+				cfg.opensearch_scheme,
+				cfg.opensearch_host,
+				cfg.opensearch_port,
+				cfg.opensearch_user,
+				cfg.opensearch_pass,
+				cfg.index,
+			)
+			typer.echo(typer.style("Credential value (from your .env/environment):", fg=typer.colors.GREEN, bold=True))
+			typer.echo("-" * 60)
+			typer.echo(credential_url)
+			typer.echo("-" * 60)
+		else:
+			typer.echo("Tip: Set up a .env file with DEVLOGS_OPENSEARCH_URL to see the exact value here.")
+			typer.echo("     Run 'devlogs mkurl' to interactively build the URL.")
+	except Exception:
+		typer.echo("Tip: Run 'devlogs mkurl' to interactively build the OpenSearch URL.")
+
+
+@app.command()
+def mkurl():
+	"""Interactively create an OpenSearch URL and show .env formats.
+
+	This command helps you construct a properly URL-encoded OpenSearch connection
+	string. You can either paste an existing URL to parse and reformat, or enter
+	the components (host, port, credentials, index) one by one.
+
+	The output shows three equivalent formats:
+	- A bare URL (for --url flag or DEVLOGS_OPENSEARCH_URL)
+	- The URL as a single .env variable
+	- Individual .env variables for each component
+	"""
+	typer.echo("OpenSearch URL Builder")
+	typer.echo("=" * 50)
+	typer.echo()
+
+	# Ask user for input method
+	typer.echo("How would you like to provide the connection details?")
+	typer.echo("  [1] Paste an existing URL")
+	typer.echo("  [2] Enter components one by one")
+	typer.echo()
+	choice = typer.prompt("Choice", default="2")
+
+	scheme = "https"
+	host = ""
+	port = 9200
+	user = ""
+	password = ""
+	index = ""
+
+	if choice == "1":
+		# Parse existing URL
+		typer.echo()
+		url_input = typer.prompt("Paste your OpenSearch URL")
+		try:
+			result = _parse_opensearch_url(url_input)
+			if result is None:
+				typer.echo(typer.style("Error: Empty URL provided.", fg=typer.colors.RED), err=True)
+				raise typer.Exit(1)
+			scheme, host, port, user, password, index = result
+			user = user or ""
+			password = password or ""
+			index = index or ""
+		except URLParseError as e:
+			typer.echo(typer.style(f"Error: {e}", fg=typer.colors.RED), err=True)
+			raise typer.Exit(1)
+	else:
+		# Prompt for each component
+		typer.echo()
+		scheme = typer.prompt("Scheme (http/https)", default="https")
+		if scheme not in ("http", "https"):
+			typer.echo(typer.style("Error: Scheme must be 'http' or 'https'.", fg=typer.colors.RED), err=True)
+			raise typer.Exit(1)
+		host = typer.prompt("Host", default="localhost")
+		default_port = 443 if scheme == "https" else 9200
+		port = int(typer.prompt("Port", default=str(default_port)))
+		user = typer.prompt("Username (leave empty for none)", default="")
+		if user:
+			password = typer.prompt("Password (leave empty for none)", default="", hide_input=True)
+		index = typer.prompt("Index name (leave empty for default)", default="")
+
+	# Build the URL
+	url = _build_opensearch_url(scheme, host, port, user, password, index)
+
+	# Output the three formats
+	typer.echo()
+	typer.echo("=" * 50)
+	typer.echo(typer.style("OUTPUT FORMATS", bold=True))
+	typer.echo("=" * 50)
+
+	# Format 1: Bare URL
+	typer.echo()
+	typer.echo(typer.style("1. Bare URL (for --url flag):", fg=typer.colors.CYAN, bold=True))
+	typer.echo("-" * 50)
+	typer.echo(url)
+
+	# Format 2: URL as .env variable
+	typer.echo()
+	typer.echo(typer.style("2. Single .env variable:", fg=typer.colors.CYAN, bold=True))
+	typer.echo("-" * 50)
+	typer.echo(f"DEVLOGS_OPENSEARCH_URL={url}")
+
+	# Format 3: Individual .env variables
+	typer.echo()
+	typer.echo(typer.style("3. Individual .env variables:", fg=typer.colors.CYAN, bold=True))
+	typer.echo("-" * 50)
+	typer.echo(_format_env_output(scheme, host, port, user, password, index))
+
+	typer.echo()
+	typer.echo("=" * 50)
+
+
+def main():
+	if len(sys.argv) == 1:
+		# No arguments: show help
+		command = typer.main.get_command(app)
+		ctx = click.Context(command)
+		typer.echo(command.get_help(ctx), err=True)
+		return 0
+	try:
+		app()
+	except typer.Exit:
+		raise
+	except Exception as e:
+		typer.echo(typer.style(
+			f"Fatal error: {type(e).__name__}: {e}",
+			fg=typer.colors.RED
+		), err=True)
+		sys.exit(1)
+
+if __name__ == "__main__":
+	main()
