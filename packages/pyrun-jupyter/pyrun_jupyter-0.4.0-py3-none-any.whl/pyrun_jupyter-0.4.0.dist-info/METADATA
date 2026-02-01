@@ -1,0 +1,268 @@
+Metadata-Version: 2.4
+Name: pyrun-jupyter
+Version: 0.4.0
+Summary: Execute Python .py files on remote Jupyter servers
+Author: Blazej Domagala
+License: MIT
+Project-URL: Homepage, https://github.com/petitoff/pyrun-jupyter
+Project-URL: Repository, https://github.com/petitoff/pyrun-jupyter
+Project-URL: Issues, https://github.com/petitoff/pyrun-jupyter/issues
+Keywords: jupyter,remote,execution,kernel,python
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: requests>=2.25.0
+Requires-Dist: websocket-client>=1.0.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0.0; extra == "dev"
+Requires-Dist: pytest-cov>=4.0.0; extra == "dev"
+Dynamic: license-file
+
+# pyrun-jupyter
+
+Execute Python `.py` files on remote Jupyter servers.
+
+[![PyPI version](https://img.shields.io/pypi/v/pyrun-jupyter)](https://pypi.org/project/pyrun-jupyter/)
+[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![GitHub](https://img.shields.io/badge/GitHub-petitoff%2Fpyrun--jupyter-blue)](https://github.com/petitoff/pyrun-jupyter)
+
+## Installation
+
+```bash
+pip install pyrun-jupyter
+```
+
+## Quick Start
+
+```python
+from pyrun_jupyter import JupyterRunner
+
+# Connect to your Jupyter server
+runner = JupyterRunner("http://localhost:8888", token="your_token")
+
+# Run a .py file on the remote server
+result = runner.run_file("script.py")
+print(result.stdout)
+
+# Or run code directly
+result = runner.run("print('Hello from Jupyter!')")
+print(result.stdout)
+```
+
+## Features
+
+- 🐍 Execute standard `.py` files on remote Jupyter kernels
+- 📤 Pass parameters to your scripts
+- 📥 Capture stdout, stderr, and rich outputs
+- 🔄 Kernel management (start, stop, restart)
+- 🔌 Connect to existing kernels
+- ⚡ Context manager support for automatic cleanup
+
+## Usage Examples
+
+### Basic Usage
+
+```python
+from pyrun_jupyter import JupyterRunner
+
+runner = JupyterRunner("http://jupyter-server:8888", token="xxx")
+
+# Execute code
+result = runner.run("x = 42; print(f'The answer is {x}')")
+print(result.stdout)  # The answer is 42
+
+# Clean up
+runner.stop_kernel()
+```
+
+### Using Context Manager (Recommended)
+
+```python
+from pyrun_jupyter import JupyterRunner
+
+with JupyterRunner("http://localhost:8888", token="xxx") as runner:
+    result = runner.run_file("my_script.py")
+    print(result.stdout)
+# Kernel automatically stopped
+```
+
+### Passing Parameters to Scripts
+
+```python
+from pyrun_jupyter import JupyterRunner
+
+with JupyterRunner("http://localhost:8888", token="xxx") as runner:
+    # Parameters are injected as variables in your script
+    result = runner.run_file(
+        "train_model.py",
+        params={
+            "learning_rate": 0.001,
+            "epochs": 100,
+            "batch_size": 32,
+        }
+    )
+    print(result.stdout)
+```
+
+Your `train_model.py` can use these variables directly:
+
+```python
+# train_model.py
+print(f"Training with lr={learning_rate}, epochs={epochs}")
+# ... your training code
+```
+
+### Handling Errors
+
+```python
+from pyrun_jupyter import JupyterRunner, ExecutionError
+
+runner = JupyterRunner("http://localhost:8888", token="xxx")
+
+result = runner.run("1/0")
+if result.has_error:
+    print(f"Error: {result.error_name}: {result.error}")
+    # Error: ZeroDivisionError: division by zero
+```
+
+### Connecting to Existing Kernel
+
+```python
+runner = JupyterRunner("http://localhost:8888", token="xxx", auto_start_kernel=False)
+
+# List available kernels
+kernels = runner.list_kernels()
+print(kernels)
+
+# Connect to a specific kernel
+runner.connect_to_kernel("existing-kernel-id")
+result = runner.run("print('Using existing kernel!')")
+```
+
+### Managing Kernels
+
+```python
+runner = JupyterRunner("http://localhost:8888", token="xxx")
+
+# Start a specific kernel type
+runner.start_kernel("python3")
+
+# Restart kernel (clears state)
+runner.restart_kernel()
+
+# Stop kernel when done
+runner.stop_kernel()
+```
+
+## ExecutionResult
+
+The `run()` and `run_file()` methods return an `ExecutionResult` object:
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `stdout` | str | Standard output |
+| `stderr` | str | Standard error |
+| `success` | bool | Whether execution succeeded |
+| `error` | str | Error message (if failed) |
+| `error_name` | str | Exception type (e.g., 'ValueError') |
+| `error_traceback` | list | Full traceback |
+| `data` | dict | Rich output (text/plain, text/html, etc.) |
+| `execution_count` | int | Jupyter cell execution count |
+
+## File Transfer
+
+### Upload/Download via Contents API
+
+```python
+with JupyterRunner("http://localhost:8888", token="xxx") as runner:
+    # Upload single file
+    runner.upload_file("local_data.csv", "data/input.csv")
+    
+    # Upload entire directory
+    runner.upload_directory(
+        "./my_project",
+        remote_dir="project",
+        pattern="**/*.py",
+        exclude_patterns=["__pycache__", "*.pyc"]
+    )
+    
+    # Download file
+    runner.download_file("output/model.pt", "./local/model.pt")
+    
+    # Download multiple files
+    runner.download_files(
+        ["output/model.pt", "output/metrics.json"],
+        local_dir="./results"
+    )
+```
+
+### Upload/Download via Kernel (for Kaggle, etc.)
+
+Some environments (like Kaggle) don't support the Contents API. Use kernel-based methods:
+
+```python
+with JupyterRunner(kaggle_url) as runner:
+    # Upload directory via kernel execution
+    runner.upload_directory_via_kernel(
+        "./my_project",
+        remote_dir="project"
+    )
+    
+    # Run your training
+    runner.run("exec(open('project/train.py').read())")
+    
+    # Download results via kernel
+    runner.download_kernel_files(
+        ["model.pth", "results.png"],
+        local_dir="./results",
+        working_dir="project"
+    )
+```
+
+## Configuration
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `url` | (required) | Jupyter server URL |
+| `token` | None | Authentication token |
+| `kernel_name` | "python3" | Kernel specification to use |
+| `auto_start_kernel` | True | Start kernel automatically on first run |
+| `reuse_kernel` | True | Reuse existing kernel if available |
+
+## Getting Your Jupyter Token
+
+### From Jupyter Notebook/Lab
+
+When you start Jupyter, it displays a URL with the token:
+```
+http://localhost:8888/?token=abc123...
+```
+
+### Generate a permanent token
+
+```bash
+jupyter server --generate-config
+# Edit ~/.jupyter/jupyter_server_config.py
+# Set: c.ServerApp.token = 'your-secret-token'
+```
+
+## Requirements
+
+- Python >= 3.8
+- A running Jupyter server (Notebook, Lab, or Hub)
+
+## License
+
+MIT
