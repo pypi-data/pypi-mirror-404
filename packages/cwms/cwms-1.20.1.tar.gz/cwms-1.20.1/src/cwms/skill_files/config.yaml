@@ -1,0 +1,110 @@
+# cwms Configuration
+# Extended context memory for Claude Code
+#
+# Environment variable overrides (highest priority):
+#   CWMS_THRESHOLD - Override threshold (int, "32k", or "auto")
+#   CWMS_PRESERVE_RECENT - Override preserve_recent_tokens
+#   CWMS_LOG_LEVEL - DEBUG, INFO, WARNING (default), ERROR, CRITICAL
+#   CWMS_LOG_FILE - Optional file path for log output
+#   CLAUDE_MODEL - Model name for auto-threshold detection
+
+context:
+  # Token threshold before triggering swap-out
+  # Options: "auto" | integer (e.g., 32000, 64000)
+  # "auto" detects the Claude model and calculates optimal threshold:
+  #   - Claude 4/3.x (200k window): ~50k threshold
+  #   - Claude 2.x (100k window): ~50k threshold
+  threshold_tokens: auto
+
+  # Percentage of threshold to trigger swap (0.7 = 70%)
+  swap_trigger_percent: 0.70
+
+  # Minimum recent tokens to always preserve
+  # With "auto" threshold, this is also calculated based on model
+  preserve_recent_tokens: 8000
+
+  # Target chunk size in tokens
+  chunk_size: 2000
+
+  # Overlap between chunks for continuity
+  chunk_overlap: 200
+
+storage:
+  # Directory for swapfiles (per-project subdirectories)
+  directory: ~/.claude/cwms
+
+  # Maximum swapfile age in days (0 = never expire)
+  max_age_days: 30
+
+embeddings:
+  # Provider: none | local
+  # DEFAULT: none (keyword search only, no dependencies required)
+  #
+  # To enable semantic search with local embeddings:
+  #   pip install 'cwms[local]'
+  #   provider: local
+  #
+  # When provider is "local", ChromaDB is automatically used as the vector
+  # store backend. The ChromaDB database is persisted to:
+  #   <storage.directory>/chroma/
+  provider: none
+
+  # Model for local embeddings (if provider: local)
+  # This model is used for both generating embeddings and ChromaDB storage
+  local_model: all-MiniLM-L6-v2
+
+retrieval:
+  # Number of chunks to retrieve
+  top_k: 5
+
+  # Minimum similarity threshold (0-1)
+  min_similarity: 0.7
+
+  # Boost factor for recent chunks
+  recency_boost: 0.1
+
+  # Search mode: auto | keyword | semantic | hybrid
+  # auto: Uses semantic if embeddings available, else keyword
+  search_mode: auto
+
+  # BM25 parameters for keyword search
+  bm25_k1: 1.2
+  bm25_b: 0.75
+
+  # Hybrid search weights (when search_mode: hybrid)
+  hybrid_keyword_weight: 0.3
+  hybrid_semantic_weight: 0.7
+
+summarizer:
+  # Maximum summary length in characters
+  max_length: 1000
+
+  # Include descriptions extracted from code blocks (docstrings, comments)
+  include_code_context: true
+
+  # Extract user questions/requests for better summaries
+  extract_questions: true
+
+  # Minimum keyword length to include in search keywords
+  min_keyword_length: 3
+
+summarization:
+  # Provider: regex | api
+  # DEFAULT: regex (fast, no dependencies, no API costs)
+  #
+  # To enable API-based summarization with Claude:
+  #   provider: api
+  #   - Requires ANTHROPIC_API_KEY environment variable
+  #   - Uses Claude Haiku for cost-effective summarization
+  #   - Falls back to regex on API errors
+  provider: regex
+
+  # Model for API summarization (if provider: api)
+  api_model: claude-haiku-4-5
+
+  # Maximum tokens for API response
+  api_max_tokens: 500
+
+  # Optional monthly cost limit in USD (null = no limit)
+  # When limit is reached, automatically falls back to regex
+  monthly_cost_limit_usd: null
