@@ -1,0 +1,34 @@
+"""LangChain pgvec_textsearch integration."""
+from .vectorstores import (
+    PGVecTextSearchStore,
+    PGVecTextSearchEngine,
+    HybridSearchConfig,
+    reciprocal_rank_fusion,
+    weighted_sum_ranking,
+    DistanceStrategy,
+    QueryOptions,
+    HNSWIndex,
+    IVFFlatIndex,
+    BM25Index,
+    FilterOperator,
+    FilterCondition,
+    MetadataFilter,
+    MetadataFilters
+)
+
+__all__ = [
+    "PGVecTextSearchStore",
+    "PGVecTextSearchEngine",
+    "HybridSearchConfig",
+    "reciprocal_rank_fusion",
+    "weighted_sum_ranking",
+    "DistanceStrategy",
+    "QueryOptions",
+    "HNSWIndex",
+    "IVFFlatIndex",
+    "BM25Index",
+    "FilterOperator",
+    "FilterCondition",
+    "MetadataFilter",
+    "MetadataFilters",
+]
