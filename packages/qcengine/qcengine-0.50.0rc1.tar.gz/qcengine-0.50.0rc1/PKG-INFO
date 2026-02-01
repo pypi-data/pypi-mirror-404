@@ -1,0 +1,136 @@
+Metadata-Version: 2.4
+Name: qcengine
+Version: 0.50.0rc1
+Summary: A compute wrapper for Quantum Chemistry, ingesting and producing QCSchema for a variety of QC programs.
+Author-email: The QCArchive Development Team <qcarchive@molssi.org>
+License: BSD 3-Clause License
+        
+        Copyright (c) 2017-2021, The Molecular Sciences Software Institute
+        All rights reserved.
+        
+        Redistribution and use in source and binary forms, with or without
+        modification, are permitted provided that the following conditions are met:
+        
+        * Redistributions of source code must retain the above copyright notice, this
+          list of conditions and the following disclaimer.
+        
+        * Redistributions in binary form must reproduce the above copyright notice,
+          this list of conditions and the following disclaimer in the documentation
+          and/or other materials provided with the distribution.
+        
+        * Neither the name of the copyright holder nor the names of its
+          contributors may be used to endorse or promote products derived from
+          this software without specific prior written permission.
+        
+        THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+        AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+        IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+        DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+        FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+        DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+        SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+        CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+        OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+        OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        
+Project-URL: homepage, https://github.com/MolSSI/QCEngine
+Project-URL: changelog, https://github.com/MolSSI/QCEngine/blob/master/docs/source/changelog.rst
+Project-URL: documentation, https://molssi.github.io/QCEngine/
+Project-URL: issues, https://github.com/MolSSI/QCEngine/issues
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Science/Research
+Classifier: Programming Language :: Python :: 3 :: Only
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Programming Language :: Python :: 3.14
+Classifier: Framework :: Pydantic
+Classifier: Framework :: Pydantic :: 2
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: pyyaml
+Requires-Dist: py-cpuinfo
+Requires-Dist: psutil
+Requires-Dist: qcelemental<0.70.0,>=0.50.0rc1
+Requires-Dist: pydantic>=2.12
+Requires-Dist: pydantic-settings
+Requires-Dist: packaging
+Provides-Extra: test
+Requires-Dist: pytest; extra == "test"
+Requires-Dist: pytest-cov; extra == "test"
+Requires-Dist: codecov; extra == "test"
+Provides-Extra: lint
+Requires-Dist: pre-commit; extra == "lint"
+Requires-Dist: black<23.0a0,>=22.1.0; extra == "lint"
+Requires-Dist: isort>=5.13.2; extra == "lint"
+Provides-Extra: docs
+Requires-Dist: numpydoc; extra == "docs"
+Requires-Dist: sphinx>=7.0.0; extra == "docs"
+Requires-Dist: sphinxcontrib-napoleon; extra == "docs"
+Requires-Dist: sphinx-rtd-theme; extra == "docs"
+Requires-Dist: autodoc-pydantic>=2.0; extra == "docs"
+Dynamic: license-file
+
+QCEngine
+========
+[![Build Status](https://github.com/MolSSI/QCEngine/workflows/CI/badge.svg?branch=master)](https://github.com/MolSSI/QCEngine/actions?query=workflow%3ACI)
+[![codecov](https://img.shields.io/codecov/c/github/MolSSI/QCEngine.svg?logo=Codecov&logoColor=white)](https://codecov.io/gh/MolSSI/QCEngine)
+[![Documentation Status](https://img.shields.io/github/actions/workflow/status/MolSSI/QCEngine/CI.yml?label=docs&logo=readthedocs&logoColor=white)](https://molssi.github.io/QCEngine/)
+[![Conda (channel only)](https://img.shields.io/conda/vn/conda-forge/qcengine?color=blue&logo=anaconda&logoColor=white)](https://anaconda.org/conda-forge/qcengine)
+[![Chat on Slack](https://img.shields.io/badge/chat-on_slack-808493.svg?longCache=true&style=flat&logo=slack)](https://join.slack.com/t/qcarchive/shared_invite/enQtNDIzNTQ2OTExODk0LTE3MWI0YzBjNzVhNzczNDM0ZTA5MmQ1ODcxYTc0YTA1ZDQ2MTk1NDhlMjhjMmQ0YWYwOGMzYzJkZTM2NDlmOGM)
+![python](https://img.shields.io/badge/python-3.7+-blue.svg)
+
+<!--[![Azure Build Status](https://dev.azure.com/MolSSI/QCArchive/_apis/build/status/MolSSI.QCEngine?branchName=master)](https://dev.azure.com/MolSSI/QCArchive/_build/latest?definitionId=5&branchName=master)-->
+Quantum chemistry program executor and IO standardizer ([QCSchema](https://github.com/MolSSI/QCSchema)) for quantum chemistry.
+
+# Example
+
+A simple example of QCEngine's capabilities is as follows:
+
+```python
+>>> import qcengine as qcng
+>>> import qcelemental as qcel
+
+>>> mol = qcel.models.Molecule.from_data("""
+O  0.0  0.000  -0.129
+H  0.0 -1.494  1.027
+H  0.0  1.494  1.027
+""")
+
+>>> inp = qcel.models.AtomicInput(
+    molecule=mol,
+    driver="energy",
+    model={"method": "SCF", "basis": "sto-3g"},
+    keywords={"scf_type": "df"}
+    )
+```
+
+These input specifications can be executed with the ``compute`` function along with a program specifier:
+
+```python
+>>> ret = qcng.compute(inp, "psi4")
+```
+
+The results contain a complete record of the computation:
+
+
+```python
+>>> ret.return_result
+-74.45994963230625
+
+>>> ret.properties.scf_dipole_moment
+[0.0, 0.0, 0.6635967188869244]
+
+>>> ret.provenance.cpu
+Intel(R) Core(TM) i7-7820HQ CPU @ 2.90GHz
+```
+
+See the [documentation](https://molssi.github.io/QCEngine/) for more information.
+
+# License
+
+BSD-3C. See the [License File](LICENSE) for more information.
