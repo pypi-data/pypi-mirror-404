@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+{% load static %}
+{% block content %}
+<style>
+    .subscription-icon.success {
+        color: green;
+        font-size: 1.5em;
+    }
+    .subscription-icon.error {
+        color: red;
+        font-size: 1.5em;
+    }
+</style>
+<div class="container">
+    <div class="row justify-content-center align-items-stretch g-4">
+        <h2 class="fw-bold mb-3 text-center">Manage Bot</h2>
+        <!-- LEFT CARD: Account Login -->
+        <div class="col-md-4">
+            <div class="card shadow-lg p-4 rounded-4 h-100">
+                <h4 class="fw-bold mb-3">
+                    <i class="bi bi-lock me-2 text-primary"></i>
+                    Account Login
+                </h4>
+
+                <p class="small text-muted">
+                    Securely connect your MetaTrader 5 account to start automated trading.
+                    Your credentials are used only to initialize the trading session.
+                </p>
+
+                <form method="POST" action="{% url 'account_login_view' %}">
+                   {% csrf_token %}
+
+                    <div class="mb-3">
+                        <label for="login" class="form-label">MT5 Login</label>
+                        <input type="number" id="login" name="login" class="form-control"
+                        placeholder="e.g. 34032517" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="password" class="form-label">MT5 Password</label>
+                        <input type="password" id="password" name="password" class="form-control"
+                        placeholder="Your trading password" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="server" class="form-label">Broker Server</label>
+                        <input type="text" id="server" name="server" class="form-control"
+                        placeholder="e.g. Deriv-Demo" required>
+                    </div>
+                    
+                    {% if request.user.is_authenticated %}
+                        <a href="{% url 'logout_user' %}" class="btn btn-danger w-100 fw-bold">
+                            Logout
+                        </a>
+                    {% else %}
+                        <button type="submit" class="btn btn-primary w-100 fw-bold">
+                            Login
+                        </button>
+                    {% endif %}
+                </form> 
+            </div>
+        </div>
+
+        <!-- MIDDLE CARD: Asset Review -->
+        <div class="col-md-4">
+            <div class="card shadow-lg p-4 rounded-4 h-100">
+                <h4 class="fw-bold mb-3">
+                    <i class="bi bi-graph-up-arrow me-2 text-primary"></i>
+                    Asset Review
+                </h4>
+
+                <p class="small text-muted">
+                    Markets and instruments actively monitored by the bot in real time.
+                    Trades are filtered using higher timeframe trend confirmation.
+                </p>
+
+                <form method="POST" action="{% url 'save_symbol_settings' %}">
+                    {% csrf_token %}
+
+                    <div class="mb-3">
+                        <label for="symbol" class="form-label">Symbol</label>
+                        <select id="symbol" name="symbol" class="form-control" required>
+                            {% if symbol %}
+                                <option value="{{symbol.symbol}}">{{symbol.symbol}}</option>
+                            {% else %}
+                                <option value="" disabled selected>Select an asset</option>
+                            {% endif %}
+                            <option value="USDCHF">USDCHF</option>
+                            <option value="EURGBP">EURGBP</option>
+                            <option value="AUDUSD">AUDUSD</option>
+                            <option value="NZDUSD">NZDUSD</option>
+                            <option value="GBPUSD">GBPUSD</option>
+                            <option value="GBPJPY">GBPJPY</option>
+                            <option value="EURJPY">EURJPY</option>
+                            <option value="GBPAUD">GBPAUD</option>
+                            <option value="Volatility 75 Index">Volatility 75 Index</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="lot_size" class="form-label">Lot Size</label>
+                        <input type="number" id="lot_size" name="lot_size" class="form-control"
+                            min="0.00001"
+                            max="50"
+                            step="0.00001"
+                            value="{{symbol.lot_size}}"
+                            placeholder="Enter lot size" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="positions" class="form-label">Number Of Positions</label>
+                        <input type="number" id="positions" name="positions" class="form-control"
+                            min="1"
+                            max="10"
+                            step="1"
+                            value="{{symbol.max_trades}}"
+                            placeholder="Enter number of positions" required>
+                    </div>
+                    {% if symbol %}
+                        <a href="{% url 'stop_bot' %}" class="btn btn-danger w-100 fw-bold">
+                            Stop Bot
+                        </a>
+                    {% else %}
+                        <button type="submit" class="btn btn-primary w-100 fw-bold">
+                            Start Bot
+                        </button>
+                    {% endif %}
+                </form>
+            </div>
+        </div>
+
+        <!-- RIGHT CARD: Bot Subscription -->
+        <div class="col-md-4">
+            <div class="card shadow-lg p-4 rounded-4 h-100">
+                <h4 class="fw-bold mb-3">
+                    <i class="bi bi-credit-card me-2 text-primary"></i>
+                    Bot Subscription
+                </h4>
+
+                <p class="small text-muted">
+                    Subscription defines bot access, trade limits, and supported features.
+                    Choose a plan that matches your trading style and risk tolerance.
+                </p>
+
+                <div class="row g-3 mt-3">
+                    <div class="col-sm-12">
+                        <div class="border rounded p-3 h-100">
+                            <h6 class="fw-bold mb-1">Subscription status</h6>
+                            <p class="mb-0 small text-muted fs-5"> <!-- fs-5 = larger font -->
+                                {% if subscription_status.valid %}
+                                    <span class="subscription-icon success me-1">&#10004;</span>
+                                    <span class="fw-bold">{{ subscription_status.message }}</span>
+                                {% else %}
+                                    <span class="subscription-icon error me-1">&#10008;</span>
+                                    <span class="fw-bold">{{ subscription_status.message }}</span>
+                                {% endif %}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row g-3 mt-3">
+                    <div class="col-sm-6">
+                        <button
+                            type="button"
+                            class="btn btn-primary w-100 fw-bold"
+                            data-bs-toggle="modal"
+                            data-bs-target="#subscribeModal">
+                            Subscribe
+                        </button>
+                    </div>
+
+                    <div class="col-sm-6">
+                        <button
+                            type="button"
+                            class="btn btn-primary w-100 fw-bold"
+                            data-bs-toggle="modal"
+                            data-bs-target="#verifyModal">
+                            Verify Code
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
