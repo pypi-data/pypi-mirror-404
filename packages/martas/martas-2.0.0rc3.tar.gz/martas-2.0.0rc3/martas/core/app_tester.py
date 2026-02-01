@@ -1,0 +1,320 @@
+#!/usr/bin/env python
+# coding=utf-8
+
+"""
+Testing module for methods from apps
+"""
+
+import unittest
+
+import sys
+sys.path.insert(1,'/home/leon/Software/MARTAS/') # should be magpy2
+sys.path.insert(1,'/home/leon/Software/magpy/') # should be magpy2
+
+import os
+import shutil
+import numpy as np
+from magpy.stream import DataStream, read
+from magpy.core import database
+from magpy.opt import cred as mpcred
+
+from datetime import datetime, timedelta, timezone
+from martas.core import methods as mameth
+
+from martas.app import archive
+from martas.app import basevalue
+from martas.app import checkdatainfo
+from martas.app import db_truncate
+from martas.app import file_download
+from martas.app import filter
+from martas.app import threshold
+
+
+def create_teststream(startdate=datetime(2022, 11, 22)):
+    teststream = DataStream()
+    array = [[] for el in DataStream().KEYLIST]
+    array[1] = [20000] * 720
+    array[1].extend([22000] * 720)
+    array[1] = np.asarray(array[1])
+    array[2] = np.asarray([0] * 1440)
+    array[3] = np.asarray([20000] * 1440)
+    array[6] = np.asarray([np.nan] * 1440)
+    # array[4] = np.sqrt((x*x) + (y*y) + (z*z))
+    array[0] = np.asarray([startdate + timedelta(minutes=i) for i in range(0, len(array[1]))])
+    rain1 = np.arange(1,721,1.0)
+    rain2 = np.arange(1,361,0.5)
+    rain = np.concatenate((rain1, rain2))
+    array[7] = rain
+    array[DataStream().KEYLIST.index('sectime')] = np.asarray(
+        [startdate + timedelta(minutes=i) for i in range(0, len(array[1]))]) + timedelta(minutes=15)
+    teststream = DataStream(header={'SensorID': 'Test_0002_0001'}, ndarray=np.asarray(array, dtype=object))
+    teststream.header['col-x'] = 'X'
+    teststream.header['col-y'] = 'Y'
+    teststream.header['col-z'] = 'Z'
+    teststream.header['col-t2'] = 'Text'
+    teststream.header['col-var1'] = 'Rain'
+    teststream.header['unit-col-x'] = 'nT'
+    teststream.header['unit-col-y'] = 'nT'
+    teststream.header['unit-col-z'] = 'nT'
+    teststream.header['unit-col-t2'] = 'degC'
+    teststream.header['unit-col-var1'] = 'mm'
+    teststream.header['DataComponents'] = 'XYZ'
+    return teststream
+
+class TestArchive(unittest.TestCase):
+    """
+    Test environment for all methods
+    """
+
+    def test_create_datelist(self):
+        dl = archive.create_datelist(startdate='', depth=10, debug=True)
+        self.assertEqual(len(dl), 10)
+
+    #def test_create_data_selectionlist(self):
+    #    dt = archive.create_data_selectionlist(blacklist=None, debug=False)
+    #    self.assertEqual(ar[1],11)
+
+    #def test_get_data_dictionary(self):
+    #    cfg = archive.get_data_dictionary(db,sql,debug=False)
+    #    self.assertEqual(cfg.get("station"),"myhome")
+
+    #def test_get_parameter(self):
+    #    sens = archive.get_parameter(plist, debug=False)
+    #    self.assertEqual(sens,[])
+
+    #def test_validtimerange(self):
+    #    archive.validtimerange(timetuple, mintime, maxtime, debug=False)
+
+class TestBasevalue(unittest.TestCase):
+    """
+    Test environment for all basevalue methods
+    """
+
+    def test_check_conf(self):
+        config = mameth.get_conf(os.path.join('..', 'conf', 'basevalue.cfg'))
+        startdate, enddate = None, None
+        varios, scalars, piers = [],[],[]
+        config = basevalue.check_conf(config, startdate, enddate, varios=varios, scalars=scalars, piers=piers, debug=True)
+        pl = config.get('pierlist')
+        self.assertEqual(len(pl), 2)
+
+    """
+    def test_get_runmode(self):
+        joblist = ['firstrun','overview']
+        jl, jt = basevalue.get_runmode(joblist)
+        self.assertEqual(jt, 'firstrun')
+
+    def test_prepare_and_backup_file(self):
+        testpath = os.path.join('/tmp', 'BLV_LEMI036_1_0002_GP20S3NSS2_012201_0001_A2.txt')
+        print ("Copying BLV to temporary directory")
+        shutil.copyfile(os.path.join('..', 'test', 'BLV_LEMI036_1_0002_GP20S3NSS2_012201_0001_A2.txt'),testpath)
+        np = basevalue.backup_file(testpath)
+        self.assertTrue(np)
+        starttime = "2024-01-01"
+        endtime = "2024-12-31"
+        data = read(testpath)
+        lb = len(data)
+        print ("Trimming BLV in temporary directory")
+        basevalue.prepare_file(testpath, starttime, endtime, format_type='PYSTR')
+        data = read(testpath)
+        la = len(data)
+        self.assertEqual(lb-la, 119)
+
+    def test_prepare_table(self):
+        starttime = "2024-01-01"
+        endtime = "2024-12-31"
+        testpath = os.path.join('/tmp', 'BLV_LEMI036_1_0002_GP20S3NSS2_012201_0001_A2.txt')
+        credentials = 'cobsdb'
+        db = database.DataBank(host=mpcred.lc(credentials, 'host'), user=mpcred.lc(credentials, 'user'),
+                                   password=mpcred.lc(credentials, 'passwd'), database=mpcred.lc(credentials, 'db'))
+        shutil.copyfile(os.path.join('..', 'test', 'BLV_LEMI036_1_0002_GP20S3NSS2_012201_0001_A2.txt'),testpath)
+        data = read(testpath)
+        lb = len(data)
+        db.write(data, tablename = 'BLV_LEMI036_1_0002_GP20S3NSS2_012201_0001_A2', mode = 'replace')
+        dl = basevalue.prepare_table(db, 'BLV_LEMI036_1_0002_GP20S3NSS2_012201_0001_A2', starttime, endtime, tcol='time', cond=None)
+        d = db.read('BLV_LEMI036_1_0002_GP20S3NSS2_012201_0001_A2')
+        la = len(d)
+        self.assertEqual(lb-la, 119)
+
+    def test_baseline_overview(self):
+        config = mameth.get_conf(os.path.join('..', 'conf', 'basevalue.cfg'))
+        config['dbcredentials'] = "cobsdb"
+        startdate, enddate = None, "2023-12-31"
+        varios, scalars, piers = ["LEMI036_1_0002_0002"],["GP20S3NSS2_012201_0001_0001"],["A2"]
+        config = basevalue.check_conf(config, startdate, enddate, varios=varios, scalars=scalars, piers=piers, debug=True)
+        config['blvdatapath'] = "/tmp"
+        config['blvabb'] = "BLV"
+        dl = basevalue.baseline_overview(runmode='firstrun', config=config, debug=True)
+        self.assertTrue(dl)
+
+    def test_baseline_recalc(self):
+        config = mameth.get_conf(os.path.join('..', 'conf', 'basevalue.cfg'))
+        config['dbcredentials'] = "cobsdb"
+        startdate, enddate = None, "2025-12-31"
+        varios, scalars, piers = ["LEMI036_1_0002_0002"],["GP20S3NSS2_012201_0001_0001"],["A2"]
+        config = basevalue.check_conf(config, startdate, enddate, varios=varios, scalars=scalars, piers=piers, debug=True)
+        config['blvdatapath'] = "/tmp"
+        config['base'] = os.path.abspath("../test")
+        config['obscode'] = "WIC"
+        config['didatapath'] = os.path.abspath("../test/archive/WIC/DI/analyze")
+        config['blvabb'] = "BLV"
+        config['writeblv2file'] = True
+        print (config)
+        runmode = "firstrun"
+        basevalue.basevalue_recalc(runmode, config=config, startdate=None, enddate=None, debug=False)
+        t = False
+        if os.path.isfile(os.path.join("/tmp","BLV_LEMI036_1_0002_GP20S3NSS2_012201_0001_A2_2025_firstrun.txt")):
+            t = True
+        self.assertTrue(t)
+    """
+
+
+class TestCheckdataInfo(unittest.TestCase):
+    """
+    Test environment for all methods
+    """
+    def test_add_datainfo(self):
+        #add_datainfo(db, tableonly=None, verbose=False, debug=False)
+        pass
+
+
+    def test_obtain_datainfo(self):
+        #xxx = obtain_datainfo(db, blacklist=None, verbose=False, debug=False)
+        pass
+
+    def test_match(self):
+        #match(first, second)
+        pass
+
+    def test_match(self):
+        #get_tables(db, identifier="*_00??", verbose=False, debug=False)
+        pass
+
+    def test_matchtest(self):
+        #matchtest(identifier, string)
+        pass
+
+
+class TestDBTrcuncate(unittest.TestCase):
+
+    def test_query_db(self):
+        #query_db(db, sql, debug=False)
+        pass
+
+    def test_get_table_tist(self):
+        #get_table_tist(db, sensorlist=None, blacklist=None, debug=False)
+        pass
+
+
+class TestFileDownload(unittest.TestCase):
+    """
+    Test environment for all methods
+    """
+
+    def test_check_configuration(self):
+        print ("TESTING file_download")
+        print ("---------------------------------------------------------------")
+        confpath = os.path.abspath(os.path.join(os.path.dirname(__file__),'..','conf','download-source.cfg'))
+        config = mameth.get_conf(confpath)
+        config, success = file_download.check_configuration(config=config, debug=True)
+        #print (config)
+        print (success)
+        self.assertEqual(config.get('db'),None)
+        self.assertEqual(success,True)
+
+    def test_get_datelist(self):
+        confpath = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'conf', 'download-source.cfg'))
+        config = mameth.get_conf(confpath)
+        config, success = file_download.check_configuration(config=config, debug=False)
+        current = datetime.now(timezone.utc).replace(tzinfo=None)
+        datelist = file_download.get_datelist(config=config,current=current,debug=True)
+        succ = False
+        if current.strftime("%Y-%m-%d") in datelist:
+            succ = True
+        self.assertTrue(succ)
+
+    def test_create_transfer_list_dir_extract(self):
+        confpath = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'conf', 'download-source.cfg'))
+        config = mameth.get_conf(confpath)
+        config, success = file_download.check_configuration(config=config, debug=False)
+        # set protocol to local directory
+        config['protocol'] = ''
+        current = datetime.now(timezone.utc).replace(tzinfo=None)
+        datelist = file_download.get_datelist(config=config,current=current,debug=False)
+        filelist = file_download.create_transfer_list(config=config, datelist=datelist, debug=True)
+        self.assertTrue(isinstance(filelist, (list,tuple)))
+
+    # missing are file_download.obtain_data_files(config=None,filelist=None,debug=False)
+    # and file_download.write_data(config=None,localpathlist=None,debug=False)
+
+
+class TestFilter(unittest.TestCase):
+    """
+    Test environment for all methods
+    """
+
+    def test_read_conf(self):
+        cfg = filter.read_conf("../conf/filter.cfg")
+        self.assertNotEqual(cfg,None)
+
+    def test_get_sensors(self):
+        recent = True
+        dd = filter.read_conf("../conf/filter.cfg")
+        groupparameterdict = dd.get('groupparameterdict')
+        blacklist = dd.get('blacklist')
+        basics = dd.get('basics')
+        recentthreshold = int(basics.get('recentthreshold', 7200))
+        self.assertEqual(recentthreshold,7200)
+        credentials = 'cobsdb'
+        db = database.DataBank(host=mpcred.lc(credentials, 'host'), user=mpcred.lc(credentials, 'user'),
+                                   password=mpcred.lc(credentials, 'passwd'), database=mpcred.lc(credentials, 'db'))
+        highreslst = filter.get_sensors(db=db,groupdict=groupparameterdict,samprate='HF', blacklist=blacklist, recent=recent, recentthreshold=recentthreshold, debug=True)
+        print ("Done:", highreslst)
+
+    def test_apply_filter(self):
+        sensorlist = []
+        basepath = '/srv/archive'
+        destination = 'db'
+        credentials = 'cobsdb'
+        dd = filter.read_conf("../conf/filter.cfg")
+        groupparameterdict = dd.get('groupparameterdict')
+        blacklist = dd.get('blacklist')
+        permanent = dd.get('permanent')
+        basics = dd.get('basics')
+        outputformat = basics.get('outputformat')
+        recentthreshold = int(basics.get('recentthreshold', 7200))
+        db = database.DataBank(host=mpcred.lc(credentials, 'host'), user=mpcred.lc(credentials, 'user'),
+                                   password=mpcred.lc(credentials, 'passwd'), database=mpcred.lc(credentials, 'db'))
+        statusmsg = filter.apply_filter(db, statusmsg={}, groupdict=groupparameterdict, permanent=permanent, blacklist=blacklist, jobtype='realtime', endtime=datetime.now(), dayrange=2, dbinputsensors=sensorlist, basepath=basepath, destination=destination, outputformat=outputformat, recentthreshold=recentthreshold, debug=True)
+        statusmsg = filter.apply_filter(db, statusmsg={}, groupdict=groupparameterdict, permanent=permanent, blacklist=blacklist, jobtype='archive', endtime=datetime.now(), dayrange=2, dbinputsensors=sensorlist, basepath=basepath, destination=destination, outputformat=outputformat, recentthreshold=recentthreshold, debug=True)
+
+class TestThreshold(unittest.TestCase):
+
+    def test_assign_parameterlist(self):
+        conf = mameth.get_conf(os.path.join('..', 'conf', 'threshold.cfg'))
+        para = threshold.assign_parameterlist(threshold.sp.valuenamelist, conf)
+        self.assertTrue(para.get('1'))
+
+    def test_get_data(self):
+        (dat1,msg1) = threshold.get_data('file', "/tmp/archive/LEMI036_3_0001", "dbcredentials", "LEMI036_3_0001", 1000, startdate=None, debug=True)
+        (dat2,msg2) = threshold.get_data('db', "path", "cobsdb", "LEMI036_3_0001", 1000, startdate=None, debug=True)
+        self.assertTrue(msg1)
+
+    def test_get_test_value_check_threshold(self):
+        data = create_teststream()
+        (testvalue, msg2) = threshold.get_test_value(data, key='x', function='average', debug=True)
+        self.assertEqual(testvalue, 21000)
+        (evaluate, msg) = threshold.check_threshold(testvalue, 20000, "above", debug=True)
+        self.assertTrue(evaluate)
+
+
+    def test_interprete_status(self):
+        conf = mameth.get_conf(os.path.join('..', 'conf', 'threshold.cfg'))
+        para = threshold.assign_parameterlist(threshold.sp.valuenamelist, conf)
+        valuedict = para.get('1', {})
+        xxx = threshold.interprete_status(valuedict, debug=True)
+        self.assertEqual(xxx, "Current average below 5")
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)
