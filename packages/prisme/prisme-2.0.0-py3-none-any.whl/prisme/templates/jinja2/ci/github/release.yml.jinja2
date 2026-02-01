@@ -1,0 +1,45 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '{{ node_version }}'
+
+      - name: Install semantic-release dependencies
+        run: |
+          npm install -g \
+            semantic-release@^24.0.0 \
+            @semantic-release/changelog@^6.0.0 \
+            @semantic-release/git@^10.0.0 \
+            @semantic-release/github@^11.0.0 \
+            conventional-changelog-conventionalcommits@^8.0.0
+
+      - name: Verify semantic-release config
+        run: npx semantic-release --dry-run
+
+      - name: Release
+        env:
+          GITHUB_TOKEN: ${{ '{{' }} secrets.GITHUB_TOKEN {{ '}}' }}
+        run: npx semantic-release

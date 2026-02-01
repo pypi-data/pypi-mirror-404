@@ -1,0 +1,46 @@
+{
+  "name": "{{ project_name }}",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+{% if include_postgres or include_redis %}
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  },
+{% endif %}
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "charliermarsh.ruff",
+        "tamasfe.even-better-toml"{% if include_frontend %},
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "bradlc.vscode-tailwindcss"{% endif %}
+
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "python.analysis.typeCheckingMode": "basic",
+        "[python]": {
+          "editor.formatOnSave": true,
+          "editor.defaultFormatter": "charliermarsh.ruff"
+        }{% if include_frontend %},
+        "[typescript]": {
+          "editor.formatOnSave": true,
+          "editor.defaultFormatter": "esbenp.prettier-vscode"
+        },
+        "[typescriptreact]": {
+          "editor.formatOnSave": true,
+          "editor.defaultFormatter": "esbenp.prettier-vscode"
+        }{% endif %}
+
+      }
+    }
+  },
+  "forwardPorts": [8000{% if include_frontend %}, 5173{% endif %}{% if include_postgres %}, 5432{% endif %}{% if include_redis %}, 6379{% endif %}],
+  "postCreateCommand": "uv sync && pre-commit install --hook-type pre-commit --hook-type pre-push",
+  "remoteUser": "vscode"
+}
