@@ -1,0 +1,37 @@
+"""
+Module: tunacode.configuration.defaults
+
+Default configuration values for the TunaCode CLI.
+Provides sensible defaults for user configuration and environment variables.
+"""
+
+from tunacode.constants import ENV_OPENAI_BASE_URL, GUIDE_FILE_NAME
+from tunacode.types import UserConfig
+
+DEFAULT_USER_CONFIG: UserConfig = {
+    "default_model": "openrouter:openai/gpt-4.1",
+    "env": {
+        "ANTHROPIC_API_KEY": "",
+        "GEMINI_API_KEY": "",
+        "OPENAI_API_KEY": "",
+        ENV_OPENAI_BASE_URL: "",
+        "OPENROUTER_API_KEY": "",
+    },
+    "settings": {
+        "max_retries": 3,
+        "max_iterations": 40,
+        "request_delay": 0.0,
+        "global_request_timeout": 120.0,
+        "guide_file": GUIDE_FILE_NAME,
+        "theme": "dracula",
+        "ripgrep": {
+            "timeout": 10,
+            "max_results": 100,
+            "enable_metrics": False,
+        },
+        "lsp": {
+            "enabled": True,
+            "timeout": 5.0,
+        },
+    },
+}
