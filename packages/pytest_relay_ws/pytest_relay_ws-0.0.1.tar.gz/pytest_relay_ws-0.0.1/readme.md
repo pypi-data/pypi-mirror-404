@@ -1,0 +1,2 @@
+
+# `pytest` websocket streaming plugin
