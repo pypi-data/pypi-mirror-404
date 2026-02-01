@@ -1,0 +1,133 @@
+# ************************************************
+# ********** setup **********
+# ************************************************
+{%- if package_manager == "poetry" %}
+RUN_CMD = poetry run
+PY_RUN_CMD = poetry run
+INSTALL_CMD = poetry install --no-interaction --without dev
+INSTALL_DEV_CMD = poetry install --no-interaction --with dev
+SYNC_CMD = poetry install --no-interaction --with dev
+LOCK_CMD = poetry lock --no-interaction --quiet
+{%- else %}
+RUN_CMD = uv run
+PY_RUN_CMD = uv run --
+INSTALL_CMD = uv pip install -e .
+INSTALL_DEV_CMD = uv pip install -e ".[dev]"
+SYNC_CMD = uv sync
+LOCK_CMD = uv lock
+{%- endif %}
+
+.PHONY: install  # install production dependencies
+install:
+	$(INSTALL_CMD)
+
+.PHONY: install.dev  # install development dependencies
+install.dev:
+	$(INSTALL_DEV_CMD)
+
+.PHONY: sync  # sync all dependencies
+sync:
+	$(SYNC_CMD)
+
+.PHONY: lock  # lock dependencies
+lock:
+	$(LOCK_CMD)
+
+
+# ************************************************
+# ********** migrations **********
+# ************************************************
+MIGRATION_MESSAGE ?= "automated migration"
+
+{%- if orm == "sqlalchemy" %}
+
+.PHONY: makemigration
+makemigration:
+	$(RUN_CMD) alembic revision --autogenerate -m $(MIGRATION_MESSAGE)
+
+.PHONY: migrate
+migrate:
+	$(RUN_CMD) alembic upgrade head
+{%- elif orm == "tortoise" %}
+
+.PHONY: makemigration
+makemigration:
+	$(RUN_CMD) aerich migrate --name $(MIGRATION_MESSAGE) --offline
+
+.PHONY: migrate
+migrate:
+	$(RUN_CMD) aerich upgrade
+{%- endif %}
+
+
+# ************************************************
+# ********** application **********
+# ************************************************
+
+.PHONY: run  # run the application in production mode
+run:
+	$(PY_RUN_CMD) python -m app.server --fast --log-level WARNING
+
+.PHONY: run.dev  # run the application in development mode
+run.dev:
+	$(PY_RUN_CMD) python -m robyn src/app/server.py --dev
+
+.PHONY: run.compose  # run the entire compose stack
+run.compose:
+	docker compose up --build
+
+
+# *************************************************
+# ********** tests **********
+# *************************************************
+
+.PHONY: tests  # run all tests
+tests:
+	$(RUN_CMD) pytest
+
+.PHONY: tests.coverage  # run all tests with coverage
+tests.coverage:
+	$(RUN_CMD) pytest --cov=./src/app --cov-report=term-missing --cov-report=html
+
+
+# *************************************************
+# ********** code quality **********
+# *************************************************
+
+.PHONY: fix  # fix formatting and order imports
+fix:
+	$(RUN_CMD) black src/app
+	$(RUN_CMD) isort src
+	$(RUN_CMD) ruff check src/app --fix
+
+.PHONY: check.types  # check type annotations
+check.types:
+	$(RUN_CMD) mypy --check-untyped-defs src/app
+
+.PHONY: check  # run all checks
+check:
+	$(RUN_CMD) ruff check src/app
+	$(RUN_CMD) black --check src/app
+	$(RUN_CMD) isort --check src
+	$(RUN_CMD) mypy --check-untyped-defs src/app
+	$(RUN_CMD) pytest
+
+
+# *************************************************
+# ********** docker helpers **********
+# *************************************************
+.PHONY: backend.run
+backend.run:
+	docker compose up -d app
+
+.PHONY: backend.status
+backend.status:
+	docker compose logs --tail 100 app
+
+.PHONY: backend.update
+backend.update:
+	docker compose build --no-cache app
+
+.PHONY: backend.stop
+backend.stop:
+	docker compose down
