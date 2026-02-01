@@ -1,0 +1,132 @@
+# packer-config-gen
+
+`packer-config-gen` (`pcg`) streamlines your golden image pipeline by separating **data** (YAML) from **build logic** (Jinja2). It serves as an orchestration layer that takes clean, inheritable VM specifications and automatically renders:
+1.  Complex **Packer manifests** (`.pkr.hcl`).
+2.  OS **autoinstall configurations** (Ubuntu autoinstall, Preseed, Kickstart).
+
+Define your infrastructure once in YAML, and let `pcg` handle the boilerplate.
+
+### Prerequisites
+- Python 3.13
+
+### Installation
+Available on [PyPI](https://pypi.org/project/packer-config-gen/)
+```
+pip install packer-config-gen
+```
+## Usage
+The tool expects the following structure in your working directory:
+```
+.
+├── .env                    # Secrets (SSH_PASS, API_TOKEN)
+├── configs/
+│   ├── hypervisor.yaml     # General settings (Proxmox/vSphere/VirtualBox)
+│   └── os/
+│       └── ubuntu.yaml  # OS-specific settings
+├── templates/
+│   ├── hypervisor.pkr.hcl.j2  # Main Packer template
+│   └── subiquity/             # Installer template folder
+│       ├── user-data.j2
+│       └── meta-data.j2
+└── artifacts/              # Output directory (auto-generated)
+```
+
+Examples of repositories that use this utility:
+- https://github.com/serhii9132/packer-vbox-builds
+- https://github.com/serhii9132/packer-proxmox-builds
+- https://github.com/serhii9132/packer-vmware-builds
+
+#### 1. OS configuration example (configs/os/ubuntu.yaml):
+```yaml
+packer_builder_name: "ubuntu"
+guest_os_type: "Ubuntu_64"
+vm_name: "ubuntu-24.04-lts"
+
+iso_config:
+  url: "https://releases.ubuntu.com/noble"
+  file: "ubuntu-24.04.3-live-server-amd64.iso"
+  checksum: "file:https://releases.ubuntu.com/noble/SHA256SUMS"
+
+boot_command:
+  - "e<wait><down><down><down><end><bs><bs><bs><bs><wait>"
+  - "ipv6.disable=1 \"ds=nocloud-net;s=http://{{ .HTTPIP }}:{{ .HTTPPort }}/\" autoinstall ---<wait>"
+  - "<f10><wait>"
+
+installer: "subiquity"
+installer_files:
+  - meta-data
+  - user-data
+```
+
+#### 2. Environment variables example:
+```sh
+export USERNAME="user"
+
+export PASSWORD='$6$vPP.....'    # Use: mkpasswd -m sha-512
+
+export SSH_PUBLIC_KEY='ssh-ed25519 AAAAbbbbbbbccccccc....'
+export SSH_PRIVATE_KEY_FILE="/home/user/.ssh/key"
+```
+
+#### 3. Hypervisor configuration example (configs/hypervisor.yaml)
+```yaml
+system_settings:
+  cpus: 2
+  memory: 2048
+  gfx_vram_size: 16
+  firmware_type: "efi"
+  export_format: "ova"
+  communicator: "ssh"
+  timezone: ""
+
+vboxmanage_commands:
+  - [ "modifyvm", "{{.Name}}", "--audio", "none" ]
+  - [ "modifyvm", "{{.Name}}", "--vrde", "off" ]
+
+iso_config:
+  interface: "sata"
+  source: ".cache/iso" 
+
+disk_config:
+  size: 150000
+  interface: "sata"
+  is_discard: false
+  is_nonrotational: false
+
+guest_additions:
+  mode: "upload"
+  path: "/tmp/VBoxGuestAdditions.iso"
+
+ssh_config:
+  username: ""
+  password: ""
+  private_key_file: ""
+  pub_key: ""
+  timeout: "30m"
+
+boot_control:
+  boot_wait: "5s"
+  shutdown_command: "sudo shutdown -P now"
+```
+
+Run the pcg command, passing the OS configuration filename:
+```sh
+pcg --os ubuntu
+```
+
+Result: The following files will be created in the artifacts/ubuntu/ folder:
+```sh
+- ubuntu.pkr.hcl
+- cidata/user-data
+- cidata/meta-data
+```
+
+Now you can start the build:
+```sh
+packer build artifacts/ubuntu/ubuntu.pkr.hcl
+```
+
+License
+-------
+
+MIT
