@@ -1,0 +1,140 @@
+[project]
+name = "python-event-sourcery"
+requires-python = ">=3.10"
+
+[tool.poetry]
+version = "0.5.1a4"
+description = "A library for event-based systems in Python."
+readme = "README.md"
+authors = [
+    "Sebastian Buczyński <nnplaya@gmail.com>",
+    "Łukasz Żukowski <lukasz.zukowski@gmail.com>",
+]
+license = "MIT"
+packages = [
+    { include = "event_sourcery" },
+    { include = "event_sourcery_django" },
+    { include = "event_sourcery_kurrentdb" },
+    { include = "event_sourcery_sqlalchemy" },
+]
+
+[tool.poetry.dependencies]
+python = ">=3.10,<4.0"
+pydantic = ">=2.0,<3"
+more-itertools = "*"
+SQLAlchemy = {version = ">=2.0", optional = true}
+kurrentdbclient = {version = ">=1.0.6", optional = true}
+django = {version = ">=4,<6", optional = true}
+psycopg2-binary = ">2,<3"
+
+[tool.poetry.group.dev.dependencies]
+ruff = "*"
+mypy = "*"
+pytest = "*"
+pytest-cov = "*"
+pytest-django = {version = "*"}
+mkdocs-material = "^8.3.9"
+psycopg2-binary = "^2.9.3"
+mkdocstrings = {version = "*", extras = ["python"]}
+pymdown-extensions = "*"
+time-machine = "*"
+pika = "*"
+deepdiff = "*"
+
+[tool.poetry.extras]
+sqlalchemy = ["SQLAlchemy"]
+kurrentdb = ["kurrentdbclient"]
+django = ["django"]
+
+[tool.pytest]
+addopts = ""
+
+[tool.pytest.ini_options]
+markers = [
+    "not_implemented: skip not implemented yet backend functionality",
+    "skip_backend: skip features not supported by backend",
+]
+DJANGO_SETTINGS_MODULE = "tests.backend.django"
+
+[tool.coverage.run]
+branch = true
+source = [
+    "event_sourcery",
+    "event_sourcery_django",
+    "event_sourcery_kurrentdb",
+    "event_sourcery_sqlalchemy",
+]
+omit = [
+    "tests/*",
+]
+
+[tool.coverage.report]
+fail_under = 100
+show_missing = true
+skip_covered = true
+exclude_lines = [
+    "pragma: no cover",
+    "pass",
+    "\\.\\.\\.",
+    "NotImplementedError",
+    "__repr__",
+    "__str__",
+    "TYPE_CHECKING",
+]
+
+[tool.mypy]
+ignore_missing_imports = true
+disallow_untyped_defs = true
+no_implicit_optional = true
+check_untyped_defs = true
+warn_return_any = true
+warn_unused_ignores = true
+show_error_codes = true
+
+[tool.ruff]
+line-length = 88
+show-fixes = true
+exclude = ["**/migrations"]
+
+[tool.ruff.lint]
+select = [
+    "A",  # flake8-builtins
+    "B",  # flake8-bugbear
+    "C",  # Convention
+    "E",  # Error
+    "F",  # Pyflakes
+    "G",  # flake8-logging-format
+    "I",  # isort
+    "N",  # pep8-naming
+    "Q",  # flake8-quotes
+    "S",  # flake8-bandit
+    "W",  # Warning
+    "PL",  # Pylint
+    "UP",  # pyupgrade
+    "RUF",  # Ruff-specific rules
+]
+ignore = [
+    "N818",  # error-suffix-on-exception-name
+    "PLR2004",  # magic-value-comparison
+    "E501",  # line-too-long, ruff format takes care about it
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = [
+    "S101",  # Use of assert detected
+]
+"event_sourcery_django/models.py" = [
+    "RUF012",  # Mutable class attributes should be annotated with typing.ClassVar
+]
+"docs/documentation/code/*" = [
+   "S101",  # Use of assert detected
+   "N806",  # Variables in function should be lowercase
+   "B018",  # Useless expressions
+]
+
+[tool.ruff.lint.pylint]
+max-args = 10
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
