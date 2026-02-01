@@ -1,0 +1,711 @@
+import django
+import re
+
+from django.conf import settings
+from django.utils.encoding import force_str
+
+from rest_framework import serializers
+from rest_framework_json_api.metadata import JSONAPIMetadata
+from rest_framework.reverse import reverse
+from rest_framework.utils.field_mapping import ClassLookupDict
+
+from rest_framework_json_api.utils import get_related_resource_type
+
+from access.models.tenant import Tenant
+
+from centurion.serializers.user import UserBaseSerializer
+User = django.contrib.auth.get_user_model()
+
+from core import fields as centurion_field
+from core.fields.badge import BadgeField
+from core.fields.icon import IconField
+
+
+
+class OverRideJSONAPIMetadata(JSONAPIMetadata):
+
+    type_lookup = ClassLookupDict(
+        {
+            serializers.Field: "GenericField",
+            serializers.RelatedField: "Relationship",
+            serializers.BooleanField: "Boolean",
+            serializers.CharField: "String",
+            serializers.URLField: "URL",
+            serializers.EmailField: "Email",
+            serializers.RegexField: "Regex",
+            serializers.SlugField: "Slug",
+            serializers.IntegerField: "Integer",
+            serializers.FloatField: "Float",
+            serializers.DecimalField: "Decimal",
+            serializers.DateField: "Date",
+            serializers.DateTimeField: "DateTime",
+            serializers.TimeField: "Time",
+            serializers.ChoiceField: "Choice",
+            serializers.MultipleChoiceField: "MultipleChoice",
+            serializers.FileField: "File",
+            serializers.ImageField: "Image",
+            serializers.ListField: "List",
+            serializers.DictField: "Dict",
+            serializers.Serializer: "Serializer",
+            serializers.JSONField: "JSON",    # New. Does not exist in base class
+            BadgeField: 'Badge',
+            IconField: 'Icon',
+            User: 'Relationship',
+            UserBaseSerializer: 'Relationship',
+            centurion_field.CharField: 'String',
+            centurion_field.MarkdownField: 'Markdown'
+        }
+    )
+
+
+
+class ReactUIMetadata(OverRideJSONAPIMetadata):
+
+
+    def determine_metadata(self, request, view):
+
+        metadata = {}
+
+        metadata["name"] = view.get_view_name()
+
+        metadata["description"] = view.get_view_description()
+
+
+        if hasattr(view, 'get_model_documentation'):
+
+            if view.get_model_documentation():
+
+                metadata['documentation'] = str(settings.DOCS_ROOT) + str(view.get_model_documentation())
+
+
+        metadata['urls']: dict = {}
+
+        url_self = None
+
+        app_namespace = ''
+
+        base_model = getattr(view, 'base_model', None)
+
+        if getattr(view, 'model', None):
+
+            if getattr(view.model, 'app_namespace', None) not in [None, '']:
+
+                app_namespace = view.model().get_app_namespace() + ':'
+
+
+        if view.kwargs.get(getattr(view, 'lookup_field', 'pk'), None) is not None:
+
+            qs = view.get_queryset()[0]
+
+            if hasattr(qs, 'get_url'):
+
+                url_self = qs.get_url( request=request )
+
+
+        elif view.kwargs:
+
+            url_self = reverse('v2:' + app_namespace + view.basename + '-list', request = view.request, kwargs = view.kwargs )
+
+        else:
+
+            url_self = reverse('v2:' + app_namespace + view.basename + '-list', request = view.request )
+
+        if url_self:
+
+            metadata['urls'].update({'self': url_self})
+
+        if view.get_back_url():
+
+            metadata['urls'].update({'back': view.get_back_url()})
+
+        if view.get_return_url():
+
+            metadata['urls'].update({'return_url': view.get_return_url()})
+
+
+        metadata["renders"] = [
+            renderer.media_type for renderer in view.renderer_classes
+        ]
+
+        metadata["parses"] = [parser.media_type for parser in view.parser_classes]
+
+        metadata["allowed_methods"] = view.allowed_methods
+
+        if hasattr(view, 'get_serializer'):
+            serializer = view.get_serializer()
+            metadata['fields'] = self.get_serializer_info(serializer)
+
+
+        if view.suffix == 'Instance':
+
+            metadata['layout'] = view.get_page_layout()
+
+        elif view.suffix == 'List':
+
+            if hasattr(view, 'table_fields'):
+
+                metadata['table_fields'] = view.get_table_fields()
+
+            if hasattr(view, 'page_layout'):
+
+                metadata['layout'] = view.get_page_layout()
+
+
+        build_repo: str = None
+
+        if settings.BUILD_REPO:
+
+            build_repo = settings.BUILD_REPO
+
+        build_sha: str = None
+
+        if settings.BUILD_SHA:
+
+            build_sha = settings.BUILD_SHA
+
+        build_version: str = 'development'
+
+        if settings.BUILD_VERSION:
+
+            build_version = settings.BUILD_VERSION
+
+
+        metadata['version']: dict = {
+            'project_url': build_repo,
+            'sha': build_sha,
+            'version': build_version,
+        }
+
+
+        metadata['navigation'] = self.get_navigation(request)
+
+        return metadata
+
+
+
+
+    def get_field_info(self, field):
+        """ Custom from `rest_framewarok_json_api.metadata.py`
+
+        Require that read-only fields have their choices added to the 
+        metadata.
+
+        Given an instance of a serializer field, return a dictionary
+        of metadata about it.
+        """
+        field_info = {}
+        serializer = field.parent
+
+        if hasattr(field, 'textarea'):
+
+            if field.textarea:
+
+                field_info["multi_line"] = True
+
+        if isinstance(field, serializers.ManyRelatedField):
+            field_info["type"] = self.type_lookup[field.child_relation]
+        else:
+            field_info["type"] = self.type_lookup[field]
+
+        try:
+            serializer_model = serializer.Meta.model
+            field_info["relationship_type"] = self.relation_type_lookup[
+                getattr(serializer_model, field.field_name)
+            ]
+        except KeyError:
+            pass
+        except AttributeError:
+            pass
+        else:
+            field_info["relationship_resource"] = get_related_resource_type(field)
+
+        if hasattr(field, 'autolink'):
+
+            if field.autolink:
+
+                field_info['autolink'] = field.autolink
+
+
+        field_info["required"] = getattr(field, "required", False)
+
+
+        if hasattr(field, 'style_class'):
+
+            field_info["style"]: dict = {
+                'class': field.style_class
+            }
+
+
+        attrs = [
+            "read_only",
+            "write_only",
+            "label",
+            "help_text",
+            "min_length",
+            "max_length",
+            "min_value",
+            "max_value",
+            "initial",
+        ]
+
+        for attr in attrs:
+            value = getattr(field, attr, None)
+            if value is not None and value != "":
+                field_info[attr] = force_str(value, strings_only=True)
+
+        if getattr(field, "child", None):
+            field_info["child"] = self.get_field_info(field.child)
+        elif getattr(field, "fields", None):
+            field_info["children"] = self.get_serializer_info(field)
+
+        if (
+            hasattr(field, "choices")
+        ):
+            field_info["choices"] = [
+                {
+                    "value": choice_value,
+                    "display_name": force_str(choice_name, strings_only=True),
+                }
+                for choice_value, choice_name in field.choices.items()
+            ]
+
+        if (
+            hasattr(serializer, "included_serializers")
+            and "relationship_resource" in field_info
+        ):
+            field_info["allows_include"] = (
+                field.field_name in serializer.included_serializers
+            )
+
+
+        if field_info["type"] == 'Markdown':
+
+            linked_models = []
+
+            linked_tickets = []
+
+            field_info["render"] = {
+                'models': {},
+                'tickets': {},
+            }
+
+
+            if(
+                field.context['view'].kwargs.get('pk', None)
+                or field.context['view'].metadata_markdown
+            ):
+
+                queryset = field.context['view'].get_queryset()
+
+                from core.lib.slash_commands.linked_model import CommandLinkedModel
+                from core.models.ticket.ticket import Ticket
+
+                for obj in queryset:
+
+                    value = getattr(obj, field.source, None)
+
+                    if field.source == 'display_name':
+
+                        value = str(obj)
+
+
+                    if value:
+
+                        linked_models = re.findall(r'\s\$(?P<model_type>[a-z_]+)-(?P<model_id>\d+)[\s|\n]?', ' ' + str(value) + ' ')
+                        linked_tickets = re.findall(r'(?P<ticket>#(?P<number>\d+))', str(value))
+
+                    if(getattr(obj, 'from_ticket_id_id', None)):
+
+                        linked_tickets += re.findall(r'(?P<ticket>#(?P<number>\d+))', '#' + str(obj.to_ticket_id_id))
+
+
+                    for ticket, number in linked_tickets:
+
+                        try:
+
+                            item = Ticket.objects.get( pk = number )
+
+                            field_info["render"]['tickets'].update({
+                                number: {
+                                    'status': Ticket.TicketStatus.All(item.status).label,
+                                    'ticket_type': Ticket.TicketType(item.ticket_type).label,
+                                    'title': str(item),
+                                    'url': str(item.get_url()).replace('/api/v2', '')
+                                }
+                            })
+
+                        except Ticket.DoesNotExist as e:
+
+                            pass
+
+
+                    for model_type, model_id in linked_models:
+
+                        try:
+
+                            model, item_type = CommandLinkedModel().get_model( model_type )
+
+                            if model:
+
+                                item = model.objects.get( pk = model_id )
+
+                                item_meta = { 
+                                    model_id: {
+                                        'title': str(item),
+                                        'url': str(item.get_url()).replace('/api/v2', ''),
+                                    }
+                                }
+
+                                if not field_info["render"]['models'].get(model_type, None):
+
+                                    field_info["render"]['models'].update({
+                                        model_type: item_meta
+                                    })
+
+                                else:
+
+                                    field_info["render"]['models'][model_type].update( item_meta )
+
+                        except model.DoesNotExist as e:
+
+                            pass
+
+
+        return field_info
+
+
+    def get_nav_items(self, request) -> dict:
+
+        nav = {
+            'access': {
+                "display_name": "Access",
+                "name": "access",
+                "pages": {
+                    'view_tenant': {
+                        "display_name": "Tenancy",
+                        "name": "tenant",
+                        "link": "/access/tenant"
+                    },
+                    'view_role': {
+                        "display_name": "Roles",
+                        "name": "roles",
+                        "icon": 'role',
+                        "link": "/access/role"
+                    },
+                    'view_company': {
+                        "display_name": "Companies",
+                        "name": "organization",
+                        "icon": 'organization',
+                        "link": "/access/company"
+                    },
+                    'view_contact': {
+                        "display_name": "Directory",
+                        "name": "directory",
+                        "link": "/access/entity/contact"
+                    }
+                }
+            },
+            'accounting': {
+                "display_name": "Accounting",
+                "name": "accounting",
+                "pages": {}
+            },
+            'assistance': {
+                "display_name": "Assistance",
+                "name": "assistance",
+                "pages": {
+                    'core.view_ticket_request': {
+                        "display_name": "Requests",
+                        "name": "request",
+                        "icon": "ticket_request",
+                        "link": "/assistance/ticket/request"
+                    },
+                    'view_knowledgebase': {
+                        "display_name": "Knowledge Base",
+                        "name": "knowledge_base",
+                        "icon": "information",
+                        "link": "/assistance/knowledge_base"
+                    }
+                }
+            },
+            'human_resources': {
+                "display_name": "Human Resources (HR)",
+                "name": "human_resources",
+                "pages": {
+                    'view_employee': {
+                        "display_name": "Employees",
+                        "name": "employees",
+                        "icon": "employee",
+                        "link": "/access/entity/employee"
+                    }
+                }
+            },
+            'itam': {
+                "display_name": "ITAM",
+                "name": "itam",
+                "pages": {
+                    'view_device': {
+                        "display_name": "Devices",
+                        "name": "device",
+                        "icon": "device",
+                        "link": "/itam/device"
+                    },
+                    'view_operatingsystem': {
+                        "display_name": "Operating System",
+                        "name": "operating_system",
+                        "link": "/itam/operating_system"
+                    },
+                    'view_software': {
+                        "display_name": "Software",
+                        "name": "software",
+                        "link": "/itam/software"
+                    }
+                }
+            },
+            'itim': {
+                "display_name": "ITIM",
+                "name": "itim",
+                "pages": {
+                    'core.view_ticket_change': {
+                        "display_name": "Changes",
+                        "name": "ticket_change",
+                        "link": "/itim/ticket/change"
+                    },
+                    'view_cluster': {
+                        "display_name": "Clusters",
+                        "name": "cluster",
+                        "link": "/itim/cluster"
+                    },
+                    'core.view_ticket_incident': {
+                        "display_name": "Incidents",
+                        "name": "ticket_incident",
+                        "link": "/itim/ticket/incident"
+                    },
+                    'core.view_ticket_problem': {
+                        "display_name": "Problems",
+                        "name": "ticket_problem",
+                        "link": "/itim/ticket/problem"
+                    },
+                    'view_service': {
+                        "display_name": "Services",
+                        "name": "service",
+                        "link": "/itim/service"
+                    },
+                }
+            },
+            'itops': {
+                "display_name": "ITOps",
+                "name": "itops",
+                "icon": "itops",
+                "pages": {
+                    'core.view_ticketcategory': {
+                        "display_name": "Ticket Category",
+                        "name": "ticketcategory",
+                        "icon": 'ticketcategory',
+                        "link": "/settings/ticket_category"
+                    },
+                    'core.view_ticketcommentcategory': {
+                        "display_name": "Ticket Comment Category",
+                        "name": "ticketcommentcategory",
+                        "icon": 'ticketcommentcategory',
+                        "link": "/settings/ticket_comment_category"
+                    },
+                }
+            },
+            'devops': {
+                "display_name": "DevOPs",
+                "name": "devops",
+                "icon": "devops",
+                "pages": {
+                    'view_featureflag': {
+                        "display_name": "Feature Flags",
+                        "name": "feature_flag",
+                        "icon": 'feature_flag',
+                        "link": "/devops/feature_flag"
+                    }
+                }
+            },
+            'config_management': {
+                "display_name": "Config Management",
+                "name": "config_management",
+                "icon": "ansible",
+                "pages": {
+                    'view_configgroups': {
+                        "display_name": "Groups",
+                        "name": "group",
+                        "icon": 'config_management',
+                        "link": "/config_management/group"
+                    }
+                }
+            },
+            'project_management': {
+                "display_name": "Project Management",
+                "name": "project_management",
+                "icon": 'project',
+                "pages": {
+                    'view_project': {
+                        "display_name": "Projects",
+                        "name": "project",
+                        "icon": 'kanban',
+                        "link": "/project_management/project"
+                    }
+                }
+            },
+
+            'settings': {
+                "display_name": "Settings",
+                "name": "settings",
+                "pages": {
+                    'all_settings': {
+                        "display_name": "System",
+                        "name": "setting",
+                        "icon": "system",
+                        "link": "/settings"
+                    },
+                    'django_celery_results.view_taskresult': {
+                        "display_name": "Task Log",
+                        "name": "celery_log",
+                        # "icon": "settings",
+                        "link": "/settings/celery_log"
+                    }
+                }
+            }
+        }
+
+        if getattr(request, 'feature_flag', None):
+
+            if request.feature_flag['2025-00001']:
+
+                nav['devops']['pages'].update({
+                    
+                    'view_gitgroup': {
+                        "display_name": "Git Group",
+                        "name": "git_group",
+                        "icon": 'git_group',
+                        "link": "/devops/git_group"
+                    },
+                    'view_gitrepository': {
+                        "display_name": "Git Repositories",
+                        "name": "git_repository",
+                        "icon": 'git',
+                        "link": "/devops/git_repository"
+                    }
+                })
+
+            if request.feature_flag['2025-00004']:
+
+                nav['accounting']['pages'].update({
+                    'view_assetbase': {
+                        "display_name": "Assets",
+                        "name": "asset",
+                        "link": "/accounting/asset"
+                    }
+                })
+
+                if request.feature_flag['2025-00007']:
+
+                    nav['itam']['pages'] = {
+                        'view_itamassetbase': {
+                            "display_name": "IT Assets",
+                            "name": "itasset",
+                            "link": "/itam/itamassetbase"
+                        },
+                        **nav['itam']['pages']
+                    }
+
+            if request.feature_flag['2025-00006']:
+
+                nav['assistance']['pages'].update({
+                    'itim.view_requestticket': {
+                        "display_name": "Requests New",
+                        "name": "request_new",
+                        "icon": "ticket_request",
+                        "link": "/core/ticket/request"
+                    }
+                })
+
+
+        return nav
+
+
+    def get_navigation(self, request) -> list(dict()):
+        """Render the navigation menu
+
+        Check the users permissions against `get_nav_items()`. if they have the permission, add the
+        menu entry to the navigation to be rendered,
+
+        **No** Menu is to be rendered that contains no menu entries.
+
+        Args:
+            user (User): User object from the request.
+
+        Returns:
+            list(dict()): Rendered navigation menu in the format the UI requires it to be.
+        """
+
+        nav: list = []
+
+        view_settings: list = [
+            'assistance.view_knowledgebasecategory',
+            'itam.view_devicemodel',
+            'itam.view_devicetype',
+            'itam.view_softwarecategory',
+            'itim.view_clustertype',
+            'project_management.view_projectstate',
+            'project_management.view_projecttype',
+            'settings.view_appsettings',
+        ]
+
+
+        for app, entry in self.get_nav_items(request).items():
+
+            new_menu_entry: dict = {}
+
+            new_pages: list = []
+
+            for permission, page in entry['pages'].items():
+
+                if permission == 'all_settings':
+
+                    for setting_permission in view_settings:
+
+                        if request.user.has_perm(permission = setting_permission, tenancy_permission = False):
+
+                            new_pages += [ page ]
+                            break
+
+
+                elif '.' in permission:
+
+                    if request.user.has_perm(permission = permission, tenancy_permission = False):
+
+                        new_pages += [ page ]
+
+
+                else:
+
+                    if request.user.has_perm(permission = app + '.' + permission, tenancy_permission = False):
+
+                        new_pages += [ page ]
+
+
+                if(
+                    app == 'access'
+                    and permission == 'view_organization'
+                    and len(request.user.get_tenancies()) > 0
+                ):
+
+                    if page not in new_pages:
+
+                        new_pages += [ page ]
+
+
+            if len(new_pages) > 0:
+
+                new_menu_entry = entry.copy()
+
+                new_menu_entry.update({ 'pages': new_pages })
+
+                nav += [ new_menu_entry ]
+
+        return nav

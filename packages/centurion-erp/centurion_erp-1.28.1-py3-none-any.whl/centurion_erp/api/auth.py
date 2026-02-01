@@ -1,0 +1,123 @@
+import datetime
+
+from django.conf import settings
+
+from rest_framework import exceptions
+from rest_framework.authentication import BaseAuthentication, get_authorization_header
+
+from api.models.tokens import AuthToken
+
+from centurion.logging import CenturionLogger
+
+# scheme.py
+from drf_spectacular.extensions import OpenApiAuthenticationExtension
+
+class TokenScheme(OpenApiAuthenticationExtension):
+    target_class = "api.auth.TokenAuthentication"
+    name = "TokenAuthentication"
+
+    def get_security_definition(self, auto_schema):
+        return {
+            "type": "apiKey",
+            "in": "header",
+            "name": "Token Authorization",
+            "description": "Token-based authentication with required prefix 'Token'",
+        }
+
+
+class TokenAuthentication(BaseAuthentication):
+    """ API Token Authentication
+
+    Provides the ability to use the API by using a token to authenticate.
+    """
+
+    def authenticate_header(self, request):
+        return 'Token'
+
+
+    def authenticate(self, request):
+        """ Authentication the API session using the supplied token
+
+        Args:
+            request (object): API Request Object
+
+        Raises:
+            exceptions.AuthenticationFailed: 'Token header invalid' - Authorization Header Value is not in format `Token <auth-token>`
+            exceptions.AuthenticationFailed: 'Token header invalid. Possibly incorrectly formatted' - Authentication header value has >1 space
+            exceptions.AuthenticationFailed: 'Invalid token header. Token string should not contain invalid characters.' - Authorization header contains non-unicode chars
+
+        Returns:
+            None (None): User not authenticated
+            tuple(user,token): User authenticated
+        """
+
+        auth = get_authorization_header(request).split()
+
+        log: CenturionLogger = settings.CENTURION_LOG.getChild('authentication')
+
+        if not auth:
+            return None
+
+        if len(auth) == 1:
+
+            log.warning(
+                msg = 'Token header invalid.'
+            )
+
+            raise exceptions.AuthenticationFailed('Token header invalid.')
+
+        elif len(auth) > 2:
+
+            log.warning(
+                msg = 'Token header invalid. Possibly incorrectly formatted.'
+            )
+
+            raise exceptions.AuthenticationFailed('Token header invalid. Possibly incorrectly formatted.')
+
+
+        elif len(auth) == 2:
+
+            try:
+
+                decoded_token: str = auth[1].decode("utf-8")
+
+                for token in AuthToken.objects.filter():
+
+                    provided_token: str = token.token_hash(decoded_token)
+
+                    if token.token == provided_token:
+
+                        if datetime.datetime.strptime(str(token.expires),'%Y-%m-%d %H:%M:%S%z') > datetime.datetime.now(datetime.timezone.utc):
+
+                            user = token.user
+
+                            log.info(
+                                msg = f'Token authentication success for {token.user.username}.'
+                            )
+
+                            return (user, provided_token)
+
+                        else:
+
+                            expired_token = AuthToken.objects.get(id=token.id)
+
+                            expired_token.delete()
+
+                            log.info(
+                                msg = f'Removed expired token for {token.user.username}.'
+                            )
+
+
+            except UnicodeError:
+
+                log.warning(
+                    msg = 'Invalid chars in token header.'
+                )
+
+                raise exceptions.AuthenticationFailed('Invalid token header. Token string should not contain invalid characters.')
+
+        log.warning(
+            msg = 'Token authentication failure.'
+        )
+
+        return None
