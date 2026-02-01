@@ -1,0 +1,1245 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Job - Fairchild</title>
+    <!-- React and ReactDOM -->
+    <script
+      crossorigin
+      src="https://unpkg.com/react@18/umd/react.production.min.js"
+    ></script>
+    <script
+      crossorigin
+      src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"
+    ></script>
+    <!-- React Flow v11 (has UMD support) -->
+    <script src="https://cdn.jsdelivr.net/npm/reactflow@11.11.4/dist/umd/index.js"></script>
+    <link
+      href="https://cdn.jsdelivr.net/npm/reactflow@11.11.4/dist/style.css"
+      rel="stylesheet"
+    />
+    <!-- Dagre for layout -->
+    <script src="https://cdn.jsdelivr.net/npm/@dagrejs/dagre@1.1.4/dist/dagre.min.js"></script>
+    <style>
+      :root {
+        --bg-primary: #0f172a;
+        --bg-secondary: #1e293b;
+        --bg-hover: #334155;
+        --border-color: #334155;
+        --text-primary: #f8fafc;
+        --text-secondary: #e2e8f0;
+        --text-muted: #94a3b8;
+        --text-dim: #64748b;
+      }
+
+      [data-theme="light"] {
+        --bg-primary: #f8fafc;
+        --bg-secondary: #ffffff;
+        --bg-hover: #f1f5f9;
+        --border-color: #e2e8f0;
+        --text-primary: #0f172a;
+        --text-secondary: #1e293b;
+        --text-muted: #64748b;
+        --text-dim: #94a3b8;
+      }
+
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background: var(--bg-primary);
+        color: var(--text-secondary);
+        min-height: 100vh;
+      }
+      .container {
+        max-width: 1000px;
+        margin: 0 auto;
+        padding: 24px;
+      }
+      header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 24px;
+        padding-bottom: 16px;
+        border-bottom: 1px solid var(--border-color);
+      }
+      .header-left {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+      }
+      .back-link {
+        color: var(--text-muted);
+        text-decoration: none;
+        font-size: 0.9rem;
+      }
+      .back-link:hover {
+        color: var(--text-primary);
+      }
+      h1 {
+        color: var(--text-primary);
+        font-size: 1.5rem;
+        font-weight: 600;
+      }
+      .header-right {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .theme-toggle {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        color: var(--text-muted);
+        padding: 8px;
+        border-radius: 6px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .theme-toggle:hover {
+        color: var(--text-primary);
+        background: var(--bg-hover);
+      }
+      .theme-toggle svg {
+        width: 18px;
+        height: 18px;
+      }
+
+      .badge {
+        padding: 4px 10px;
+        border-radius: 4px;
+        font-size: 0.8rem;
+        font-weight: 500;
+        display: inline-block;
+      }
+      .badge.completed {
+        background: rgba(34, 197, 94, 0.2);
+        color: #22c55e;
+      }
+      .badge.running {
+        background: rgba(59, 130, 246, 0.2);
+        color: #3b82f6;
+      }
+      .badge.scheduled {
+        background: rgba(168, 85, 247, 0.2);
+        color: #a855f7;
+      }
+      .badge.available {
+        background: rgba(100, 116, 139, 0.2);
+        color: #94a3b8;
+      }
+      .badge.failed,
+      .badge.discarded {
+        background: rgba(239, 68, 68, 0.2);
+        color: #ef4444;
+      }
+      .badge.cancelled {
+        background: rgba(245, 158, 11, 0.2);
+        color: #f59e0b;
+      }
+
+      .card {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 20px;
+      }
+      .card-title {
+        color: var(--text-primary);
+        font-size: 1rem;
+        font-weight: 600;
+        margin-bottom: 16px;
+      }
+
+      .info-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 16px;
+      }
+      @media (max-width: 600px) {
+        .info-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+      .info-item {
+      }
+      .info-label {
+        font-size: 0.75rem;
+        color: var(--text-dim);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-bottom: 4px;
+      }
+      .info-value {
+        color: var(--text-primary);
+        font-size: 0.95rem;
+      }
+      .info-value.mono {
+        font-family: "SF Mono", Monaco, monospace;
+        font-size: 0.85rem;
+      }
+      .info-value a {
+        color: #3b82f6;
+        text-decoration: none;
+      }
+      .info-value a:hover {
+        text-decoration: underline;
+      }
+
+      .code-block {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        padding: 12px;
+        font-family: "SF Mono", Monaco, monospace;
+        font-size: 0.8rem;
+        overflow-x: auto;
+        white-space: pre-wrap;
+        word-break: break-all;
+        color: var(--text-secondary);
+      }
+
+      .timeline {
+        position: relative;
+        padding-left: 24px;
+      }
+      .timeline::before {
+        content: "";
+        position: absolute;
+        left: 6px;
+        top: 4px;
+        bottom: 4px;
+        width: 2px;
+        background: var(--border-color);
+      }
+      .timeline-item {
+        position: relative;
+        padding-bottom: 16px;
+      }
+      .timeline-item:last-child {
+        padding-bottom: 0;
+      }
+      .timeline-item::before {
+        content: "";
+        position: absolute;
+        left: -20px;
+        top: 4px;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: var(--border-color);
+      }
+      .timeline-item.active::before {
+        background: #3b82f6;
+      }
+      .timeline-item.success::before {
+        background: #22c55e;
+      }
+      .timeline-item.error::before {
+        background: #ef4444;
+      }
+      .timeline-label {
+        font-size: 0.8rem;
+        color: var(--text-dim);
+      }
+      .timeline-time {
+        font-size: 0.9rem;
+        color: var(--text-primary);
+        font-family: "SF Mono", Monaco, monospace;
+      }
+      .timeline-duration {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        margin-left: 8px;
+      }
+
+      .error-box {
+        background: rgba(239, 68, 68, 0.1);
+        border: 1px solid rgba(239, 68, 68, 0.3);
+        border-radius: 6px;
+        padding: 12px;
+        margin-top: 8px;
+      }
+      .error-box pre {
+        font-family: "SF Mono", Monaco, monospace;
+        font-size: 0.8rem;
+        color: #ef4444;
+        white-space: pre-wrap;
+        word-break: break-all;
+      }
+
+      .deps-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .dep-tag {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        padding: 4px 10px;
+        border-radius: 4px;
+        font-size: 0.8rem;
+        font-family: "SF Mono", Monaco, monospace;
+        color: var(--text-muted);
+      }
+
+      .dag-container {
+        position: relative;
+      }
+      .dag-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 12px;
+      }
+      .dag-legend {
+        display: flex;
+        gap: 12px;
+        font-size: 0.7rem;
+      }
+      .dag-legend-item {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .dag-legend-color {
+        width: 10px;
+        height: 10px;
+        border-radius: 2px;
+      }
+      #dag-flow {
+        width: 100%;
+        height: 350px;
+        border-radius: 6px;
+        background: var(--bg-primary);
+      }
+
+      /* React Flow custom styles */
+      .react-flow__node {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      }
+      .react-flow__attribution {
+        display: none;
+      }
+      .job-node {
+        padding: 8px 16px;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 600;
+        color: white;
+        min-width: 80px;
+        text-align: center;
+        cursor: pointer;
+        border: 2px solid transparent;
+        transition: all 0.15s ease;
+      }
+      .job-node:hover {
+        filter: brightness(1.1);
+        transform: scale(1.02);
+      }
+      .job-node.current {
+        border: 2px solid #fbbf24 !important;
+        box-shadow: 0 0 0 2px rgba(251, 191, 36, 0.3);
+      }
+      .job-node.group {
+        border-style: dashed;
+        border-color: rgba(255, 255, 255, 0.5);
+      }
+      .job-node .count {
+        font-size: 10px;
+        opacity: 0.8;
+        margin-left: 4px;
+      }
+      .job-node.completed {
+        background: #22c55e;
+      }
+      .job-node.running {
+        background: #3b82f6;
+      }
+      .job-node.scheduled {
+        background: #a855f7;
+      }
+      .job-node.available {
+        background: #64748b;
+      }
+      .job-node.failed,
+      .job-node.discarded {
+        background: #ef4444;
+      }
+      .job-node.cancelled {
+        background: #f59e0b;
+      }
+      .job-node.ellipsis {
+        background: transparent;
+        border: none;
+        min-width: auto;
+        color: #94a3b8;
+        font-size: 11px;
+        padding: 4px 8px;
+      }
+      .job-node.ellipsis:hover {
+        color: #e2e8f0;
+        background: rgba(148, 163, 184, 0.1);
+        border-radius: 4px;
+      }
+
+      #family-table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      #family-table th,
+      #family-table td {
+        text-align: left;
+        padding: 8px 12px;
+        border-bottom: 1px solid var(--border-color);
+        font-size: 0.85rem;
+      }
+      #family-table th {
+        color: var(--text-dim);
+        font-weight: 500;
+        text-transform: uppercase;
+        font-size: 0.7rem;
+      }
+      #family-table tr:last-child td {
+        border-bottom: none;
+      }
+      #family-table .current-job {
+        background: var(--bg-hover);
+      }
+      #family-table a {
+        color: #3b82f6;
+        text-decoration: none;
+      }
+      #family-table a:hover {
+        text-decoration: underline;
+      }
+
+      .expand-btn {
+        font-size: 0.7rem;
+        padding: 2px 8px;
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        color: var(--text-muted);
+        border-radius: 4px;
+        cursor: pointer;
+        margin-left: 12px;
+      }
+      .expand-btn:hover {
+        background: var(--bg-hover);
+        color: var(--text-primary);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <div class="header-left">
+          <a href="/" class="back-link">← Dashboard</a>
+          <h1 id="job-title">Job</h1>
+        </div>
+        <div class="header-right">
+          <span id="job-state"></span>
+          <button
+            class="theme-toggle"
+            onclick="toggleTheme()"
+            title="Toggle theme"
+          >
+            <svg
+              id="theme-icon-sun"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              style="display: none"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"
+              />
+            </svg>
+            <svg
+              id="theme-icon-moon"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"
+              />
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <div class="card">
+        <div class="card-title">Overview</div>
+        <div class="info-grid" id="overview-grid">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+
+      <div class="card" id="family-card" style="display: none">
+        <div class="dag-container">
+          <div class="dag-header">
+            <div class="card-title" style="margin-bottom: 0">Job Tree</div>
+            <div class="dag-legend">
+              <div class="dag-legend-item">
+                <div class="dag-legend-color" style="background: #22c55e"></div>
+                <span>Completed</span>
+              </div>
+              <div class="dag-legend-item">
+                <div class="dag-legend-color" style="background: #3b82f6"></div>
+                <span>Running</span>
+              </div>
+              <div class="dag-legend-item">
+                <div class="dag-legend-color" style="background: #a855f7"></div>
+                <span>Scheduled</span>
+              </div>
+              <div class="dag-legend-item">
+                <div class="dag-legend-color" style="background: #64748b"></div>
+                <span>Available</span>
+              </div>
+              <div class="dag-legend-item">
+                <div class="dag-legend-color" style="background: #ef4444"></div>
+                <span>Failed</span>
+              </div>
+            </div>
+          </div>
+          <div id="dag-flow"></div>
+        </div>
+        <table id="family-table" style="margin-top: 16px">
+          <thead>
+            <tr>
+              <th>Task</th>
+              <th>State</th>
+              <th>Duration</th>
+              <th>Result</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Timeline</div>
+        <div class="timeline" id="timeline">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Arguments</div>
+        <div class="code-block" id="args-block">Loading...</div>
+      </div>
+
+      <div class="card" id="result-card" style="display: none">
+        <div class="card-title">Result</div>
+        <div class="code-block" id="result-block"></div>
+      </div>
+
+      <div class="card" id="errors-card" style="display: none">
+        <div class="card-title">Errors</div>
+        <div id="errors-list"></div>
+      </div>
+
+      <div class="card" id="deps-card" style="display: none">
+        <div class="card-title">Dependencies</div>
+        <div class="deps-list" id="deps-list"></div>
+      </div>
+    </div>
+
+    <script>
+      // Theme management
+      function getSystemTheme() {
+        return window.matchMedia("(prefers-color-scheme: light)").matches
+          ? "light"
+          : "dark";
+      }
+
+      function getStoredTheme() {
+        return localStorage.getItem("fairchild-theme");
+      }
+
+      function setTheme(theme) {
+        document.documentElement.setAttribute("data-theme", theme);
+        localStorage.setItem("fairchild-theme", theme);
+        updateThemeIcon(theme);
+      }
+
+      function updateThemeIcon(theme) {
+        document.getElementById("theme-icon-sun").style.display =
+          theme === "light" ? "block" : "none";
+        document.getElementById("theme-icon-moon").style.display =
+          theme === "dark" ? "block" : "none";
+      }
+
+      function toggleTheme() {
+        const current =
+          document.documentElement.getAttribute("data-theme") ||
+          getSystemTheme();
+        const next = current === "light" ? "dark" : "light";
+        setTheme(next);
+      }
+
+      // Initialize theme
+      const storedTheme = getStoredTheme();
+      if (storedTheme) {
+        setTheme(storedTheme);
+      } else {
+        const systemTheme = getSystemTheme();
+        document.documentElement.setAttribute("data-theme", systemTheme);
+        updateThemeIcon(systemTheme);
+      }
+
+      // Listen for system theme changes
+      window
+        .matchMedia("(prefers-color-scheme: light)")
+        .addEventListener("change", (e) => {
+          if (!getStoredTheme()) {
+            const newTheme = e.matches ? "light" : "dark";
+            document.documentElement.setAttribute("data-theme", newTheme);
+            updateThemeIcon(newTheme);
+          }
+        });
+
+      const jobId = "{{JOB_ID}}";
+
+      function formatTime(isoString) {
+        if (!isoString) return "-";
+        const d = new Date(isoString);
+        return d.toLocaleString();
+      }
+
+      function formatDuration(ms) {
+        if (ms < 1000) return ms + "ms";
+        if (ms < 60000) return (ms / 1000).toFixed(1) + "s";
+        return (ms / 60000).toFixed(1) + "m";
+      }
+
+      function formatJson(obj) {
+        if (obj === null || obj === undefined) return "null";
+        if (typeof obj === "string") {
+          try {
+            obj = JSON.parse(obj);
+          } catch (e) {
+            return obj;
+          }
+        }
+        return JSON.stringify(obj, null, 2);
+      }
+
+      async function fetchJob() {
+        const res = await fetch(`/api/jobs/${jobId}`);
+        if (!res.ok) {
+          document.getElementById("job-title").textContent = "Job Not Found";
+          return;
+        }
+        const job = await res.json();
+        renderJob(job);
+      }
+
+      function renderJob(job) {
+        // Title
+        const taskShortName = job.task_name.split(".").pop();
+        document.getElementById("job-title").textContent =
+          job.job_key || taskShortName;
+        document.title = `${job.job_key || taskShortName} - Fairchild`;
+
+        // State badge
+        document.getElementById("job-state").innerHTML =
+          `<span class="badge ${job.state}">${job.state}</span>`;
+
+        // Overview grid
+        const parentLink = job.parent_id
+          ? `<a href="/jobs/${job.parent_id}">${job.parent_id.slice(0, 8)}...</a>`
+          : "-";
+
+        document.getElementById("overview-grid").innerHTML = `
+                <div class="info-item">
+                    <div class="info-label">Task</div>
+                    <div class="info-value mono">${job.task_name}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Queue</div>
+                    <div class="info-value">${job.queue}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Parent Job</div>
+                    <div class="info-value mono">${parentLink}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Priority</div>
+                    <div class="info-value">${job.priority}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Attempts</div>
+                    <div class="info-value">${job.attempt} / ${job.max_attempts}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Job ID</div>
+                    <div class="info-value mono">${job.id}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Tags</div>
+                    <div class="info-value">${job.tags && job.tags.length > 0 ? job.tags.join(", ") : "-"}</div>
+                </div>
+            `;
+
+        // Timeline
+        let timelineHtml = "";
+
+        timelineHtml += `
+                <div class="timeline-item active">
+                    <div class="timeline-label">Inserted</div>
+                    <div class="timeline-time">${formatTime(job.inserted_at)}</div>
+                </div>
+            `;
+
+        if (
+          job.scheduled_at &&
+          new Date(job.scheduled_at) > new Date(job.inserted_at)
+        ) {
+          const waitTime =
+            new Date(job.scheduled_at) - new Date(job.inserted_at);
+          timelineHtml += `
+                    <div class="timeline-item">
+                        <div class="timeline-label">Scheduled</div>
+                        <div class="timeline-time">${formatTime(job.scheduled_at)}<span class="timeline-duration">+${formatDuration(waitTime)}</span></div>
+                    </div>
+                `;
+        }
+
+        if (job.attempted_at) {
+          const queueTime =
+            new Date(job.attempted_at) - new Date(job.inserted_at);
+          timelineHtml += `
+                    <div class="timeline-item active">
+                        <div class="timeline-label">Started</div>
+                        <div class="timeline-time">${formatTime(job.attempted_at)}<span class="timeline-duration">waited ${formatDuration(queueTime)}</span></div>
+                    </div>
+                `;
+        }
+
+        if (job.completed_at) {
+          const execTime =
+            new Date(job.completed_at) - new Date(job.attempted_at);
+          const itemClass = job.state === "completed" ? "success" : "error";
+          timelineHtml += `
+                    <div class="timeline-item ${itemClass}">
+                        <div class="timeline-label">${job.state === "completed" ? "Completed" : "Failed"}</div>
+                        <div class="timeline-time">${formatTime(job.completed_at)}<span class="timeline-duration">ran ${formatDuration(execTime)}</span></div>
+                    </div>
+                `;
+        }
+
+        document.getElementById("timeline").innerHTML = timelineHtml;
+
+        // Arguments
+        document.getElementById("args-block").textContent = formatJson(
+          job.args,
+        );
+
+        // Result
+        if (job.recorded !== null && job.recorded !== undefined) {
+          document.getElementById("result-card").style.display = "block";
+          document.getElementById("result-block").textContent = formatJson(
+            job.recorded,
+          );
+        }
+
+        // Errors
+        let errors = job.errors;
+        if (typeof errors === "string") {
+          try {
+            errors = JSON.parse(errors);
+          } catch (e) {
+            errors = [];
+          }
+        }
+        if (errors && Array.isArray(errors) && errors.length > 0) {
+          document.getElementById("errors-card").style.display = "block";
+          let errorsHtml = "";
+          errors.forEach((err, idx) => {
+            errorsHtml += `
+                        <div class="error-box">
+                            <div style="font-size: 0.75rem; color: var(--text-dim); margin-bottom: 4px;">Attempt ${idx + 1}</div>
+                            <pre>${typeof err === "string" ? err : JSON.stringify(err, null, 2)}</pre>
+                        </div>
+                    `;
+          });
+          document.getElementById("errors-list").innerHTML = errorsHtml;
+        }
+
+        // Dependencies
+        if (job.deps && job.deps.length > 0) {
+          document.getElementById("deps-card").style.display = "block";
+          const depsHtml = job.deps
+            .map(
+              (dep) =>
+                `<a href="/jobs/${dep}" class="dep-tag">${dep.slice(0, 8)}...</a>`,
+            )
+            .join("");
+          document.getElementById("deps-list").innerHTML = depsHtml;
+        }
+
+        // Fetch and render job family tree if this job has parent or children
+        fetchJobFamily();
+      }
+
+      let familyData = null;
+      let expandedGroups = {}; // Track which groups are expanded by key
+      let flowRoot = null;
+
+      async function fetchJobFamily() {
+        try {
+          const res = await fetch(`/api/jobs/${jobId}/family`);
+          if (!res.ok) {
+            console.error("Family API error:", res.status);
+            return;
+          }
+
+          familyData = await res.json();
+
+          // Only show DAG if there's more than one job in the family
+          if (familyData.jobs && familyData.jobs.length > 1) {
+            document.getElementById("family-card").style.display = "block";
+            renderDAG(familyData.jobs);
+            renderFamilyTable(familyData.jobs);
+          }
+        } catch (err) {
+          console.error("fetchJobFamily error:", err);
+        }
+      }
+
+      function toggleGroupExpand(groupKey) {
+        expandedGroups[groupKey] = !expandedGroups[groupKey];
+        if (familyData && familyData.jobs) {
+          renderDAG(familyData.jobs);
+        }
+      }
+
+      // Make toggleGroupExpand available globally for node clicks
+      window.toggleGroupExpand = toggleGroupExpand;
+
+      function renderDAG(jobs) {
+        // reactflow v11 UMD exposes window.ReactFlow
+        const {
+          ReactFlowProvider,
+          default: ReactFlow,
+          Background,
+          Controls,
+          Handle,
+          Position,
+          useNodesState,
+          useEdgesState,
+          useReactFlow,
+          MarkerType,
+        } = window.ReactFlow;
+        const { useState, useEffect, useCallback } = React;
+
+        // Build job map
+        const jobMap = {};
+        jobs.forEach((j) => (jobMap[j.id] = j));
+
+        // Build display nodes and edges
+        let displayNodes = [];
+        let edges = [];
+
+        // Group siblings by parent_id + task_name
+        const siblingGroups = {};
+        const jobsWithDeps = [];
+        const rootJobs = [];
+
+        jobs.forEach((job) => {
+          if (!job.parent_id) {
+            rootJobs.push(job);
+          } else if (job.deps && job.deps.length > 0) {
+            jobsWithDeps.push(job);
+          } else {
+            const key = `${job.parent_id}:${job.task_name}`;
+            if (!siblingGroups[key]) siblingGroups[key] = [];
+            siblingGroups[key].push(job);
+          }
+        });
+
+        // Root jobs
+        rootJobs.forEach((job) => {
+          displayNodes.push({
+            id: job.id,
+            label: job.task_name.split(".").pop(),
+            state: job.state,
+            isGroup: false,
+            count: 1,
+            jobIds: [job.id],
+          });
+        });
+
+        // Sibling groups - show first 2, "...", and last 1 when collapsed
+        Object.entries(siblingGroups).forEach(([key, groupJobs]) => {
+          let isExpanded = expandedGroups[key];
+
+          // Auto-expand if the current job is hidden in this group
+          const hiddenJobs = groupJobs.slice(2, -1);
+          if (hiddenJobs.some((j) => j.id === jobId)) {
+            isExpanded = true;
+            expandedGroups[key] = true;
+          }
+
+          if (groupJobs.length >= 4 && !isExpanded) {
+            // Show first 2, ellipsis node, and last 1
+            const parentId = groupJobs[0].parent_id;
+            const hiddenCount = groupJobs.length - 3;
+
+            // First 2 jobs
+            for (let i = 0; i < 2; i++) {
+              const job = groupJobs[i];
+              displayNodes.push({
+                id: job.id,
+                label: job.task_name.split(".").pop(),
+                state: job.state,
+                isGroup: false,
+                count: 1,
+                jobIds: [job.id],
+              });
+              edges.push({ from: parentId, to: job.id });
+            }
+
+            // Last job (before ellipsis so ellipsis appears at the end)
+            const lastJob = groupJobs[groupJobs.length - 1];
+            displayNodes.push({
+              id: lastJob.id,
+              label: lastJob.task_name.split(".").pop(),
+              state: lastJob.state,
+              isGroup: false,
+              count: 1,
+              jobIds: [lastJob.id],
+            });
+            edges.push({ from: parentId, to: lastJob.id });
+
+            // Ellipsis node at the end (clickable to expand)
+            const ellipsisId = `ellipsis:${key}`;
+            displayNodes.push({
+              id: ellipsisId,
+              label: `+${hiddenCount}`,
+              state: "ellipsis",
+              isGroup: false,
+              isEllipsis: true,
+              count: hiddenCount,
+              jobIds: groupJobs.slice(2, -1).map((j) => j.id),
+              groupKey: key,
+            });
+            edges.push({ from: parentId, to: ellipsisId });
+          } else {
+            // Show all (either < 4 jobs or expanded)
+            groupJobs.forEach((job) => {
+              displayNodes.push({
+                id: job.id,
+                label: job.task_name.split(".").pop(),
+                state: job.state,
+                isGroup: false,
+                count: 1,
+                jobIds: [job.id],
+              });
+              edges.push({ from: job.parent_id, to: job.id });
+            });
+          }
+        });
+
+        // Jobs with deps
+        jobsWithDeps.forEach((job) => {
+          displayNodes.push({
+            id: job.id,
+            label: job.task_name.split(".").pop(),
+            state: job.state,
+            isGroup: false,
+            count: 1,
+            jobIds: [job.id],
+          });
+          job.deps.forEach((depId) => {
+            let edgeFrom = depId;
+            // Check if this dep is hidden in an ellipsis node
+            displayNodes.forEach((node) => {
+              if (
+                (node.isGroup || node.isEllipsis) &&
+                node.jobIds.includes(depId)
+              ) {
+                edgeFrom = node.id;
+              }
+            });
+            edges.push({ from: edgeFrom, to: job.id });
+          });
+        });
+
+        // Use dagre for layout
+        const g = new dagre.graphlib.Graph();
+        g.setGraph({ rankdir: "LR", nodesep: 50, ranksep: 100 });
+        g.setDefaultEdgeLabel(() => ({}));
+
+        const nodeWidth = 120;
+        const nodeHeight = 36;
+
+        const nodeMap = {};
+        displayNodes.forEach((node) => {
+          nodeMap[node.id] = node;
+          g.setNode(node.id, { width: nodeWidth, height: nodeHeight });
+        });
+
+        const edgeSet = new Set();
+        edges.forEach((e) => {
+          const key = `${e.from}->${e.to}`;
+          if (!edgeSet.has(key) && nodeMap[e.from] && nodeMap[e.to]) {
+            edgeSet.add(key);
+            g.setEdge(e.from, e.to);
+          }
+        });
+
+        dagre.layout(g);
+
+        // Convert to React Flow format
+        const flowNodes = displayNodes.map((node) => {
+          const pos = g.node(node.id);
+          const isCurrent = node.jobIds.includes(jobId);
+          return {
+            id: node.id,
+            position: { x: pos.x - nodeWidth / 2, y: pos.y - nodeHeight / 2 },
+            data: {
+              label: node.label,
+              state: node.state,
+              isGroup: node.isGroup,
+              isEllipsis: node.isEllipsis,
+              groupKey: node.groupKey,
+              count: node.count,
+              isCurrent: isCurrent,
+              jobIds: node.jobIds,
+            },
+            type: "jobNode",
+          };
+        });
+
+        const flowEdges = [];
+        edgeSet.forEach((key) => {
+          const [from, to] = key.split("->");
+          // Check if target node is still pending (not completed)
+          const targetNode = nodeMap[to];
+          const isFlowing =
+            targetNode &&
+            ["running", "scheduled", "available"].includes(targetNode.state);
+
+          flowEdges.push({
+            id: key,
+            source: from,
+            target: to,
+            type: "bezier",
+            style: { stroke: "#94a3b8", strokeWidth: 2 },
+            markerEnd: { type: MarkerType.ArrowClosed, color: "#94a3b8" },
+            animated: isFlowing,
+          });
+        });
+
+        // Custom node component
+        const JobNode = ({ data }) => {
+          const classes = ["job-node", data.state];
+          if (data.isCurrent) classes.push("current");
+          if (data.isGroup) classes.push("group");
+          if (data.isEllipsis) classes.push("ellipsis");
+
+          const handleClick = (e) => {
+            e.stopPropagation();
+            // Ellipsis node - expand the group
+            if (data.isEllipsis && data.groupKey) {
+              window.toggleGroupExpand(data.groupKey);
+              return;
+            }
+            // Regular job node - navigate to job
+            if (
+              !data.isGroup &&
+              data.jobIds.length === 1 &&
+              data.jobIds[0] !== jobId
+            ) {
+              window.location.href = `/jobs/${data.jobIds[0]}`;
+            }
+          };
+
+          return React.createElement(
+            "div",
+            {
+              className: classes.join(" "),
+              onClick: handleClick,
+            },
+            [
+              // Left handle (target for incoming edges)
+              React.createElement(Handle, {
+                key: "target",
+                type: "target",
+                position: Position.Left,
+                style: { background: "transparent", border: "none" },
+              }),
+              // Label
+              data.label,
+              // Count for groups
+              data.isGroup &&
+                React.createElement(
+                  "span",
+                  { key: "count", className: "count" },
+                  `×${data.count}`,
+                ),
+              // Right handle (source for outgoing edges)
+              React.createElement(Handle, {
+                key: "source",
+                type: "source",
+                position: Position.Right,
+                style: { background: "transparent", border: "none" },
+              }),
+            ],
+          );
+        };
+
+        const nodeTypes = { jobNode: JobNode };
+
+        // Flow component
+        const Flow = () => {
+          const [nodes, setNodes, onNodesChange] = useNodesState(flowNodes);
+          const [edgesState, setEdges, onEdgesChange] =
+            useEdgesState(flowEdges);
+          const { fitView } = useReactFlow();
+
+          // Fit view when nodes change
+          useEffect(() => {
+            setTimeout(() => fitView({ padding: 0.2 }), 50);
+          }, [nodes, fitView]);
+
+          const onNodeClick = (event, node) => {
+            const data = node.data;
+            // Ellipsis node - expand the group
+            if (data.isEllipsis && data.groupKey) {
+              window.toggleGroupExpand(data.groupKey);
+              return;
+            }
+            // Regular job node - navigate to job
+            if (
+              !data.isGroup &&
+              data.jobIds &&
+              data.jobIds.length === 1 &&
+              data.jobIds[0] !== jobId
+            ) {
+              window.location.href = `/jobs/${data.jobIds[0]}`;
+            }
+          };
+
+          return React.createElement(
+            ReactFlow,
+            {
+              nodes: nodes,
+              edges: edgesState,
+              onNodesChange: onNodesChange,
+              onEdgesChange: onEdgesChange,
+              onNodeClick: onNodeClick,
+              nodeTypes: nodeTypes,
+              fitView: true,
+              fitViewOptions: { padding: 0.2 },
+              minZoom: 0.5,
+              maxZoom: 2,
+              nodesDraggable: false,
+              nodesConnectable: false,
+              elementsSelectable: true,
+              panOnDrag: true,
+              zoomOnScroll: true,
+              preventScrolling: false,
+            },
+            [
+              React.createElement(Background, {
+                key: "bg",
+                color: "#334155",
+                gap: 20,
+                size: 1,
+              }),
+              React.createElement(Controls, {
+                key: "controls",
+                showInteractive: false,
+              }),
+            ],
+          );
+        };
+
+        // Render
+        const container = document.getElementById("dag-flow");
+        if (!flowRoot) {
+          flowRoot = ReactDOM.createRoot(container);
+        }
+        flowRoot.render(
+          React.createElement(
+            ReactFlowProvider,
+            null,
+            React.createElement(Flow),
+          ),
+        );
+      }
+
+      function renderFamilyTable(jobs) {
+        const tbody = document.querySelector("#family-table tbody");
+
+        const sorted = jobs.slice().sort((a, b) => {
+          if (!a.parent_id && b.parent_id) return -1;
+          if (a.parent_id && !b.parent_id) return 1;
+          return 0;
+        });
+
+        tbody.innerHTML = sorted
+          .map((job) => {
+            const isCurrentJob = job.id === jobId;
+            const taskName = job.task_name.split(".").pop();
+
+            let duration = "-";
+            if (job.attempted_at && job.completed_at) {
+              const ms =
+                new Date(job.completed_at) - new Date(job.attempted_at);
+              duration = formatDuration(ms);
+            } else if (job.attempted_at && job.state === "running") {
+              duration = "running...";
+            }
+
+            let result = "-";
+            if (job.recorded !== null && job.recorded !== undefined) {
+              const recorded =
+                typeof job.recorded === "string"
+                  ? job.recorded
+                  : JSON.stringify(job.recorded);
+              result =
+                recorded.length > 30 ? recorded.slice(0, 30) + "..." : recorded;
+            }
+
+            return `
+            <tr class="${isCurrentJob ? "current-job" : ""}">
+              <td class="mono">
+                ${isCurrentJob ? taskName : `<a href="/jobs/${job.id}">${taskName}</a>`}
+                ${!job.parent_id ? ' <span style="color: var(--text-dim)">(root)</span>' : ""}
+              </td>
+              <td><span class="badge ${job.state}">${job.state}</span></td>
+              <td class="mono">${duration}</td>
+              <td class="mono" style="color: var(--text-muted)">${result}</td>
+            </tr>
+          `;
+          })
+          .join("");
+      }
+
+      fetchJob();
+      setInterval(fetchJob, 5000);
+    </script>
+  </body>
+</html>
