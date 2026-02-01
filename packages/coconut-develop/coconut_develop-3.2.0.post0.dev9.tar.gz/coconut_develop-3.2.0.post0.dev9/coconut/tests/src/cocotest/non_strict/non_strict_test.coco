@@ -1,0 +1,121 @@
+from __future__ import division
+
+import sys
+
+if sys.version_info >= (3, 5) or TYPE_CHECKING:
+    import typing
+    type TextMap[T: typing.Text, U] = typing.Mapping[T, U]
+
+def non_strict_test() -> bool:
+    """Performs non --strict tests."""
+    assert (lambda x: x + 1)(2) == 3;
+    assert u"abc" == "a" \
+        "bc"
+    found_x = None
+    match 1, 2:  # type: ignore
+        case x, 1:
+            assert False
+        case (x, 2) + tail:  # type: ignore
+            assert not tail
+            found_x = x
+        case _:
+            assert False
+    else:
+        assert False
+    assert found_x == 1
+    big_d = {"a": 1, "b": 2}
+    match big_d:
+        case {"a": a}:
+            assert a == 1
+    else:
+        assert False
+    class A(object):  # type: ignore
+        CONST = 10
+        def __init__(self, x):
+            self.x = x
+    a1 = A(1)
+    match a1:  # type: ignore
+        case A(x=1):
+            pass
+    else:
+        assert False
+    match [A.CONST] in [10]:  # type: ignore
+        pass
+    else:
+        assert False
+    match A.CONST in 11:  # type: ignore
+        assert False
+    assert A.CONST == 10 == A.("CONST")
+    match {"a": 1, "b": 2}:  # type: ignore
+        case {"a": a}:
+            pass
+        case _:
+            assert False
+    assert a == 1  # type: ignore
+    x is int = 10
+    assert x == 10
+    =x = 10
+    x is int is int = 5
+    assert x == 5
+    try:
+        x is int is str = x
+    except MatchError:
+        pass
+    else:
+        assert False
+    match def kwd_only_x_is_int_def_0(*, x is int = 0) = x
+    assert kwd_only_x_is_int_def_0() == 0 == kwd_only_x_is_int_def_0(x=0)
+    try:
+        kwd_only_x_is_int_def_0(1)
+    except MatchError:
+        pass
+    else:
+        assert False
+    case 1:
+        match 1:
+            pass
+    else:
+        assert False
+    def weird_func(f:lambda g=->_:g=lambda h=->_:h) = f  # type: ignore
+    assert weird_func()()(5) == 5
+    a_dict: TextMap[str, int] = {"a": 1}
+    assert a_dict["a"] == 1
+    assert "". <| "join" <| ["1","2","3"] == "123"
+    assert "a b c" == (" ". ?? "not gonna happen")("join")("abc")
+    assert f'{ (lambda x: x*2)(2) }' == "4"
+    assert f"{{" == "{"
+    assert f"}}" == "}"
+    assert f"a" f"b" == "ab" == f"a" "b" == "a" f"b"
+    assert f"a" r"b" fr"c" rf"d" == "abcd"
+    assert "a" fr"b" == "ab" == "a" rf"b"
+    assert f"{f"{f"infinite"}"}" + " " + f"{f"nesting!!!"}" == "infinite nesting!!!"
+    assert range(100) |> parallel_map$(.**2) |> list |> .$[-1] == 9801
+    @recursive_iterator
+    def fib() = (1, 1) :: map((+), fib(), fib()$[1:])
+    assert fib()$[:5] |> list == [1, 1, 2, 3, 5]
+    addpattern def args_or_kwargs(*args) = args
+    addpattern def args_or_kwargs(**kwargs) = kwargs  # type: ignore
+    assert args_or_kwargs(1, 2) == (1, 2)
+    very_long_name = 10
+    assert args_or_kwargs(short_name=5, very_long_name=) == {"short_name": 5, "very_long_name": 10}
+    assert "hello," " " "world" == "hello, world"
+    assert "\\" "\"" == "\\\""
+    x = 1
+    assert f"{x}" f"{x}" == "11"
+    assert f"{x}" "{x}" == "1{x}"
+    assert "{x}" f"{x}" == "{x}1"
+    assert "a\"z""a"'"'"z" == 'a"za"z'
+    assert b"ab" b"cd" == b"abcd" == rb"ab" br"cd"
+    "a" "c" = "ac"
+    b"a" b"c" = b"ac"
+    key = "abc"
+    f"{key}" ": " + value = "abc: 123"
+    assert value == "123"
+    "{" f"{key}" ": " + value + "}" = "{abc: aaa}"
+    assert value == "aaa"
+    assert """ """\
+        == " "
+    return True
+
+if __name__ == "__main__":
+    assert non_strict_test()
