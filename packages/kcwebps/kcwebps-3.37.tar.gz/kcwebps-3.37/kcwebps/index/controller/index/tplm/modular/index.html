@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+<meta charset="utf-8" />
+<title>kcwebs云管</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+<meta name="HandheldFriendly" content="true"/>
+<meta name="MobileOptimized" content="320"/>
+<%include file="../include/static.html"/>
+</head>
+<body>
+<div id="app">
+    <div style="height:50px;position:fixed;width:100%;z-index: 999;top:-1px;">
+            <van-search v-model="kw" shape="round" background="#4fc08d" placeholder="请输入搜索关键词模块" @search='ssgetlist'>
+    </div><div style="height:50px;"></div>
+    <div>
+        <van-swipe-cell v-for="(item,index) in data.lists" style="border-top:1px solid #cccccc">
+            <div class="goods-card van-card" :style="'width:'+(winwidth)+'px;overflow: hidden;'">
+                <div class="van-card__header">
+                    <a class="van-card__thumb">
+                        <div class="van-image" style="width: 100%; height: 100%;">
+                            <img v-if="item.icon" :src="item.icon" class="van-image__img" style="object-fit: cover;">
+                            <img v-else src="https://img.kwebapp.cn/icon/user1.png" class="van-image__img" style="object-fit: cover;">
+                        </div>
+                    </a>
+                    <div class="van-card__content">
+                        <div>
+                            <div class="van-card__title van-multi-ellipsis--l2">{{item.title}}</div>
+                            <div class="van-card__desc van-ellipsis">{{item.describes}}</div>
+                        </div>
+                        <div>
+                            <span v-if="item.status==0" class="van-card__price-decimal" style="float:left"><van-tag type="warning">待安装</van-tag></span>
+                            <span v-else-if="item.status==1" class="van-card__price-decimal" style="float:left"><van-tag type="success">已安装</van-tag></span>
+                            <span v-else-if="item.status==2" class="van-card__price-decimal" style="float:left"><van-loading type="spinner" style="height:20px;float:left"></van-loading><van-tag>安装中</van-tag></span>
+                            <span v-else-if="item.status==3" class="van-card__price-decimal" style="float:left"><van-loading type="spinner" style="height:20px;float:left"></van-loading><van-tag>卸载中</van-tag></span>
+                            <span v-for="item1 in item.ation" class="van-card__price-decimal"><img :src="item1.icon" alt="" style="height:20px;margin-left:10px;float:left"></span>
+                        </div>
+                        <div class="van-card__bottom">
+                            <div class="van-card__price">
+                                <div>
+                                    <span class="van-card__price-currency">模块名：{{item.name}}</span>
+                                    <span v-if="item.name" class="van-card__price-decimal" style="float:right">&nbsp&nbsp&nbsp&nbsp下载：{{item.dow_num}}</span>
+                                </div>
+                            </div>
+                            <div class="van-card__num"><span class="van-card__price-decimal">更新于：{{time_date(item.updtime)}}</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <template #right>
+                    <van-button v-if="item.status==1" square type="primary" @click="gethtmls('/index/index/plug/index/'+item.name,item.title,item.icon,item)" text="管理插件" style="float:left;height:100%"></van-button>
+                <van-button v-if="item.status==0" square type="info" @click="insertsheet(item)" text="安装" style="float:left;height:100%"></van-button>
+                <van-button v-else-if="item.status==1 && item.name != 'intapp'" square type="danger" @click="uninstallmodular(item)" text="卸载" style="float:left;height:100%"></van-button>
+            </template>
+        </van-swipe-cell>
+        <div v-if="status==1">
+            <van-divider><van-loading size="24px">加载中...</van-loading></van-divider>
+        </div>
+        <div v-else-if="status==0">
+            <van-divider v-if="data.pagenow<data.pagecount"  @click="xyygetlist"><span>下一页</span></van-divider>
+            <van-divider v-else>我已到底了</van-divider>
+        </div>
+        <div style="height:50px"></div>
+    </div>
+    <van-action-sheet v-model="show" title="输入授权码" @close="closesheet">
+        <div>
+            <van-field v-model="token" type="text" label="授权码" placeholder="请输入授权码"></van-field>
+            <van-button @click="installmodular(items)" type="primary" block>确定</van-button>
+        </div>
+    </van-action-sheet>
+</div>
+<script>
+ var VU=new Vue({
+    el: '#app',
+    data:{
+        winheight:document.documentElement.clientHeight,winwidth:document.documentElement.clientWidth,
+        data:{
+            count:0,
+            lists:[],
+            pagecount:0,
+            pagenow:1,
+            pagesize:10
+        },rolelist:{},
+        show:false,token:'',kw:'',status:1,//1加载中 0加载完成
+        items:{},
+    },
+    mounted:function(){
+        var self=this
+        window.onresize = function(){
+            self.winheight=document.documentElement.clientHeight
+            self.winwidth=document.documentElement.clientWidth
+        }
+        try{
+            parent.window.setheader({height:49,type:'',title:'模块',icon:'https://img.kwebapp.cn/icon/modular.png',
+                lefturl:{text:'',url:''}
+            })
+        }catch(exception){}
+        self.modular_list()
+    },
+    methods: {
+        gethtmls:function(url,title,icon,item){
+            if(item.status==1 || item.status==5){
+                parent.window.topgethtml(url,title,icon)
+            }
+        },
+        insertsheet:function(item){
+            var self=this;
+            if (item.token){
+                parent.window.vantabbar('settabbarheight',0)
+                self.items=item;self.show=true
+            }else{
+                self.installmodular(item)
+            }
+        },
+        closesheet:function(){
+            setTimeout(function(){
+                parent.window.vantabbar('settabbarheight',70)
+            },300)
+        },
+        xyygetlist:function(){//下一页
+            var self=this;
+            self.data.pagenow+=1
+            self.modular_list()
+        },
+        ssgetlist:function(){//搜索
+            var self=this;
+            self.data.pagenow=1
+            self.modular_list()
+        },
+        modular_list:function(){
+            var self=this
+            self.status=1
+			self.get("/index/index/modular/modular_list",{'kw':self.kw,'pagenow':self.data.pagenow}).then(function(res){
+				self.data.count=res.data.count
+                self.data.pagecount=res.data.pagecount
+                self.data.pagenow=res.data.pagenow
+                self.data.pagesize=res.data.pagesize
+                if(self.data.pagenow==1){
+                    self.data.lists=[]
+                }
+                for (var i=0;i<res.data.lists.length;i++){
+                    self.data.lists.push(res.data.lists[i])
+                }
+                self.status=0
+			})
+        },installmodular:function(item){
+            self=this
+            self.show=false
+            var token=''
+            if(item.token){
+                token=self.token
+            }else{
+                
+            }
+            self.$dialog.confirm({
+                title: '提示',
+                message: '确定要安装该模块',
+            }).then(function(){
+                self.post("/index/index/modular/installmodular/",{title:item.title,icon:item.icon,name:item.name,token:token},'正在安装模块，请稍后...').then(function(res){
+                    item.status=1
+                    self.$notify({message: "安装成功",type: 'success'});
+                })
+            }).catch(function(){});
+        },uninstallmodular:function(item){
+            self=this
+            self.$dialog.confirm({
+                title: '提示',
+                message: '确定要卸载该模块',
+            }).then(function(){
+                self.delete("/index/index/modular/uninstallmodular/",item,'正在卸载模块，请稍后...').then(function(res){
+                    item.status=0
+                    self.$notify({message: "卸载成功",type: 'success'});
+                })
+            }).catch(function(){});
+        }
+    }
+ });
+  </script>
+</body>
+</html>

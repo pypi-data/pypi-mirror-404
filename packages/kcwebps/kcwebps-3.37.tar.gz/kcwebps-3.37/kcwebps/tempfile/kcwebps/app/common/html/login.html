@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+<meta charset="utf-8" />
+<title>登录</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+<meta name="HandheldFriendly" content="true"/>
+<meta name="MobileOptimized" content="320"/>
+<%include file="./include/static.html"/>
+</head>
+<body>
+	<div id="app" style="padding:0px;margin:0px">
+		<div v-bind:style="'background:url(${config.domain['kcwebsstatic']}/intapp/default/images/kcwsback.gif) no-repeat #009688;background-size:cover;height:'+winheight+'px;width:100%;'">
+			<div  v-bind:style="'padding-top:'+(winheight/2-260)+'px;'">
+				<div  style="margin:0px auto;background:#FFF;width:360px;height:280px;border-radius:4px">
+					<div style="margin:0px auto;width:260px;"><br>
+						<img src="${config.domain['kcwebsstatic']}/intapp/default/images/icon/linux.png" alt="" style="height:40px;float:left"><h2 style="text-align:right;padding-top:6px;">kcwebs&nbsp&nbsp&nbsp</h2>
+					</div>
+					<div style="margin:20px auto;width:260px;">
+						<el-input v-model="username" placeholder="用户名"></el-input>
+					</div>
+					<div style="margin:10px auto;width:260px;">
+						<el-input type="password" v-model="password" placeholder="登录密码"  autocomplete="off"></el-input>
+					</div>
+					<div style="margin:10px auto;width:260px;">
+						<el-button type="primary" @click="login" style="width:100%;">登录</el-button>
+					</div>
+				</div>
+			</div>
+		</div>
+		
+	</div>
+</body>
+<script>
+var vm = new Vue({
+	el: '#app',
+	data: {
+		winheight:document.documentElement.clientHeight,
+		username:"",
+		password:""
+	},
+	mounted:function(){
+		self=this
+		window.onresize = function(){
+			self.winheight=document.documentElement.clientHeight
+		}
+		if(self.username && self.password){
+			self.login()
+		}
+	},
+	methods: {
+		login: function(){
+			var self=this
+			if (self.username==''||self.password==''){
+				self.$message({message: '请输入用户名或密码',type: 'error'});return;
+			}
+			timestamp= Date.parse(new Date())/1000;
+			random=md5('feafwefasas'+timestamp)
+			sign=md5(self.username+md5('kcws'+self.password)+timestamp+random)
+            self.post("/index/index/pub/login/"+self.username+"/"+sign+"/"+timestamp+"/"+random,{},'登录中...').then(function(res){
+				if(res.code==0){
+					location.reload()
+				}
+            })
+		}
+	}
+})
+</script>
+</html>

@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+<meta charset="utf-8" />
+<title>kcwebs云管</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+<meta name="HandheldFriendly" content="true"/>
+<meta name="MobileOptimized" content="320"/>
+<%include file="../include/static.html"/>
+</head>
+<body>
+<div id="app">
+    <van-cell title="系统设置" value=""></van-cell>
+    <van-cell-group>
+        <van-field v-model="config.system.name" label="系统名称" placeholder="系统名称"></van-field>
+        <van-field v-model="config.system.logo" label="系统logo" placeholder="系统logo">
+            <template #button>
+                <van-button @click="win.show=true;win.url='/intapp/imgmt?select=1;'" size="small" type="primary">选择图片</van-button>
+            </template>
+        </van-field>
+    </van-cell-group>
+    <div style="height:20px;"></div>
+    <van-cell title="阿里云oss对象储存配置" value=""></van-cell>
+    <van-cell-group>
+        <van-field v-model="config.aliyun.address" label="地域节点" placeholder="如：http://oss-cn-hangzhou.aliyuncs.com"></van-field>
+        <van-field v-model="config.aliyun.bucket" label="阿里云存储桶" placeholder="bucket"></van-field>
+        <van-field v-model="config.aliyun.access_key" label="阿里云账号" placeholder="access_key"></van-field>
+        <van-field v-model="config.aliyun.access_key_secret" label="阿里云密钥" placeholder="access_key_secret"></van-field>
+        <van-field v-model="config.aliyun.backpath" label="备份目录" placeholder="backpath"></van-field>
+    </van-cell-group>
+    <van-button type="primary" block @click="setbaseconfig('set')">保存</van-button>
+<van-action-sheet v-model="win.show" :title="win.title">
+    <div :style="'height:'+(winheight-120)+'px;overflow-y: scroll;'">
+        <iframe :src="win.url" id="iframe" style="margin:0px;padding:0px;overflow:hidden;" frameborder="0" border="0" marginwidth="0" marginheight="0" scrolling="yes" allowtransparency="no" width="100%" v-bind:height="(winheight-124)+'px'"></iframe>
+    </div>
+</van-action-sheet>
+</div>
+<script>
+function setimgmt(domain,paths,item){
+    mysetimgmt(domain,paths,item)
+}
+ var VU=new Vue({
+    el: '#app',
+    data:{
+        kcwebsimg:"${config.domain['kcwebsimg']}",
+        winheight:document.documentElement.clientHeight,winwidth:document.documentElement.clientWidth,
+        config:{
+            aliyun:{
+                access_key:'',
+                access_key_secret:'',
+                address:'',
+                backpath:'',
+                bucket:''
+            },
+            system:{
+                name:'',
+                logo:'',
+                kcwebsuser:{}
+            },
+        },
+        win:{show:false,title:'',url:''},
+    },
+    mounted:function(){
+        self=this
+        window.onresize = function(){
+            self.winheight=document.documentElement.clientHeight
+            self.winwidth=document.documentElement.clientWidth
+        }
+        window.mysetimgmt = this.mysetimgmt;
+        try{
+            parent.window.setheader({height:49,type:'lefturl',title:'基本配置',icon:'https://img.kwebapp.cn/icon/config.png',
+                lefturl:{text:'系统设置',url:'/index/index/setup'}
+            })
+        }catch(exception){}
+        self.setbaseconfig('get')
+    },
+    methods: {
+        mysetimgmt:function(domain,paths,item){
+            this.win.show=false
+            if (item.suffix=='jpg' || item.suffix=='JPG' || item.suffix=='png' || item.suffix=='PNG' || item.suffix=='gif' || item.suffix=='GIF'){
+                self.config.system.logo=domain+paths+item.name
+            }else{
+                self.$notify({type: 'warning',message: '请选择图片文件'});
+            }
+        },
+        gethtml:function(url,title,icon){
+            parent.window.topgethtml(url,title,icon)
+        },
+        setbaseconfig:function(types){
+            self=this
+			self.post("/index/index/setup/setbaseconfig/"+types,self.config,'请稍后...').then(function(res){
+                if(types=='set'){
+                    self.$notify({message: "保存成功",type: 'success'});
+                }else{
+                    self.config=res.data
+                    if(!self.config.system){
+                        self.config.system={
+                            name:'',logo:'',kcwebsuser:{}
+                        }
+                    }
+                }
+			})
+        }
+    }
+ });
+  </script>
+</body>
+</html>
