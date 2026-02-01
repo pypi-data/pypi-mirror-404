@@ -1,0 +1,132 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version_bump:
+        description: "Version bump type"
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/spkmc
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Get current version
+        id: current
+        run: |
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          echo "latest_tag=$LATEST_TAG" >> "$GITHUB_OUTPUT"
+          echo "Current version: $LATEST_TAG"
+
+      - name: Determine bump type
+        id: bump_type
+        env:
+          INPUT_BUMP: ${{ github.event.inputs.version_bump }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+        run: |
+          if [ -n "$INPUT_BUMP" ]; then
+            BUMP="$INPUT_BUMP"
+          elif echo "$COMMIT_MSG" | grep -qiE "^(feat|feature)(\(.+\))?!:|BREAKING CHANGE"; then
+            BUMP="major"
+          elif echo "$COMMIT_MSG" | grep -qiE "^(feat|feature)(\(.+\))?:"; then
+            BUMP="minor"
+          else
+            BUMP="patch"
+          fi
+          echo "bump=$BUMP" >> "$GITHUB_OUTPUT"
+          echo "Bump type: $BUMP"
+
+      - name: Calculate new version
+        id: new_version
+        env:
+          LATEST_TAG: ${{ steps.current.outputs.latest_tag }}
+          BUMP_TYPE: ${{ steps.bump_type.outputs.bump }}
+        run: |
+          VERSION="${LATEST_TAG#v}"
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+          case "$BUMP_TYPE" in
+            major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+            minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+            patch) PATCH=$((PATCH + 1)) ;;
+          esac
+          NEW_TAG="v${MAJOR}.${MINOR}.${PATCH}"
+          echo "new_tag=$NEW_TAG" >> "$GITHUB_OUTPUT"
+          echo "New version: $NEW_TAG"
+
+      - name: Create and push tag
+        env:
+          NEW_TAG: ${{ steps.new_version.outputs.new_tag }}
+        run: |
+          git tag -a "$NEW_TAG" -m "Release $NEW_TAG"
+          git push origin "$NEW_TAG"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine
+
+      - name: Build package
+        run: python -m build
+
+      - name: Check package
+        run: twine check dist/*
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+      - name: Generate changelog
+        env:
+          NEW_TAG: ${{ steps.new_version.outputs.new_tag }}
+          LATEST_TAG: ${{ steps.current.outputs.latest_tag }}
+        run: |
+          if [ "$LATEST_TAG" != "v0.0.0" ]; then
+            echo "## Changes since $LATEST_TAG" > CHANGELOG.md
+            echo "" >> CHANGELOG.md
+            git log --pretty=format:"- %s (%h)" "$LATEST_TAG".."$NEW_TAG" >> CHANGELOG.md
+          else
+            echo "## Initial Release" > CHANGELOG.md
+            echo "" >> CHANGELOG.md
+            echo "First release of SPKMC." >> CHANGELOG.md
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.new_version.outputs.new_tag }}
+          name: Release ${{ steps.new_version.outputs.new_tag }}
+          body_path: CHANGELOG.md
+          files: dist/*
+          draft: false
+          prerelease: false
