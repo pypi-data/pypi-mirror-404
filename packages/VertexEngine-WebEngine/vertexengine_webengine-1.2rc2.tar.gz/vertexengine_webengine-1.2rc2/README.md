@@ -1,0 +1,56 @@
+# VertexEngine/Vertex-WebEngine
+VertexEngine-WebEngine is a WebEngine built for the VertexEngine SDK. It's a seperate package.
+
+## Help
+The documentation is in the following link:
+[Project Documentation](https://vertexenginedocs.netlify.app/) for help.
+
+## Change Logs (1.2rc2), NEW!
+### 1.2rc2
+- EXPANDED JS BRIDGE!
+### 1.2rc1
+- FULL ENGINE REVAMP! Check Documentation for more details.
+### Version 1.1
+- Added 1 New Library!
+   ~ BrowserTools.Tabs
+   
+## How to install Pyinstaller
+Step 1. Type in:
+pip install pyinstaller
+
+Step 2. Wait a few min, don't worry if it takes 1 hr or more, it will finish
+
+Step 3. How to use pyinstaller
+type:
+python -m PyInstaller --onefile *.py
+
+There are flags:
+--noconsole > disables the console when you run the app
+--onefile > compress all of the code into one file
+--icon > the *.ico file after you type it will be set as the app icon.
+
+## How to install VertexEngine-WebEngine/Vertex:
+
+Step 1:
+Type in
+pip install VertexEngine-WebEngine
+
+Step 2: Wait a few min, don't worry if it takes 1 hr or more, it will finish
+
+## Dependencies
+Vertex obviously has heavy dependencies since it's a game engine, the following requirements are:
+
+| Dependency       | Version                              |
+|------------------|--------------------------------------|
+| PyQt6            | >=6.7                                |   
+| Pygame           | >=2.0                                |
+| Python           | >=3.10                               |
+
+## About Me ❔
+I Am a solo developer in Diliman, Quezon City that makes things for fun :)
+77 Rd 1, 53 Rd 3 Bg-Asa QC
+Email:
+FinalFacility0828@gmail.com
+
+## 📄 License
+VertexEngine-WebEngine/Vertex is Managed by the MIT License. This license allows others to tweak the code. However, I would like my name be in the credits if you choose this as your starting ground for your next library.
