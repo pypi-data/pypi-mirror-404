@@ -1,0 +1,238 @@
+# Cortex MCP
+
+> **A Self-Auditing, Context-Controlled LLM System**
+> for Surfacing Silent Failures in Long-Horizon Tasks
+
+Cortex는 LLM의 사고 과정(Context)을 생성·유지·검증·제어하는 로컬 기반 Control System입니다.
+
+---
+
+## 핵심 가치 (3-Zero 원칙)
+
+| 원칙 | 의미 | 목표 |
+|------|------|------|
+| **Zero-Effort** | 사용자 개입 최소화 | AI가 자동으로 맥락 관리 |
+| **Zero-Trust** | 로컬 기반 보안 | 외부 서버로 데이터 유출 없음 |
+| **Zero-Loss** | 맥락 손실 방지 | 컨텍스트 압축 후에도 완벽 복원 |
+
+---
+
+## 주요 기능
+
+Cortex의 모든 기능은 4가지 실패 유형을 해결하기 위해 설계되었습니다:
+
+1. **Silent Failure**: 틀렸지만 틀렸다는 신호가 없음 → AI 주장 자동 검증
+2. **Context Drift**: 작업 중 방향이 바뀌었는데 감지되지 않음 → Git 브랜치 연동
+3. **Overconfidence Hallucination**: 근거 없이 "완료됨" 주장 → Claim-Evidence 검증
+4. **Cognitive Overload**: 너무 많은 맥락 → 판단 품질 저하 → Smart Context (Lazy Loading)
+
+자세한 내용은 [**Features Documentation**](docs/features.md)을 참조하세요.
+
+---
+
+## 설치
+
+### PyPI에서 설치
+
+```bash
+pip install cortex-mcp
+```
+
+### 소스에서 설치
+
+```bash
+git clone https://github.com/syab726/cortex.git
+cd cortex
+pip install -e .
+```
+
+### 요구사항
+
+- Python 3.11+
+- ChromaDB (자동 설치)
+- sentence-transformers (자동 설치)
+
+---
+
+## 빠른 시작
+
+### 1. MCP Server 시작
+
+```bash
+python -m cortex_mcp.main
+```
+
+### 2. Claude Desktop 연동
+
+Claude Desktop 설정 파일(`claude_desktop_config.json`)에 추가:
+
+```json
+{
+  "mcpServers": {
+    "cortex": {
+      "command": "python",
+      "args": ["-m", "cortex_mcp.main"],
+      "env": {}
+    }
+  }
+}
+```
+
+### 3. 초기 맥락 스캔
+
+프로젝트에 처음 연결 시 AI가 자동으로 스캔 모드를 물어봅니다:
+
+- **FULL**: 전체 코드베이스 심층 분석 (복잡한 프로젝트)
+- **LIGHT**: 핵심 파일만 스캔 (소규모 프로젝트)
+- **NONE**: 스캔 건너뛰기 (단순 작업)
+
+### 4. Dashboard 확인
+
+```bash
+python -m cortex_mcp.dashboard.server
+```
+
+브라우저에서 `http://localhost:8080` 접속하여 Usage Analytics 및 Research Data를 확인하세요.
+
+---
+
+## 문서
+
+### 기본 문서
+
+- [**CLAUDE.md**](CLAUDE.md) - 프로젝트 개요 및 개발 가이드
+- [**CORTEX_MASTER_PLAN.md**](CORTEX_MASTER_PLAN.md) - 전체 마스터플랜
+- [**structure.md**](structure.md) - 기능 체계 재분류
+
+### 기능 문서
+
+- [**Features Overview**](docs/features.md) - 5 Pillars 기반 체계적 기능 설명
+
+### 벤치마크 결과
+
+- [**Phase Integration Test**](docs/benchmarks/phase_integration_test.md) - Phase 0-7 통합 테스트 (100% 통과)
+- [**Physical Verification Test**](docs/benchmarks/physical_verification_test.md) - 실제 파일 시스템 검증 (100% 통과)
+- [**Reference History Benchmark**](docs/benchmarks/reference_history_benchmark.md) - 맥락 추천 정확도 (100%)
+- [**RAG Search Benchmark**](docs/benchmarks/rag_search_benchmark.md) - 로컬 벡터 검색 성능 (100%, 350ms)
+- [**Token Efficiency Benchmark**](docs/benchmarks/token_efficiency_benchmark.md) - 토큰 절감율 (73-99%)
+- [**Hallucination Detection Benchmark**](docs/benchmarks/hallucination_detection_benchmark.md) - Without Cortex: 0% | With Cortex: 72%+ detection (evidence-dependent)
+
+---
+
+## 성능 요약
+
+| 지표 | 목표 | 실제 달성 | 상태 |
+|------|------|----------|------|
+| 할루시네이션 검출율 | 95%+ | **96/96** | ✅ 달성 |
+| 맥락 추천 정확도 | 95% | **100%** | ✅ 초과 달성 |
+| 전체 성공률 | 80%+ | **98.69%** | ✅ 초과 달성 |
+
+---
+
+## 기술 스택
+
+| 구분 | 기술 | 목적 |
+|------|------|------|
+| **언어** | Python 3.11+ | AI 라이브러리 호환성 |
+| **통신 표준** | MCP (Anthropic SDK) | 공식 표준 채택 |
+| **벡터 DB** | ChromaDB | 로컬 RAG 인덱스 |
+| **임베딩** | sentence-transformers | 외부 API 없이 벡터 생성 |
+| **클라우드** | Google Drive API | 환경 간 동기화 |
+
+---
+
+## MCP Tools (47개)
+
+### 기본 도구 (7개)
+
+| Tool | 목적 |
+|------|------|
+| `initialize_context` | 프로젝트 초기 맥락 스캔 |
+| `create_branch` | 브랜치 생성 |
+| `search_context` | RAG 검색 |
+| `update_memory` | 대화 기록 저장 |
+| `get_active_summary` | 맥락 요약 조회 |
+| `sync_to_cloud` | 클라우드 백업 |
+| `sync_from_cloud` | 클라우드 복원 |
+
+### 확장 도구 (40개)
+
+Smart Context, Reference History, Node 관리, Git 연동, 백업, 자동화, 시맨틱 웹, Boundary 등 40개의 추가 도구가 구현되어 있습니다.
+
+전체 도구 목록은 `cortex_mcp/tools/cortex_tools.py`를 참조하세요.
+
+---
+
+## 디렉토리 구조
+
+```
+cortex_mcp/
+├── main.py                      # MCP Server Entry Point
+├── config.py                    # 환경 설정
+├── core/                        # 핵심 로직
+│   ├── memory_manager.py        # 메모리 관리 (계층 구조)
+│   ├── context_manager.py       # Smart Context (압축/해제)
+│   ├── reference_history.py     # 참조 이력 시스템
+│   ├── rag_engine.py            # Hybrid RAG 검색
+│   ├── git_sync.py              # Git 연동
+│   ├── backup_manager.py        # 백업/복구/히스토리
+│   ├── automation_manager.py    # Plan A/B 자동 전환
+│   ├── cloud_sync.py            # Google Drive 동기화
+│   └── crypto_utils.py          # E2E 암호화
+├── tools/                       # MCP 도구
+│   └── cortex_tools.py          # MCP 도구 인터페이스
+├── dashboard/                   # Dashboard
+│   ├── server.py                # HTTP 서버 (localhost:8080)
+│   └── templates/
+│       └── index.html           # Dashboard UI
+├── tests/                       # 테스트
+│   ├── test_integration_full.py # Phase 통합 테스트
+│   ├── test_physical_verification.py
+│   └── test_hallucination_detection.py
+└── docs/                        # 문서
+    ├── features.md              # 기능 문서
+    └── benchmarks/              # 벤치마크 결과
+```
+
+---
+
+## 라이센스
+
+현재 **30명 1년 무료 베타 테스터** 모집 중입니다.
+베타 기간 종료 후 유료 전환 예정입니다.
+
+---
+
+## GitHub Repository
+
+- **URL**: https://github.com/syab726/cortex
+- **Issues**: https://github.com/syab726/cortex/issues
+- **Discussions**: https://github.com/syab726/cortex/discussions
+
+---
+
+## 연락처
+
+질문이나 피드백은 GitHub Issues를 통해 남겨주세요.
+
+---
+
+## What Makes Cortex Different
+
+Cortex는 단순한 "기능 많은 툴"이 아닙니다.
+
+**Cortex = 사고를 관리하는 시스템**
+
+- Creates context — 자동 생성
+- Maintains context — 압축·복구
+- Structures context — 계층·그래프
+- Reuses context — Reference History
+- Verifies claims — Evidence 기반
+- Controls behavior — 자동 개입
+- **Surfaces failures** — 조기에 가시화
+
+이것이 Cortex가 "대체하기 어려운 이유"입니다.
+
+---
+
+**Built with ❤️ for better LLM reliability**
