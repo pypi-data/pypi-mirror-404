@@ -1,0 +1,790 @@
+Metadata-Version: 2.4
+Name: the1conf
+Version: 1.2.3
+Summary: All in one configuration management tool for your python applications.
+License-Expression: MIT
+License-File: LICENSE
+Keywords: configuration,settings,cli,click,pydantic
+Author: Eric CHASTAN
+Author-email: eric@chastan.consulting
+Requires-Python: >=3.12,<3.13
+Classifier: Development Status :: 5 - Production/Stable
+Classifier: Intended Audience :: Developers
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Software Development :: Libraries
+Requires-Dist: click (>=8.3.1)
+Requires-Dist: jinja2 (>=3.1.6)
+Requires-Dist: pydantic (>=2.12.5)
+Requires-Dist: toml (>=0.10.2)
+Project-URL: Issues, https://gitlab.com/eric-chastan/the1conf/-/issues
+Project-URL: Repository, https://gitlab.com/eric-chastan/the1conf
+Description-Content-Type: text/markdown
+
+# TheOneConf
+
+![Status](https://img.shields.io/badge/status-active-success.svg)
+![Python](https://img.shields.io/badge/python-3.12%2B-blue.svg)
+![PyPI](https://img.shields.io/pypi/v/the1conf.svg)
+![License](https://img.shields.io/badge/license-MIT-green.svg)
+
+Define app configuration in plain Python classes.
+
+**TheOneConf** lets Python developers declare configuration variables in a single line of **plain Python** (name, type, default, help text) and then resolve values from **CLI > env vars > config files > variable substitution > computed values > static defaults** — without writing any manual parsing code.
+
+```bash
+pip install the1conf
+```
+
+```python
+# Setup: create a dummy yaml config file whose  content is:
+#
+# host-dev: localhost
+# host: myapp.dot.com
+#
+old_env = os.environ.get("XDG_CONFIG_HOME")
+os.environ["XDG_CONFIG_HOME"] = str(tmp_path)
+conf_file =  Path(os.environ["XDG_CONFIG_HOME"]) / "myapp/conf.yaml"
+conf_file.parent.mkdir(parents=True)
+conf_file.write_text("""
+host-dev: localhost
+host: myapp.dot.com
+port: 80
+""")
+
+class MyConfig(AppConfig):
+    host: str = configvar(
+        file_key=["host-{{exec_stage}}", "host"],
+    )
+    """Server host"""
+
+    port: int = configvar(default=8080)
+    """Server port"""
+
+    url: str = configvar(
+        default="http://{{host}}:{{port}}",
+        no_search=True,
+    )
+    """Computed base URL"""
+
+# case 1: dev stage
+cfg = MyConfig()
+# Override port via CLI args for demonstration
+cfg.resolve_vars(conffile_path="{{xdg_config_home}}/myapp/conf.yaml",values={"stage":"dev","port": "9090"})  
+assert cfg.url == "http://localhost:9090"
+
+# case 2: prod stage
+cfg = MyConfig()
+cfg.resolve_vars(conffile_path="{{xdg_config_home}}/myapp/conf.yaml",values={"stage":"prod"})  
+assert cfg.url == "http://myapp.dot.com:80"
+
+if old_env is not None:
+    os.environ["XDG_CONFIG_HOME"] = old_env
+else:
+    del os.environ["XDG_CONFIG_HOME"]
+```
+
+**Why you might like it**
+- **Plain Python Declarations**: Define variables, types, defaults, and docs in a single line of standard Python.
+- **Variable subsitution**: Use Jinja2 templates to define dynamic defaults and search keys.
+- **Deep Computation**: Resolution chain goes: **CLI > Env > Files > Substitution > Computed > Defaults**.
+- **Smart Fallbacks**: Automatically search for multiple key variants (e.g. `host-dev` then `host`) and first matching config file.
+- **Structured & Modular**: Supports **Namespaces**, **Scopes**, and **Decentralized** definitions via inheritance.
+- **Robust & Integrated**: Built-in **Pydantic** validation and zero-boilerplate **Click** CLI generation.
+- **predefined variables**: `config_home`, `user_home`, `os_type`, `exec-stage` are available out of the box for use in templates and can be used in variable substitution to define dynamic defaults and search keys.
+
+**Why not X? (quick comparison)**
+- **pydantic-settings**: great for env-driven settings models; choose TheOneConf if you want a complete **resolution order** (CLI > Env > Files > Defaults) with built-in **variable substitution**.
+- **Dynaconf**: great for flexible layered configs; choose TheOneConf if you prefer a **plain Python** approach where definitions are just class attributes with standard type hints.
+- **Hydra / OmegaConf**: great for complex composition; choose TheOneConf if you want a **lighter** solution that manages **smart fallbacks** (like searching `key-prod` then `key`) natively.
+- **Hand-rolled `argparse`/`click` + `os.environ` + file parsing**: fine for small scripts; choose TheOneConf when you want to stop rewriting the same precedence/typing/validation glue.
+
+## Table of Contents
+
+- [✨ Key Features](#-key-features)
+- [🚀 Quick Start](#-quick-start)
+- [🧩 First-Class IDE Support](#-first-class-ide-support)
+- [🔌 Multiple Configuration Sources](#-multiple-configuration-sources)
+- [🧠 Dynamic Computed Values (Eval Forms)](#-dynamic-computed-values-eval-forms)
+- [🔄 Data Transformation](#-data-transformation)
+- [📂 Path Management](#-path-management)
+- [📦 Nested Configurations (Namespaces)](#-nested-configurations-namespaces)
+- [🌍 Scopes (Environment Awareness)](#-scopes-environment-awareness)
+- [🏗️ Inheritance and Extensibility (Decentralization)](#-inheritance-and-extensibility-decentralization)
+- [🛡️ Type Casting and Validation](#-type-casting-and-validation)
+- [🖱️ Click Integration](#-click-integration)
+
+## ✨ Key Features
+
+- 🧠 **First-Class IDE Support**: Leverage standard Python type hints for out-of-the-box autocompletion, type checking, and navigation.
+- 🔌 **Multi-Source Loading**: Seamlessly unify configuration from CLI arguments, environment variables, config files (YAML/JSON/TOML), and defaults.
+- � **Predefined Variables**: Access useful built-in variables like `os_type`, `user_home`, `config_home`, and `exec_stage` immediately.
+- �🔎 **Smart Fallbacks**: Automatically search for multiple key variants (e.g. `host-dev` then `host`) and first matching config file.
+- 🔄 **Variable Substitution**: Use Jinja2 templates to define dynamic defaults and search keys using the values of other variables.
+- 🧮 **Dynamic Computed Values**: Define smart variables that automatically update based on other resolved values using Python callables.
+- 🧹 **Data Transformation**: Sanitized and format your inputs on the fly (e.g. trimming, case conversion) before they hit your application logic.
+- 📂 **Path Management**: Handle file system paths elegantly with auto-creation of directories and relative path resolution.
+- 🏗️ **Cascading Configuration Files**: Load and merge multiple configuration files (e.g. system, user, local) by resolving configuration variables sequentially from different files.
+- 🧩 **Nested Namespaces**: Organize complex configurations into logical, hierarchical groups (e.g. `db.host`, `server.timeout`) using nested classes.
+- 🎭 **Scopes**: Activate different sets of variables for different execution scopes (e.g. 'bd', 'server') or usages within a single config class.
+- 🌐 **Decentralized Configuration**: Modularize your settings by splitting definitions across multiple files or mixins and combining them effortlessly.
+- 🛡️ **Robust Validation**: Eliminate startup errors with strict type enforcement and powerful constraints (ranges, regex) powered by **Pydantic**.
+- � **Configuration Saving**: Persist configuration back to files with filtering by scope/namespaces, merging updates smartly to preserve unrelated existing values.
+- �🖱️ **Seamless Click Integration**: Auto-generate your CLI interface directly from your configuration schema with zero boilerplate.
+
+
+## 🚀 Quick Start
+
+A minimal example showing how to define and use configuration variables with default values.
+
+```python
+from the1conf import AppConfig, configvar
+
+class MyConfig(AppConfig):
+    host: str = configvar(default="localhost")
+    """Server host"""
+
+    port: int = configvar(default=8080,env_name="APP_PORT")
+    """Server port"""
+
+    debug: bool = configvar(default=False)
+
+# Instantiate and resolve
+conf = MyConfig()
+conf.resolve_vars()
+
+print(f"Host: {conf.host}, Port: {conf.port}")
+```
+
+**Why it's easier:**
+TheOneConf drastically reduces boilerplate. In a single line, you define the variable name, its type, its default value, and its documentation. No separate schema files, no manual parsing—just standard Python code that works out of the box.
+
+## 🧩 First-Class IDE Support
+
+Because TheOneConf uses standard Python type hints, modern IDEs (VS Code, PyCharm) provide excellent support out of the box.
+
+- **Autocompletion**: You get instant suggestions for resolved configuration variables as you type `config.`.
+- **Type Checking**: Static analysis tools (mypy, pylance) can catch type errors in your configuration usage.
+- **Go to Definition**: Easily navigate to where a configuration variable is defined.
+- **Documentation**: Hover over a variable to see its help string.
+  > **Note**: This requires defining a standard python docstring just below the variable definition (which is also used for the CLI help message when using a click_option as explained below).
+
+## 🔌 Multiple Configuration Sources
+
+TheOneConf resolves values in this priority order: **CLI > Environment > Config File > Variable Substitution > Computed Values > Defaults**.
+
+### Detailed Resolution Order
+
+1.  **CLI Arguments**: Explicit values passed to `resolve_vars` (usually from command line args) have the highest priority.
+2.  **Environment Variables**: Checks for associated environment variables (e.g., `APP_PORT`).
+3.  **Config Files**: Looks for keys in loaded configuration files (JSON, YAML, TOML).
+4.  **Variable Substitution**: Substitue already resolved variables into values (e.g. `{{ home }}/param`) with Jinja2 templating.
+5.  **Computed Values**: Executes Python callables to derive values dynamically.
+6.  **Static Defaults**: Falls back to the hardcoded default value if nothing else is found.
+
+Here is a comprehensive example showing resolution from all sources (Click, Env, File, Default), integration with Click will be explain in detail later.
+
+```python
+import os
+import json
+import click
+import the1conf
+from pathlib import Path
+
+# 1. Setup Environment Variable
+os.environ["APP_KEY_ENV"] = "value_from_env"
+
+# 2. Create a dummy JSON config file
+with open("config.json", "w") as f:
+    json.dump({"key_file": "value_from_file","key_file_alt2": "value_from_file_alt2"}, f)
+
+class AppConfig(the1conf.AppConfig):
+    # Variables with different priorities
+    key_cli: str = the1conf.configvar(default="default")
+    key_env: str = the1conf.configvar(default="default", env_name="APP_KEY_ENV")
+    key_file: str = the1conf.configvar(default="default")
+    key_sub: str = the1conf.configvar(
+        default="sub_{{ key_env }}_{{ key_file }}"
+    )
+    key_computed: str = the1conf.configvar(
+        default=lambda _, c, __: f"computed_{c.key_env}_{c.key_file}",
+        no_search=True
+    )
+    key_default: str = the1conf.configvar(default="value_from_default")
+
+@click.command()
+@the1conf.click_option(AppConfig.key_cli)
+def main(**kwargs):
+    conf = AppConfig()
+    
+    # Resolve vars: CLI (kwargs) > Env > File > Default
+    conf.resolve_vars(
+        values=kwargs,
+        conffile_path="config.json"
+    )
+    
+    # Verify sources
+    assert conf.key_cli == "value_from_cli"       # Source: CLI Argument
+    assert conf.key_env == "value_from_env"       # Source: Environment Variable
+    assert conf.key_file == "value_from_file"     # Source: Config File (JSON)
+    assert conf.key_sub == "sub_value_from_env_value_from_file" # Source: Variable Substitution
+    assert conf.key_computed == "computed_value_from_env_value_from_file" # Source: Computed Value
+    assert conf.key_default == "value_from_default" # Source: Default Value
+    print("All assertions passed!")
+
+# Simulate CLI execution: python app.py --key-cli "value_from_cli"
+# We invoke the underlying function directly for demonstration
+runner = CliRunner()
+result = runner.invoke(main, ["--key-cli", "value_from_cli"])
+if result.exception:
+    raise result.exception
+assert result.exit_code == 0
+
+# Cleanup
+del os.environ["APP_KEY_ENV"]
+if os.path.exists("config.json"):
+    os.remove("config.json")
+```
+
+**Focus on Logic, Not Plumbing**
+Notice how clean the `main` function is? You don't verify if a file exists, you don't manually parse environment variables, and you don't write complex `if/else` chains to handle priorities. TheOneConf abstracts all this complexity away, allowing you to focus entirely on your application's business logic.
+
+## Predefined Variables
+TheOneConf provides several useful built-in variables that you can use directly in your configuration definitions, especially for variable substitution and dynamic paths.
+There are two groups of predefined variables:
+1.  **Standard base directory variables**: These are variables derived from standard environment variables that define common user directories. There are os dependent variables based on:
+- XGD base directories for linux and macOS.
+- standard windows APPDATA and APPCONFIG directories.
+
+All these path are unified into OS independent variables:
+- `data_home`: The path to the user-specific data directory.
+- `config_home`: The path to the user-specific configuration directory.
+- `cache_home`: The path to the user-specific cache directory.
+
+2.  **OS Variables**: These provide information about the operating system and user environment.
+
+- `os_type`: The operating system type (e.g., 'windows', 'linux', 'darwin').
+- `user_home`: The path to the current user's home directory.
+
+3. **Execution Stage Variable**: The `exec_stage` variable is particularly useful for differentiating configurations based on the execution stage (ie. environment) like development, production, test, etc. 
+This variable is predefined  but users needs to set its value either through the command line of in an environment variable named.
+
+## Key Lookup with Fallback
+
+When searching for a variable name (like `server_port`), TheOneConf uses a smart fallback mechanism:
+
+1.  **Exact Key**: Checks for the exact key defined in `ConfigVarDef`.
+2.  **Fallback List**: If `env_name`, `value_key` or `file_key` is defined as a list, it searches each candidate in order.
+    *   Example: `env_name=["MYAPP_PORT", "PORT"]` checks `MYAPP_PORT` first, then `PORT`.
+3.  **Click-Style Conversion**: If enabled (`click_key_conversion=True`), it attempts to normalize keys (e.g. converting `server_port` to `server-port`).
+4.  **Variable Substitution in keys**: Keys themselves can be templates (e.g. `env_name="APP_{{ env }}_PORT"`), allowing context-dependent variable names.
+
+
+This example demonstrates how to use `exec_stage` and `os_type` (predefined variables) to implement context-aware defaults.
+
+```python
+import click
+import the1conf
+from the1conf import AppConfig, configvar
+
+# 1. Create a dummy config file
+with open("config.yaml", "w") as f:
+    f.write("""
+browser-linux-prod: "/usr/bin/google-chrome-stable"
+browser-linux-dev: "/usr/bin/google-chrome-beta"
+browser-linux:  "google-chrome"
+browser-windows-prod: "C:/Program Files/Google/Chrome/Application/chrome.exe"
+browser-windows-dev: "C:/Program Files/Google/Chrome Beta/Application/chrome.exe"
+browser-windows: "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"
+browser: "google-chrome"
+""")
+
+class MyConfig(AppConfig):
+    # This variable will look for keys in this order:
+    # 1. 'browser-{{os_type}}-{{exec_stage}}' (e.g. browser-linux-prod)
+    # 2. 'browser-{{os_type}}'                (e.g. browser-linux)
+    # 3. 'browser'                            (fallback)
+    browser_cmd: str = configvar(
+        file_key=[
+            "browser-{{os_type}}-{{exec_stage}}",
+            "browser-{{os_type}}",
+            "browser"
+        ]
+    )
+
+@click.command()
+# Allow user to specify stage via CLI (e.g. --env prod)
+# exec_stage is a predefined variable in AppConfig
+@the1conf.click_option(AppConfig.exec_stage) 
+def main(**kwargs):
+    # 'exec_stage' and 'os_type' are automatically available
+    cfg = MyConfig()
+    cfg.resolve_vars(conffile_path="config.yaml", values=kwargs)
+    
+    print(f"Stage: {cfg.exec_stage}")
+    print(f"OS: {cfg.os_type}")
+    print(f"Browser: {cfg.browser_cmd}")
+
+# simulate CLI execution like: python app.py --env prod
+runner = CliRunner()
+result = runner.invoke(main, ["--env", "prod"])
+if result.exception:
+    raise result.exception
+assert result.exit_code == 0
+assert "Browser: /usr/bin/google-chrome-stable" in result.output
+if os.path.exists("config.yaml"):
+    os.remove("config.yaml")
+```
+
+## Config File Lookup with Fallback
+
+You can specify multiple potential locations for configuration files. TheOneConf will use the first one that exists.
+
+*   **Candidate List**: Pass a list of paths to `conffile_path` (e.g. `['./config.json', '~/.myapp/config.json', '/etc/myapp/config.json']`).
+*   **Template Support**: Paths can contain Jinja templates (e.g. `~/.{{ app_name }}/config.yaml`), which are rendered using currently resolved variables before checking for existence.
+
+Configuration files can be in **YAML**, **JSON**, or **TOML** format.
+
+**Important**: When using variables in `conffile_path`, these variables must be resolved **before** TheOneConf attempts to load the file. This is typically achieved by:
+1.  Using **Predefined Variables** (like `exec_stage` or `os_type`) which are available automatically.
+2.  Using variables marked with `auto_prolog=True`.
+3.  **Two-Step Resolution**: Resolving the path-dependent variables first, then resolving the rest.
+
+### Example: Two-Step Resolution
+
+If your config file path depends on a custom variable (like `app_name`), you can resolve it first.
+
+```python
+import os
+import json
+import tempfile
+from the1conf import AppConfig, configvar
+
+# Setup: Create a specific config file for 'superapp' in a temp dir
+tmp_dir = tempfile.TemporaryDirectory()
+config_file = os.path.join(tmp_dir.name, "superapp.json")
+with open(config_file, "w") as f:
+    json.dump({"timeout": 120}, f)
+
+class MyConfig(AppConfig):
+    app_name: str = configvar(
+        default="myapp",
+        env_name="APP_NAME"
+    )
+    
+    timeout: int = configvar(default=30)
+
+conf = MyConfig()
+
+# Step 1: Resolve 'app_name' (from Defaults, Env, or CLI variables passed here)
+# We haven't specified a conffile_path yet.
+conf.resolve_vars(values={"app_name": "superapp"})
+
+# Step 2: Use the resolved 'app_name' to locate the config file
+# We use f-string to inject the temp dir path, but let TheOneConf inject 'app_name'
+conf_path_template = os.path.join(tmp_dir.name, "{{app_name}}.json")
+conf.resolve_vars(conffile_path=conf_path_template)
+
+assert conf.timeout == 120
+
+# Cleanup
+tmp_dir.cleanup()
+```
+
+## 🏗️ Cascading Configuration Files
+
+Complex applications effectively need to load configuration from multiples files depending on the context (e.g. system-wide, user-specific, project-specific).
+Since TheOneConf loads only one configuration file per call to `resolve_vars()`, you can easily chain multiple calls to achieve **Cascading Configuration**.
+
+Normally `resolve_vars()` protects already set variables. By setting `allow_override=True`, you instruct TheOneConf to overwrite existing values with new ones found in the subsequent file, effectively implementing a "last-one-wins" merge logic. (Note: If a specific variable definition has `allow_override=False` (default value if not specified anywhere in the Configuration instantiation , the call to resolve_vars or the variable definition), it will only be resolved the first time a value is found, ignoring subsequent calls even if the global flag is set).
+
+This feature combines powerfully with other mechanisms:
+1.  **Fallback**: If a variable is missing in a higher-priority file, the value from the lower-priority file (or default) is preserved.
+2.  **Variable Substitution**: You can use variables (like `exec_stage` or `os_type`) to dynamically construct paths for each layer of configuration.
+
+### Example: Multi-layer loading
+
+```python
+conf = MyAppConfig()
+
+# 1. Load system defaults (lowest priority)
+conf.resolve_vars(conffile_path="/etc/myapp/config.yaml")
+
+# 2. Load user preferences (override system defaults)
+conf.resolve_vars(conffile_path="~/.config/myapp/user_config.yaml", allow_override=True)
+
+# 3. Load stage specific config (highest priority)
+# Using substitution: loads 'config-dev.yaml' or 'config-prod.yaml'
+conf.resolve_vars(conffile_path="config-{{exec_stage}}.yaml", allow_override=True)
+```
+
+## 🧠 Dynamic Computed Values (Eval Forms)
+
+TheOneConf allows variables to be computed dynamically based on the values of **already resolved** variables. This is realized using **Eval Forms**: callables that receive the configuration context.
+
+
+```python
+from the1conf import AppConfig, configvar
+
+class DBConfig(AppConfig):
+    host: str = configvar(default="localhost")
+    port: int = configvar(default=5432)
+    name: str = configvar(default="app_db")
+    
+    # Eval Form signature: (variable_name, config, current_value)
+    # We use the 'config' (c) to access previously resolved 'host', 'port', and 'name'
+    
+    dsn: str = configvar(
+        default=lambda _, c, __: f"postgresql://{c.host}:{c.port}/{c.name}",
+        no_search=True
+    )
+
+conf = DBConfig()
+# Override host via CLI args style for demonstration
+conf.resolve_vars(values={"host": "db.internal"})
+
+assert conf.dsn == "postgresql://db.internal:5432/app_db"
+```
+**Note**: `no_search=True` for `dns` ensures we don't look for 'dsn' in env vars or config file, purely computed.
+
+**Decouple Configuration Logic**:
+By moving the logic for computation on variables (like URLs, paths, or connection strings) out of your application code and into the configuration definition, you keep your business logic clean. Your application simply requests the final value (e.g. `conf.dsn`) without needing to know how it was constructed from `host`, `port`, and `name`.
+
+This is extremely useful to avoid duplication, for example constructing a Database URL from host and port.
+
+## 🔄 Data Transformation
+
+You can also use **Eval Forms** to transform a value after it has been resolved but before it is cast to its final type. This is done using the `transform` directive.
+
+```python
+from the1conf import AppConfig, configvar
+
+class App(AppConfig):
+    # transform: takes the found value (e.g. from env or CLI) and modifies it.
+    # Here we ensure the API key is always uppercase and stripped of whitespace.
+    api_key: str = configvar(
+        default="  default_key  ",
+        transform=lambda _, __, val: val.strip().upper() if val else val
+    )
+
+conf = App()
+# Pass a value that needs cleaning (whitespace, lowercase)
+conf.resolve_vars(values={"api_key": "  my_custom_key  "})
+
+assert conf.api_key == "MY_CUSTOM_KEY" # Result has been stripped and uppercased
+```
+
+## 📂 Path Management
+
+TheOneConf simplifies handling file system paths with built-in directives for resolution and directory creation.
+
+- **`can_be_relative_to`**: If a path is relative, it is resolved against a base directory (which can be another configuration variable or a fixed path).
+- **`make_dirs`**: Automatically creates the directory hierarchy if it doesn't exist.
+
+```python
+import os
+import shutil
+from pathlib import Path
+from the1conf import AppConfig, configvar
+from the1conf.app_config import PathType
+
+# Set environment variable for the example
+os.environ["APP_BASE_DIR"] = "/tmp/my_app_from_env"
+
+class IOConfig(AppConfig):
+    # Validates that 'base_dir' is a path
+    # no_value_search=True means we ignore values passed in resolve_vars() dict
+    base_dir: Path = configvar(
+        default="/tmp/default_data",
+        env_name="APP_BASE_DIR",
+        no_value_search=True
+    )
+    
+    # If 'log_dir' is relative (e.g. "logs"), it becomes "{base_dir}/logs"
+    # make_dirs=PathType.Dir ensures the directory is created on resolution
+    log_dir: Path = configvar(
+        default="logs",
+        can_be_relative_to="base_dir",
+        make_dirs=PathType.Dir
+    )
+    
+    # Resolves relative to 'base_dir'. Creates parent directory of the file.
+    cache_file: Path = configvar(
+        default="cache/db.sqlite",
+        can_be_relative_to="base_dir",
+        make_dirs=PathType.File
+    )
+
+conf = IOConfig()
+# Pass a value for base_dir, but it will be IGNORED due to no_value_search=True
+conf.resolve_vars(values={"base_dir": "/tmp/ignored_path"})
+
+# Verification:
+# 1. base_dir came from ENV: "APP_BASE_DIR" => "/tmp/my_app_from_env"
+# 2. log_dir is resolved relative to base_dir
+assert conf.log_dir == Path("/tmp/my_app_from_env/logs") # Value from Env used, runtime value ignored
+assert conf.log_dir.is_dir() # Directory was automatically created
+
+# Clean up for the example
+if conf.base_dir.exists():
+    shutil.rmtree(conf.base_dir)
+```
+
+## 📦 Nested Configurations (Namespaces)
+
+For larger applications, flat configuration structures can become unmanageable. TheOneConf supports **Nested Namespaces** using inner classes inheriting from `NameSpace`. This allows you to group related settings logically (e.g., `db`, `logging`, `server`).
+
+Important: Namespaces are also used in searching configuration files (e.g. `db.host` looks for `{"db": {"host": ...}}` in YAML/JSON).
+
+```yaml
+# config.yaml
+env: "prod"
+db:
+  host: "db.prod"
+  port: 5432
+  auth:
+    username: "admin"
+```
+
+```python
+from pathlib import Path
+from the1conf import AppConfig, NameSpace, configvar
+
+class MyApp(AppConfig):
+    env: str = configvar(default="dev")
+
+    # Define a 'db' namespace
+    class db(NameSpace):
+        host: str = configvar(default="localhost")
+        port: int = configvar(default=5432)
+        
+        # Nested namespaces can be infinitely deep
+        class auth(NameSpace):
+            username: str = configvar(default="admin")
+            password: str = configvar(env_name="DB_PASSWORD")
+
+conf = MyApp()
+# Resolve variables loading the config.yaml file defined above
+conf.resolve_vars(conffile_path=Path("config.yaml"))
+
+# Check that values are loaded from the file
+assert conf.env == "prod"
+assert conf.db.host == "db.prod"
+assert conf.db.auth.username == "admin"
+```
+
+## 🌍 Scopes (Environment Awareness)
+
+In complex applications, you often need to adapt the configuration schema based on the runtime environment.
+By tagging variables with `scope`, you can define which settings are relevant for a specific mode (e.g. "server", "client", "test"). When resolving variables, you specify the active scope(s), and TheOneConf will ignore any variable not belonging to it.
+
+**Why it matters**:
+This prevents errors and avoids unnecessary computation. Variables specific to one scope often depend on data (like CLI arguments or config sections) that are absent in others. By skipping unconnected scope, you ensure the application doesn't crash trying to resolve or validate settings it doesn't need.
+
+```python
+import the1conf
+
+class ToolConfig(the1conf.AppConfig):
+    # Common variable (available in all scope)
+    verbose: bool = the1conf.configvar(default=False)
+    """Enable verbose logging"""
+
+    # Variable specific to 'server' scope
+    port: int = the1conf.configvar(
+        default=8080,
+        scope=["server"]
+    )
+    """Port to listen on"""
+
+    # Variable specific to 'client' scope
+    timeout: int = the1conf.configvar(
+        default=30,
+        scope=["client"]
+    )
+    """Connection timeout"""
+
+conf = ToolConfig()
+
+# 1. Resolve for SERVER scope
+# Only 'verbose' and 'port' are resolved. 'timeout' is ignored.
+conf.resolve_vars(scope=["server"])
+
+assert conf.port == 8080        # Available in 'server' scope
+assert conf.verbose is False    # Common variable
+assert conf.timeout is None     # Ignored variable
+
+# 2. Resolve for CLIENT scope (simulating a fresh run for clarity)
+# In a real CLI, you'd likely instantiate a new config or reuse one cleanly.
+conf2 = ToolConfig()
+conf2.resolve_vars(scope=["client"])
+
+assert conf2.timeout == 30      # Available in 'client' scope
+assert conf2.verbose is False   # Common variable
+assert conf2.port is None       # Ignored variable
+print("Scope assertions passed!")
+```
+
+## 🏗️ Inheritance and Extensibility (Decentralization)
+
+One of the strengths of TheOneConf is its support for standard Python inheritance to achieve **decentralized configuration**.
+You can split your configuration definitions across multiple classes (e.g., one per module or component) or create specialized versions for environments.
+
+When you instantiate the final class, TheOneConf **merges** all variables found in the class hierarchy into a single, unified configuration object. This means valid variables are the union of all parent content and the local content.
+
+```python
+import the1conf
+
+# Base Component Configuration
+class LogConfig(the1conf.AppConfig):
+    verbose: bool = the1conf.configvar(default=False)
+    log_file: str = the1conf.configvar(default="app.log")
+
+# App Configuration extends the Component Config
+class AppConfig(LogConfig):
+    # We inherit 'verbose' and 'log_file'
+    # And we add new specific variables
+    port: int = the1conf.configvar(default=8080)
+    
+    # We can also override defaults
+    log_file: str = the1conf.configvar(default="server.log")
+
+conf = AppConfig()
+conf.resolve_vars()
+
+# variable from Base
+assert conf.verbose is False 
+# overwritten variable
+assert conf.log_file == "server.log" 
+# new variable
+assert conf.port == 8080
+```
+
+**Modular & Independent Configuration**
+You can organize your configuration by "application domain" (e.g., Database, Network), where each domain has its own configuration file, a dedicated **Namespace**, and one or more specific **Scopes**. Thanks to the ability to call `resolve_vars()` multiple times, each domain can trigger its own resolution process targeting only its relevant scopes. This ensures strict variable segregation via namespaces and allows different parts of your application to load and validate their specific settings independently.
+
+## 🛡️ Type Casting and Validation
+
+TheOneConf leverages **Pydantic** to ensure that configuration values are not only of the correct type but also adhere to specific constraints.
+This is particularly useful when loading values from typeless sources like environment variables or CLI arguments (which are always strings). TheOneConf automatically **casts** them to your target Python types and **validates** them against any defined constraints.
+
+```python
+from typing import Annotated
+from datetime import date
+from pydantic import PositiveInt, BaseModel, model_validator, Field
+from the1conf import AppConfig, configvar
+from the1conf.app_config import AppConfigException
+
+# Identify a Pydantic Model for complex validation
+class DateRange(BaseModel):
+    start_date: date
+    end_date: date
+    
+    @model_validator(mode='after')
+    def check_dates(self):
+        if self.end_date <= self.start_date:
+            raise ValueError("end_date must be after start_date")
+        return self
+
+class ServerConfig(AppConfig):
+    # Annotated[int, Field(...)] enforces value constraints (1024 < port < 65536)
+    port: Annotated[int, Field(gt=1024, lt=65536)] = configvar(default=8080)
+    
+    # Pydantic types enforce strict constraints
+    max_workers: PositiveInt = configvar(default=4) # Must be > 0
+    
+    # Complex validation using Pydantic Model
+    period: DateRange = configvar(
+        default={"start_date": "2024-01-01", "end_date": "2024-12-31"}
+    )
+
+conf = ServerConfig()
+
+# Simulate loading values from environment variables (strings)
+conf.resolve_vars(values={
+    "port": "9000",       # Cast: "9000" -> 9000 (int)
+    "max_workers": "10",  # Cast & Validate: "10" -> 10 (int)
+    "period": {"start_date": "2024-03-01", "end_date": "2024-03-31"}
+})
+
+assert conf.port == 9000
+assert conf.max_workers == 10
+assert conf.period.start_date == date(2024, 3, 1)
+
+# Validation ensures integrity
+try:
+    # Use a new instance to ensure we don't skip the variable because it's already set
+    conf_invalid = ServerConfig()
+    # Invalid: end_date before start_date
+    conf_invalid.resolve_vars(values={
+        "period": {"start_date": "2024-02-01", "end_date": "2024-01-01"}
+    })
+except AppConfigException:
+    print("Validation correctly rejected invalid date range")
+```
+
+**Powerful & Safe Configuration**
+This combination of strict typing and advanced validation ensures your application starts only with a valid configuration state. By catching errors early (at startup) and providing clear feedback, you prevent subtle runtime bugs and make your application more robust. You can define complex rules (ranges, dependencies between fields, regex patterns) declaratively, keeping your initialization logic clean and simple.
+
+## Saving Configuration
+
+`the1conf` allows you to save the current configuration state back to a file using the `store_conf_infile` method. This is useful for persisting user preferences or updating configuration files programmatically.
+
+### `store_conf_infile`
+
+This method writes the configuration variables to a specified file. It merges the current configuration with the existing file content (if any), updating values for the provided variables while preserving other data in the file (at the top level).
+
+```python
+def store_conf_infile(
+    self,
+    file: Union[Path, str],
+    *,
+    namespaces: Sequence[str] = [],
+    scopes: Sequence[str] = [],
+    type: str = "yaml",
+)
+```
+## 🖱️ Click Integration
+
+TheOneConf integrates seamlessly with [Click](https://click.palletsprojects.com/) to inject configuration variables into your CLI.
+The `@the1conf.click_option` decorator creates a click option from a `ConfigVarDef`.
+
+**Benefits:**
+1.  **Zero Boilerplate**: No need to manually define `click.option('--port', default=8080, help='...')`. TheOneConf infers everything from your class definition.
+2.  **Single Source of Truth**: Change the default value or help text in your Config class, and the CLI updates automatically.
+3.  **Complex Features Support**: It works seamlessly with TheOneConf's features like type casting, validation, and multi-source resolution.
+
+```python
+import click
+import the1conf
+
+class MyConfig(the1conf.AppConfig):
+    name: str = the1conf.configvar(default="World")
+    """Name to greet. Help text is automatically exposed in --help"""
+
+    port: int = the1conf.configvar(default=8080)
+    """Server port"""
+
+@click.command()
+# Automatically generate --name and --port options
+@the1conf.click_option(MyConfig.name)
+@the1conf.click_option(MyConfig.port)
+def main(**kwargs):
+    cfg = MyConfig()
+    # Apply CLI args (highest priority) -> Env -> Files -> Defaults
+    cfg.resolve_vars(values=kwargs)
+    
+    assert cfg.name == "Alice"
+    assert cfg.port == 9000
+    print(f"Server starting on {cfg.port} for {cfg.name}...")
+
+if __name__ == "__main__":
+    from click.testing import CliRunner
+
+    # Simulate CLI execution: app.py --name Alice --port 9000
+    runner = CliRunner()
+    result = runner.invoke(main, ["--name", "Alice", "--port", "9000"])
+    print(result.output)
+```
+
+
