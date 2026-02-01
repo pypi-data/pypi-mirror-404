@@ -1,0 +1,41 @@
+cargo-features = ["profile-rustflags"]
+
+[package]
+name = "rusterize"
+version = "0.6.1"
+edition = "2024"
+resolver = "2"
+readme = "README.md"
+
+[lib]
+name = "rusterize"
+crate-type = ["cdylib"]
+
+[dependencies]
+geo = "0.30.0"
+geo-traits = "0.3.0"
+geo-types = "0.7.18"
+ndarray = { version = "0.16.1", features = ["rayon"] }
+num-traits = "0.2.19"
+numpy = "0.25.0"
+polars = { version = "0.51.0", features = ["lazy", "simd", "performant", "nightly"] }
+pyo3 = { version = "0.25.1", features = ["extension-module", "abi3-py311", "generate-import-lib"] }
+pyo3-polars = "0.24.0"
+rayon = "1.11.0"
+wkb = "0.9.2"
+
+# OS-specific allocators
+[target.'cfg(not(target_family = "unix"))'.dependencies]
+mimalloc = { version = "*", default-features = false }
+
+[target.'cfg(all(target_family = "unix", not(target_os = "macos")))'.dependencies]
+tikv-jemallocator = { version = "*", features = ["disable_initial_exec_tls", "background_threads"] }
+
+[target.'cfg(all(target_family = "unix", target_os = "macos"))'.dependencies]
+tikv-jemallocator = { version = "*", features = ["disable_initial_exec_tls"] }
+
+[profile.dist-release]
+inherits = "release"
+codegen-units = 1
+debug = false
+lto = "fat"
