@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  irssi:
+    build:
+      context: .
+      dockerfile: Dockerfile.irssi
+    container_name: irssi-chat
+    volumes:
+      - ./irssi-data:/home/irssi/.irssi
+    networks:
+      - irssi-net
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+
+  muaddib:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: muaddib
+    working_dir: /app
+    environment:
+      - MUADDIB_HOME=/data
+    volumes:
+      - ./irssi-data:/home/irssi/.irssi
+      - ./muaddib-data:/data
+      - .:/app/src  # For development - mount source code
+    networks:
+      - irssi-net
+    depends_on:
+      - irssi
+    restart: unless-stopped
+    command: uv run python -m muaddib.main
+
+networks:
+  irssi-net:
+    driver: bridge
