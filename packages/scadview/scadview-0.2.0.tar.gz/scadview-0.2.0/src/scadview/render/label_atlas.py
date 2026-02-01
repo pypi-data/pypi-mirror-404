@@ -1,0 +1,95 @@
+import os
+
+import moderngl
+import numpy as np
+from numpy.typing import NDArray
+from PIL import Image, ImageDraw, ImageFont
+
+LABEL_CHARS = "0123456789-."
+# MINUS_INDEX = LABEL_CHARS.index("-")
+# DOT_INDEX = LABEL_CHARS.index(".")
+FONT_SIZE = 100  # defines the resolution of the font
+FONT_FILE = "DejaVuSansMono.ttf"
+RELATIVE_PATH_TO_FONT = "../resources/"
+BBOX_WIDTH_INDEX = 2
+BBOX_HEIGHT_INDEX = 3
+
+
+def _load_font() -> ImageFont.FreeTypeFont:
+    font_path = os.path.join(
+        os.path.dirname(__file__), RELATIVE_PATH_TO_FONT, FONT_FILE
+    )
+    return ImageFont.truetype(font_path, FONT_SIZE)
+
+
+def _get_font_size(font: ImageFont.FreeTypeFont) -> tuple[int, int]:
+    cell_bbox = font.getbbox("0")
+    cell_height = cell_bbox[BBOX_HEIGHT_INDEX]  # Height of a character cell
+    cell_width = cell_bbox[BBOX_WIDTH_INDEX]  # Width of a character cell
+    return (int(cell_width), int(cell_height))
+
+
+class LabelAtlas:
+    def __init__(self, ctx: moderngl.Context):
+        self._uv_data: dict[str, NDArray[np.float32]] = {}
+        self._create_label_atlas()
+        self._texture = None
+        self._sampler = None
+
+    def uv(self, char: str) -> NDArray[np.float32]:
+        return self._uv_data[char]
+
+    def _create_label_atlas(
+        self,
+    ):
+        font = _load_font()
+        self._cell_width, self._cell_height = _get_font_size(font)
+        self._calc_atlas_size()
+        self._draw_chars(LABEL_CHARS, font)
+        self._bytes = self._image.tobytes()
+
+    def _save_atlas(self) -> None:
+        self._image.save("label_atlas.png")
+
+    def _calc_atlas_size(self):
+        cols = len(LABEL_CHARS)
+        self._width = cols * self._cell_width
+        self._height = self._cell_height
+
+    def _draw_chars(self, chars: str, font: ImageFont.FreeTypeFont) -> None:
+        # Create a new image for the atlas
+        self._image = Image.new("L", (self._width, self._height))
+        draw = ImageDraw.Draw(self._image)
+
+        # Draw each character into its cell
+        for i, char in enumerate(chars):
+            self._draw_char(draw, font, char, i)
+
+    def _draw_char(
+        self,
+        draw: ImageDraw.ImageDraw,
+        font: ImageFont.FreeTypeFont,
+        char: str,
+        index: int,
+    ) -> None:
+        WHITE = 255
+        x = index * self._cell_width
+        draw.text((x, 0), char, fill=WHITE, font=font)
+        # Save texture coordinates for later use (normalized coordinates)
+        u0 = x / self._width
+        v0 = 0.0
+        u1 = (x + self._cell_width) / self._width
+        v1 = 1.0
+        self._uv_data[char] = np.array((u0, v0, u1, v1), dtype="f4")
+
+    def create_sampler(self, ctx: moderngl.Context) -> moderngl.Sampler:
+        if self._sampler is None:
+            self._texture = ctx.texture(
+                (self._width, self._height),
+                1,
+                data=self._bytes,
+                dtype="f1",
+            )
+            self._sampler = ctx.sampler(texture=self._texture)
+            self._sampler.filter = (ctx.NEAREST, ctx.NEAREST)
+        return self._sampler
