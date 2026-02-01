@@ -1,0 +1,3693 @@
+{
+  "_generated": {
+    "warning": "DO NOT EDIT - This file is auto-generated",
+    "generator": "tools/generate_mcp_command_registry.py",
+    "cliVersion": "1.0.0",
+    "sourceConfig": "mcp/.registry/mcp-commands.json"
+  },
+  "version": 1,
+  "cliVersion": "1.0.0",
+  "commands": [
+    {
+      "name": "company create",
+      "description": "Create a company.",
+      "category": "write",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {
+        "--domain": {
+          "type": "string",
+          "required": false,
+          "help": "Primary domain."
+        },
+        "--name": {
+          "type": "string",
+          "required": true,
+          "help": "Company name."
+        },
+        "--person-id": {
+          "type": "int",
+          "required": false,
+          "help": "Associated person id (repeatable).",
+          "multiple": true
+        }
+      },
+      "positionals": [],
+      "whenToUse": "Create a new company in the CRM.",
+      "relatedCommands": [
+        "company get",
+        "company update"
+      ]
+    },
+    {
+      "name": "company delete",
+      "description": "Delete a company.",
+      "category": "write",
+      "destructive": true,
+      "progressCapable": false,
+      "parameters": {
+        "--yes": {
+          "type": "flag",
+          "required": false,
+          "help": "Skip confirmation prompt.",
+          "aliases": [
+            "-y"
+          ]
+        }
+      },
+      "positionals": [
+        {
+          "name": "COMPANY_ID",
+          "type": "int",
+          "required": true
+        }
+      ],
+      "whenToUse": "Delete a company from the CRM. Use with caution.",
+      "relatedCommands": [
+        "company get"
+      ]
+    },
+    {
+      "name": "company field",
+      "description": "Manage company field values.",
+      "category": "write",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {
+        "--get": {
+          "type": "string",
+          "required": false,
+          "help": "Get specific field values (repeatable).",
+          "multiple": true
+        },
+        "--set": {
+          "type": "string",
+          "required": false,
+          "help": "Set field value (repeatable). Use two args: FIELD VALUE.",
+          "multiple": true,
+          "nargs": 2
+        },
+        "--set-json": {
+          "type": "string",
+          "required": false,
+          "help": "JSON object of field:value pairs to set."
+        },
+        "--unset": {
+          "type": "string",
+          "required": false,
+          "help": "Unset field (repeatable). Removes all values for the field.",
+          "multiple": true
+        }
+      },
+      "positionals": [
+        {
+          "name": "COMPANY_ID",
+          "type": "int",
+          "required": true
+        }
+      ],
+      "examples": [
+        "company field 123 --set Industry \"Technology\"",
+        "company field 123 --set Industry \"Tech\" --set Size \"Large\"",
+        "company field 123 --unset Industry",
+        "company field 123 --set-json '{\"Industry\": \"Tech\", \"Size\": \"Large\"}'",
+        "company field 123 --get Industry --get Size"
+      ],
+      "whenToUse": "Manage global field values on a company.",
+      "relatedCommands": [
+        "company get",
+        "field ls"
+      ]
+    },
+    {
+      "name": "company files ls",
+      "description": "List files attached to a company.",
+      "category": "read",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {
+        "--all": {
+          "type": "flag",
+          "required": false,
+          "help": "Fetch all pages.",
+          "aliases": [
+            "-A"
+          ]
+        },
+        "--cursor": {
+          "type": "string",
+          "required": false,
+          "help": "Resume from pagination cursor (incompatible with --page-size)."
+        },
+        "--max-results": {
+          "type": "string",
+          "required": false,
+          "help": "Stop after N results (min 1).",
+          "aliases": [
+            "--limit",
+            "-n"
+          ]
+        },
+        "--page-size": {
+          "type": "string",
+          "required": false,
+          "help": "Page size (1-100).",
+          "aliases": [
+            "-s"
+          ]
+        }
+      },
+      "positionals": [
+        {
+          "name": "COMPANY",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "examples": [
+        "company files ls 12345",
+        "company files ls \"name:Acme Corp\" --max-results 10"
+      ],
+      "whenToUse": "List files attached to a company. Use this first to get file IDs, then use 'company files read' to read file content inline (works in Claude Desktop/Cowork), or 'get-file-url' for presigned URLs.",
+      "relatedCommands": [
+        "company get",
+        "company files read",
+        "company files upload"
+      ],
+      "mcpNote": "After listing, use 'company files read' with fileId to read content inline (recommended for Claude Desktop/Cowork), or 'get-file-url' for presigned URLs.",
+      "mcpBehavior": {
+        "limitEnforced": true,
+        "allFlagBlocked": true,
+        "defaultLimit": 1000,
+        "maxLimit": 10000
+      },
+      "limitConfig": {
+        "flag": "--max-results",
+        "flagAliases": [
+          "--max-results",
+          "--limit",
+          "-n"
+        ],
+        "default": 1000,
+        "max": 10000,
+        "unboundedFlag": "--all",
+        "unboundedFlagAliases": [
+          "--all",
+          "-A"
+        ]
+      }
+    },
+    {
+      "name": "company files read",
+      "description": "Read file content with chunking support.",
+      "category": "read",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {
+        "--file-id": {
+          "type": "int",
+          "required": true,
+          "help": "File ID to read."
+        },
+        "--limit": {
+          "type": "string",
+          "required": false,
+          "help": "Max bytes to read (e.g., '1MB', '500KB', '1048576')."
+        },
+        "--offset": {
+          "type": "int",
+          "required": false,
+          "help": "Byte offset to start reading."
+        }
+      },
+      "positionals": [
+        {
+          "name": "COMPANY_ID",
+          "type": "int",
+          "required": true
+        }
+      ],
+      "examples": [
+        "company files read 12345 --file-id 123456",
+        "company files read 12345 --file-id 123456 --offset 0 --limit 1MB",
+        "company files read 12345 --file-id 123456 --offset 1048576 --limit 500KB"
+      ],
+      "whenToUse": "Read file content inline with chunking support. Returns base64-encoded content. Use this when Claude Desktop/Cowork blocks presigned URLs (userfiles.affinity.co). For large files, use --offset and --limit to fetch in chunks.",
+      "relatedCommands": [
+        "company files ls",
+        "company get"
+      ],
+      "mcpNote": "Response includes hasMore and nextOffset for chunked downloads. LLMs with Python sandbox can reassemble chunks and process with tools like PyPDF2, pandas, PIL.",
+      "limitConfig": {
+        "flag": "--limit",
+        "flagAliases": [
+          "--limit"
+        ],
+        "default": 1000,
+        "max": 10000
+      }
+    },
+    {
+      "name": "company files upload",
+      "description": "Upload files to a company.",
+      "category": "write",
+      "destructive": false,
+      "progressCapable": true,
+      "parameters": {
+        "--file": {
+          "type": "string",
+          "required": true,
+          "help": "File path to upload (repeatable).",
+          "multiple": true
+        }
+      },
+      "positionals": [
+        {
+          "name": "COMPANY_ID",
+          "type": "int",
+          "required": true
+        }
+      ],
+      "examples": [
+        "company files upload 123 --file doc.pdf"
+      ],
+      "whenToUse": "Upload files/documents to a company.",
+      "relatedCommands": [
+        "company get",
+        "company files ls"
+      ]
+    },
+    {
+      "name": "company get",
+      "description": "Get a company by id, URL, domain, or name.",
+      "category": "read",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {
+        "--all": {
+          "type": "flag",
+          "required": false,
+          "help": "Fetch all pages for expansions (still capped by --max-results if set)."
+        },
+        "--all-fields": {
+          "type": "flag",
+          "required": false,
+          "help": "Include all supported (non-list-specific) field data."
+        },
+        "--expand": {
+          "type": "string",
+          "required": false,
+          "help": "Include related data (repeatable).",
+          "choices": [
+            "lists",
+            "list-entries",
+            "persons"
+          ],
+          "multiple": true
+        },
+        "--field": {
+          "type": "string",
+          "required": false,
+          "help": "Field id or exact field name (repeatable).",
+          "multiple": true,
+          "aliases": [
+            "-f"
+          ]
+        },
+        "--field-type": {
+          "type": "string",
+          "required": false,
+          "help": "Include all fields of this type (repeatable).",
+          "choices": [
+            "global",
+            "enriched",
+            "relationship-intelligence"
+          ],
+          "multiple": true,
+          "aliases": [
+            "-t"
+          ]
+        },
+        "--list": {
+          "type": "string",
+          "required": false,
+          "help": "Filter list-entries expansion to a list id or exact list name (implies --expand list-entries)."
+        },
+        "--list-entry-field": {
+          "type": "string",
+          "required": false,
+          "help": "Project a list-entry field into its own column (repeatable; implies --expand list-entries).",
+          "multiple": true
+        },
+        "--list-entry-fields-scope": {
+          "type": "string",
+          "required": false,
+          "help": "Control which fields appear in list entry tables (human output only).",
+          "choices": [
+            "list-only",
+            "all"
+          ]
+        },
+        "--max-results": {
+          "type": "int",
+          "required": false,
+          "help": "Maximum items to fetch per expansion section (applies to --expand).",
+          "aliases": [
+            "--limit",
+            "-n"
+          ]
+        },
+        "--no-fields": {
+          "type": "flag",
+          "required": false,
+          "help": "Do not request field data."
+        },
+        "--show-list-entry-fields": {
+          "type": "flag",
+          "required": false,
+          "help": "Render per-list-entry Fields tables in human output (implies --expand list-entries; requires --max-results <= 3)."
+        },
+        "--with-interaction-dates": {
+          "type": "flag",
+          "required": false,
+          "help": "Include interaction date summaries (last/next meeting, email dates)."
+        },
+        "--with-interaction-persons": {
+          "type": "flag",
+          "required": false,
+          "help": "Include person IDs for each interaction (requires --with-interaction-dates)."
+        }
+      },
+      "positionals": [
+        {
+          "name": "COMPANY_SELECTOR",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "examples": [
+        "company get 12345",
+        "company get domain:wellybox.com",
+        "company get 12345 --expand list-entries",
+        "company get 12345 --with-interaction-dates"
+      ],
+      "whenToUse": "Get full details for a company. Selector formats: numeric ID, Affinity URL, 'domain:example.com', or 'name:Company Name'. Use --expand list-entries to check which lists the company is on (efficient single-entity lookup). Use --with-interaction-dates for last/next meeting dates and email activity.",
+      "relatedCommands": [
+        "company ls",
+        "company field"
+      ],
+      "limitConfig": {
+        "flag": "--max-results",
+        "flagAliases": [
+          "--max-results",
+          "--limit",
+          "-n"
+        ],
+        "default": 1000,
+        "max": 10000,
+        "unboundedFlag": "--all",
+        "unboundedFlagAliases": [
+          "--all"
+        ]
+      }
+    },
+    {
+      "name": "company ls",
+      "description": "List companies.",
+      "category": "read",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {
+        "--all": {
+          "type": "flag",
+          "required": false,
+          "help": "Fetch all pages.",
+          "aliases": [
+            "-A"
+          ]
+        },
+        "--csv": {
+          "type": "flag",
+          "required": false,
+          "help": "Alias for --output csv."
+        },
+        "--csv-bom": {
+          "type": "flag",
+          "required": false,
+          "help": "Add UTF-8 BOM for Excel (use with redirection: --csv --csv-bom > file.csv)."
+        },
+        "--cursor": {
+          "type": "string",
+          "required": false,
+          "help": "Resume from cursor (incompatible with --page-size)."
+        },
+        "--field": {
+          "type": "string",
+          "required": false,
+          "help": "Field ID or name to include (repeatable).",
+          "multiple": true
+        },
+        "--field-type": {
+          "type": "string",
+          "required": false,
+          "help": "Field type to include (repeatable). Values: global, enriched, relationship-intelligence.",
+          "multiple": true
+        },
+        "--filter": {
+          "type": "string",
+          "required": false,
+          "help": "Filter: 'field op value'. Ops: = != =~ =^ =$ > < >= <=. E.g., 'name =~ \"Acme\"'."
+        },
+        "--max-results": {
+          "type": "int",
+          "required": false,
+          "help": "Stop after N items total.",
+          "aliases": [
+            "--limit",
+            "-n"
+          ]
+        },
+        "--page-size": {
+          "type": "int",
+          "required": false,
+          "help": "Page size (limit).",
+          "aliases": [
+            "-s"
+          ]
+        },
+        "--query": {
+          "type": "string",
+          "required": false,
+          "help": "Fuzzy text search (simple matching). Use --filter for structured queries.",
+          "aliases": [
+            "-q"
+          ]
+        }
+      },
+      "positionals": [],
+      "examples": [
+        "company ls",
+        "company ls --page-size 50",
+        "company ls --field-type enriched --all",
+        "company ls --filter 'Industry = \"Software\"'",
+        "company ls --query \"Acme\" --all",
+        "company ls --all --csv > companies.csv",
+        "company ls --all --output csv --csv-bom > companies.csv"
+      ],
+      "whenToUse": "List or search ALL companies in CRM. Use --query for text search (name, domain). NOT for list-specific fields like Status.",
+      "relatedCommands": [
+        "company get",
+        "company field"
+      ],
+      "mcpBehavior": {
+        "limitEnforced": true,
+        "allFlagBlocked": true,
+        "defaultLimit": 1000,
+        "maxLimit": 10000
+      },
+      "limitConfig": {
+        "flag": "--max-results",
+        "flagAliases": [
+          "--max-results",
+          "--limit",
+          "-n"
+        ],
+        "default": 1000,
+        "max": 10000,
+        "unboundedFlag": "--all",
+        "unboundedFlagAliases": [
+          "--all",
+          "-A"
+        ]
+      }
+    },
+    {
+      "name": "company merge",
+      "description": "Merge a duplicate company into a primary (beta).",
+      "category": "write",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {},
+      "positionals": [
+        {
+          "name": "PRIMARY_ID",
+          "type": "int",
+          "required": true
+        },
+        {
+          "name": "DUPLICATE_ID",
+          "type": "int",
+          "required": true
+        }
+      ],
+      "whenToUse": "Merge a duplicate company into a primary company (beta). Combines data from both records. Returns a taskUrl - use 'task wait' to poll for completion.",
+      "examples": [
+        "company merge 123 456"
+      ],
+      "relatedCommands": [
+        "company get",
+        "company ls",
+        "task wait"
+      ]
+    },
+    {
+      "name": "company update",
+      "description": "Update a company.",
+      "category": "write",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {
+        "--domain": {
+          "type": "string",
+          "required": false,
+          "help": "Updated primary domain."
+        },
+        "--name": {
+          "type": "string",
+          "required": false,
+          "help": "Updated company name."
+        },
+        "--person-id": {
+          "type": "int",
+          "required": false,
+          "help": "Replace associated person ids (repeatable).",
+          "multiple": true
+        }
+      },
+      "positionals": [
+        {
+          "name": "COMPANY_ID",
+          "type": "int",
+          "required": true
+        }
+      ],
+      "whenToUse": "Update an existing company's details.",
+      "relatedCommands": [
+        "company get"
+      ]
+    },
+    {
+      "name": "config check-key",
+      "description": "Check if an API key is configured.",
+      "category": "local",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {},
+      "positionals": [],
+      "whenToUse": "Check if an API key is configured. Useful for troubleshooting authentication issues.",
+      "relatedCommands": [
+        "config setup-key",
+        "whoami"
+      ]
+    },
+    {
+      "name": "config path",
+      "description": "Show the path to the configuration file.",
+      "category": "local",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {},
+      "positionals": [],
+      "whenToUse": "Show the path to the configuration file. Useful for debugging.",
+      "relatedCommands": [
+        "config check-key"
+      ]
+    },
+    {
+      "name": "config setup-key",
+      "description": "Securely configure your Affinity API key.",
+      "category": "local",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {
+        "--force": {
+          "type": "flag",
+          "required": false,
+          "help": "Overwrite existing API key without prompting."
+        },
+        "--scope": {
+          "type": "string",
+          "required": false,
+          "help": "Where to store: 'project' (.env) or 'user' (config.toml). Interactive if omitted.",
+          "choices": [
+            "project",
+            "user"
+          ]
+        },
+        "--validate": {
+          "type": "flag",
+          "required": false,
+          "help": "Test the key against the API after storing (default: validate)."
+        }
+      },
+      "positionals": [],
+      "whenToUse": "Securely configure the Affinity API key. Use when key is not set up.",
+      "relatedCommands": [
+        "config check-key",
+        "whoami"
+      ]
+    },
+    {
+      "name": "entry add",
+      "description": "Add a person or company to a list.",
+      "category": "write",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {
+        "--company-id": {
+          "type": "int",
+          "required": false,
+          "help": "Company id to add."
+        },
+        "--creator-id": {
+          "type": "int",
+          "required": false,
+          "help": "Creator id override."
+        },
+        "--person-id": {
+          "type": "int",
+          "required": false,
+          "help": "Person id to add."
+        }
+      },
+      "positionals": [
+        {
+          "name": "LIST_SELECTOR",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "whenToUse": "Add a person or company to a list.",
+      "relatedCommands": [
+        "entry get",
+        "entry delete"
+      ]
+    },
+    {
+      "name": "entry delete",
+      "description": "Delete a list entry.",
+      "category": "write",
+      "destructive": true,
+      "progressCapable": false,
+      "parameters": {
+        "--yes": {
+          "type": "flag",
+          "required": false,
+          "help": "Skip confirmation prompt.",
+          "aliases": [
+            "-y"
+          ]
+        }
+      },
+      "positionals": [
+        {
+          "name": "LIST_SELECTOR",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "ENTRY_ID",
+          "type": "int",
+          "required": true
+        }
+      ],
+      "whenToUse": "Remove an entry from a list. Use with caution.",
+      "relatedCommands": [
+        "entry get"
+      ]
+    },
+    {
+      "name": "entry field",
+      "description": "Manage list entry field values.",
+      "category": "write",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {
+        "--append": {
+          "type": "string",
+          "required": false,
+          "help": "Append to multi-value field (repeatable). Adds without replacing.",
+          "multiple": true,
+          "nargs": 2
+        },
+        "--get": {
+          "type": "string",
+          "required": false,
+          "help": "Get specific field values (repeatable).",
+          "multiple": true
+        },
+        "--set": {
+          "type": "string",
+          "required": false,
+          "help": "Set field value (repeatable). Replaces existing value(s).",
+          "multiple": true,
+          "nargs": 2
+        },
+        "--set-json": {
+          "type": "string",
+          "required": false,
+          "help": "JSON object of field:value pairs to set."
+        },
+        "--unset": {
+          "type": "string",
+          "required": false,
+          "help": "Unset all values for field (repeatable).",
+          "multiple": true
+        },
+        "--unset-value": {
+          "type": "string",
+          "required": false,
+          "help": "Unset specific value from multi-value field (repeatable).",
+          "multiple": true,
+          "nargs": 2
+        }
+      },
+      "positionals": [
+        {
+          "name": "LIST_SELECTOR",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "ENTRY_ID",
+          "type": "int",
+          "required": true
+        }
+      ],
+      "examples": [
+        "entry field \"Pipeline\" 12345 --set Status \"Active\"",
+        "entry field \"Pipeline\" 12345 --set \"Deal Size\" 50000"
+      ],
+      "whenToUse": "Update field values on a list entry.",
+      "relatedCommands": [
+        "entry get",
+        "field ls"
+      ]
+    },
+    {
+      "name": "entry get",
+      "description": "Get a single list entry by ID.",
+      "category": "read",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {},
+      "positionals": [
+        {
+          "name": "LIST_SELECTOR",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "ENTRY_ID",
+          "type": "int",
+          "required": true
+        }
+      ],
+      "examples": [
+        "list entry get \"Portfolio\" 12345",
+        "list entry get 67890 12345"
+      ],
+      "whenToUse": "Get full details for a single list entry by ID.",
+      "relatedCommands": [
+        "entry field",
+        "query"
+      ]
+    },
+    {
+      "name": "field create",
+      "description": "Create a field.",
+      "category": "write",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {
+        "--allows-multiple": {
+          "type": "flag",
+          "required": false,
+          "help": "Allow multiple values."
+        },
+        "--entity-type": {
+          "type": "string",
+          "required": true,
+          "help": "Entity type (person/company/opportunity).",
+          "choices": [
+            "company",
+            "opportunity",
+            "organization",
+            "people",
+            "person"
+          ]
+        },
+        "--list-id": {
+          "type": "int",
+          "required": false,
+          "help": "List id for list-specific field."
+        },
+        "--list-specific": {
+          "type": "flag",
+          "required": false,
+          "help": "Mark as list-specific."
+        },
+        "--name": {
+          "type": "string",
+          "required": true,
+          "help": "Field name."
+        },
+        "--required": {
+          "type": "flag",
+          "required": false,
+          "help": "Mark as required."
+        },
+        "--value-type": {
+          "type": "string",
+          "required": true,
+          "help": "Field value type (e.g. text, dropdown, person, number).",
+          "choices": [
+            "company",
+            "company-multi",
+            "datetime",
+            "dropdown",
+            "dropdown-multi",
+            "filterable-text",
+            "filterable-text-multi",
+            "interaction",
+            "location",
+            "location-multi",
+            "number",
+            "number-multi",
+            "person",
+            "person-multi",
+            "ranked-dropdown",
+            "text"
+          ]
+        }
+      },
+      "positionals": [],
+      "whenToUse": "Create a new custom field on a list or globally.",
+      "relatedCommands": [
+        "field ls",
+        "field delete"
+      ]
+    },
+    {
+      "name": "field delete",
+      "description": "Delete a field.",
+      "category": "write",
+      "destructive": true,
+      "progressCapable": false,
+      "parameters": {
+        "--yes": {
+          "type": "flag",
+          "required": false,
+          "help": "Skip confirmation prompt.",
+          "aliases": [
+            "-y"
+          ]
+        }
+      },
+      "positionals": [
+        {
+          "name": "FIELD_ID",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "whenToUse": "Delete a custom field. Use with caution - this removes all data in that field.",
+      "relatedCommands": [
+        "field ls"
+      ]
+    },
+    {
+      "name": "field history",
+      "description": "Show field value change history.",
+      "category": "read",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {
+        "--action-type": {
+          "type": "string",
+          "required": false,
+          "help": "Filter by action type.",
+          "choices": [
+            "create",
+            "update",
+            "delete"
+          ]
+        },
+        "--company-id": {
+          "type": "int",
+          "required": false,
+          "help": "Filter by company ID."
+        },
+        "--list-entry-id": {
+          "type": "int",
+          "required": false,
+          "help": "Filter by list entry ID."
+        },
+        "--max-results": {
+          "type": "int",
+          "required": false,
+          "help": "Limit number of results.",
+          "aliases": [
+            "--limit",
+            "-n"
+          ]
+        },
+        "--opportunity-id": {
+          "type": "int",
+          "required": false,
+          "help": "Filter by opportunity ID."
+        },
+        "--person-id": {
+          "type": "int",
+          "required": false,
+          "help": "Filter by person ID."
+        }
+      },
+      "positionals": [
+        {
+          "name": "FIELD_ID",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "examples": [
+        "field history field-123456 --person-id 789",
+        "field history field-123456 --company-id 456",
+        "field history field-123456 --list-entry-id 999 --max-results 50"
+      ],
+      "whenToUse": "Audit who changed a field value and when. Use to track status changes, see modification timestamps, or investigate field value history. REQUIRES exactly one entity selector: --person-id, --company-id, --opportunity-id, or --list-entry-id.",
+      "requiredOneOf": [
+        [
+          "--person-id",
+          "--company-id",
+          "--opportunity-id",
+          "--list-entry-id"
+        ]
+      ],
+      "relatedCommands": [
+        "field ls",
+        "person get",
+        "company get",
+        "opportunity get",
+        "entry get"
+      ],
+      "mcpBehavior": {
+        "limitEnforced": true,
+        "defaultLimit": 1000,
+        "maxLimit": 10000
+      },
+      "limitConfig": {
+        "flag": "--max-results",
+        "flagAliases": [
+          "--max-results",
+          "--limit",
+          "-n"
+        ],
+        "default": 1000,
+        "max": 10000
+      }
+    },
+    {
+      "name": "field ls",
+      "description": "List fields with dropdown options.",
+      "category": "read",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {
+        "--entity-type": {
+          "type": "string",
+          "required": false,
+          "help": "Filter by entity type (person/company/opportunity).",
+          "choices": [
+            "company",
+            "opportunity",
+            "organization",
+            "people",
+            "person"
+          ]
+        },
+        "--list-id": {
+          "type": "string",
+          "required": false,
+          "help": "Filter by list (ID or name)."
+        }
+      },
+      "positionals": [],
+      "whenToUse": "See what custom fields exist on a list. Helps understand available filter fields and dropdown options.",
+      "relatedCommands": [
+        "list ls",
+        "entry field"
+      ]
+    },
+    {
+      "name": "interaction create",
+      "description": "Create an interaction.",
+      "category": "write",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {
+        "--content": {
+          "type": "string",
+          "required": true,
+          "help": "Interaction content."
+        },
+        "--date": {
+          "type": "string",
+          "required": true,
+          "help": "Interaction date (ISO-8601)."
+        },
+        "--direction": {
+          "type": "string",
+          "required": false,
+          "help": "Direction (incoming, outgoing).",
+          "choices": [
+            "incoming",
+            "outgoing"
+          ]
+        },
+        "--person-id": {
+          "type": "int",
+          "required": false,
+          "help": "Person id.",
+          "multiple": true
+        },
+        "--type": {
+          "type": "string",
+          "required": true,
+          "help": "Interaction type (required).",
+          "choices": [
+            "call",
+            "chat",
+            "chat-message",
+            "email",
+            "meeting"
+          ],
+          "aliases": [
+            "-t"
+          ]
+        }
+      },
+      "positionals": [],
+      "whenToUse": "Log a meeting, call, or email. Requires --type and --participants.",
+      "relatedCommands": [
+        "interaction ls",
+        "note create"
+      ]
+    },
+    {
+      "name": "interaction delete",
+      "description": "Delete an interaction.",
+      "category": "write",
+      "destructive": true,
+      "progressCapable": false,
+      "parameters": {
+        "--type": {
+          "type": "string",
+          "required": true,
+          "help": "Interaction type (required by API).",
+          "choices": [
+            "call",
+            "chat",
+            "chat-message",
+            "email",
+            "meeting"
+          ],
+          "aliases": [
+            "-t"
+          ]
+        },
+        "--yes": {
+          "type": "flag",
+          "required": false,
+          "help": "Skip confirmation prompt.",
+          "aliases": [
+            "-y"
+          ]
+        }
+      },
+      "positionals": [
+        {
+          "name": "INTERACTION_ID",
+          "type": "int",
+          "required": true
+        }
+      ],
+      "whenToUse": "Delete an interaction. Use with caution.",
+      "relatedCommands": [
+        "interaction get"
+      ]
+    },
+    {
+      "name": "interaction get",
+      "description": "Get an interaction by id.",
+      "category": "read",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {
+        "--type": {
+          "type": "string",
+          "required": true,
+          "help": "Interaction type (required by API).",
+          "choices": [
+            "call",
+            "chat",
+            "chat-message",
+            "email",
+            "meeting"
+          ],
+          "aliases": [
+            "-t"
+          ]
+        }
+      },
+      "positionals": [
+        {
+          "name": "INTERACTION_ID",
+          "type": "int",
+          "required": true
+        }
+      ],
+      "examples": [
+        "interaction get 123 --type meeting",
+        "interaction get 456 -t email"
+      ],
+      "whenToUse": "Get details of a specific interaction by ID.",
+      "relatedCommands": [
+        "interaction ls",
+        "interaction update"
+      ]
+    },
+    {
+      "name": "interaction ls",
+      "description": "List interactions with automatic date range handling.",
+      "category": "read",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {
+        "--after": {
+          "type": "string",
+          "required": false,
+          "help": "Start date (ISO-8601). Mutually exclusive with --days."
+        },
+        "--before": {
+          "type": "string",
+          "required": false,
+          "help": "End date (ISO-8601). Default: now."
+        },
+        "--company-id": {
+          "type": "int",
+          "required": false,
+          "help": "Filter by company id."
+        },
+        "--csv": {
+          "type": "flag",
+          "required": false,
+          "help": "Alias for --output csv."
+        },
+        "--csv-bom": {
+          "type": "flag",
+          "required": false,
+          "help": "Add UTF-8 BOM for Excel compatibility."
+        },
+        "--days": {
+          "type": "int",
+          "required": false,
+          "help": "Fetch last N days. Mutually exclusive with --after.",
+          "aliases": [
+            "-d"
+          ]
+        },
+        "--max-results": {
+          "type": "int",
+          "required": false,
+          "help": "Stop after N results total.",
+          "aliases": [
+            "--limit",
+            "-n"
+          ]
+        },
+        "--opportunity-id": {
+          "type": "int",
+          "required": false,
+          "help": "Filter by opportunity id."
+        },
+        "--page-size": {
+          "type": "int",
+          "required": false,
+          "help": "Page size (max 500).",
+          "aliases": [
+            "-s"
+          ]
+        },
+        "--person-id": {
+          "type": "int",
+          "required": false,
+          "help": "Filter by person id."
+        },
+        "--type": {
+          "type": "string",
+          "required": true,
+          "help": "Interaction type(s): call, chat-message, email, meeting, or 'all'. Repeatable.",
+          "choices": [
+            "call",
+            "chat",
+            "chat-message",
+            "email",
+            "meeting",
+            "all"
+          ],
+          "multiple": true,
+          "aliases": [
+            "-t"
+          ]
+        }
+      },
+      "positionals": [],
+      "whenToUse": "List interactions for an entity. Requires --type (repeatable, or 'all') and one entity selector (--person-id, --company-id, or --opportunity-id). Date range defaults to all-time; use --days or --after to limit. Auto-chunks ranges > 1 year.",
+      "requiredOneOf": [
+        [
+          "--person-id",
+          "--company-id",
+          "--opportunity-id"
+        ]
+      ],
+      "examples": [
+        "interaction ls --type all --company-id 456",
+        "interaction ls --type email --type meeting --person-id 123 --days 30",
+        "interaction ls --type meeting --person-id 123 --days 30",
+        "interaction ls --type call --person-id 789 --after 2024-01-01 --before 2024-06-30"
+      ],
+      "relatedCommands": [
+        "interaction get",
+        "interaction create",
+        "note ls"
+      ],
+      "mcpBehavior": {
+        "limitEnforced": true,
+        "defaultLimit": 1000,
+        "maxLimit": 10000
+      },
+      "limitConfig": {
+        "flag": "--max-results",
+        "flagAliases": [
+          "--max-results",
+          "--limit",
+          "-n"
+        ],
+        "default": 1000,
+        "max": 10000
+      }
+    },
+    {
+      "name": "interaction update",
+      "description": "Update an interaction.",
+      "category": "write",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {
+        "--content": {
+          "type": "string",
+          "required": false,
+          "help": "Interaction content."
+        },
+        "--date": {
+          "type": "string",
+          "required": false,
+          "help": "Interaction date (ISO-8601)."
+        },
+        "--direction": {
+          "type": "string",
+          "required": false,
+          "help": "Direction (incoming, outgoing).",
+          "choices": [
+            "incoming",
+            "outgoing"
+          ]
+        },
+        "--person-id": {
+          "type": "int",
+          "required": false,
+          "help": "Person id.",
+          "multiple": true
+        },
+        "--type": {
+          "type": "string",
+          "required": true,
+          "help": "Interaction type (required by API).",
+          "choices": [
+            "call",
+            "chat",
+            "chat-message",
+            "email",
+            "meeting"
+          ],
+          "aliases": [
+            "-t"
+          ]
+        }
+      },
+      "positionals": [
+        {
+          "name": "INTERACTION_ID",
+          "type": "int",
+          "required": true
+        }
+      ],
+      "whenToUse": "Update an existing interaction.",
+      "relatedCommands": [
+        "interaction get"
+      ]
+    },
+    {
+      "name": "list create",
+      "description": "Create a new list.",
+      "category": "write",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {
+        "--name": {
+          "type": "string",
+          "required": true,
+          "help": "List name."
+        },
+        "--owner-id": {
+          "type": "int",
+          "required": false,
+          "help": "Owner id."
+        },
+        "--public": {
+          "type": "flag",
+          "required": false,
+          "help": "Whether the list is public (default: private)."
+        },
+        "--type": {
+          "type": "string",
+          "required": true,
+          "help": "List type (person/company/opportunity)."
+        }
+      },
+      "positionals": [],
+      "examples": [
+        "list create --name \"Prospects\" --type company",
+        "list create --name \"Candidates\" --type person --public"
+      ],
+      "whenToUse": "Create a new list (person, company, or opportunity type).",
+      "relatedCommands": [
+        "list ls",
+        "list get"
+      ]
+    },
+    {
+      "name": "list export",
+      "description": "Export list entries to JSON or CSV.",
+      "category": "read",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {
+        "--all": {
+          "type": "flag",
+          "required": false,
+          "help": "Fetch all rows.",
+          "aliases": [
+            "-A"
+          ]
+        },
+        "--check-unreplied": {
+          "type": "flag",
+          "required": false,
+          "help": "Check for unreplied incoming messages (email/chat). Adds API call per entry."
+        },
+        "--csv": {
+          "type": "flag",
+          "required": false,
+          "help": "Alias for --output csv."
+        },
+        "--csv-bom": {
+          "type": "flag",
+          "required": false,
+          "help": "Add UTF-8 BOM for Excel (use with redirection: --csv --csv-bom > file.csv)."
+        },
+        "--csv-header": {
+          "type": "string",
+          "required": false,
+          "help": "Use field names or IDs for CSV headers.",
+          "choices": [
+            "names",
+            "ids"
+          ]
+        },
+        "--csv-mode": {
+          "type": "string",
+          "required": false,
+          "help": "CSV expansion format: flat (one row per association) or nested (JSON arrays).",
+          "choices": [
+            "flat",
+            "nested"
+          ]
+        },
+        "--cursor": {
+          "type": "string",
+          "required": false,
+          "help": "Resume from cursor (incompatible with --page-size)."
+        },
+        "--dry-run": {
+          "type": "flag",
+          "required": false,
+          "help": "Validate selectors and print export plan."
+        },
+        "--expand": {
+          "type": "string",
+          "required": false,
+          "help": "Expand associated entities or interaction data (repeatable). 'interactions' adds last/next meeting and email date summaries.",
+          "choices": [
+            "persons",
+            "companies",
+            "opportunities",
+            "interactions"
+          ],
+          "multiple": true
+        },
+        "--expand-all": {
+          "type": "flag",
+          "required": false,
+          "help": "Fetch all associations per entry (no limit)."
+        },
+        "--expand-field-type": {
+          "type": "string",
+          "required": false,
+          "help": "Include all fields of this type in expanded entities (repeatable).",
+          "choices": [
+            "global",
+            "enriched",
+            "relationship-intelligence"
+          ],
+          "multiple": true
+        },
+        "--expand-fields": {
+          "type": "string",
+          "required": false,
+          "help": "Include specific field by name or ID in expanded entities (repeatable).",
+          "multiple": true
+        },
+        "--expand-filter": {
+          "type": "string",
+          "required": false,
+          "help": "Filter expanded entities (e.g., 'field=value' or 'field!=value')."
+        },
+        "--expand-max-results": {
+          "type": "int",
+          "required": false,
+          "help": "Max associations per entry per type."
+        },
+        "--expand-on-error": {
+          "type": "string",
+          "required": false,
+          "help": "How to handle per-entry expansion errors.",
+          "choices": [
+            "raise",
+            "skip"
+          ]
+        },
+        "--expand-opportunities-list": {
+          "type": "string",
+          "required": false,
+          "help": "Scope --expand opportunities to a specific list (id or name)."
+        },
+        "--field": {
+          "type": "string",
+          "required": false,
+          "help": "Field name or id (repeatable).",
+          "multiple": true
+        },
+        "--filter": {
+          "type": "string",
+          "required": false,
+          "help": "Client-side filter (field op value). Quote multi-word: Status=\"Intro Meeting\"."
+        },
+        "--max-results": {
+          "type": "int",
+          "required": false,
+          "help": "Stop after N rows total.",
+          "aliases": [
+            "--limit",
+            "-n"
+          ]
+        },
+        "--page-size": {
+          "type": "int",
+          "required": false,
+          "help": "Page size (max 100).",
+          "aliases": [
+            "-s"
+          ]
+        },
+        "--saved-view": {
+          "type": "string",
+          "required": false,
+          "help": "Saved view id or name."
+        },
+        "--unreplied-lookback-days": {
+          "type": "int",
+          "required": false,
+          "help": "Days to look back for unreplied message detection."
+        },
+        "--unreplied-types": {
+          "type": "string",
+          "required": false,
+          "help": "Comma-separated interaction types to check: email, chat, all (shorthand for both)."
+        }
+      },
+      "positionals": [
+        {
+          "name": "LIST_SELECTOR",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "examples": [
+        "list export \"Pipeline\" --saved-view \"Active Deals\" --csv > deals.csv"
+      ],
+      "whenToUse": "ONLY for --saved-view (Affinity saved views). For ALL other list operations, use the 'query' tool instead - it supports filtering, includes (persons, companies, interactions), expands (interactionDates, unreplied), and aggregations.",
+      "relatedCommands": [
+        "query",
+        "list get",
+        "field ls"
+      ],
+      "mcpBehavior": {
+        "limitEnforced": true,
+        "allFlagBlocked": true,
+        "defaultLimit": 1000,
+        "maxLimit": 10000
+      },
+      "limitConfig": {
+        "flag": "--max-results",
+        "flagAliases": [
+          "--max-results",
+          "--limit",
+          "-n"
+        ],
+        "default": 1000,
+        "max": 10000,
+        "unboundedFlag": "--all",
+        "unboundedFlagAliases": [
+          "--all",
+          "-A"
+        ]
+      }
+    },
+    {
+      "name": "list get",
+      "description": "Get list details, fields, and saved views.",
+      "category": "read",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {},
+      "positionals": [
+        {
+          "name": "LIST_SELECTOR",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "examples": [
+        "list get 12345",
+        "list get \"Pipeline\""
+      ],
+      "whenToUse": "Get list details including type and field count.",
+      "relatedCommands": [
+        "list ls",
+        "field ls"
+      ]
+    },
+    {
+      "name": "list ls",
+      "description": "List all lists in the workspace.",
+      "category": "read",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {
+        "--all": {
+          "type": "flag",
+          "required": false,
+          "help": "Fetch all pages.",
+          "aliases": [
+            "-A"
+          ]
+        },
+        "--cursor": {
+          "type": "string",
+          "required": false,
+          "help": "Resume from cursor (incompatible with --page-size)."
+        },
+        "--max-results": {
+          "type": "int",
+          "required": false,
+          "help": "Stop after N items total.",
+          "aliases": [
+            "--limit",
+            "-n"
+          ]
+        },
+        "--page-size": {
+          "type": "int",
+          "required": false,
+          "help": "Page size (limit).",
+          "aliases": [
+            "-s"
+          ]
+        },
+        "--type": {
+          "type": "string",
+          "required": false,
+          "help": "Filter by list type."
+        }
+      },
+      "positionals": [],
+      "examples": [
+        "list ls",
+        "list ls --type person",
+        "list ls --type company --all"
+      ],
+      "whenToUse": "Find list IDs by name. Use before list export or field ls.",
+      "relatedCommands": [
+        "list get",
+        "field ls"
+      ],
+      "mcpBehavior": {
+        "limitEnforced": true,
+        "allFlagBlocked": true,
+        "defaultLimit": 1000,
+        "maxLimit": 10000
+      },
+      "limitConfig": {
+        "flag": "--max-results",
+        "flagAliases": [
+          "--max-results",
+          "--limit",
+          "-n"
+        ],
+        "default": 1000,
+        "max": 10000,
+        "unboundedFlag": "--all",
+        "unboundedFlagAliases": [
+          "--all",
+          "-A"
+        ]
+      }
+    },
+    {
+      "name": "note create",
+      "description": "Create a note attached to an entity.",
+      "category": "write",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {
+        "--company-id": {
+          "type": "int",
+          "required": false,
+          "help": "Associate company id.",
+          "multiple": true
+        },
+        "--content": {
+          "type": "string",
+          "required": true,
+          "help": "Note content."
+        },
+        "--created-at": {
+          "type": "string",
+          "required": false,
+          "help": "Creation timestamp (ISO-8601)."
+        },
+        "--creator-id": {
+          "type": "int",
+          "required": false,
+          "help": "Creator id override."
+        },
+        "--opportunity-id": {
+          "type": "int",
+          "required": false,
+          "help": "Associate opportunity id.",
+          "multiple": true
+        },
+        "--parent-id": {
+          "type": "int",
+          "required": false,
+          "help": "Parent note id (reply)."
+        },
+        "--person-id": {
+          "type": "int",
+          "required": false,
+          "help": "Associate person id.",
+          "multiple": true
+        },
+        "--type": {
+          "type": "string",
+          "required": false,
+          "help": "Note type (plain-text, html, ai-notetaker, email-derived).",
+          "choices": [
+            "ai-notetaker",
+            "email-derived",
+            "html",
+            "plain",
+            "plain-text"
+          ]
+        }
+      },
+      "positionals": [],
+      "examples": [
+        "note create --content \"Meeting notes\" --person-id 12345",
+        "note create --content \"<b>Summary</b>\" --type html --company-id 67890"
+      ],
+      "whenToUse": "Add a note to an entity. Simpler than interactions for quick notes.",
+      "relatedCommands": [
+        "note ls",
+        "interaction create"
+      ]
+    },
+    {
+      "name": "note delete",
+      "description": "Delete a note.",
+      "category": "write",
+      "destructive": true,
+      "progressCapable": false,
+      "parameters": {
+        "--yes": {
+          "type": "flag",
+          "required": false,
+          "help": "Skip confirmation prompt.",
+          "aliases": [
+            "-y"
+          ]
+        }
+      },
+      "positionals": [
+        {
+          "name": "NOTE_ID",
+          "type": "int",
+          "required": true
+        }
+      ],
+      "whenToUse": "Delete a note. Use with caution.",
+      "relatedCommands": [
+        "note get"
+      ]
+    },
+    {
+      "name": "note get",
+      "description": "Get a note by id.",
+      "category": "read",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {},
+      "positionals": [
+        {
+          "name": "NOTE_ID",
+          "type": "int",
+          "required": true
+        }
+      ],
+      "whenToUse": "Get details of a specific note by ID.",
+      "relatedCommands": [
+        "note ls",
+        "note update"
+      ]
+    },
+    {
+      "name": "note ls",
+      "description": "List notes.",
+      "category": "read",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {
+        "--all": {
+          "type": "flag",
+          "required": false,
+          "help": "Fetch all pages.",
+          "aliases": [
+            "-A"
+          ]
+        },
+        "--company-id": {
+          "type": "int",
+          "required": false,
+          "help": "Filter by company id."
+        },
+        "--creator-id": {
+          "type": "int",
+          "required": false,
+          "help": "Filter by creator id."
+        },
+        "--cursor": {
+          "type": "string",
+          "required": false,
+          "help": "Resume from cursor (incompatible with --page-size)."
+        },
+        "--max-results": {
+          "type": "int",
+          "required": false,
+          "help": "Stop after N results total.",
+          "aliases": [
+            "--limit",
+            "-n"
+          ]
+        },
+        "--opportunity-id": {
+          "type": "int",
+          "required": false,
+          "help": "Filter by opportunity id."
+        },
+        "--page-size": {
+          "type": "int",
+          "required": false,
+          "help": "Page size (max 500).",
+          "aliases": [
+            "-s"
+          ]
+        },
+        "--person-id": {
+          "type": "int",
+          "required": false,
+          "help": "Filter by person id."
+        }
+      },
+      "positionals": [],
+      "examples": [
+        "note ls --person-id 12345",
+        "note ls --company-id 67890 --all",
+        "note ls --creator-id 111 --max-results 50"
+      ],
+      "whenToUse": "List notes attached to an entity.",
+      "relatedCommands": [
+        "note get",
+        "note create"
+      ],
+      "mcpBehavior": {
+        "limitEnforced": true,
+        "allFlagBlocked": true,
+        "defaultLimit": 1000,
+        "maxLimit": 10000
+      },
+      "limitConfig": {
+        "flag": "--max-results",
+        "flagAliases": [
+          "--max-results",
+          "--limit",
+          "-n"
+        ],
+        "default": 1000,
+        "max": 10000,
+        "unboundedFlag": "--all",
+        "unboundedFlagAliases": [
+          "--all",
+          "-A"
+        ]
+      }
+    },
+    {
+      "name": "note update",
+      "description": "Update a note.",
+      "category": "write",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {
+        "--content": {
+          "type": "string",
+          "required": true,
+          "help": "Updated note content."
+        }
+      },
+      "positionals": [
+        {
+          "name": "NOTE_ID",
+          "type": "int",
+          "required": true
+        }
+      ],
+      "whenToUse": "Update an existing note.",
+      "relatedCommands": [
+        "note get"
+      ]
+    },
+    {
+      "name": "opportunity create",
+      "description": "Create a new opportunity.",
+      "category": "write",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {
+        "--company-id": {
+          "type": "int",
+          "required": false,
+          "help": "Associate a company id (repeatable).",
+          "multiple": true
+        },
+        "--list": {
+          "type": "string",
+          "required": true,
+          "help": "List id or exact list name."
+        },
+        "--name": {
+          "type": "string",
+          "required": true,
+          "help": "Opportunity name."
+        },
+        "--person-id": {
+          "type": "int",
+          "required": false,
+          "help": "Associate a person id (repeatable).",
+          "multiple": true
+        }
+      },
+      "positionals": [],
+      "examples": [
+        "opportunity create --name \"Series A\" --list \"Dealflow\"",
+        "opportunity create --name \"Series A\" --list 123 --person-id 1 --company-id 2"
+      ],
+      "whenToUse": "Create a new opportunity in a pipeline.",
+      "relatedCommands": [
+        "opportunity get",
+        "opportunity update"
+      ]
+    },
+    {
+      "name": "opportunity delete",
+      "description": "Delete an opportunity.",
+      "category": "write",
+      "destructive": true,
+      "progressCapable": false,
+      "parameters": {
+        "--yes": {
+          "type": "flag",
+          "required": false,
+          "help": "Skip confirmation prompt.",
+          "aliases": [
+            "-y"
+          ]
+        }
+      },
+      "positionals": [
+        {
+          "name": "OPPORTUNITY_ID",
+          "type": "int",
+          "required": true
+        }
+      ],
+      "whenToUse": "Delete an opportunity. Use with caution.",
+      "relatedCommands": [
+        "opportunity get"
+      ]
+    },
+    {
+      "name": "opportunity field",
+      "description": "Manage opportunity field values.",
+      "category": "write",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {
+        "--get": {
+          "type": "string",
+          "required": false,
+          "help": "Get specific field values (repeatable).",
+          "multiple": true
+        },
+        "--set": {
+          "type": "string",
+          "required": false,
+          "help": "Set field value (repeatable). Use two args: FIELD VALUE.",
+          "multiple": true,
+          "nargs": 2
+        },
+        "--set-json": {
+          "type": "string",
+          "required": false,
+          "help": "JSON object of field:value pairs to set."
+        },
+        "--unset": {
+          "type": "string",
+          "required": false,
+          "help": "Unset field (repeatable). Removes all values for the field.",
+          "multiple": true
+        }
+      },
+      "positionals": [
+        {
+          "name": "OPPORTUNITY_ID",
+          "type": "int",
+          "required": true
+        }
+      ],
+      "examples": [
+        "opportunity field 123 --set Status \"Active\"",
+        "opportunity field 123 --set Status \"Active\" --set Stage \"Negotiation\"",
+        "opportunity field 123 --unset Status",
+        "opportunity field 123 --set-json '{\"Status\": \"Active\", \"Stage\": \"Negotiation\"}'",
+        "opportunity field 123 --get Status --get Stage"
+      ],
+      "whenToUse": "Manage field values on an opportunity.",
+      "relatedCommands": [
+        "opportunity get",
+        "field ls"
+      ]
+    },
+    {
+      "name": "opportunity files ls",
+      "description": "List files attached to an opportunity.",
+      "category": "read",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {
+        "--all": {
+          "type": "flag",
+          "required": false,
+          "help": "Fetch all pages.",
+          "aliases": [
+            "-A"
+          ]
+        },
+        "--cursor": {
+          "type": "string",
+          "required": false,
+          "help": "Resume from pagination cursor (incompatible with --page-size)."
+        },
+        "--max-results": {
+          "type": "string",
+          "required": false,
+          "help": "Stop after N results (min 1).",
+          "aliases": [
+            "--limit",
+            "-n"
+          ]
+        },
+        "--page-size": {
+          "type": "string",
+          "required": false,
+          "help": "Page size (1-100).",
+          "aliases": [
+            "-s"
+          ]
+        }
+      },
+      "positionals": [
+        {
+          "name": "OPPORTUNITY",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "examples": [
+        "opportunity files ls 98765"
+      ],
+      "whenToUse": "List files attached to an opportunity. Use this first to get file IDs, then use 'opportunity files read' to read file content inline (works in Claude Desktop/Cowork), or 'get-file-url' for presigned URLs.",
+      "relatedCommands": [
+        "opportunity get",
+        "opportunity files read",
+        "opportunity files upload"
+      ],
+      "mcpNote": "After listing, use 'opportunity files read' with fileId to read content inline (recommended for Claude Desktop/Cowork), or 'get-file-url' for presigned URLs.",
+      "mcpBehavior": {
+        "limitEnforced": true,
+        "allFlagBlocked": true,
+        "defaultLimit": 1000,
+        "maxLimit": 10000
+      },
+      "limitConfig": {
+        "flag": "--max-results",
+        "flagAliases": [
+          "--max-results",
+          "--limit",
+          "-n"
+        ],
+        "default": 1000,
+        "max": 10000,
+        "unboundedFlag": "--all",
+        "unboundedFlagAliases": [
+          "--all",
+          "-A"
+        ]
+      }
+    },
+    {
+      "name": "opportunity files read",
+      "description": "Read file content with chunking support.",
+      "category": "read",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {
+        "--file-id": {
+          "type": "int",
+          "required": true,
+          "help": "File ID to read."
+        },
+        "--limit": {
+          "type": "string",
+          "required": false,
+          "help": "Max bytes to read (e.g., '1MB', '500KB', '1048576')."
+        },
+        "--offset": {
+          "type": "int",
+          "required": false,
+          "help": "Byte offset to start reading."
+        }
+      },
+      "positionals": [
+        {
+          "name": "OPPORTUNITY_ID",
+          "type": "int",
+          "required": true
+        }
+      ],
+      "examples": [
+        "opportunity files read 98765 --file-id 123456",
+        "opportunity files read 98765 --file-id 123456 --offset 0 --limit 1MB",
+        "opportunity files read 98765 --file-id 123456 --offset 1048576 --limit 500KB"
+      ],
+      "whenToUse": "Read file content inline with chunking support. Returns base64-encoded content. Use this when Claude Desktop/Cowork blocks presigned URLs (userfiles.affinity.co). For large files, use --offset and --limit to fetch in chunks.",
+      "relatedCommands": [
+        "opportunity files ls",
+        "opportunity get"
+      ],
+      "mcpNote": "Response includes hasMore and nextOffset for chunked downloads. LLMs with Python sandbox can reassemble chunks and process with tools like PyPDF2, pandas, PIL.",
+      "limitConfig": {
+        "flag": "--limit",
+        "flagAliases": [
+          "--limit"
+        ],
+        "default": 1000,
+        "max": 10000
+      }
+    },
+    {
+      "name": "opportunity files upload",
+      "description": "Upload files to an opportunity.",
+      "category": "write",
+      "destructive": false,
+      "progressCapable": true,
+      "parameters": {
+        "--file": {
+          "type": "string",
+          "required": true,
+          "help": "File path to upload (repeatable).",
+          "multiple": true
+        }
+      },
+      "positionals": [
+        {
+          "name": "OPPORTUNITY_ID",
+          "type": "int",
+          "required": true
+        }
+      ],
+      "examples": [
+        "opportunity files upload 123 --file doc.pdf"
+      ],
+      "whenToUse": "Upload files/documents to an opportunity.",
+      "relatedCommands": [
+        "opportunity get",
+        "opportunity files ls"
+      ]
+    },
+    {
+      "name": "opportunity get",
+      "description": "Get an opportunity by id or URL.",
+      "category": "read",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {
+        "--all": {
+          "type": "flag",
+          "required": false,
+          "help": "Fetch all expanded items (no limit)."
+        },
+        "--details": {
+          "type": "flag",
+          "required": false,
+          "help": "Fetch a fuller payload with associations and list entries."
+        },
+        "--expand": {
+          "type": "string",
+          "required": false,
+          "help": "Include related data (repeatable).",
+          "choices": [
+            "persons",
+            "companies"
+          ],
+          "multiple": true
+        },
+        "--max-results": {
+          "type": "int",
+          "required": false,
+          "help": "Maximum items per expansion (default: 100).",
+          "aliases": [
+            "--limit",
+            "-n"
+          ]
+        }
+      },
+      "positionals": [
+        {
+          "name": "OPPORTUNITY_SELECTOR",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "examples": [
+        "opportunity get 123",
+        "opportunity get https://mydomain.affinity.com/opportunities/123",
+        "opportunity get 123 --details",
+        "opportunity get 123 --expand persons",
+        "opportunity get 123 --expand persons --expand companies"
+      ],
+      "whenToUse": "Get opportunity details. Use --expand persons/companies for associations.",
+      "relatedCommands": [
+        "opportunity ls",
+        "opportunity field"
+      ],
+      "limitConfig": {
+        "flag": "--max-results",
+        "flagAliases": [
+          "--max-results",
+          "--limit",
+          "-n"
+        ],
+        "default": 1000,
+        "max": 10000,
+        "unboundedFlag": "--all",
+        "unboundedFlagAliases": [
+          "--all"
+        ]
+      }
+    },
+    {
+      "name": "opportunity ls",
+      "description": "List opportunities.",
+      "category": "read",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {
+        "--all": {
+          "type": "flag",
+          "required": false,
+          "help": "Fetch all pages.",
+          "aliases": [
+            "-A"
+          ]
+        },
+        "--csv": {
+          "type": "flag",
+          "required": false,
+          "help": "Alias for --output csv."
+        },
+        "--csv-bom": {
+          "type": "flag",
+          "required": false,
+          "help": "Add UTF-8 BOM for Excel (use with redirection: --csv --csv-bom > file.csv)."
+        },
+        "--cursor": {
+          "type": "string",
+          "required": false,
+          "help": "Resume from cursor (incompatible with --page-size)."
+        },
+        "--max-results": {
+          "type": "int",
+          "required": false,
+          "help": "Stop after N items total.",
+          "aliases": [
+            "--limit",
+            "-n"
+          ]
+        },
+        "--page-size": {
+          "type": "int",
+          "required": false,
+          "help": "Page size (limit).",
+          "aliases": [
+            "-s"
+          ]
+        },
+        "--query": {
+          "type": "string",
+          "required": false,
+          "help": "Fuzzy text search (simple matching).",
+          "aliases": [
+            "-q"
+          ]
+        }
+      },
+      "positionals": [],
+      "examples": [
+        "opportunity ls",
+        "opportunity ls --page-size 200",
+        "opportunity ls --query \"Series A\" --all",
+        "opportunity ls --cursor <cursor>",
+        "opportunity ls --all --csv > opportunities.csv",
+        "opportunity ls --all --output csv --csv-bom > opportunities.csv"
+      ],
+      "whenToUse": "List opportunities. Note: opportunities exist only within a specific list (pipeline).",
+      "relatedCommands": [
+        "opportunity get",
+        "list ls"
+      ],
+      "mcpBehavior": {
+        "limitEnforced": true,
+        "allFlagBlocked": true,
+        "defaultLimit": 1000,
+        "maxLimit": 10000
+      },
+      "limitConfig": {
+        "flag": "--max-results",
+        "flagAliases": [
+          "--max-results",
+          "--limit",
+          "-n"
+        ],
+        "default": 1000,
+        "max": 10000,
+        "unboundedFlag": "--all",
+        "unboundedFlagAliases": [
+          "--all",
+          "-A"
+        ]
+      }
+    },
+    {
+      "name": "opportunity update",
+      "description": "Update an opportunity (replaces association arrays when provided).",
+      "category": "write",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {
+        "--company-id": {
+          "type": "int",
+          "required": false,
+          "help": "Replace associated company ids (repeatable).",
+          "multiple": true
+        },
+        "--name": {
+          "type": "string",
+          "required": false,
+          "help": "Updated opportunity name."
+        },
+        "--person-id": {
+          "type": "int",
+          "required": false,
+          "help": "Replace associated person ids (repeatable).",
+          "multiple": true
+        }
+      },
+      "positionals": [
+        {
+          "name": "OPPORTUNITY_ID",
+          "type": "int",
+          "required": true
+        }
+      ],
+      "examples": [
+        "opportunity update 123 --name \"Series A (Closed)\"",
+        "opportunity update 123 --person-id 1 --person-id 2"
+      ],
+      "whenToUse": "Update an existing opportunity.",
+      "relatedCommands": [
+        "opportunity get"
+      ]
+    },
+    {
+      "name": "person create",
+      "description": "Create a person.",
+      "category": "write",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {
+        "--company-id": {
+          "type": "int",
+          "required": false,
+          "help": "Associated company id (repeatable).",
+          "multiple": true
+        },
+        "--email": {
+          "type": "string",
+          "required": false,
+          "help": "Email address (repeatable).",
+          "multiple": true
+        },
+        "--first-name": {
+          "type": "string",
+          "required": true,
+          "help": "Person's first name (required)."
+        },
+        "--last-name": {
+          "type": "string",
+          "required": true,
+          "help": "Person's last name (required)."
+        }
+      },
+      "positionals": [],
+      "examples": [
+        "person create --first-name \"Alice\" --last-name \"Smith\"",
+        "person create --first-name \"Bob\" --last-name \"Jones\" --email bob@example.com",
+        "person create --first-name \"Carol\" --last-name \"Lee\" --email a@x.com",
+        "person create --first-name \"Dan\" --last-name \"Park\" --company-id 12345"
+      ],
+      "whenToUse": "Create a new person in the CRM.",
+      "relatedCommands": [
+        "person get",
+        "person update"
+      ]
+    },
+    {
+      "name": "person delete",
+      "description": "Delete a person.",
+      "category": "write",
+      "destructive": true,
+      "progressCapable": false,
+      "parameters": {
+        "--yes": {
+          "type": "flag",
+          "required": false,
+          "help": "Skip confirmation prompt.",
+          "aliases": [
+            "-y"
+          ]
+        }
+      },
+      "positionals": [
+        {
+          "name": "PERSON_ID",
+          "type": "int",
+          "required": true
+        }
+      ],
+      "whenToUse": "Delete a person from the CRM. Use with caution.",
+      "relatedCommands": [
+        "person get"
+      ]
+    },
+    {
+      "name": "person field",
+      "description": "Manage person field values.",
+      "category": "write",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {
+        "--get": {
+          "type": "string",
+          "required": false,
+          "help": "Get specific field values (repeatable).",
+          "multiple": true
+        },
+        "--set": {
+          "type": "string",
+          "required": false,
+          "help": "Set field value (repeatable). Use two args: FIELD VALUE.",
+          "multiple": true,
+          "nargs": 2
+        },
+        "--set-json": {
+          "type": "string",
+          "required": false,
+          "help": "JSON object of field:value pairs to set."
+        },
+        "--unset": {
+          "type": "string",
+          "required": false,
+          "help": "Unset field (repeatable). Removes all values for the field.",
+          "multiple": true
+        }
+      },
+      "positionals": [
+        {
+          "name": "PERSON_ID",
+          "type": "int",
+          "required": true
+        }
+      ],
+      "examples": [
+        "person field 123 --set Phone \"+1-555-0123\"",
+        "person field 123 --set Phone \"+1...\" --set Title \"CEO\"",
+        "person field 123 --unset Phone",
+        "person field 123 --set-json '{\"Phone\": \"+1...\", \"Title\": \"CEO\"}'",
+        "person field 123 --get Phone --get Email"
+      ],
+      "whenToUse": "Manage global field values on a person.",
+      "relatedCommands": [
+        "person get",
+        "field ls"
+      ]
+    },
+    {
+      "name": "person files ls",
+      "description": "List files attached to a person.",
+      "category": "read",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {
+        "--all": {
+          "type": "flag",
+          "required": false,
+          "help": "Fetch all pages.",
+          "aliases": [
+            "-A"
+          ]
+        },
+        "--cursor": {
+          "type": "string",
+          "required": false,
+          "help": "Resume from pagination cursor (incompatible with --page-size)."
+        },
+        "--max-results": {
+          "type": "string",
+          "required": false,
+          "help": "Stop after N results (min 1).",
+          "aliases": [
+            "--limit",
+            "-n"
+          ]
+        },
+        "--page-size": {
+          "type": "string",
+          "required": false,
+          "help": "Page size (1-100).",
+          "aliases": [
+            "-s"
+          ]
+        }
+      },
+      "positionals": [
+        {
+          "name": "PERSON",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "examples": [
+        "person files ls 67890",
+        "person files ls \"email:john@example.com\" --max-results 10"
+      ],
+      "whenToUse": "List files attached to a person. Use this first to get file IDs, then use 'person files read' to read file content inline (works in Claude Desktop/Cowork), or 'get-file-url' for presigned URLs.",
+      "relatedCommands": [
+        "person get",
+        "person files read",
+        "person files upload"
+      ],
+      "mcpNote": "After listing, use 'person files read' with fileId to read content inline (recommended for Claude Desktop/Cowork), or 'get-file-url' for presigned URLs.",
+      "mcpBehavior": {
+        "limitEnforced": true,
+        "allFlagBlocked": true,
+        "defaultLimit": 1000,
+        "maxLimit": 10000
+      },
+      "limitConfig": {
+        "flag": "--max-results",
+        "flagAliases": [
+          "--max-results",
+          "--limit",
+          "-n"
+        ],
+        "default": 1000,
+        "max": 10000,
+        "unboundedFlag": "--all",
+        "unboundedFlagAliases": [
+          "--all",
+          "-A"
+        ]
+      }
+    },
+    {
+      "name": "person files read",
+      "description": "Read file content with chunking support.",
+      "category": "read",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {
+        "--file-id": {
+          "type": "int",
+          "required": true,
+          "help": "File ID to read."
+        },
+        "--limit": {
+          "type": "string",
+          "required": false,
+          "help": "Max bytes to read (e.g., '1MB', '500KB', '1048576')."
+        },
+        "--offset": {
+          "type": "int",
+          "required": false,
+          "help": "Byte offset to start reading."
+        }
+      },
+      "positionals": [
+        {
+          "name": "PERSON_ID",
+          "type": "int",
+          "required": true
+        }
+      ],
+      "examples": [
+        "person files read 67890 --file-id 123456",
+        "person files read 67890 --file-id 123456 --offset 0 --limit 1MB",
+        "person files read 67890 --file-id 123456 --offset 1048576 --limit 500KB"
+      ],
+      "whenToUse": "Read file content inline with chunking support. Returns base64-encoded content. Use this when Claude Desktop/Cowork blocks presigned URLs (userfiles.affinity.co). For large files, use --offset and --limit to fetch in chunks.",
+      "relatedCommands": [
+        "person files ls",
+        "person get"
+      ],
+      "mcpNote": "Response includes hasMore and nextOffset for chunked downloads. LLMs with Python sandbox can reassemble chunks and process with tools like PyPDF2, pandas, PIL.",
+      "limitConfig": {
+        "flag": "--limit",
+        "flagAliases": [
+          "--limit"
+        ],
+        "default": 1000,
+        "max": 10000
+      }
+    },
+    {
+      "name": "person files upload",
+      "description": "Upload files to a person.",
+      "category": "write",
+      "destructive": false,
+      "progressCapable": true,
+      "parameters": {
+        "--file": {
+          "type": "string",
+          "required": true,
+          "help": "File path to upload (repeatable).",
+          "multiple": true
+        }
+      },
+      "positionals": [
+        {
+          "name": "PERSON_ID",
+          "type": "int",
+          "required": true
+        }
+      ],
+      "examples": [
+        "person files upload 123 --file doc.pdf"
+      ],
+      "whenToUse": "Upload files/documents to a person.",
+      "relatedCommands": [
+        "person get",
+        "person files ls"
+      ]
+    },
+    {
+      "name": "person get",
+      "description": "Get a person by id, URL, email, or name.",
+      "category": "read",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {
+        "--all": {
+          "type": "flag",
+          "required": false,
+          "help": "Fetch all pages for expansions (still capped by --max-results if set)."
+        },
+        "--all-fields": {
+          "type": "flag",
+          "required": false,
+          "help": "Include all supported (non-list-specific) field data."
+        },
+        "--expand": {
+          "type": "string",
+          "required": false,
+          "help": "Include related data (repeatable).",
+          "choices": [
+            "lists",
+            "list-entries"
+          ],
+          "multiple": true
+        },
+        "--field": {
+          "type": "string",
+          "required": false,
+          "help": "Field id or exact field name (repeatable).",
+          "multiple": true,
+          "aliases": [
+            "-f"
+          ]
+        },
+        "--field-type": {
+          "type": "string",
+          "required": false,
+          "help": "Include all fields of this type (repeatable).",
+          "choices": [
+            "global",
+            "enriched",
+            "relationship-intelligence"
+          ],
+          "multiple": true,
+          "aliases": [
+            "-t"
+          ]
+        },
+        "--list": {
+          "type": "string",
+          "required": false,
+          "help": "Filter list-entries expansion to a list id or exact list name (implies --expand list-entries)."
+        },
+        "--list-entry-field": {
+          "type": "string",
+          "required": false,
+          "help": "Project a list-entry field into its own column (repeatable; implies --expand list-entries).",
+          "multiple": true
+        },
+        "--list-entry-fields-scope": {
+          "type": "string",
+          "required": false,
+          "help": "Control which fields appear in list entry tables (human output only).",
+          "choices": [
+            "list-only",
+            "all"
+          ]
+        },
+        "--max-results": {
+          "type": "int",
+          "required": false,
+          "help": "Maximum items to fetch per expansion section (applies to --expand).",
+          "aliases": [
+            "--limit",
+            "-n"
+          ]
+        },
+        "--no-fields": {
+          "type": "flag",
+          "required": false,
+          "help": "Do not request field data."
+        },
+        "--show-list-entry-fields": {
+          "type": "flag",
+          "required": false,
+          "help": "Render per-list-entry Fields tables in human output (implies --expand list-entries; requires --max-results <= 3)."
+        },
+        "--with-interaction-dates": {
+          "type": "flag",
+          "required": false,
+          "help": "Include interaction date summaries (last/next meeting, email dates)."
+        },
+        "--with-interaction-persons": {
+          "type": "flag",
+          "required": false,
+          "help": "Include person IDs for each interaction (requires --with-interaction-dates)."
+        }
+      },
+      "positionals": [
+        {
+          "name": "PERSON_SELECTOR",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "examples": [
+        "person get 12345",
+        "person get email:john@example.com",
+        "person get 12345 --expand list-entries",
+        "person get 12345 --with-interaction-dates"
+      ],
+      "whenToUse": "Get full details for a person. Selector formats: numeric ID, Affinity URL, or 'email:user@example.com'. Use --expand list-entries to check which lists the person is on (efficient single-entity lookup). Use --with-interaction-dates for last/next meeting dates and email activity.",
+      "relatedCommands": [
+        "person ls",
+        "person field"
+      ],
+      "limitConfig": {
+        "flag": "--max-results",
+        "flagAliases": [
+          "--max-results",
+          "--limit",
+          "-n"
+        ],
+        "default": 1000,
+        "max": 10000,
+        "unboundedFlag": "--all",
+        "unboundedFlagAliases": [
+          "--all"
+        ]
+      }
+    },
+    {
+      "name": "person ls",
+      "description": "List persons.",
+      "category": "read",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {
+        "--all": {
+          "type": "flag",
+          "required": false,
+          "help": "Fetch all pages.",
+          "aliases": [
+            "-A"
+          ]
+        },
+        "--csv": {
+          "type": "flag",
+          "required": false,
+          "help": "Alias for --output csv."
+        },
+        "--csv-bom": {
+          "type": "flag",
+          "required": false,
+          "help": "Add UTF-8 BOM for Excel (use with redirection: --csv --csv-bom > file.csv)."
+        },
+        "--cursor": {
+          "type": "string",
+          "required": false,
+          "help": "Resume from cursor (incompatible with --page-size)."
+        },
+        "--field": {
+          "type": "string",
+          "required": false,
+          "help": "Field ID or name to include (repeatable).",
+          "multiple": true
+        },
+        "--field-type": {
+          "type": "string",
+          "required": false,
+          "help": "Field type to include (repeatable). Values: global, enriched, relationship-intelligence.",
+          "multiple": true
+        },
+        "--filter": {
+          "type": "string",
+          "required": false,
+          "help": "Filter: 'field op value'. Ops: = != =~ =^ =$ > < >= <=. E.g., 'Email =~ \"@acme\"'."
+        },
+        "--max-results": {
+          "type": "int",
+          "required": false,
+          "help": "Stop after N items total.",
+          "aliases": [
+            "--limit",
+            "-n"
+          ]
+        },
+        "--page-size": {
+          "type": "int",
+          "required": false,
+          "help": "Page size (limit).",
+          "aliases": [
+            "-s"
+          ]
+        },
+        "--query": {
+          "type": "string",
+          "required": false,
+          "help": "Fuzzy text search (simple matching). Use --filter for structured queries.",
+          "aliases": [
+            "-q"
+          ]
+        }
+      },
+      "positionals": [],
+      "examples": [
+        "person ls --query 'John Smith'",
+        "person ls --query 'john@example.com'"
+      ],
+      "whenToUse": "Search persons by name/email. ALWAYS use --query for text search (simpler, more reliable). Avoid --filter with complex expressions containing quotes.",
+      "relatedCommands": [
+        "person get",
+        "person field"
+      ],
+      "mcpBehavior": {
+        "limitEnforced": true,
+        "allFlagBlocked": true,
+        "defaultLimit": 1000,
+        "maxLimit": 10000
+      },
+      "limitConfig": {
+        "flag": "--max-results",
+        "flagAliases": [
+          "--max-results",
+          "--limit",
+          "-n"
+        ],
+        "default": 1000,
+        "max": 10000,
+        "unboundedFlag": "--all",
+        "unboundedFlagAliases": [
+          "--all",
+          "-A"
+        ]
+      }
+    },
+    {
+      "name": "person merge",
+      "description": "Merge a duplicate person into a primary (beta).",
+      "category": "write",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {},
+      "positionals": [
+        {
+          "name": "PRIMARY_ID",
+          "type": "int",
+          "required": true
+        },
+        {
+          "name": "DUPLICATE_ID",
+          "type": "int",
+          "required": true
+        }
+      ],
+      "whenToUse": "Merge a duplicate person into a primary person (beta). Combines data from both records. Returns a taskUrl - use 'task wait' to poll for completion.",
+      "examples": [
+        "person merge 123 456"
+      ],
+      "relatedCommands": [
+        "person get",
+        "person ls",
+        "task wait"
+      ]
+    },
+    {
+      "name": "person update",
+      "description": "Update a person.",
+      "category": "write",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {
+        "--company-id": {
+          "type": "int",
+          "required": false,
+          "help": "Replace associated company ids (repeatable).",
+          "multiple": true
+        },
+        "--email": {
+          "type": "string",
+          "required": false,
+          "help": "Replace emails (repeatable).",
+          "multiple": true
+        },
+        "--first-name": {
+          "type": "string",
+          "required": false,
+          "help": "Updated first name."
+        },
+        "--last-name": {
+          "type": "string",
+          "required": false,
+          "help": "Updated last name."
+        }
+      },
+      "positionals": [
+        {
+          "name": "PERSON_ID",
+          "type": "int",
+          "required": true
+        }
+      ],
+      "whenToUse": "Update an existing person's details.",
+      "relatedCommands": [
+        "person get"
+      ]
+    },
+    {
+      "name": "query",
+      "description": "Execute a structured query against Affinity data.",
+      "category": "read",
+      "destructive": false,
+      "progressCapable": true,
+      "parameters": {
+        "--confirm": {
+          "type": "flag",
+          "required": false,
+          "help": "Require confirmation before expensive operations."
+        },
+        "--csv": {
+          "type": "flag",
+          "required": false,
+          "help": "Alias for --output csv."
+        },
+        "--csv-bom": {
+          "type": "flag",
+          "required": false,
+          "help": "Add UTF-8 BOM for Excel (use with redirection: --csv --csv-bom > file.csv)."
+        },
+        "--cursor": {
+          "type": "string",
+          "required": false,
+          "help": "Resume from cursor (from previous truncated response)."
+        },
+        "--dry-run": {
+          "type": "flag",
+          "required": false,
+          "help": "Show execution plan without running."
+        },
+        "--dry-run-verbose": {
+          "type": "flag",
+          "required": false,
+          "help": "Show detailed plan with API call breakdown."
+        },
+        "--file": {
+          "type": "string",
+          "required": false,
+          "help": "Read query from JSON file.",
+          "aliases": [
+            "-f"
+          ]
+        },
+        "--include-meta": {
+          "type": "flag",
+          "required": false,
+          "help": "Include execution metadata in output."
+        },
+        "--include-style": {
+          "type": "string",
+          "required": false,
+          "help": "How to display included data: inline (default), separate tables, or raw IDs.",
+          "choices": [
+            "inline",
+            "separate",
+            "ids-only"
+          ]
+        },
+        "--max-output-bytes": {
+          "type": "int",
+          "required": false,
+          "help": "Truncate output to max bytes (for MCP use). Exits with code 100 if truncated."
+        },
+        "--max-records": {
+          "type": "int",
+          "required": false,
+          "help": "Safety limit on total records fetched."
+        },
+        "--query": {
+          "type": "string",
+          "required": false,
+          "help": "Inline JSON query string."
+        },
+        "--query-version": {
+          "type": "string",
+          "required": false,
+          "help": "Override $version in query (e.g., '1.0')."
+        },
+        "--quiet": {
+          "type": "flag",
+          "required": false,
+          "help": "Suppress progress output.",
+          "aliases": [
+            "-q"
+          ]
+        },
+        "--timeout": {
+          "type": "string",
+          "required": false,
+          "help": "Overall timeout in seconds."
+        },
+        "--verbose": {
+          "type": "flag",
+          "required": false,
+          "help": "Show detailed progress.",
+          "aliases": [
+            "-v"
+          ]
+        }
+      },
+      "positionals": [],
+      "whenToUse": "For complex data queries. PREFERRED over list export for all list operations except --saved-view. Always use --dry-run first to preview API call count. Supports cursor-based pagination for truncated responses - pass nextCursor value to resume.",
+      "syntax": {
+        "structure": "{\"from\": \"<entity>\", \"where\": {...}, \"include\": [...], \"expand\": [...], \"select\": [...], \"orderBy\": [...], \"groupBy\": \"<field>\", \"aggregate\": {...}, \"limit\": N}",
+        "entities": [
+          "persons",
+          "companies",
+          "opportunities",
+          "listEntries",
+          "interactions",
+          "notes"
+        ],
+        "operators": {
+          "comparison": [
+            "eq",
+            "neq",
+            "gt",
+            "gte",
+            "lt",
+            "lte"
+          ],
+          "string": [
+            "contains",
+            "starts_with",
+            "ends_with"
+          ],
+          "collection": [
+            "in",
+            "between",
+            "has_any",
+            "has_all",
+            "contains_any",
+            "contains_all"
+          ],
+          "null": [
+            "is_null",
+            "is_not_null",
+            "is_empty"
+          ]
+        },
+        "compound": [
+          "and",
+          "or",
+          "not"
+        ],
+        "quantifiers": [
+          "all",
+          "none",
+          "exists",
+          "_count (e.g. companies._count)"
+        ],
+        "relativeDates": [
+          "-30d",
+          "+7d",
+          "today",
+          "now",
+          "yesterday",
+          "tomorrow"
+        ]
+      },
+      "critical": {
+        "listEntriesRequiresFilter": "listEntries MUST have where clause with listId or listName - e.g. {\"path\": \"listName\", \"op\": \"eq\", \"value\": \"Pipeline\"}",
+        "includeVsExpand": "include fetches related entities (separate section), expand adds computed data to each record",
+        "quantifiersNeedMaxRecords": "all/none/exists/_count on persons/companies/opportunities cause N+1 calls - always add maxRecords",
+        "multiSelectFields": "Use has_any/has_all for multi-select dropdown fields, not eq/in"
+      },
+      "include": {
+        "persons": [
+          "companies",
+          "opportunities",
+          "interactions",
+          "notes",
+          "listEntries"
+        ],
+        "companies": [
+          "persons",
+          "opportunities",
+          "interactions",
+          "notes",
+          "listEntries"
+        ],
+        "listEntries": [
+          "entity",
+          "persons",
+          "companies",
+          "opportunities",
+          "interactions"
+        ],
+        "withParams": "{\"interactions\": {\"limit\": 50, \"days\": 180}}"
+      },
+      "expand": {
+        "interactionDates": "Last/next meeting dates, email dates, team members (persons, companies, listEntries)",
+        "unreplied": "Detect unreplied incoming messages (email/chat) with date, daysSince, type, subject"
+      },
+      "fieldPaths": {
+        "customFields": "fields.<FieldName> for list entry custom fields",
+        "wildcard": "fields.* selects all custom fields",
+        "array": "emails[0] for array access"
+      },
+      "outputFormats": {
+        "toon": "Default, token-efficient (~40% fewer tokens)",
+        "markdown": "Best for LLM analysis - tables are easy to comprehend",
+        "json": "Full structure for programmatic use",
+        "csv": "For spreadsheets"
+      },
+      "truncationResumption": {
+        "description": "When truncated=true, use the nextCursor value to resume fetching the remaining data",
+        "usage": "Pass the nextCursor value as the cursor parameter with the IDENTICAL query",
+        "important": "NEVER fabricate a cursor - only use the exact nextCursor value from the response. Query and format MUST match exactly",
+        "allFormatsSupported": "Cursor pagination works with all output formats (toon, markdown, json, jsonl, csv)",
+        "modes": {
+          "streaming": "Simple queries without orderBy/aggregate",
+          "full-fetch": "Complex queries with orderBy/aggregate - results are cached for efficient resumption"
+        }
+      },
+      "examples": [
+        "query --query '{\"from\": \"persons\", \"limit\": 10}' --dry-run",
+        "query --query '{\"from\": \"persons\", \"where\": {\"path\": \"email\", \"op\": \"contains\", \"value\": \"@acme.com\"}, \"include\": [\"companies\"], \"limit\": 50}'",
+        "query --query '{\"from\": \"listEntries\", \"where\": {\"path\": \"listName\", \"op\": \"eq\", \"value\": \"Dealflow\"}, \"select\": [\"entityName\", \"fields.*\"], \"limit\": 100}'",
+        "query --query '{\"from\": \"listEntries\", \"where\": {\"path\": \"listName\", \"op\": \"eq\", \"value\": \"Dealflow\"}, \"expand\": [\"interactionDates\", \"unreplied\"], \"limit\": 50}'",
+        "query --query '{\"from\": \"listEntries\", \"where\": {\"path\": \"listName\", \"op\": \"eq\", \"value\": \"Dealflow\"}, \"include\": [{\"interactions\": {\"days\": 90, \"limit\": 20}}], \"limit\": 50}'",
+        "query --query '{\"from\": \"opportunities\", \"groupBy\": \"fields.Status\", \"aggregate\": {\"count\": {\"count\": true}, \"totalValue\": {\"sum\": \"fields.Deal Value\"}}}'",
+        "query --query '{\"from\": \"persons\", \"where\": {\"and\": [{\"path\": \"email\", \"op\": \"is_not_null\"}, {\"path\": \"companies._count\", \"op\": \"gte\", \"value\": 1}]}, \"include\": [\"companies\"], \"limit\": 100}' --dry-run",
+        "query --query '{\"from\": \"companies\", \"where\": {\"path\": \"createdAt\", \"op\": \"gte\", \"value\": \"-30d\"}, \"limit\": 50}'",
+        "query --query '{\"from\": \"listEntries\", \"where\": {\"and\": [{\"path\": \"listName\", \"op\": \"eq\", \"value\": \"Pipeline\"}, {\"path\": \"fields.Team Member\", \"op\": \"has_any\", \"value\": [\"Alice\", \"Bob\"]}]}, \"limit\": 100}'"
+      ],
+      "relatedCommands": [
+        "person ls",
+        "company ls",
+        "list export"
+      ]
+    },
+    {
+      "name": "relationship-strength ls",
+      "description": "List relationship strengths.",
+      "category": "read",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {
+        "--external-id": {
+          "type": "int",
+          "required": true,
+          "help": "External person id."
+        },
+        "--internal-id": {
+          "type": "int",
+          "required": false,
+          "help": "Internal user id."
+        }
+      },
+      "positionals": [],
+      "whenToUse": "List relationship strengths for a person or external ID. Shows connection quality and team members who know them.",
+      "relatedCommands": [
+        "person get"
+      ]
+    },
+    {
+      "name": "reminder create",
+      "description": "Create a reminder.",
+      "category": "write",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {
+        "--company-id": {
+          "type": "int",
+          "required": false,
+          "help": "Associate company id."
+        },
+        "--content": {
+          "type": "string",
+          "required": false,
+          "help": "Reminder content."
+        },
+        "--due-date": {
+          "type": "string",
+          "required": false,
+          "help": "Due date: ISO-8601 (2026-01-23), relative (+7d, +2w), or keyword (today, tomorrow)."
+        },
+        "--opportunity-id": {
+          "type": "int",
+          "required": false,
+          "help": "Associate opportunity id."
+        },
+        "--owner-id": {
+          "type": "int",
+          "required": true,
+          "help": "Owner id (required)."
+        },
+        "--person-id": {
+          "type": "int",
+          "required": false,
+          "help": "Associate person id."
+        },
+        "--reminder-days": {
+          "type": "int",
+          "required": false,
+          "help": "Days before due date to remind."
+        },
+        "--reset-type": {
+          "type": "string",
+          "required": false,
+          "help": "Reset type for recurring reminders.",
+          "choices": [
+            "email",
+            "interaction",
+            "meeting"
+          ]
+        },
+        "--type": {
+          "type": "string",
+          "required": true,
+          "help": "Reminder type (one-time, recurring).",
+          "choices": [
+            "one-time",
+            "recurring"
+          ]
+        }
+      },
+      "positionals": [],
+      "examples": [
+        "reminder create --type one-time --due-date +7d --owner-id 123 --person-id 456",
+        "reminder create --type one-time --due-date tomorrow --owner-id 123 --person-id 456"
+      ],
+      "whenToUse": "Create a reminder for follow-up on an entity.",
+      "relatedCommands": [
+        "reminder ls",
+        "reminder update"
+      ]
+    },
+    {
+      "name": "reminder delete",
+      "description": "Delete a reminder.",
+      "category": "write",
+      "destructive": true,
+      "progressCapable": false,
+      "parameters": {
+        "--yes": {
+          "type": "flag",
+          "required": false,
+          "help": "Skip confirmation prompt.",
+          "aliases": [
+            "-y"
+          ]
+        }
+      },
+      "positionals": [
+        {
+          "name": "REMINDER_ID",
+          "type": "int",
+          "required": true
+        }
+      ],
+      "whenToUse": "Delete a reminder.",
+      "relatedCommands": [
+        "reminder get"
+      ]
+    },
+    {
+      "name": "reminder get",
+      "description": "Get a reminder by id.",
+      "category": "read",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {},
+      "positionals": [
+        {
+          "name": "REMINDER_ID",
+          "type": "int",
+          "required": true
+        }
+      ],
+      "whenToUse": "Get details of a specific reminder by ID.",
+      "relatedCommands": [
+        "reminder ls",
+        "reminder update"
+      ]
+    },
+    {
+      "name": "reminder ls",
+      "description": "List reminders.",
+      "category": "read",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {
+        "--all": {
+          "type": "flag",
+          "required": false,
+          "help": "Fetch all pages.",
+          "aliases": [
+            "-A"
+          ]
+        },
+        "--company-id": {
+          "type": "int",
+          "required": false,
+          "help": "Filter by company id."
+        },
+        "--completer-id": {
+          "type": "int",
+          "required": false,
+          "help": "Filter by completer id."
+        },
+        "--creator-id": {
+          "type": "int",
+          "required": false,
+          "help": "Filter by creator id."
+        },
+        "--cursor": {
+          "type": "string",
+          "required": false,
+          "help": "Resume from cursor (incompatible with --page-size)."
+        },
+        "--due-after": {
+          "type": "string",
+          "required": false,
+          "help": "Filter reminders due after this date (ISO-8601, relative, or keyword)."
+        },
+        "--due-before": {
+          "type": "string",
+          "required": false,
+          "help": "Filter reminders due before this date (ISO-8601, relative, or keyword)."
+        },
+        "--max-results": {
+          "type": "int",
+          "required": false,
+          "help": "Stop after N results total.",
+          "aliases": [
+            "--limit",
+            "-n"
+          ]
+        },
+        "--opportunity-id": {
+          "type": "int",
+          "required": false,
+          "help": "Filter by opportunity id."
+        },
+        "--owner-id": {
+          "type": "int",
+          "required": false,
+          "help": "Filter by owner id."
+        },
+        "--page-size": {
+          "type": "int",
+          "required": false,
+          "help": "Page size (max 500).",
+          "aliases": [
+            "-s"
+          ]
+        },
+        "--person-id": {
+          "type": "int",
+          "required": false,
+          "help": "Filter by person id."
+        },
+        "--reset-type": {
+          "type": "string",
+          "required": false,
+          "help": "Reset type for recurring reminders.",
+          "choices": [
+            "email",
+            "interaction",
+            "meeting"
+          ]
+        },
+        "--status": {
+          "type": "string",
+          "required": false,
+          "help": "Reminder status (active, completed, overdue).",
+          "choices": [
+            "active",
+            "completed",
+            "overdue"
+          ]
+        },
+        "--type": {
+          "type": "string",
+          "required": false,
+          "help": "Reminder type (one-time, recurring).",
+          "choices": [
+            "one-time",
+            "recurring"
+          ]
+        }
+      },
+      "positionals": [],
+      "examples": [
+        "reminder ls --person-id 123",
+        "reminder ls --status active --due-after today",
+        "reminder ls --due-before +7d",
+        "reminder ls --owner-id 456 --type recurring"
+      ],
+      "whenToUse": "List reminders. Filter by entity (--person-id, --company-id, --opportunity-id), user (--owner-id, --creator-id), type, status, or due date range (--due-after/--due-before).",
+      "relatedCommands": [
+        "reminder get",
+        "reminder create"
+      ],
+      "mcpBehavior": {
+        "limitEnforced": true,
+        "allFlagBlocked": true,
+        "defaultLimit": 1000,
+        "maxLimit": 10000
+      },
+      "limitConfig": {
+        "flag": "--max-results",
+        "flagAliases": [
+          "--max-results",
+          "--limit",
+          "-n"
+        ],
+        "default": 1000,
+        "max": 10000,
+        "unboundedFlag": "--all",
+        "unboundedFlagAliases": [
+          "--all",
+          "-A"
+        ]
+      }
+    },
+    {
+      "name": "reminder update",
+      "description": "Update a reminder.",
+      "category": "write",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {
+        "--completed": {
+          "type": "flag",
+          "required": false,
+          "help": "Set completion status."
+        },
+        "--content": {
+          "type": "string",
+          "required": false,
+          "help": "Reminder content."
+        },
+        "--due-date": {
+          "type": "string",
+          "required": false,
+          "help": "Due date: ISO-8601 (2026-01-23), relative (+7d, +2w), or keyword (today, tomorrow)."
+        },
+        "--owner-id": {
+          "type": "int",
+          "required": false,
+          "help": "Owner id."
+        },
+        "--reminder-days": {
+          "type": "int",
+          "required": false,
+          "help": "Days before due date to remind."
+        },
+        "--reset-type": {
+          "type": "string",
+          "required": false,
+          "help": "Reset type for recurring reminders.",
+          "choices": [
+            "email",
+            "interaction",
+            "meeting"
+          ]
+        },
+        "--type": {
+          "type": "string",
+          "required": false,
+          "help": "Reminder type (one-time, recurring).",
+          "choices": [
+            "one-time",
+            "recurring"
+          ]
+        }
+      },
+      "positionals": [
+        {
+          "name": "REMINDER_ID",
+          "type": "int",
+          "required": true
+        }
+      ],
+      "whenToUse": "Update an existing reminder.",
+      "relatedCommands": [
+        "reminder get"
+      ]
+    },
+    {
+      "name": "resolve-url",
+      "description": "Resolve an Affinity UI URL to entity type and IDs.",
+      "category": "read",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {},
+      "positionals": [
+        {
+          "name": "URL",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "whenToUse": "Parse an Affinity UI URL to extract entity type and IDs. Useful when user pastes an Affinity link.",
+      "examples": [
+        "resolve-url 'https://app.affinity.co/persons/123'"
+      ],
+      "relatedCommands": [
+        "person get",
+        "company get",
+        "opportunity get",
+        "list get",
+        "entry get"
+      ]
+    },
+    {
+      "name": "task get",
+      "description": "Get current status of an async task.",
+      "category": "read",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {},
+      "positionals": [
+        {
+          "name": "TASK_URL",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "whenToUse": "Get current status of an async task (pending/in_progress/success/failed). Operations like 'company merge' and 'person merge' return taskUrls that complete in the background.",
+      "examples": [
+        "task get 'https://api.affinity.co/v2/tasks/abc123'"
+      ],
+      "relatedCommands": [
+        "task wait",
+        "company merge",
+        "person merge"
+      ]
+    },
+    {
+      "name": "task wait",
+      "description": "Wait for an async task to complete.",
+      "category": "read",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {
+        "--max-poll-interval": {
+          "type": "string",
+          "required": false,
+          "help": "Maximum polling interval in seconds."
+        },
+        "--poll-interval": {
+          "type": "string",
+          "required": false,
+          "help": "Initial polling interval in seconds."
+        },
+        "--timeout": {
+          "type": "string",
+          "required": false,
+          "help": "Maximum seconds to wait for task completion."
+        }
+      },
+      "positionals": [
+        {
+          "name": "TASK_URL",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "whenToUse": "Wait for an async task to complete. Polls with exponential backoff until success/failure. Use after 'company merge' or 'person merge'.",
+      "examples": [
+        "task wait 'https://api.affinity.co/v2/tasks/abc123'",
+        "task wait 'https://api.affinity.co/v2/tasks/abc123' --timeout 60"
+      ],
+      "relatedCommands": [
+        "task get",
+        "company merge",
+        "person merge"
+      ]
+    },
+    {
+      "name": "whoami",
+      "description": "Show current authenticated user information.",
+      "category": "read",
+      "destructive": false,
+      "progressCapable": false,
+      "parameters": {},
+      "positionals": [],
+      "whenToUse": "Show current authenticated user and tenant information.",
+      "relatedCommands": [
+        "config check-key"
+      ]
+    }
+  ],
+  "total": 65
+}

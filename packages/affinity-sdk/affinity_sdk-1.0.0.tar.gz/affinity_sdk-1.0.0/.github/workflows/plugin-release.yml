@@ -1,0 +1,163 @@
+name: Release MCP Plugin
+
+on:
+  push:
+    tags: ["mcp-v*.*.*"]  # Renamed from plugin-v*
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (without prefix, for API trigger)"
+        required: false
+        type: string
+      triggered_by:
+        description: "What triggered this release"
+        required: false
+        type: string
+        default: "manual"
+      tag:
+        description: 'Tag to release manually (e.g., mcp-v1.0.0, ignored if version set)'
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Determine version and tag
+        id: version
+        run: |
+          set -euo pipefail
+          if [[ -n "${{ inputs.version }}" ]]; then
+            # API-triggered release (from release-detect)
+            # Note: Version validation happens post-checkout in "Validate version matches VERSION file" step
+            echo "version=${{ inputs.version }}" >> $GITHUB_OUTPUT
+            echo "tag_name=mcp-v${{ inputs.version }}" >> $GITHUB_OUTPUT
+            echo "is_api_trigger=true" >> $GITHUB_OUTPUT
+            echo "Mode: workflow_dispatch (API), version=${{ inputs.version }}, triggered_by=${{ inputs.triggered_by }}"
+          elif [[ "${GITHUB_EVENT_NAME}" == "push" && "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            # Tag push
+            TAG_NAME="${GITHUB_REF_NAME}"
+            VERSION="${TAG_NAME#mcp-v}"
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+            echo "is_api_trigger=false" >> $GITHUB_OUTPUT
+            echo "Mode: tag push, tag=$TAG_NAME, version=$VERSION"
+          else
+            # Manual workflow_dispatch with tag input
+            TAG_NAME="${{ inputs.tag }}"
+            if [[ -z "$TAG_NAME" ]]; then
+              echo "::error::Manual dispatch requires either 'version' or 'tag' input"
+              exit 1
+            fi
+            VERSION="${TAG_NAME#mcp-v}"
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+            echo "is_api_trigger=false" >> $GITHUB_OUTPUT
+            echo "Mode: workflow_dispatch (manual), tag=$TAG_NAME, version=$VERSION"
+          fi
+
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.version.outputs.is_api_trigger == 'true' && 'main' || (github.event.inputs.tag || github.ref) }}
+
+      - name: Validate version matches VERSION file
+        run: |
+          set -euo pipefail
+          FILE_VERSION=$(cat mcp/VERSION | tr -d '[:space:]')
+          INPUT_VERSION="${{ steps.version.outputs.version }}"
+          if [[ "$FILE_VERSION" != "$INPUT_VERSION" ]]; then
+            echo "::error::Version mismatch: mcp/VERSION=$FILE_VERSION, expected=$INPUT_VERSION"
+            exit 1
+          fi
+          echo "Version validated: $FILE_VERSION"
+
+      - name: Install jq
+        run: sudo apt-get install -y jq
+
+      - name: Install mcp-bash framework
+        run: |
+          # Source version and commit from lockfile (single source of truth)
+          source mcp/mcp-bash.lock
+          echo "Installing mcp-bash v${MCPBASH_VERSION} (${MCPBASH_COMMIT})"
+          curl -fsSL https://raw.githubusercontent.com/yaniv-golan/mcp-bash-framework/main/install.sh | \
+            bash -s -- --version "v${MCPBASH_VERSION}" --yes
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          # Verify installed commit matches lockfile
+          INSTALLED_COMMIT=$(git -C "${XDG_DATA_HOME:-$HOME/.local/share}/mcp-bash" rev-parse HEAD)
+          if [[ "$INSTALLED_COMMIT" != "$MCPBASH_COMMIT" ]]; then
+            echo "::error::mcp-bash commit mismatch: expected $MCPBASH_COMMIT, got $INSTALLED_COMMIT"
+            exit 1
+          fi
+
+      - name: Verify mcp-bash installation
+        run: mcp-bash --version
+
+      - name: Build Claude Code plugin ZIP
+        run: |
+          cd mcp
+          make plugin
+          echo "Plugin version: $(cat .claude-plugin/VERSION)"
+          ls -la .claude-plugin/xaffinity-mcp-plugin.zip
+
+      - name: Validate MCPB configuration
+        run: |
+          cd mcp
+          mcp-bash bundle --validate
+
+      - name: Build MCPB bundle
+        run: |
+          cd mcp
+          mcp-bash bundle --output dist --verbose
+          ls -la dist/*.mcpb
+
+      - name: Validate MCPB bundle structure
+        run: |
+          cd mcp
+          MCPB_FILE=$(ls dist/*.mcpb | head -1)
+          unzip -t "$MCPB_FILE"
+          unzip -p "$MCPB_FILE" manifest.json | jq .
+          echo "MCPB bundle validated"
+
+      - name: Test MCPB bundle health check
+        run: |
+          cd mcp
+          MCPB_FILE=$(ls dist/*.mcpb | head -1)
+          EXTRACT_DIR=$(mktemp -d)
+          unzip -q "$MCPB_FILE" -d "$EXTRACT_DIR"
+          "$EXTRACT_DIR/server/run-server.sh" --health || echo "Health check not available (expected if CLI not configured)"
+          rm -rf "$EXTRACT_DIR"
+
+      - name: Create and push tag (API trigger only)
+        if: steps.version.outputs.is_api_trigger == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ steps.version.outputs.tag_name }}" -m "Release ${{ steps.version.outputs.tag_name }}"
+          git push origin "${{ steps.version.outputs.tag_name }}"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag_name }}
+          files: |
+            mcp/.claude-plugin/xaffinity-mcp-plugin.zip
+            mcp/dist/*.mcpb
+          generate_release_notes: true
+          name: MCP Server ${{ steps.version.outputs.tag_name }}
+          body: |
+            ## Installation
+
+            ### One-click install (Claude Desktop)
+            Download `xaffinity-mcp-*.mcpb` and double-click or drag to Claude Desktop.
+
+            ### Claude Code
+            ```bash
+            /plugin marketplace add yaniv-golan/affinity-sdk
+            /plugin install mcp@xaffinity
+            ```
+
+            ### Manual configuration
+            Download `xaffinity-mcp-plugin.zip` and configure your MCP client manually.
+            See [documentation](https://yaniv-golan.github.io/affinity-sdk/latest/mcp/) for details.

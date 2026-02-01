@@ -1,0 +1,383 @@
+name: Release (PyPI)
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (without v prefix, for API trigger)"
+        required: false
+        type: string
+      triggered_by:
+        description: "What triggered this release"
+        required: false
+        type: string
+        default: "manual"
+      target:
+        description: "Publish target (manual TestPyPI only, ignored if version set)"
+        required: false
+        default: "none"
+        type: choice
+        options:
+          - none
+          - testpypi
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  # Use version for API triggers, ref_name for tag pushes
+  group: release-${{ inputs.version || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      tag_name: ${{ steps.meta.outputs.tag_name }}
+      version_tag: ${{ steps.meta.outputs.version_tag }}
+      publish_target: ${{ steps.meta.outputs.publish_target }}
+      is_api_trigger: ${{ steps.meta.outputs.is_api_trigger }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Determine publish target
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -n "${{ inputs.version }}" ]]; then
+            # API-triggered release (from release-detect)
+            # IMPORTANT: Verify version matches pyproject.toml to prevent mismatches
+            PYPROJECT_VERSION=$(grep '^version = ' pyproject.toml | head -1 | cut -d'"' -f2)
+            if [[ "${{ inputs.version }}" != "$PYPROJECT_VERSION" ]]; then
+              echo "::error::Version mismatch: input=${{ inputs.version }}, pyproject.toml=$PYPROJECT_VERSION"
+              exit 1
+            fi
+            echo "is_api_trigger=true" >> "$GITHUB_OUTPUT"
+            echo "version_tag=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+            echo "tag_name=v${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+            echo "publish_target=pypi" >> "$GITHUB_OUTPUT"
+            echo "Mode: workflow_dispatch (API), version=${{ inputs.version }}, triggered_by=${{ inputs.triggered_by }}"
+          elif [[ "${GITHUB_EVENT_NAME}" == "push" && "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            # Tag push
+            echo "is_api_trigger=false" >> "$GITHUB_OUTPUT"
+            echo "publish_target=pypi" >> "$GITHUB_OUTPUT"
+            echo "tag_name=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            if [[ "${GITHUB_REF_NAME}" != v* ]]; then
+              echo "Expected tag to start with 'v' (got: ${GITHUB_REF_NAME})" >&2
+              exit 1
+            fi
+            echo "version_tag=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+            echo "Mode: tag push, tag=${GITHUB_REF_NAME}"
+          else
+            # Manual workflow_dispatch (TestPyPI dry run)
+            echo "is_api_trigger=false" >> "$GITHUB_OUTPUT"
+            echo "publish_target=${{ inputs.target }}" >> "$GITHUB_OUTPUT"
+            echo "tag_name=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            echo "version_tag=" >> "$GITHUB_OUTPUT"
+            echo "Mode: workflow_dispatch (manual), target=${{ inputs.target }}"
+          fi
+
+      - name: Require tag ref for publishing (tag-triggered only)
+        if: ${{ steps.meta.outputs.publish_target == 'pypi' && steps.meta.outputs.is_api_trigger != 'true' && github.ref_type != 'tag' }}
+        shell: bash
+        run: |
+          echo "Publishing requires running the workflow on a tag ref (vX.Y.Z)." >&2
+          exit 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Validate version matches pyproject
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYPROJECT_VERSION="$(python -c "import tomllib, pathlib; d=tomllib.loads(pathlib.Path('pyproject.toml').read_text()); print(d['project']['version'])")"
+          EXPECTED_VERSION="${{ steps.meta.outputs.version_tag }}"
+
+          # Skip validation if no version to validate (e.g., testpypi dry run)
+          if [[ -z "$EXPECTED_VERSION" ]]; then
+            echo "No version to validate (dry run mode)"
+            exit 0
+          fi
+
+          if [[ "${PYPROJECT_VERSION}" != "${EXPECTED_VERSION}" ]]; then
+            echo "Version mismatch: pyproject.toml=${PYPROJECT_VERSION} expected=${EXPECTED_VERSION}" >&2
+            exit 1
+          fi
+          echo "Version validated: $PYPROJECT_VERSION"
+
+      - name: Validate commit is on main (tag-triggered only)
+        if: ${{ steps.meta.outputs.is_api_trigger != 'true' && github.ref_type == 'tag' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main --depth=1
+          git merge-base --is-ancestor "${GITHUB_SHA}" "origin/main"
+
+  test:
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Lint
+        run: |
+          ruff format --check .
+          ruff check .
+
+      - name: Type check
+        run: |
+          mypy affinity
+
+      - name: Test
+        run: |
+          pytest
+
+      - name: Verify registry is up to date
+        run: |
+          python tools/generate_mcp_command_registry.py
+          git diff --exit-code mcp/.registry/commands.generated.json
+
+  build:
+    runs-on: ubuntu-latest
+    needs: [validate, test]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Build distributions
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install build
+          python -m build
+
+      - name: Upload dist artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: dist-${{ needs.validate.outputs.tag_name }}
+          path: dist/
+          if-no-files-found: error
+
+      # Build MCPB bundle for convenience (same commit as SDK)
+      - name: Install jq
+        run: sudo apt-get install -y jq
+
+      - name: Install mcp-bash framework
+        run: |
+          # Source version and commit from lockfile (single source of truth)
+          source mcp/mcp-bash.lock
+          echo "Installing mcp-bash v${MCPBASH_VERSION} (${MCPBASH_COMMIT})"
+          curl -fsSL https://raw.githubusercontent.com/yaniv-golan/mcp-bash-framework/main/install.sh | \
+            bash -s -- --version "v${MCPBASH_VERSION}" --yes
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          # Verify installed commit matches lockfile
+          INSTALLED_COMMIT=$(git -C "${XDG_DATA_HOME:-$HOME/.local/share}/mcp-bash" rev-parse HEAD)
+          if [[ "$INSTALLED_COMMIT" != "$MCPBASH_COMMIT" ]]; then
+            echo "::error::mcp-bash commit mismatch: expected $MCPBASH_COMMIT, got $INSTALLED_COMMIT"
+            exit 1
+          fi
+
+      - name: Build Claude Code plugin ZIP
+        run: |
+          cd mcp
+          make plugin
+          echo "Plugin version: $(cat .claude-plugin/VERSION)"
+          ls -la .claude-plugin/xaffinity-mcp-plugin.zip
+
+      - name: Build MCPB bundle
+        run: |
+          cd mcp
+          mcp-bash bundle --output dist --verbose
+          ls -la dist/*.mcpb
+
+      - name: Upload MCPB artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: mcpb-${{ needs.validate.outputs.tag_name }}
+          path: |
+            mcp/.claude-plugin/xaffinity-mcp-plugin.zip
+            mcp/dist/*.mcpb
+          if-no-files-found: error
+
+  publish:
+    runs-on: ubuntu-latest
+    needs: [validate, build]
+    if: ${{ needs.validate.outputs.publish_target != 'none' }}
+    environment: ${{ needs.validate.outputs.publish_target }}
+    steps:
+      - name: Download dist artifacts
+        uses: actions/download-artifact@v7
+        with:
+          name: dist-${{ needs.validate.outputs.tag_name }}
+          path: dist/
+
+      - name: Publish to PyPI (trusted publishing)
+        if: ${{ needs.validate.outputs.publish_target == 'pypi' }}
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          attestations: true
+
+      - name: Publish to TestPyPI (trusted publishing)
+        if: ${{ needs.validate.outputs.publish_target == 'testpypi' }}
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          attestations: true
+
+  github-release:
+    runs-on: ubuntu-latest
+    needs: [validate, build, publish]
+    if: ${{ needs.validate.outputs.publish_target == 'pypi' }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Extract changelog for version
+        id: changelog
+        shell: bash
+        run: |
+          VERSION="${{ needs.validate.outputs.version_tag }}"
+          # Extract changelog section for this version
+          CHANGELOG=$(awk "/^## ${VERSION//./\\.} -/,/^## [0-9]/" CHANGELOG.md | head -n -1 | tail -n +2)
+          if [ -z "$CHANGELOG" ]; then
+            CHANGELOG="Release ${VERSION}"
+          fi
+          # Write to file to preserve formatting
+          echo "$CHANGELOG" > release_notes.md
+
+          # Add install instructions footer with dynamic MCPB link
+          MCP_VERSION=$(cat mcp/VERSION)
+          SDK_TAG="${{ needs.validate.outputs.tag_name }}"
+          MCPB_URL="https://github.com/yaniv-golan/affinity-sdk/releases/download/${SDK_TAG}/xaffinity-mcp-${MCP_VERSION}.mcpb"
+          sed "s|{{MCPB_URL}}|${MCPB_URL}|g" .github/release-install-footer.md >> release_notes.md
+
+      - name: Download dist artifacts
+        uses: actions/download-artifact@v7
+        with:
+          name: dist-${{ needs.validate.outputs.tag_name }}
+          path: dist/
+
+      - name: Download MCPB artifacts
+        uses: actions/download-artifact@v7
+        with:
+          name: mcpb-${{ needs.validate.outputs.tag_name }}
+          path: mcpb/
+
+      - name: Create and push tag (API trigger only)
+        if: ${{ needs.validate.outputs.is_api_trigger == 'true' }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ needs.validate.outputs.tag_name }}" -m "Release ${{ needs.validate.outputs.tag_name }}"
+          git push origin "${{ needs.validate.outputs.tag_name }}"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.validate.outputs.tag_name }}
+          name: SDK ${{ needs.validate.outputs.tag_name }}
+          body_path: release_notes.md
+          files: |
+            dist/*
+            mcpb/**/*
+          fail_on_unmatched_files: true
+
+  smoke-test:
+    runs-on: ubuntu-latest
+    needs: [validate, publish]
+    if: ${{ needs.validate.outputs.publish_target == 'pypi' }}
+    steps:
+      - name: Wait for PyPI propagation
+        run: sleep 30
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Smoke test SDK installation
+        run: |
+          pip install affinity-sdk==${{ needs.validate.outputs.version_tag }}
+          python -c "from affinity import Affinity; print('SDK import OK')"
+
+      - name: Smoke test CLI installation
+        run: |
+          pip install "affinity-sdk[cli]==${{ needs.validate.outputs.version_tag }}"
+          python -c "from affinity.cli import cli; print('CLI import OK')"
+
+      - name: Warn on failure
+        if: failure()
+        run: |
+          echo "::warning::Release ${{ needs.validate.outputs.version_tag }} failed smoke test"
+          echo "::warning::Consider yanking the release if broken"
+
+  deploy-docs:
+    runs-on: ubuntu-latest
+    needs: [validate, github-release]
+    if: ${{ needs.validate.outputs.publish_target == 'pypi' }}
+    concurrency:
+      group: docs-deploy
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install docs dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[docs]"
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch gh-pages branch
+        run: |
+          git fetch origin gh-pages:gh-pages || true
+
+      - name: Deploy versioned docs
+        run: |
+          VERSION="${{ needs.validate.outputs.version_tag }}"
+          echo "Deploying docs for version ${VERSION}"
+          mike deploy --push --update-aliases "${VERSION}" latest
+          mike set-default --push latest

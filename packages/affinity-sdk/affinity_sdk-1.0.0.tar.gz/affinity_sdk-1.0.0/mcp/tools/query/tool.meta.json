@@ -1,0 +1,111 @@
+{
+  "name": "query",
+  "description": "Execute a structured JSON query against Affinity data. Supports filtering, includes, expands, aggregates, and multiple output formats.\n\n📖 FIRST: Read xaffinity://query-guide for performance tips (especially field selection and expand limits).\n\n⚠️ EXPAND/INCLUDE WARNING: These cause N+1 API calls (one per record).\n- ALWAYS use dryRun=true FIRST to see estimated API calls before running\n- 100 records with expand = ~100 API calls = ~2-3 minutes\n- 400+ records may hit the 10-minute timeout ceiling\n- See data-model resource for practical limits table\n\nQuery structure:\n- from: Entity type ('persons', 'companies', 'opportunities', 'listEntries', 'interactions', 'notes')\n- where: Filter conditions with operators (eq, neq, gt, gte, lt, lte, contains, starts_with, ends_with, in, between, is_null, is_not_null, is_empty, has_any, has_all, contains_any, contains_all)\n- include: Related entities to fetch (e.g., ['companies', 'opportunities'] for persons; ['persons', 'companies', 'opportunities', 'interactions'] for listEntries)\n- expand: Computed data to add to records (e.g., ['interactionDates'], ['unreplied']). Unlike include, expand merges data directly into each record.\n- select: Fields to return (default: all). Use 'fields.*' for all custom fields on listEntries\n- orderBy: Sort results [{field, direction}]\n- groupBy: Group by field for aggregates (e.g., 'fields.Status' for listEntries)\n- aggregate: Compute aggregates {alias: {sum/avg/count/min/max: field}}\n- limit: Max records to return\n\nAdvanced filtering (quantifiers, exists, count):\n- all: All related items must match condition - {\"all\": {\"path\": \"companies\", \"where\": {\"path\": \"name\", \"op\": \"contains\", \"value\": \"Inc\"}}}\n- none: No related items may match condition - {\"none\": {\"path\": \"interactions\", \"where\": {\"path\": \"type\", \"op\": \"eq\", \"value\": \"spam\"}}}\n- exists: At least one related item exists - {\"exists\": {\"from\": \"interactions\"}} or with filter {\"exists\": {\"from\": \"interactions\", \"where\": {\"path\": \"type\", \"op\": \"eq\", \"value\": \"email\"}}}\n- _count: Count of related items - {\"path\": \"companies._count\", \"op\": \"gte\", \"value\": 2}\n- Note: Nested quantifiers (all/none/exists inside each other) are not supported\n\nMulti-select field filtering:\n- eq with scalar value: checks if value is in the array (membership)\n- eq with array value: checks set equality (order-insensitive)\n- has_any: checks if array contains any of the specified values\n- has_all: checks if array contains all of the specified values\n- contains_any: any array element contains any substring (case-insensitive)\n- contains_all: array elements collectively contain all substrings (case-insensitive)\n\nlistEntries queries:\n- Require 'listId' or 'listName' filter (listName resolves to ID at runtime)\n- Custom field values are auto-fetched when referenced in groupBy, aggregate, or where\n- Use 'fields.<FieldName>' paths for custom list fields\n- Select fields: listEntryId, entityId, entityName, entityType, listId, createdAt, fields.<Name>, fields.*\n\nExamples:\n- {\"from\": \"persons\", \"where\": {\"path\": \"email\", \"op\": \"contains\", \"value\": \"@acme.com\"}, \"limit\": 50}\n- {\"from\": \"listEntries\", \"where\": {\"path\": \"listName\", \"op\": \"eq\", \"value\": \"Dealflow\"}, \"select\": [\"listEntryId\", \"entityName\", \"fields.Status\"]}\n- {\"from\": \"listEntries\", \"where\": {\"and\": [{\"path\": \"listName\", \"op\": \"eq\", \"value\": \"Dealflow\"}, {\"path\": \"entityName\", \"op\": \"contains\", \"value\": \"Acme\"}]}}\n- {\"from\": \"opportunities\", \"include\": [\"companies\"], \"orderBy\": [{\"field\": \"created_at\", \"direction\": \"desc\"}]}\n- {\"from\": \"persons\", \"where\": {\"path\": \"companies._count\", \"op\": \"gte\", \"value\": 2}, \"limit\": 100}\n- {\"from\": \"persons\", \"where\": {\"all\": {\"path\": \"companies\", \"where\": {\"path\": \"domain\", \"op\": \"contains\", \"value\": \".com\"}}}}\n- {\"from\": \"persons\", \"where\": {\"exists\": {\"from\": \"interactions\"}}}\n- {\"from\": \"listEntries\", \"where\": {\"path\": \"listName\", \"op\": \"eq\", \"value\": \"Dealflow\"}, \"expand\": [\"interactionDates\"], \"limit\": 50}\n- {\"from\": \"listEntries\", \"where\": {\"path\": \"listName\", \"op\": \"eq\", \"value\": \"Dealflow\"}, \"include\": [\"persons\", \"companies\"], \"limit\": 50}\n- {\"from\": \"listEntries\", \"where\": {\"path\": \"listName\", \"op\": \"eq\", \"value\": \"Dealflow\"}, \"expand\": [\"unreplied\"], \"limit\": 50}\n\nPerformance notes:\n- Includes cause N+1 API calls (1 per parent record) - use dryRun to preview\n- Expand (interactionDates) also causes N+1 API calls (1 per record)\n- Quantifiers (all, none, exists) and _count also cause N+1 API calls to fetch relationship data\n- IMPORTANT: Quantifier queries on 'persons', 'companies', or 'opportunities' require explicit maxRecords to prevent slow queries (could take 26+ minutes on large databases)\\n- Recommended: Start from 'listEntries' (bounded by list) instead of unbounded entities for quantifier queries\\n- Use dryRun=true to preview the execution plan with estimated API calls before running\n- PRACTICAL LIMITS: expand/include queries support up to ~400 records via MCP (10-min ceiling). For larger exports, batch queries or use CLI directly.\n\nFor complete query language reference (all operators, aggregations, advanced filtering), read the xaffinity://query-guide resource.",
+  "inputSchema": {
+    "type": "object",
+    "required": ["query"],
+    "properties": {
+      "query": {
+        "type": "object",
+        "description": "JSON query object with 'from' (required) and optional where, include, expand, select, orderBy, groupBy, aggregate, having, limit fields.",
+        "properties": {
+          "$version": {
+            "type": "string",
+            "description": "Query version (default: '1.0')"
+          },
+          "from": {
+            "type": "string",
+            "enum": ["persons", "companies", "opportunities", "listEntries", "interactions", "notes"],
+            "description": "Entity type to query"
+          },
+          "where": {
+            "type": "object",
+            "description": "Filter conditions. Simple: {path, op, value}. Compound: {and: [...]} or {or: [...]}"
+          },
+          "include": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Related entities to include (e.g., ['companies', 'opportunities', 'listEntries'])"
+          },
+          "expand": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Computed data to add to records. Available: 'interactionDates' (last/next meeting, email dates, team members), 'unreplied' (detect unreplied incoming messages - email/chat). Unlike include, expand merges data into each record."
+          },
+          "select": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Fields to return (default: all). Note: Expansions (from 'expand') are automatically included in output even when select is specified."
+          },
+          "orderBy": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "field": { "type": "string" },
+                "direction": { "type": "string", "enum": ["asc", "desc"] }
+              }
+            },
+            "description": "Sort order"
+          },
+          "groupBy": {
+            "type": "string",
+            "description": "Field to group by for aggregates"
+          },
+          "aggregate": {
+            "type": "object",
+            "description": "Aggregate functions: {alias: {sum/avg/count/min/max/percentile: field}}"
+          },
+          "having": {
+            "type": "object",
+            "description": "Filter on aggregate results"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum records to return"
+          }
+        },
+        "required": ["from"]
+      },
+      "dryRun": {
+        "type": "boolean",
+        "default": false,
+        "description": "If true, return the execution plan with estimated API calls without running the query."
+      },
+      "maxRecords": {
+        "type": "integer",
+        "default": 1000,
+        "description": "Safety limit for maximum records to fetch (default 1000, max 10000). Note: MCP gateway enforces the same limits on CLI pagination commands via the execute-read-command tool."
+      },
+      "timeout": {
+        "type": "integer",
+        "description": "Query timeout in seconds. If not specified (0 or omitted), timeout is auto-calculated based on estimated API calls (~2s per call, minimum 30s). Specify explicitly to override."
+      },
+      "maxOutputBytes": {
+        "type": "integer",
+        "default": 50000,
+        "description": "Maximum output size in bytes (default 50000). Larger outputs are truncated."
+      },
+      "format": {
+        "type": "string",
+        "enum": ["toon", "markdown", "json", "jsonl", "csv"],
+        "default": "toon",
+        "description": "Output format (applies to query results only; ignored when dryRun=true which always returns JSON execution plan). Options: 'toon' (default, 40% fewer tokens for large results), 'markdown' (best for analysis/summarization), 'json' (full envelope with pagination/includes), 'csv'/'jsonl' (for export/downstream processing)"
+      },
+      "cursor": {
+        "type": "string",
+        "description": "Opaque cursor from previous truncated response. Pass the exact 'nextCursor' value to resume fetching. The query object AND format parameter must be IDENTICAL to the original request. Cursors expire after 1 hour. Works with all formats (toon, markdown, json, jsonl, csv). NEVER fabricate a cursor; it contains cryptographic hashes and will fail validation."
+      }
+    }
+  },
+  "timeoutSecs": 60,
+  "maxTimeoutSecs": 600,
+  "progressExtendsTimeout": true,
+  "timeoutHint": "Use dryRun=true to test filters first. For large datasets, set limit <= 100 and avoid expand/include.",
+  "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": true
+  }
+}
