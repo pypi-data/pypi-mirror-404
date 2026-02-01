@@ -1,0 +1,352 @@
+var:
+  rr: 0
+  r: 0
+  q: 2
+  r_freq: 5000
+  r_power: -30
+  r_length: 2
+  r_phase: 0
+  r_offset: 0
+  r_threshold: 0
+  r_relax: 1
+  r_reset: 0
+  q_freq: 5000
+  q_length: 2
+  q_length_2: null
+  q_delta: -180
+  q_gain: 1
+  q_gain_2: 0.5
+
+var_label:
+  rr: ["Readout Channel for Readout Pulse", ""]
+  r: ["Generator Channel for Readout Pulse", ""]
+  q: ["Generator Channel for Qubit Pulse", ""]
+  r_freq: ["Readout Pulse Frequency", "MHz"]
+  r_power: ["Readout Pulse Power", "dB"]
+  r_length: ["Readout Pulse Length", "us"]
+  r_phase: ["Readout Pulse Phase", "deg"]
+  r_offset: ["Readout Offset", "us"]
+  r_threshold: ["Readout Threshold", ""]
+  r_relax: ["Readout Relax", "us"]
+  r_reset: ["Reset Wait Time", "us"]
+  q_freq: ["Qubit Pulse Frequency", "MHz"]
+  q_length: ["Qubit Pulse Length", "us"]
+  q_length_2: ["Qubit Half Pulse Length", "us"]
+  q_delta: ["Qubit Anharmonicity", "MHz"]
+  q_gain: ["Qubit Pulse Gain", "a.u."]
+  q_gain_2: ["Qubit Half Pulse Gain", "a.u."]
+
+# Programs below are exported as strings for variable insertion
+
+LoopBack: |
+  soft_avg: 100
+  p0_freq: {r_freq}
+  p0_length: {r_length}
+  p0_power: {r_power}
+  r{rr}_p: 0
+  r{rr}_length: {r_length}
+  r{rr}_phase: {r_phase}
+  steps:
+  - type: pulse
+    p: 0
+    g: {r}
+  - type: trigger
+    t: {r_offset}
+  - type: delay_auto
+    t: {r_relax}
+
+ResonatorSpectroscopy: |
+  hard_avg: 300
+  p0_freq: {r_freq}
+  p0_mixer: {int(r_freq/1000)*1000+500}
+  p0_length: {r_length}
+  p0_power: {r_power}
+  r{rr}_p: 0
+  r{rr}_length: {r_length}
+  r{rr}_phase: {r_phase}
+  0_type: pulse
+  0_p: 0
+  0_g: {r}
+  1_type: trigger
+  1_t: {r_offset}
+  2_type: delay_auto
+  2_t: {r_relax}
+
+QubitSpectroscopy: |
+  hard_avg: 1000
+  p0_freq: {r_freq}
+  p0_length: {r_length}
+  p0_power: {r_power}
+  p1_style: flat_top
+  p1_sigma: 0.05
+  p1_freq: {q_freq}
+  p1_length: {q_length}
+  p1_gain: {q_gain}
+  r{rr}_p: 0
+  r{rr}_length: {r_length}
+  r{rr}_phase: {r_phase}
+  0_type: pulse
+  0_p: 1
+  0_g: {q}
+  1_type: delay_auto
+  2_type: pulse
+  2_p: 0
+  2_g: {r}
+  3_type: trigger
+  3_t: {r_offset}
+  4_type: delay_auto
+  4_t: {r_relax}
+
+Rabi: |
+  rep: 1000
+  p0_freq: {r_freq}
+  p0_length: {r_length}
+  p0_power: {r_power}
+  p1_style: gaussian
+  p1_freq: {q_freq}
+  p1_length: {q_length}
+  p1_gain: {q_gain}
+  r{rr}_p: 0
+  r{rr}_length: {r_length}
+  r{rr}_phase: {r_phase}
+  0_type: pulse
+  0_p: 1
+  0_g: {q}
+  1_type: delay_auto
+  1_t: 0.002
+  2_type: goto
+  2_i: 0
+  2_rep: {cycle}
+  3_type: pulse
+  3_p: 0
+  3_g: {r}
+  4_type: trigger
+  4_t: {r_offset}
+  5_type: delay_auto
+  5_t: {r_relax}
+
+IQScatter: |
+  rep: 10000
+  p0_freq: {r_freq}
+  p0_length: {r_length}
+  p0_power: {r_power}
+  p1_style: gaussian
+  p1_freq: {q_freq}
+  p1_length: {q_length}
+  p1_gain: {q_gain}
+  r{rr}_p: 0
+  r{rr}_length: {rr_length or r_length}
+  r{rr}_phase: {r_phase}
+  0_type: pulse
+  0_p: 1
+  0_g: {q}
+  1_type: delay_auto
+  2_type: pulse
+  2_p: 0
+  2_g: {r}
+  3_type: trigger
+  3_t: {r_offset}
+  4_type: {"wait_auto" if r_reset else "goto"}
+  4_i: 7
+  4_t: {r_reset}
+  5_type: delay_auto
+  5_t: {r_reset}
+  6_type: pulse          # reset pulse
+  6_p: 1
+  6_g: {q}
+  6_threshold: {r_threshold}
+  6_r: {rr}
+  7_type: delay_auto
+  7_t: {r_relax}
+
+DispersiveSpectroscopy: |
+  hard_avg: 1000
+  p0_freq: {r_freq}
+  p0_mixer: {int(r_freq/1000)*1000+500}
+  p0_length: {r_length}
+  p0_power: {r_power}
+  p1_style: gaussian
+  p1_freq: {q_freq}
+  p1_length: {q_length}
+  p1_gain: {q_gain}
+  r{rr}_p: 0
+  r{rr}_length: {r_length}
+  r{rr}_phase: {r_phase}
+  0_type: pulse
+  0_p: 1
+  0_g: {q}
+  1_type: delay_auto
+  2_type: pulse
+  2_p: 0
+  2_g: {r}
+  3_type: trigger
+  3_t: {r_offset}
+  4_type: delay_auto
+  4_t: {r_relax}
+
+T1: |
+  rep: 10000
+  p0_freq: {r_freq}
+  p0_length: {r_length}
+  p0_power: {r_power}
+  p1_style: gaussian
+  p1_freq: {q_freq}
+  p1_length: {q_length}
+  p1_gain: {q_gain}
+  r{rr}_p: 0
+  r{rr}_length: {r_length}
+  r{rr}_phase: {r_phase}
+  0_type: pulse
+  0_p: 1
+  0_g: {q}
+  1_type: delay_auto
+  1_t: {time}         # delay time
+  2_type: pulse
+  2_p: 0
+  2_g: {r}
+  3_type: trigger
+  3_t: {r_offset}
+  4_type: {"wait_auto" if r_reset else "goto"}
+  4_i: 7
+  4_t: {r_reset}
+  5_type: delay_auto
+  5_t: {r_reset}
+  6_type: pulse          # reset pulse
+  6_p: 1
+  6_g: {q}
+  6_threshold: {r_threshold}
+  6_r: {rr}
+  7_type: delay_auto
+  7_t: {r_relax}
+
+T2Ramsey: |
+  rep: 10000
+  p0_freq: {r_freq}
+  p0_length: {r_length}
+  p0_power: {r_power}
+  p1_style: gaussian
+  p1_freq: {q_freq}
+  p1_length: {q_length}
+  p1_gain: {q_gain}
+  p2_style: gaussian
+  p2_freq: {q_freq}
+  p2_length: {q_length_2 or q_length}
+  p2_gain: {q_gain_2}
+  p3_style: gaussian
+  p3_freq: {q_freq}
+  p3_length: {q_length}
+  p3_gain: {q_gain_2}
+  p3_phase: {-360 * time * fringe_freq % 360}
+  r{rr}_p: 0
+  r{rr}_length: {r_length}
+  r{rr}_phase: {r_phase}
+  steps:
+  - type: pulse
+    p: 2
+    g: {q}
+  - type: delay_auto
+    t: {time}    # delay time
+  - type: pulse
+    p: 3
+    g: {q}
+  - type: delay_auto
+  - type: pulse
+    p: 0
+    g: {r}
+  - type: trigger
+    t: {r_offset}
+  - type: {"wait_auto" if r_reset else "goto"}
+    i: 9
+    t: {r_reset}
+  - type: delay_auto
+    t: {r_reset}
+  - type: pulse
+    p: 1
+    g: {q}
+    threshold: {r_threshold}
+    r: {rr}
+  - type: delay_auto
+    t: {r_relax}
+
+T2Echo: |
+  rep: 10000
+  p0_freq: {r_freq}
+  p0_length: {r_length}
+  p0_power: {r_power}
+  p1_style: gaussian
+  p1_freq: {q_freq}
+  p1_length: {q_length}
+  p1_gain: {q_gain}
+  p1_phase: 90   # pi pulse on y-axis
+  p2_style: gaussian
+  p2_freq: {q_freq}
+  p2_length: {q_length_2 or q_length}
+  p2_gain: {q_gain_2}
+  p3_style: gaussian
+  p3_freq: {q_freq}
+  p3_length: {q_length_2 or q_length}
+  p3_gain: {q_gain_2}
+  p3_phase: {-360 * time * fringe_freq % 360}
+  r{rr}_p: 0
+  r{rr}_length: {r_length}
+  r{rr}_phase: {r_phase}
+  steps:
+  - type: pulse
+    p: 2
+    g: {q}
+  - type: delay_auto
+    t: {time / (cycle + 1) / 2}  # half wait time
+  - type: pulse
+    p: 1
+    g: {q}
+  - type: delay_auto
+    t: {time / (cycle + 1) / 2}  # half wait time
+  - type: goto
+    i: 1
+    rep: {cycle}
+  - type: pulse
+    p: 3
+    g: {q}
+  - type: delay_auto
+  - type: pulse
+    p: 0
+    g: {r}
+  - type: trigger
+    t: {r_offset}
+  - type: {"wait_auto" if r_reset else "goto"}
+    i: 12
+    t: {r_reset}
+  - type: delay_auto
+    t: {r_reset}
+  - type: pulse
+    p: 1
+    g: {q}
+    threshold: {r_threshold}
+    r: {rr}
+  - type: delay_auto
+    t: {r_relax}
+
+QND: |
+  rep: 100
+  p0_freq: {r_freq}
+  p0_length: {r_length}
+  p0_power: {r_power}
+  p1_style: gaussian
+  p1_freq: {q_freq}
+  p1_length: {q_length}
+  p1_gain: {q_gain}
+  r{rr}_p: 0
+  r{rr}_length: {r_length}
+  r{rr}_phase: {r_phase}
+  steps:
+  - type: pulse
+    p: 0
+    g: {r}
+  - type: trigger
+    t: {r_offset}
+  - type: delay_auto
+    t: {r_reset}
+  {get_steps(seq, v=locals())}
+  - type: delay_auto
+    t: {r_relax}
+
