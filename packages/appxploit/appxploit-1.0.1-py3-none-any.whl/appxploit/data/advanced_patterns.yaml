@@ -1,0 +1,228 @@
+# Advanced Vulnerability Detection Patterns
+# Used for detecting real-world Android security issues
+
+# Authentication & Session Logic Vulnerabilities
+auth_bypass:
+  hardcoded_bypass_flags:
+    - pattern: "(DEBUG_MODE|SKIP_AUTH|BYPASS_LOGIN|IS_TESTING|DISABLE_AUTH|AUTH_DISABLED)\\s*=\\s*true"
+      severity: critical
+      cwe: "CWE-489"
+      description: "Hardcoded authentication bypass flag"
+      confidence: 0.9
+  
+  client_side_admin_check:
+    - pattern: "if\\s*\\(\\s*(isAdmin|isRoot|isSuperUser|hasAdminAccess)\\s*\\)"
+      severity: high
+      cwe: "CWE-602"
+      description: "Client-side admin authorization check"
+      confidence: 0.8
+  
+  client_side_premium_check:
+    - pattern: "if\\s*\\(\\s*(isPremium|isPro|isSubscribed|hasAccess)\\s*\\)"
+      severity: medium
+      cwe: "CWE-602"
+      description: "Client-side premium feature check"
+      confidence: 0.7
+  
+  session_token_storage:
+    - pattern: "SharedPreferences.*put.*(session|token|auth).*"
+      severity: medium
+      cwe: "CWE-922"
+      description: "Session token stored in SharedPreferences"
+      confidence: 0.6
+
+# IDOR & Access Control Vulnerabilities
+idor_patterns:
+  user_id_in_url:
+    - pattern: '"/api/(user|profile|account)/\\{?(id|userId|uid)\\}?"'
+      severity: high
+      cwe: "CWE-639"
+      description: "User ID in API endpoint (potential IDOR)"
+      confidence: 0.7
+  
+  admin_endpoint_reference:
+    - pattern: '"/api/(admin|internal|debug|management)/'
+      severity: high
+      cwe: "CWE-284"
+      description: "Admin endpoint referenced in client code"
+      confidence: 0.8
+  
+  role_based_endpoint:
+    - pattern: '"/api/.*(role|permission|privilege)/'
+      severity: medium
+      cwe: "CWE-284"
+      description: "Role-based endpoint without enforcement"
+      confidence: 0.6
+
+# Cryptography & Data Protection Vulnerabilities
+crypto_weak:
+  md5_usage:
+    - pattern: "MessageDigest\\.getInstance\\(.*MD5.*\\)"
+      severity: high
+      cwe: "CWE-327"
+      description: "Weak hash algorithm MD5"
+      confidence: 1.0
+  
+  sha1_usage:
+    - pattern: "MessageDigest\\.getInstance\\(.*SHA-?1.*\\)"
+      severity: high
+      cwe: "CWE-327"
+      description: "Weak hash algorithm SHA1"
+      confidence: 1.0
+  
+  ecb_mode:
+    - pattern: "Cipher\\.getInstance\\(.*AES/ECB"
+      severity: high
+      cwe: "CWE-327"
+      description: "Insecure ECB mode encryption"
+      confidence: 1.0
+  
+  des_usage:
+    - pattern: "Cipher\\.getInstance\\(.*DES"
+      severity: high
+      cwe: "CWE-327"
+      description: "Weak encryption algorithm DES"
+      confidence: 1.0
+  
+  hardcoded_key:
+    - pattern: "(encryptionKey|secretKey|aesKey|cryptoKey)\\s*=\\s*.*[A-Za-z0-9+/=]{16,}"
+      severity: critical
+      cwe: "CWE-321"
+      description: "Hardcoded encryption key"
+      confidence: 0.8
+  
+  hardcoded_iv:
+    - pattern: "(iv|initVector|IvParameterSpec)\\s*=\\s*(new byte|\\[)"
+      severity: high
+      cwe: "CWE-329"
+      description: "Hardcoded initialization vector"
+      confidence: 0.7
+  
+  base64_as_encryption:
+    - pattern: "Base64\\.(encode|decode).*(password|token|secret)"
+      severity: medium
+      cwe: "CWE-261"
+      description: "Base64 used as encryption (encoding is not encryption)"
+      confidence: 0.6
+
+# WebView Security Vulnerabilities
+webview_risks:
+  javascript_enabled:
+    - pattern: "setJavaScriptEnabled\\(true\\)"
+      severity: medium
+      cwe: "CWE-79"
+      description: "JavaScript enabled in WebView"
+      confidence: 0.9
+  
+  javascript_interface:
+    - pattern: "addJavascriptInterface\\("
+      severity: high
+      cwe: "CWE-749"
+      description: "JavaScript interface exposed (RCE risk)"
+      confidence: 0.9
+  
+  file_access_enabled:
+    - pattern: "setAllowFileAccess\\(true\\)"
+      severity: medium
+      cwe: "CWE-73"
+      description: "File access enabled in WebView"
+      confidence: 0.8
+  
+  universal_access:
+    - pattern: "setAllowUniversalAccessFromFileURLs\\(true\\)"
+      severity: high
+      cwe: "CWE-942"
+      description: "Universal access from file URLs enabled"
+      confidence: 0.9
+  
+  http_in_webview:
+    - pattern: "loadUrl\\(.*http://"
+      severity: medium
+      cwe: "CWE-319"
+      description: "HTTP URL loaded in WebView (MITM risk)"
+      confidence: 0.8
+
+# Storage & Data Leak Vulnerabilities
+storage_leaks:
+  sensitive_sharedprefs:
+    - pattern: "SharedPreferences.*put.*(password|token|key|secret|pin|otp|credit|card)"
+      severity: high
+      cwe: "CWE-312"
+      description: "Sensitive data in SharedPreferences"
+      confidence: 0.8
+  
+  logging_tokens:
+    - pattern: "Log\\.[deiw]\\(.*?(token|password|key|secret|authorization|bearer)"
+      severity: high
+      cwe: "CWE-532"
+      description: "Sensitive data in logs"
+      confidence: 0.9
+  
+  sql_sensitive_data:
+    - pattern: "INSERT INTO.*?(password|token|secret|key|pin)"
+      severity: medium
+      cwe: "CWE-312"
+      description: "Sensitive data in SQLite database"
+      confidence: 0.7
+  
+  world_readable:
+    - pattern: "MODE_WORLD_READABLE"
+      severity: critical
+      cwe: "CWE-732"
+      description: "World-readable file mode (deprecated and insecure)"
+      confidence: 1.0
+
+# Component Security Vulnerabilities
+component_abuse:
+  state_changing_exported:
+    - pattern: "exported.*?(delete|remove|update|modify|transfer|send|pay)"
+      severity: high
+      cwe: "CWE-927"
+      description: "State-changing exported component"
+      confidence: 0.7
+  
+  pending_intent_mutable:
+    - pattern: "PendingIntent\\..*FLAG_MUTABLE"
+      severity: high
+      cwe: "CWE-927"
+      description: "Mutable PendingIntent (hijacking risk)"
+      confidence: 0.9
+  
+  broadcast_unprotected:
+    - pattern: "sendBroadcast\\((?!.*permission)"
+      severity: medium
+      cwe: "CWE-927"
+      description: "Unprotected broadcast"
+      confidence: 0.6
+
+# OTP & Verification Vulnerabilities
+otp_client_side:
+  client_otp_validation:
+    - pattern: "(validateOTP|verifyOTP|checkOTP).*return (true|false)"
+      severity: critical
+      cwe: "CWE-602"
+      description: "OTP validation performed client-side"
+      confidence: 0.8
+  
+  hardcoded_otp:
+    - pattern: "(otp|pin|code)\\s*==\\s*.*[0-9]{4,6}"
+      severity: critical
+      cwe: "CWE-798"
+      description: "Hardcoded OTP/PIN"
+      confidence: 0.9
+
+# Payment & Financial Vulnerabilities
+payment_risks:
+  client_price_calculation:
+    - pattern: "(price|amount|total|cost)\\s*=\\s*[0-9]+"
+      severity: high
+      cwe: "CWE-602"
+      description: "Price calculation on client-side"
+      confidence: 0.6
+  
+  payment_bypass:
+    - pattern: "(isPaid|hasPurchased|isUnlocked)\\s*=\\s*true"
+      severity: critical
+      cwe: "CWE-602"
+      description: "Payment verification bypass flag"
+      confidence: 0.7
