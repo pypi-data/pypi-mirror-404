@@ -1,0 +1,174 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# File:                Ampel-core/ampel/cli/AbsCoreCommand.py
+# License:             BSD-3-Clause
+# Author:              valery brinnel <firstname.lastname@gmail.com>
+# Date:                18.03.2021
+# Last Modified Date:  12.11.2025
+# Last Modified By:    valery brinnel <firstname.lastname@gmail.com>
+
+import json
+import os
+import re
+import sys
+from collections.abc import Iterator, Sequence
+from typing import Any, Literal, TypeVar
+
+from ampel.abstract.AbsCLIOperation import AbsCLIOperation
+from ampel.cli.config import get_user_data_config_path
+from ampel.cli.utils import _maybe_int, get_db, get_vault
+from ampel.config.AmpelConfig import AmpelConfig, ConfigLoadOptions
+from ampel.config.InvalidConfigError import InvalidConfigError
+from ampel.core.AmpelContext import AmpelContext
+from ampel.core.UnitLoader import UnitLoader
+from ampel.log.AmpelLogger import AmpelLogger
+from ampel.util.freeze import recursive_freeze
+from ampel.util.mappings import set_by_path
+from ampel.util.pretty import out_stack
+
+custom_conf_patter = re.compile(r"^--[\w-]*(?:\.[\w-]+)*.*$")
+
+T = TypeVar("T", bound = AmpelContext)
+
+class AbsCoreCommand(AbsCLIOperation, abstract=True):
+
+	def __init__(self):
+		self.parsers = {}
+		try:
+			import IPython  # noqa: PLC0415
+			sys.breakpointhook = IPython.embed
+		except Exception:
+			pass
+
+
+	def load_config(self,
+		config_path: str | None,
+		unknown_args: Sequence[str],
+		logger: AmpelLogger | None = None,
+		freeze: bool = True,
+		env_var_prefix: str | None = "AMPEL_CONFIG_",
+		config_load_options: ConfigLoadOptions | None = None
+	) -> AmpelConfig:
+
+		if config_load_options is None:
+			config_load_options = ConfigLoadOptions()
+
+		if not config_path:
+			std_conf = get_user_data_config_path()
+			if os.path.exists(std_conf):
+				try:
+					ampel_conf = AmpelConfig.load(std_conf, freeze=False, options=config_load_options)
+				except InvalidConfigError:
+					sys.exit(1)
+			else:
+				with out_stack():
+					raise ValueError("No default ampel config found -> argument -config required\n")
+		else:
+			ampel_conf = AmpelConfig.load(config_path, freeze=False, options=config_load_options)
+
+		if logger is None:
+			logger = AmpelLogger.get_logger()
+
+		if env_var_prefix is not None:
+			for var, value in os.environ.items():
+				if var.startswith(env_var_prefix):
+					k = var[len(env_var_prefix):]
+					try:
+						v = json.loads(value)
+					except json.JSONDecodeError:
+						v = value
+					logger.info(f"Setting config parameter '{k}' from environment")
+					set_by_path(ampel_conf._config, k, v)  # noqa: SLF001
+
+		for k, v in self.get_custom_args(unknown_args):
+
+			if ampel_conf.get(".".join(k.split(".")[:-1])) is None:
+				with out_stack():
+					raise ValueError(f"Unknown config parameter '{k}'\n")
+
+			logger.info(f"Setting config parameter '{k}' value to: {v}")
+			set_by_path(ampel_conf._config, k, v)  # noqa: SLF001
+
+		if freeze:
+			ampel_conf._config = recursive_freeze(ampel_conf._config)  # noqa: SLF001
+
+		return ampel_conf
+
+
+	def get_custom_args(self, customizations: Sequence[str]) -> Iterator[tuple[str, Any]]:
+		"""
+		:raises: ValueError
+		"""
+
+		it = iter(customizations)
+		for el in it:
+			if custom_conf_patter.match(el):
+				if "=" in el:
+					s = el.split("=")
+					k = s[0][2:]
+					v = _maybe_int(s[1])
+				else:
+					k = el[2:]
+					try:
+						v = _maybe_int(next(it))
+					except StopIteration:
+						v = None
+				yield k, v
+			else:
+				with out_stack():
+					raise ValueError(f"Unknown argument: {el}\n")
+
+
+	def get_context(self,
+		args: dict[str, Any],
+		unknown_args: Sequence[str],
+		logger: AmpelLogger | None = None,
+		freeze_config: bool = True,
+		ContextClass: type[T] = AmpelContext, # type: ignore[assignment]
+		require_existing_db: bool | str = True,
+		one_db: bool | Literal['auto'] = False,
+		config_load_options: ConfigLoadOptions | None = None,
+		**kwargs
+	) -> T:
+		"""
+		:require_existing_db: str typed values specify required database prefix
+		"""
+
+		if logger is None:
+			logger = AmpelLogger.get_logger()
+
+		if config_load_options is None:
+			config_load_options = ConfigLoadOptions()
+
+		config = self.load_config(
+			args['config'], unknown_args, logger,
+			freeze = freeze_config,
+			config_load_options = config_load_options
+		)
+
+		vault = get_vault(args)
+		db = get_db(config, vault, require_existing_db, one_db)
+
+		return ContextClass(
+			config = config,
+			db = db,
+			loader = UnitLoader(config, db=db, vault=vault),
+			**kwargs
+		)
+
+
+	def convert_logical_args(self, name: str, args: dict[str, Any]) -> None:
+
+		for k in (f"with_{name}", f"with_{name}s_and", f"with_{name}s_or"):
+			if args.get(k):
+				if name not in args:
+					args[name] = {}
+				args[name]['with'] = args[k]
+				break
+
+		for k in (f"without_{name}", f"without_{name}s_and", f"without_{name}s_or"):
+			if args.get(k):
+				if name not in args:
+					args[name] = {}
+				args[name]['without'] = args[k]
+				break

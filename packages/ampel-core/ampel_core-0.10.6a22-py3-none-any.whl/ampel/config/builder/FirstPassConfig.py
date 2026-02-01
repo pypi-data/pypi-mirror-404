@@ -1,0 +1,125 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# File:                Ampel-core/ampel/config/builder/FirstPassConfig.py
+# License:             BSD-3-Clause
+# Author:              valery brinnel <firstname.lastname@gmail.com>
+# Date:                16.10.2019
+# Last Modified Date:  07.11.2025
+# Last Modified By:    valery brinnel <firstname.lastname@gmail.com>
+
+import json
+from typing import Any, Literal
+
+from ampel.config.builder.DisplayOptions import DisplayOptions
+from ampel.config.collector.AliasConfigCollector import AliasConfigCollector
+from ampel.config.collector.ChannelConfigCollector import ChannelConfigCollector
+from ampel.config.collector.ConfigCollector import ConfigCollector
+from ampel.config.collector.DBConfigCollector import DBConfigCollector
+from ampel.config.collector.ForwardProcessConfigCollector import (
+	ForwardProcessConfigCollector,
+)
+from ampel.config.collector.LoggingCollector import LoggingCollector
+from ampel.config.collector.ProcessConfigCollector import ProcessConfigCollector
+from ampel.config.collector.ResourceConfigCollector import ResourceConfigCollector
+from ampel.config.collector.UnitConfigCollector import UnitConfigCollector
+from ampel.log.AmpelLogger import AmpelLogger
+
+tiers: tuple[Literal[0, 1, 2, 3], ...] = (0, 1, 2, 3)
+
+class FirstPassConfig(dict):
+	"""
+	Class used to aggregate config pieces into a central configuration dict for ampel.
+	"""
+
+	conf_keys: dict[str, None | type[ConfigCollector]] = {
+		"mongo": DBConfigCollector,
+		"logging": LoggingCollector,
+		"channel": ChannelConfigCollector,
+		"unit": None,
+		"process": None,
+		"alias": None,
+		"resource": ResourceConfigCollector,
+	}
+
+	def __init__(self,
+		options: DisplayOptions,
+		logger: None | AmpelLogger = None,
+		ignore_exc: list[str] | None = None
+	) -> None:
+
+		self.logger = AmpelLogger.get_logger() if logger is None else logger
+
+		d: dict[str, Any] = {
+			k: Klass(conf_section=k, options=options, logger=logger)
+			for k, Klass in self.conf_keys.items() if Klass
+		}
+
+		d['unit'] = UnitConfigCollector(
+			conf_section="unit", options=options, logger=logger, ignore_exc=ignore_exc
+		)
+
+		# Allow process to be defined in root key
+		d['process'] = ForwardProcessConfigCollector(
+			root_config=self, conf_section="process",
+			target_collector_type=ProcessConfigCollector,
+			logger=logger, options=options
+		)
+
+		d['alias'] = {}
+		for k in tiers:
+
+			d['alias'][f"t{k}"] = AliasConfigCollector(
+				conf_section='alias', options=options, logger=logger, tier=k
+			)
+
+			# Allow processes to be defined in sub-tier entries already (process.t0, process.t1, ...)
+			d['process'][f"t{k}"] = ProcessConfigCollector(
+				conf_section='process', options=options, logger=logger, tier=k
+			)
+
+		d['process']["ops"] = ProcessConfigCollector(
+			conf_section='process', options=options, logger=logger, tier="ops"
+		)
+
+		super().__init__(d)
+
+
+	def unset_errors(self, d: None | dict = None) -> None:
+		""" """
+		for v in d.values() if d is not None else self.values():
+			if isinstance(v, dict):
+				if getattr(v, 'has_error', False):
+					v.has_error = False # type: ignore[attr-defined]
+				self.unset_errors(v)
+
+
+	def has_nested_error(self, d=None, k=None) -> bool:
+
+		ret = False
+
+		for kk, dd in d.items() if d is not None else self.items():
+			if isinstance(dd, dict):
+				if getattr(dd, 'has_error', False):
+					ret = True
+					self.logger.warn(f"Errors occurred during configuration build in {dd.__class__.__name__}")
+					if getattr(dd, 'err_fqns', False):
+						self.logger.warn("[blue]───────[/blue]")
+						self.logger.warn("[bold][blue]Summary[/bold][/blue]")
+						self.logger.warn("[blue]───────\n[/blue]")
+						for el in dd.err_fqns: # type: ignore[attr-defined]
+							self.logger.warn(f"[red][bold]{el[0]}[/bold][/red]: {el[1]}")
+						print(" ") # noqa
+				if self.has_nested_error(dd, kk):
+					ret = True
+
+		return ret
+
+
+	def print(self) -> None:
+
+		if self.has_nested_error():
+			self.logger.warn(
+				"Warning: error were reported while collecting configurations"
+			)
+
+		self.logger.info(json.dumps(self, indent=4))
