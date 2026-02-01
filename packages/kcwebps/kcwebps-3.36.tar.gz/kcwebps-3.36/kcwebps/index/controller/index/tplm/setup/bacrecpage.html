@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+<meta charset="utf-8" />
+<title>kcwebs云管</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+<meta name="HandheldFriendly" content="true"/>
+<meta name="MobileOptimized" content="320"/>
+<%include file="../include/static.html"/>
+</head>
+<body>
+<div id="app">
+    <van-cell-group>
+        <van-cell @click="backup()" title="备份所有导服务器" value="备份" is-link></van-cell>
+        <van-cell @click="recovery()" title="从服务器恢复所有" value="恢复" is-link></van-cell>
+    </van-cell-group>
+    <van-collapse v-model="activeNames">
+        <van-collapse-item :title="mysql?mysql:'阿里云oss mysql备份点'" name="1">
+            <span v-for="item in aliyunossmysqllist">
+                <van-cell v-if="item.type=='file'">
+                    <template #title>
+                        <img :src="kcwebsimg+'/icon/zip.png'" alt="" style="height:20px;float:left">
+                        <span class="custom-title">{{item.name}}</span>
+                    </template>
+                    <template #right-icon>
+                        <van-button v-if="item.type=='file'" type="primary" size="small" @click="recoverymysql(item.path)">恢复</van-button>
+                    </template>
+                </van-cell>
+                <van-cell v-else is-link @click="mysql=item.name;getaliyunosslist(item.path)">
+                    <template #title>
+                        <img :src="kcwebsimg+'/icon/folder.png'" alt="" style="height:20px;float:left">
+                        <span class="custom-title">{{item.name}}</span>
+                    </template>
+                </van-cell>
+            </span>
+        </van-collapse-item>
+        <van-collapse-item title="阿里云oss文稿备份点" name="2">
+            <van-cell v-for="item in aliyunosslist">
+                <template #title>
+                    <img :src="kcwebsimg+'/icon/zip.png'" alt="" style="height:20px;float:left">
+                    <span class="custom-title">{{item.name}}</span>
+                </template>
+                <template #right-icon>
+                    <van-button v-if="item.type=='file'" type="primary" size="small" @click="aliyunossdownload(item.path)">恢复</van-button>
+                </template>
+            </van-cell>
+        </van-collapse-item>
+    </van-collapse>
+</div>
+<script>
+ var VU=new Vue({
+    el: '#app',
+    data:{
+        kcwebsimg:"${config.domain['kcwebsimg']}",
+        winheight:document.documentElement.clientHeight,winwidth:document.documentElement.clientWidth,upload:{fileList:[]},
+        config:{
+            aliyun:{
+                address:'',
+                bucket:'',
+                access_key:'',
+                access_key_secret:'',
+                backpath:''
+            }
+        },aliyunosslist:[],aliyunossmysqllist:[],
+        activeNames: ['1','2'],activeNames1:[],mysql:''
+    },
+    mounted:function(){
+        self=this
+        window.onresize = function(){
+            self.winheight=document.documentElement.clientHeight
+            self.winwidth=document.documentElement.clientWidth
+        }
+        try{
+            parent.window.setheader({height:49,type:'lefturl',title:'备份恢复',icon:'https://img.kwebapp.cn/icon/aliyunoss.png',
+                lefturl:{text:'系统设置',url:'/index/index/setup'}
+            })
+        }catch(exception){}
+        self.obtain()
+    },
+    methods: {
+        gethtml:function(url,title,icon){
+            parent.window.topgethtml(url,title,icon)
+        },
+        //从阿里云恢复文稿
+        aliyunossdownload:function(filepath,types){
+            self=this
+            self.$dialog.confirm({
+                title: '警告',
+                message: '该操作会还原系统备份文稿，是否继续',
+            }).then(function(){
+                self.put("/index/index/setup/aliyunossdownload?filepath="+filepath,{},"正在恢复...").then(function(res){
+                    self.$notify({message: res.msg,type: 'success'});
+                })
+            }).catch(function(){});
+        },
+        //恢复mysql
+        recoverymysql:function(filepath){
+            self=this
+            var edition="5.6"
+            if(filepath.indexOf('5.7')!=-1){
+                edition='5.7'
+            }
+            self.$dialog.confirm({
+                title: '警告',
+                message: '该操作会还原mysql备份数据，是否继续',
+            }).then(function(){
+                self.put("/intapp/soft/mysql/recovery/whole/1/"+edition+"?db="+filepath,{},"正在恢复...").then(function(res){
+                    self.$notify({message: res.msg,type: 'success'});
+                })
+            }).catch(function(){});
+        },
+        getaliyunosslist:function(prefix){
+            self=this
+            self.get("/index/index/setup/aliyunosslist",{prefix:prefix},"请稍后...").then(function(res){
+                self.aliyunossmysqllist=res.data
+            })
+        },
+        obtain:function(){
+			self=this
+            self.get("/index/index/setup/aliyunosslist/mysql",null,"请稍后...").then(function(res){
+                self.aliyunossmysqllist=res.data
+            })
+            self.get("/index/index/setup/aliyunosslist/app",null,"请稍后...").then(function(res){
+                self.aliyunosslist=res.data
+            })
+        },
+        backup:function(dirname){
+            var self=this;
+            self.post("/index/index/setup/backup?dirname="+dirname,{},'正在备份').then(function(res){
+                if(res.code==0){
+                    self.$notify({message:res.msg,type: 'success'});
+                }else if(res.code==1){
+                    self.$dialog.confirm({
+                        title: '温馨提示',
+                        message: res.msg,
+                    }).then(function(){
+                        self.post("/index/index/setup/backup?dirname="+dirname+"&qzx=1",{}).then(function(res){
+                            if(res.code==0){
+                                self.$notify({message:res.msg,type: 'success'});
+                            }else if(res.code==1){
+                                self.$notify({message:res,msg,type: 'warning'});
+                            }
+                        })
+                    }).catch(function(){});
+                }
+            })
+        },recovery:function(dirname){
+            var self=this;
+            self.put("/index/index/setup/recovery?dirname="+dirname,{},'正在恢复').then(function(res){
+                if(res.code==0){
+                    self.$notify({message:res.msg,type: 'success'});
+                }else if(res.code==1){
+                    self.$confirm({
+                        title: '温馨提示',
+                        message: res.msg,
+                    }).then(function(){
+                        self.get("/index/index/setup/recovery",{dirname:dirname,qzx:1}).then(function(res){
+                            if(res.code==0){
+                                self.$notify({message:res.msg,type: 'success'});
+                            }else if(res.code==1){
+                                self.$notify({message:res,msg,type: 'warning'});
+                            }
+                        })
+                    }).catch(function(){});
+                }
+            })
+        },
+    }
+ });
+  </script>
+</body>
+</html>
