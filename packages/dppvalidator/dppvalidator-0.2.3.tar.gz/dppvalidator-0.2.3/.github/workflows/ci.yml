@@ -1,0 +1,158 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      # Matches pre-commit: ruff bandit security (src only)
+      - name: Run ruff security (bandit)
+        run: uv run ruff check src/ --select=S --ignore=S101,S110 --output-format=github
+
+      # Matches pre-commit: ruff isort
+      - name: Run ruff isort
+        run: uv run ruff check src/ tests/ --select=I --output-format=github
+
+      # Matches pre-commit: ruff type annotations (src only)
+      - name: Run ruff type annotations
+        run: uv run ruff check src/ --select=ANN --ignore=ANN101,ANN102,ANN401,ANN002,ANN003 --output-format=github
+
+      # Matches pre-commit: ruff comprehensive (src only)
+      - name: Run ruff comprehensive (src)
+        run: uv run ruff check src/ --output-format=github
+
+      # Matches pre-commit: ruff-format
+      - name: Run ruff formatter check
+        run: uv run ruff format --check src/ tests/
+
+      # Matches pre-commit: ty type checker
+      - name: Run ty type checker
+        run: uv run ty check src/dppvalidator/
+
+      # Matches pre-commit: pip-audit (pre-push stage)
+      - name: Run security scan (pip-audit)
+        run: uv run pip-audit --skip-editable
+
+  test:
+    runs-on: ${{ matrix.os }}
+    needs: lint
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+          enable-cache: true
+          cache-suffix: ${{ matrix.os }}-${{ matrix.python-version }}
+
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Run tests with coverage
+        run: uv run pytest tests/ -v --cov=src/dppvalidator --cov-report=xml --cov-report=html --cov-fail-under=90 --junitxml=test-results.xml
+
+      - name: Generate coverage report
+        id: coverage
+        if: always() && matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
+        run: |
+          COVERAGE=$(uv run coverage report --format=total)
+          echo "coverage=$COVERAGE" >> $GITHUB_OUTPUT
+          echo "## 📊 Coverage Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Total Coverage:** ${COVERAGE}%" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          uv run coverage report --format=markdown >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-${{ matrix.os }}-py${{ matrix.python-version }}
+          path: test-results.xml
+          retention-days: 30
+
+      - name: Upload coverage HTML report
+        uses: actions/upload-artifact@v4
+        if: always() && matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
+        with:
+          name: coverage-report
+          path: htmlcov/
+          retention-days: 90
+
+      - name: Upload coverage to Codecov
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.xml
+          fail_ci_if_error: false
+
+  mutation:
+    runs-on: ubuntu-latest
+    needs: lint
+    continue-on-error: true # Non-blocking - mutation testing is advisory
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Run mutation tests
+        run: |
+          uv run mutmut run \
+            --paths-to-mutate=src/dppvalidator/validators/ \
+            --tests-dir=tests/unit/ \
+            --runner="uv run pytest tests/unit/ -x --tb=no -q" \
+            --no-progress \
+            || true  # Don't fail the job on surviving mutants
+
+      - name: Generate mutation report
+        if: always()
+        run: |
+          echo "## 🧬 Mutation Testing Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          uv run mutmut results >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "No results available" >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload mutation cache
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mutation-cache
+          path: .mutmut-cache
+          retention-days: 7
