@@ -1,0 +1,239 @@
+# LangChain-Encrypted-Mongo-Memory
+
+![Python](https://img.shields.io/badge/python-3.9+-blue.svg)
+[![PyPI](https://img.shields.io/badge/PyPI-langchain--encrypted--mongo--memory-blue)](https://pypi.org/project/langchain-encrypted-mongo-memory/)
+![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
+
+**A Secure, Encrypted MongoDB Chat Memory for LangChain Applications**
+
+LangChain-Encrypted-Mongo-Memory extends `MongoDBChatMessageHistory` to provide AES-128 encryption for all stored messages. Built on top of [mores-encryption](https://pypi.org/project/mores-encryption/), it ensures sensitive conversation data remains protected at rest.
+
+Perfect for securing chat histories containing PII, medical data, financial information, or any sensitive conversation data in your LangChain applications.
+
+LangChain-Encrypted-Mongo-Memory removes the cryptographic complexity so you can focus on building — not configuring.
+
+---
+
+## Features
+
+- **AES-128 Encryption** — Messages encrypted using Fernet (AES-128 CBC with PKCS7 padding)
+- **HMAC-SHA256 Integrity** — Cryptographic verification of message integrity
+- **URL-safe Base64 Output** — Encrypted data stored in URL-safe format
+- **Drop-in Replacement** — Compatible with LangChain's chat memory interface
+- **Persistent Storage** — Long-term message storage in MongoDB
+- **Type Filtering** — Supports human, AI, and system message types
+- **Zero-Config Encryption** — Automatic key handling via mores-encryption
+
+---
+
+## Installation
+
+```bash
+pip install langchain-encrypted-mongo-memory
+```
+
+Or install from source:
+
+```bash
+git clone https://github.com/HATAKEkakshi/langchain-encrypted-mongo-memory.git
+cd langchain-encrypted-mongo-memory
+pip install -e .
+```
+
+---
+
+## Setup
+
+### Generate Encryption Key
+
+Run this command in your terminal:
+
+```bash
+python -c "from cryptography.fernet import Fernet; print('ENCRYPTION_KEY=' + Fernet.generate_key().decode())"
+```
+
+### Save to .env
+
+Copy the output and save it in your `.env` file:
+
+```env
+ENCRYPTION_KEY=your_generated_key_here
+```
+
+---
+
+## Usage
+
+### 1. Basic Usage
+
+```python
+from langchain_encrypted_mongo_memory import EncryptedMongoDBChatMessageHistory
+from langchain_core.messages import HumanMessage, AIMessage
+
+# Create encrypted history
+history = EncryptedMongoDBChatMessageHistory(
+    connection_string="mongodb://localhost:27017",
+    database_name="chat_app",
+    collection_name="encrypted_messages",
+    session_id="user-123"
+)
+
+# Add messages (automatically encrypted)
+history.add_message(HumanMessage(content="Hello, how are you?"))
+history.add_message(AIMessage(content="I'm doing great, thank you!"))
+
+# Retrieve messages (automatically decrypted)
+messages = history.messages
+for msg in messages:
+    print(f"{msg.type}: {msg.content}")
+```
+
+### 2. Clear Session History
+
+```python
+# Clear history for the current session
+history.clear()
+```
+
+---
+
+## Why Use LangChain-Encrypted-Mongo-Memory?
+
+Because securing chat history shouldn't be painful.
+
+Most developers store sensitive conversation data in MongoDB without encryption — exposing PII, medical records, and confidential information to potential breaches.
+
+LangChain-Encrypted-Mongo-Memory gives you:
+
+- **Automatic Encryption** — Messages encrypted before storage
+- **Transparent Decryption** — Seamless retrieval without extra code
+- **LangChain Compatible** — Works with all LangChain memory patterns
+- **Production Ready** — Built on proven cryptographic standards
+- **Minimal Code Changes** — Drop-in replacement for MongoDBChatMessageHistory
+
+---
+
+## Configuration
+
+### Environment Variables
+
+| Variable | Description | Required | Default |
+|----------|-------------|----------|---------|
+| `ENCRYPTION_KEY` | Base64-encoded 32-byte Fernet key | No (Auto-generated if missing) | N/A |
+
+### MongoDB Connection URLs
+
+```python
+# Local MongoDB
+connection_string="mongodb://localhost:27017"
+
+# With authentication
+connection_string="mongodb://user:password@localhost:27017"
+
+# MongoDB Atlas
+connection_string="mongodb+srv://user:password@cluster.mongodb.net"
+
+# With replica set
+connection_string="mongodb://host1:27017,host2:27017/?replicaSet=rs0"
+```
+
+---
+
+## API Reference
+
+### EncryptedMongoDBChatMessageHistory
+
+```python
+EncryptedMongoDBChatMessageHistory(
+    connection_string: str,
+    database_name: str,
+    collection_name: str,
+    session_id: str
+)
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `connection_string` | `str` | MongoDB connection URL |
+| `database_name` | `str` | Name of the database |
+| `collection_name` | `str` | Name of the collection |
+| `session_id` | `str` | Unique identifier for the chat session |
+
+### Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `messages` | `List[BaseMessage]` | List of decrypted messages |
+
+### Methods
+
+| Method | Description |
+|--------|-------------|
+| `add_message(message)` | Encrypt and store a message |
+| `add_user_message(content)` | Add a human message |
+| `add_ai_message(content)` | Add an AI message |
+| `clear()` | Delete all messages for this session |
+
+---
+
+## Security Implementation Details
+
+- **Encryption**: `cryptography.fernet.Fernet` (AES-128 CBC with PKCS7 padding, HMAC-SHA256 for integrity)
+- **Key Management**: Automatic loading from `ENCRYPTION_KEY` environment variable
+- **Encoding**: All outputs are URL-safe Base64 encoded strings
+- **Library**: Built on [mores-encryption](https://pypi.org/project/mores-encryption/) for proven security
+
+---
+
+## Development
+
+### Setup
+
+```bash
+git clone https://github.com/HATAKEkakshi/langchain-encrypted-mongo-memory.git
+cd langchain-encrypted-mongo-memory
+python -m venv venv
+source venv/bin/activate
+pip install -e ".[dev]"
+```
+
+### Running Tests
+
+```bash
+# Run all tests
+pytest
+
+# With verbose output
+pytest -v
+
+# With coverage
+pytest --cov=langchain_encrypted_mongo_memory
+```
+
+---
+
+## Documentation & Source Code
+
+- **GitHub**: https://github.com/HATAKEkakshi/langchain-encrypted-mongo-memory
+- **PyPI**: https://pypi.org/project/langchain-encrypted-mongo-memory/
+- **mores-encryption**: https://pypi.org/project/mores-encryption/
+
+---
+
+## License
+
+MIT License — see [LICENSE](LICENSE) for details.
+
+---
+
+## Author
+
+**Hemant Kumar** — [GitHub](https://github.com/HATAKEkakshi)
+
+---
+
+## Acknowledgments
+
+- [LangChain](https://langchain.com/) for the excellent LLM framework
+- [mores-encryption](https://pypi.org/project/mores-encryption/) for encryption utilities
+- [cryptography](https://cryptography.io/) for secure encryption primitives
