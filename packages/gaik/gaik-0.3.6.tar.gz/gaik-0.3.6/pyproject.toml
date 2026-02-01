@@ -1,0 +1,226 @@
+[project]
+name = "gaik"
+dynamic = ["version"]
+description = "General AI Kit - Reusable AI/ML components for Python"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+authors = [{ name = "GAIK Project" }]
+keywords = [
+    "ai",
+    "ml",
+    "openai",
+    "azure-openai",
+    "structured-outputs",
+    "pydantic",
+    "schema",
+    "extraction",
+    "transcription",
+    "whisper",
+    "audio",
+    "video",
+    "pdf-parsing",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    # Core runtime requirements shared across all installs
+    "pydantic>=2.12.0",
+    "python-dotenv>=1.2.0",
+    "openai>=2.7.0",
+]
+
+[project.optional-dependencies]
+# Data extraction with LLM providers (core deps provide openai, pydantic, python-dotenv)
+extract = []
+
+# Text embeddings
+embedder = [
+    "openai>=1.58.0",
+    "langchain-core>=0.2.0",
+]
+
+# Vector store (in-memory + Chroma)
+vector-store = [
+    "langchain-core>=0.2.0",
+    "numpy>=1.24.0",
+    "chromadb>=0.5.0",
+]
+
+retriever = [
+    "gaik[embedder]",
+    "gaik[vector-store]",
+    "langchain-core>=0.2.0",
+    "sentence-transformers>=2.6.0",
+]
+
+answer-generator = [
+    "openai>=1.58.0",
+    "langchain-core>=0.2.0",
+]
+
+# Document parsing (PDF, DOCX, images)
+parser = [
+    "PyMuPDF>=1.26.0",
+    "python-docx>=1.2.0",
+    "docling==2.64.1",
+    "psutil",
+]
+
+# RAG docling parser
+rag-parser-docling = [
+    "docling==2.64.1",
+    "docling-core[chunking]>=2.50.1,<3.0.0",
+    "docling-ibm-models>=3.9.1,<4",
+    "docling-parse>=4.7.0,<5.0.0",
+    "langchain-core>=0.2.0",
+    "pydantic>=2.0.0",
+    "python-dotenv>=1.0.0",
+    "torch>=2.1.0",
+    "transformers>=4.39.0",
+]
+
+# RAG vision parser (Docling + Vision model for images)
+rag-parser-vision = [
+    "docling==2.64.1",
+    "docling-core[chunking]>=2.50.1,<3.0.0",
+    "docling-ibm-models>=3.9.1,<4",
+    "docling-parse>=4.7.0,<5.0.0",
+    "langchain-core>=0.2.0",
+    "openai>=2.7",
+    "PyMuPDF>=1.23.0",
+    "Pillow>=10.0.0",
+    "pydantic>=2.0.0",
+    "python-dotenv>=1.0.0",
+    "torch>=2.1.0",
+    "transformers>=4.39.0",
+]
+
+# RAG workflow
+rag-workflow = [
+    "gaik[rag-parser-vision]",
+    "gaik[embedder]",
+    "gaik[vector-store]",
+    "gaik[retriever]",
+    "gaik[answer-generator]",
+]
+
+# Audio/video transcription
+transcriber = [
+    "pydub>=0.25.1",
+]
+
+# Document classification
+classifier = [
+    "PyMuPDF>=1.26.0",
+    "python-docx>=1.2.0",
+]
+
+# All features
+all = [
+    "gaik[extract]",
+    "gaik[parser]",
+    "gaik[transcriber]",
+    "gaik[classifier]",
+    "gaik[rag-parser-docling]",
+    "gaik[rag-parser-vision]",
+    "gaik[embedder]",
+    "gaik[vector-store]",
+    "gaik[retriever]",
+    "gaik[answer-generator]",
+    "gaik[rag-workflow]",
+    "gaik[audio-to-structured-data]",
+    "gaik[documents-to-structured-data]",
+]
+
+# Software components
+audio-to-structured-data = [
+    "gaik[transcriber]",
+    "gaik[extract]",
+]
+
+documents-to-structured-data = [
+    "gaik[parser]",
+    "gaik[extract]",
+]
+
+# CPU-only variants (no GPU/torch/docling dependencies)
+parser-cpu = [
+    "PyMuPDF>=1.26.0",
+    "python-docx>=1.2.0",
+]
+
+documents-to-structured-data-cpu = [
+    "gaik[parser-cpu]",
+    "gaik[extract]",
+]
+
+all-cpu = [
+    "gaik[extract]",
+    "gaik[parser-cpu]",
+    "gaik[transcriber]",
+    "gaik[classifier]",
+    "gaik[audio-to-structured-data]",
+    "gaik[documents-to-structured-data-cpu]",
+    "gaik[rag-workflow]",
+]
+
+# Development tooling for maintainers only (pip install -e ".[dev]")
+dev = [
+    "ruff>=0.14.1",
+    "build>=1.0",
+    "twine>=4.0",
+    "pytest>=8.0",
+]
+
+[project.urls]
+Homepage = "https://gaik.ai/"
+Repository = "https://github.com/GAIK-project/gaik-toolkit"
+Documentation = "https://github.com/GAIK-project/gaik-toolkit/tree/main/docs"
+Issues = "https://github.com/GAIK-project/gaik-toolkit/issues"
+
+# Build system configuration (not installed, used during `python -m build`)
+[build-system]
+requires = ["setuptools>=61.0", "wheel", "setuptools-scm>=8.0"]
+build-backend = "setuptools.build_meta"
+
+# Source code location (not installed, directs setuptools behavior)
+[tool.setuptools.packages.find]
+where = ["implementation_layer/src"]
+exclude = ["gaik.tests", "gaik.*.tests"]
+[tool.setuptools_scm]
+version_file = "implementation_layer/src/gaik/_version.py"
+tag_regex = "^v(?P<version>\\d+\\.\\d+\\.\\d+)$"
+fallback_version = "0.0.0"
+version_scheme = "no-guess-dev"
+local_scheme = "no-local-version"
+
+
+# Include type hints marker file (py.typed included in package)
+[tool.setuptools.package-data]
+gaik = ["py.typed"]
+
+# Ruff linter/formatter settings (not installed, used when running `ruff check`)
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["scripts"]  # Exclude CI/CD scripts from linting
+
+# Ruff lint rules configuration
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+ignore = []
+
+# Pytest test runner configuration
+[tool.pytest.ini_options]
+testpaths = ["implementation_layer/unit_tests"]
+addopts = ["-v", "--strict-markers"]

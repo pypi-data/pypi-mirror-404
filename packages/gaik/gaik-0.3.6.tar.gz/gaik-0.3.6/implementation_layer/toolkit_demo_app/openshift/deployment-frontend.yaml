@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gaik-demo
+  labels:
+    app: gaik-demo
+    app.kubernetes.io/part-of: gaik-toolkit
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gaik-demo
+  template:
+    metadata:
+      labels:
+        app: gaik-demo
+    spec:
+      containers:
+        - name: gaik-demo
+          image: image-registry.apps.2.rahti.csc.fi/gaik/gaik-demo:latest
+          ports:
+            - containerPort: 3000
+          env:
+            - name: BACKEND_URL
+              value: "http://gaik-demo-api:8000"
+            - name: ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: gaik-demo-admin
+                  key: ADMIN_PASSWORD
+            - name: NEXT_PUBLIC_SUPABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: gaik-demo-supabase
+                  key: NEXT_PUBLIC_SUPABASE_URL
+            - name: NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: gaik-demo-supabase
+                  key: NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+            - name: SUPABASE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: gaik-demo-supabase
+                  key: SUPABASE_SECRET_KEY
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
