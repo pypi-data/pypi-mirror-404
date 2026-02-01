@@ -1,0 +1,165 @@
+#
+# sonar-tools
+# Copyright (C) 2024-2026 Olivier Korach
+# mailto:olivier.korach AT gmail DOT com
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU Lesser General Public
+# License as published by the Free Software Foundation; either
+# version 3 of the License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+# Lesser General Public License for more details.
+#
+# You should have received a copy of the GNU Lesser General Public License
+# along with this program; if not, write to the Free Software Foundation,
+# Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+#
+"""
+
+Abstraction of the SonarQube Cloud organization concept
+
+"""
+
+from __future__ import annotations
+from typing import Optional, Any, TYPE_CHECKING
+
+import json
+from threading import Lock
+
+from sonar.sqobject import SqObject
+import sonar.logging as log
+from sonar.util import cache
+from sonar import exceptions
+import sonar.util.misc as util
+from sonar.api.manager import ApiOperation as Oper
+
+if TYPE_CHECKING:
+    from sonar.platform import Platform
+    from sonar.util.types import ApiParams, ApiPayload, ObjectJsonRepr, KeyList
+
+
+_IMPORTABLE_PROPERTIES = ("key", "name", "description", "url", "avatar", "newCodePeriod")
+_NOT_SUPPORTED = "Organizations do not exist in SonarQube"
+
+
+class Organization(SqObject):
+    """Abstraction of the SonarQube Cloud "organization" concept"""
+
+    CACHE = cache.Cache()
+    CLASS_LOCK = Lock()
+
+    def __init__(self, endpoint: Platform, data: ApiPayload) -> None:
+        """Don't use this directly, go through the class methods to create Objects"""
+        super().__init__(endpoint, data)
+        self.key = data["key"]
+        self.description: Optional[str] = None
+        self.name = data["name"]
+        log.debug("Created object %s", str(self))
+        with self.__class__.CLASS_LOCK:
+            self.__class__.CACHE.put(self)
+
+    def __str__(self) -> str:
+        return f"organization key '{self.key}'"
+
+    @classmethod
+    def search(cls, endpoint: Platform, **search_params: Any) -> dict[str, Organization]:
+        """Searches organizations
+
+        :param Platform endpoint: Reference to the SonarQube platform
+        :param search_params: Search filters (see api/organizations/search parameters)
+        :raises UnsupportedOperation: If not on a SonarQube Cloud platform
+        :return: dict of organizations
+        :rtype: dict {<orgKey>: Organization, ...}
+        """
+        if not endpoint.is_sonarcloud():
+            raise exceptions.UnsupportedOperation(_NOT_SUPPORTED)
+        return cls.get_paginated(endpoint=endpoint, params=search_params | {"member": "true"})
+
+    @classmethod
+    def get_object(cls, endpoint: Platform, key: str) -> Organization:
+        """Gets an Organization object from SonarQube Cloud
+
+        :param Platform endpoint: Reference to the SonarQube platform
+        :param str key: Application key, must not already exist on SonarQube
+        :raises UnsupportedOperation: If on a Community Edition
+        :raises ObjectNotFound: If Application key not found in SonarQube
+        :return: The found Application object
+        :rtype: Application
+        """
+        if not endpoint.is_sonarcloud():
+            raise exceptions.UnsupportedOperation(_NOT_SUPPORTED)
+        if o := Organization.CACHE.get(endpoint.local_url, key):
+            return o
+        api, _, params, ret = endpoint.api.get_details(cls, Oper.SEARCH, organizations=key)
+        data = json.loads(endpoint.get(api, params=params).text)
+        if len(data[ret]) == 0:
+            raise exceptions.ObjectNotFound(key, f"Organization '{key}' not found")
+        return cls.load(endpoint, data[ret][0])
+
+    @classmethod
+    def load(cls, endpoint: Platform, data: ApiPayload) -> Organization:
+        """Loads an Organization object with data retrieved from SonarQube Cloud
+
+        :param endpoint: Reference to the SonarQube Cloud platform
+        :param data: Search payload of an organization
+        :raises UnsupportedOperation: If not running against SonarQube Cloud
+        :raises ObjectNotFound: If Organization key not found
+        :return: The found Organization object
+        """
+        if not endpoint.is_sonarcloud():
+            raise exceptions.UnsupportedOperation(_NOT_SUPPORTED)
+        return super().load(endpoint, data)
+
+    def reload(self, data: ApiPayload) -> Organization:
+        """Reloads an Organization object with data retrieved from SonarQube Cloud, returns self"""
+        super().reload(data)
+        self.name = data["name"]
+        self.description = data["description"]
+        return self
+
+    def export(self) -> ObjectJsonRepr:
+        """Exports an organization"""
+        log.info("Exporting %s", str(self))
+        json_data = self.sq_json.copy()
+        json_data.pop("defaultLeakPeriod", None)
+        json_data.pop("defaultLeakPeriodType", None)
+        (nctype, ncval) = self.new_code_period()
+        json_data["newCodePeriod"] = nctype
+        if ncval:
+            json_data["newCodePeriod"] = f"{nctype} = {ncval}"
+        return util.remove_nones(util.filter_export(json_data, _IMPORTABLE_PROPERTIES, True))
+
+    def search_params(self) -> ApiParams:
+        """Return params used to search/create/delete for that object"""
+        return {"organizations": self.key}
+
+    def new_code_period(self) -> tuple[str, str]:
+        if "defaultLeakPeriodType" in self.sq_json and self.sq_json["defaultLeakPeriodType"] == "days":
+            return "DAYS", self.sq_json["defaultLeakPeriod"]
+        return "PREVIOUS_VERSION", None
+
+    def subscription(self) -> str:
+        return self.sq_json.get("subscription", "UNKNOWN")
+
+    def alm(self) -> ApiPayload:
+        """Returns The DevOps platform bound to the organization, or None if not set"""
+        return self.sq_json.get("alm")
+
+
+def export(endpoint: Platform, key_list: KeyList = None) -> ObjectJsonRepr:
+    """Exports organizations as JSON
+
+    :param Platform endpoint: Reference to the SonarQube Cloud platform
+    :param KeyList key_list: list of Organizations keys to export, defaults to all if None
+    :return: Dict of organization settings
+    :rtype: dict
+    """
+
+    org_settings = {k: org.export() for k, org in Organization.search(endpoint).items()}
+    for k in org_settings:
+        # remove key from JSON value, it's already the dict key
+        org_settings[k].pop("key")
+    return org_settings

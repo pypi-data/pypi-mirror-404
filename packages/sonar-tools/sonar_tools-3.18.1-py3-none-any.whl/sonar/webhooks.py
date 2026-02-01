@@ -1,0 +1,221 @@
+#
+# sonar-tools
+# Copyright (C) 2022-2026 Olivier Korach
+# mailto:olivier.korach AT gmail DOT com
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU Lesser General Public
+# License as published by the Free Software Foundation; either
+# version 3 of the License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+# Lesser General Public License for more details.
+#
+# You should have received a copy of the GNU Lesser General Public License
+# along with this program; if not, write to the Free Software Foundation,
+# Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+#
+
+"""Abstraction of the SonarQube webhook concept"""
+
+from __future__ import annotations
+from typing import Optional, ClassVar, Any, Union, TYPE_CHECKING
+
+from sonar.sqobject import SqObject
+import sonar.logging as log
+from sonar import exceptions
+from sonar.util import cache
+import sonar.util.misc as util
+from sonar.audit import rules, problem
+from sonar.api.manager import ApiOperation as Oper
+
+if TYPE_CHECKING:
+    from sonar.platform import Platform
+    from sonar.projects import Project
+    from sonar.util.types import ApiPayload, ObjectJsonRepr
+
+_IMPORTABLE_PROPERTIES = ("name", "url", "secret")
+
+
+class WebHook(SqObject):
+    """Abstraction of the SonarQube "webhook" concept"""
+
+    CACHE: ClassVar[cache.Cache] = cache.Cache()
+
+    def __init__(self, endpoint: Platform, data: ApiPayload) -> None:
+        """Constructor"""
+        super().__init__(endpoint=endpoint, data=data)
+        self.name = data["name"]  #: Webhook name
+        self.webhook_url = data["url"]  #: Webhook key
+        self.secret = data.get("secret")  #: Webhook secret
+        self.project = data.get("project")  #: Webhook project, optional
+        self.last_delivery: Optional[str] = data.get("latestDelivery")  #: Webhook last delivery timestamp
+        self.__class__.CACHE.put(self)
+        self.reload(data)
+
+    def __str__(self) -> str:
+        """Returns a string representation of the webhook"""
+        if self.project:
+            return f"webhook '{self.name}' of {self.project}"
+        return f"webhook '{self.name}'"
+
+    @staticmethod
+    def hash_payload(data: ApiPayload) -> tuple[Any, ...]:
+        """Returns the hash items for a given object search payload"""
+        return (data["name"], data["project"])
+
+    def hash_object(self) -> tuple[Any, ...]:
+        """Returns the hash elements for a given object"""
+        return (self.name, self.project)
+
+    @classmethod
+    def create(cls, endpoint: Platform, name: str, url: str, secret: Optional[str] = None, project: Optional[str] = None) -> WebHook:
+        """Creates a WebHook object in SonarQube
+
+        :param Platform endpoint: Reference to the SonarQube platform
+        :param str name: Webhook name
+        :param str url: Webhook URL
+        :param str secret: Webhook secret, optional
+        :param str project: Webhook project key, optional
+        :return: The created WebHook
+        """
+        log.info("Creating webhook name %s, url %s project %s", name, url, str(project))
+        params = {"name": name, "url": url, "secret": secret, "project": project}
+        api, _, api_params, _ = endpoint.api.get_details(cls, Oper.CREATE, **params)
+        endpoint.post(api, params=api_params)
+        o = cls.get_object(endpoint, name, project)
+        o.secret = secret
+        return o
+
+    @classmethod
+    def load(cls, endpoint: Platform, data: ApiPayload) -> WebHook:
+        """Creates and loads a local WebHook object with data payload received from API
+
+        :param Platform endpoint: Reference to the SonarQube platform
+        :param ApiPayload data: The webhook data received from the API
+        :return: The created WebHook
+        """
+        name, project = data["name"], data.get("project")
+        log.debug("Loading Webhook '%s' of project '%s'", name, project)
+        if (o := cls.CACHE.get(endpoint.local_url, name, project)) is None:
+            o = WebHook(endpoint, data)
+        o.reload(data)
+        return o
+
+    @classmethod
+    def get_object(cls, endpoint: Platform, name: str, project: Optional[Union[str, Project]] = None, use_cache: bool = True) -> WebHook:
+        """Gets a WebHook object from its name and an eventual project key"""
+        if project and not isinstance(project, str):
+            project = project.key
+        log.debug("Getting webhook name %s project key %s", name, project)
+        o = cls.CACHE.get(endpoint.local_url, name, project)
+        if o and use_cache:
+            return o
+        try:
+            whs = list(cls.search(endpoint, project=project).values())
+            return next(wh for wh in whs if wh.name == name)
+        except StopIteration as e:
+            raise exceptions.ObjectNotFound(str(project), f"Webhook '{name}' of project '{project}' not found") from e
+
+    @classmethod
+    def search(cls, endpoint: Platform, **search_params: Any) -> dict[str, WebHook]:
+        """Searches webhooks
+
+        :param search_params: Filters to narrow down the search, can only be "project"
+        :return: Dict of webhooks with webhook name as key
+        """
+        wh_list = cls.get_paginated(endpoint=endpoint, params=search_params)
+        for wh in wh_list.values():
+            wh.project = search_params.get("project")
+        return wh_list
+
+    def reload(self, data: ApiPayload) -> WebHook:
+        """Reloads a WebHook from the payload gotten from SonarQube"""
+        super().reload(data)
+        self.name = data["name"]
+        self.key = data["key"]
+        self.webhook_url = data["url"]
+        self.secret = data.get("secret") or self.secret
+        self.last_delivery = data.get("latestDelivery")
+        return self
+
+    def refresh(self) -> WebHook:
+        """Reads the Webhook data on the SonarQube platform and updates the local object"""
+        log.debug("Refreshing %s", self)
+        return self.__class__.get_object(self.endpoint, name=self.name, project=self.project, use_cache=False)
+
+    def url(self) -> str:
+        """Returns the object permalink"""
+        return f"{self.base_url(local=False)}/admin/webhooks"
+
+    def update(self, **kwargs: str) -> bool:
+        """Updates a webhook with new properties (name, url, secret)
+
+        :param kwargs: dict - "url", "name", "secret" are the looked up keys
+        :return: Whether the operation succeeded
+        """
+        log.info("Updating %s with %s", str(self), str(self.project))
+        params = {"webhook": self.key, "name": self.name, "url": self.webhook_url} | kwargs
+        api, _, api_params, _ = self.endpoint.api.get_details(self, Oper.UPDATE, **params)
+        ok = self.post(api, params=api_params).ok
+        self.refresh()
+        return ok
+
+    def delete(self) -> bool:
+        """Deletes the webhook, returns whether the operation succeeded"""
+        return self.delete_object(webhook=self.key)
+
+    def audit(self) -> list[problem.Problem]:
+        """
+        :meta private:
+        """
+        if "latestDelivery" not in self.sq_json or self.sq_json["latestDelivery"]["success"]:
+            return []
+        return [problem.Problem(rules.get_rule(rules.RuleId.FAILED_WEBHOOK), self, str(self))]
+
+    def to_json(self, full: bool = False) -> dict[str, any]:
+        """Exports a Webhook configuration in JSON format
+
+        :param full: Whether to export all properties, including those that can't be set, or not, defaults to False
+        :type full: bool, optional
+        :return: The configuration of the DevOps platform (except secrets)
+        :rtype: dict
+        """
+        return util.filter_export(self.sq_json, _IMPORTABLE_PROPERTIES, full)
+
+
+def export(endpoint: Platform, project_key: Optional[str] = None, full: bool = False) -> ObjectJsonRepr:
+    """Export webhooks of a project as JSON"""
+    json_data = {}
+    for wb in WebHook.search(endpoint, project=project_key).values():
+        j = wb.to_json(full)
+        j.pop("name", None)
+        json_data[wb.name] = util.remove_nones(j)
+    return json_data if len(json_data) > 0 else None
+
+
+def import_config(endpoint: Platform, data: list[dict[str, str]], project_key: Optional[str] = None) -> None:
+    """Imports a set of webhooks defined from a JSON description"""
+    log.info("Importing webhooks %s for %s", str(data), str(project_key))
+    current_wh = WebHook.search(endpoint, project=project_key)
+    existing_webhooks = {wh.name: k for k, wh in current_wh.items()}
+
+    # FIXME: Handle several webhooks with same name
+    for wh_data in data:
+        wh_name = wh_data["name"]
+        if wh_name in existing_webhooks:
+            current_wh[existing_webhooks[wh_name]].update(**wh_data)
+        else:
+            hook = WebHook.create(endpoint=endpoint, name=wh_name, url=wh_data.get("url", "https://to.be.defined"), project=project_key)
+            hook.update(**wh_data)
+
+
+def audit(endpoint: Platform) -> list[problem.Problem]:
+    """Audits web hooks and returns list of found problems"""
+    log.info("Auditing webhooks")
+    problems = []
+    for wh in WebHook.search(endpoint=endpoint).values():
+        problems += wh.audit()
+    return problems

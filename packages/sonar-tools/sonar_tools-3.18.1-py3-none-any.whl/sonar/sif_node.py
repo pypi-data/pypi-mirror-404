@@ -1,0 +1,297 @@
+#
+# sonar-tools
+# Copyright (C) 2019-2026 Olivier Korach
+# mailto:olivier.korach AT gmail DOT com
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU Lesser General Public
+# License as published by the Free Software Foundation; either
+# version 3 of the License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+# Lesser General Public License for more details.
+#
+# You should have received a copy of the GNU Lesser General Public License
+# along with this program; if not, write to the Free Software Foundation,
+# Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+#
+"""Abstraction of SIF node, for audit"""
+
+from __future__ import annotations
+from typing import Union, TYPE_CHECKING
+
+import datetime
+from dateutil.relativedelta import relativedelta
+
+import sonar.logging as log
+import sonar.util.misc as util
+import sonar.utilities as sutil
+from sonar.util import types, update_center
+from sonar.audit.rules import get_rule, RuleId
+from sonar.audit.problem import Problem
+from sonar import config
+import sonar.util.constants as c
+
+if TYPE_CHECKING:
+    from sonar.util.types import ConfigSettings
+    from sonar.sif import Sif
+    from sonar.dce.app_nodes import AppNode
+
+_RELEASE_DATES = {
+    "2026.1": (2026, 1, 27),
+    "2025.1": (2025, 1, 27),
+    "9.9": (2023, 2, 1),
+    "8.9": (2021, 5, 4),
+    "7.9": (2019, 7, 1),
+    "6.7": (2017, 11, 8),
+}
+
+for k, v in _RELEASE_DATES.items():
+    _RELEASE_DATES[k] = datetime.datetime(*v, tzinfo=datetime.timezone.utc) + relativedelta(months=+6)
+
+_CE_TASKS = "Compute Engine Tasks"
+_WORKER_COUNT = "Worker Count"
+
+
+def __audit_background_tasks(sif_obj: Union[Sif, AppNode], obj_name: str, audit_settings: ConfigSettings) -> list[Problem]:
+    """Audits the SIF for the health of background tasks stats, namely the failure rate
+
+    :param sif_obj: Object concerned by the audit (SIF or App Node)
+    :param str obj_name: String name of the object as it will appear in the audit warning, if any audit warning
+    :return: List of problems found, or empty list
+    """
+    log.info("%s: Auditing CE background tasks", obj_name)
+    problems = []
+    ce_tasks = sif_obj.json.get(_CE_TASKS)
+    if ce_tasks is None:
+        log.warning("%s: Can't find Compute Engine Tasks in SIF, audit on CE task is skipped", obj_name)
+        return []
+    ce_success = ce_tasks["Processed With Success"]
+    ce_error = ce_tasks["Processed With Error"]
+    failure_rate = 0
+    if ce_success != 0 or ce_error != 0:
+        failure_rate = ce_error / (ce_success + ce_error)
+    if ce_error > audit_settings.get("audit.ce.minErrors", 10) and failure_rate > audit_settings.get("audit.ce.mediumFailureRateThreshold", 0.01):
+        rule = get_rule(RuleId.BACKGROUND_TASKS_FAILURE_RATE_HIGH)
+        if failure_rate > audit_settings.get("audit.ce.highFailureRateThreshold", 0.05):
+            rule = get_rule(RuleId.BACKGROUND_TASKS_FAILURE_RATE_VERY_HIGH)
+        problems.append(Problem(rule, sif_obj, int(failure_rate * 100)))
+    else:
+        log.info(
+            "%s: Number of failed background tasks (%d), and failure rate %d%% is OK",
+            obj_name,
+            ce_error,
+            int(failure_rate * 100),
+        )
+    ce_pending = ce_tasks["Pending"]
+    if ce_pending > audit_settings.get("audit.ce.maxPendingTasks", 100):
+        rule = get_rule(RuleId.BACKGROUND_TASKS_PENDING_QUEUE_VERY_LONG)
+        problems.append(Problem(rule, sif_obj, ce_pending))
+    elif ce_pending > audit_settings.get("audit.ce.minPendingTasks", 20) and ce_pending > (
+        audit_settings.get("audit.ce.maxPendingTasksPerWorker", 10) * ce_tasks[_WORKER_COUNT]
+    ):
+        rule = get_rule(RuleId.BACKGROUND_TASKS_PENDING_QUEUE_LONG)
+        problems.append(Problem(rule, sif_obj, ce_pending))
+    else:
+        log.info("%s: Number of pending background tasks (%d) is OK", obj_name, ce_pending)
+    return problems
+
+
+def __audit_jvm(sif_obj: Union[Sif, AppNode], obj_name: str, jvm_state: dict[str, str], heap_limits: tuple[int, int] = (1024, 4096)) -> list[Problem]:
+    """Audits the SIF for the JVM head allocation used for a node (global SIF or App Node level)
+
+    :param sif_obj: Object concerned by the audit (SIF or App Node)
+    :param str obj_name: String name of the object as it will appear in the audit warning, if any audit warning
+    :param dict jvm_props: Web or CE JVM State section of the SIF (global SIF or App Node level)
+    :return: List of problems found, or empty list
+    :rtype: list[Problem]
+    """
+    log.info("%s: Auditing JVM RAM", obj_name)
+    # On DCE we expect between 2 and 4 GB of RAM per App Node Web JVM
+    (min_heap, max_heap) = heap_limits
+    try:
+        heap = int(jvm_state["Heap Max (MB)"])
+    except KeyError:
+        log.warning("%s: Can't find JVM Heap in SIF, auditing this part is skipped", obj_name)
+        return []
+    if min_heap <= heap <= max_heap:
+        log.info("%s: Heap of %d MB is within recommended range [%d-%d]", obj_name, heap, min_heap, max_heap)
+        return []
+
+    if heap < min_heap:
+        rule = get_rule(RuleId.CE_HEAP_TOO_LOW) if "CE process" in obj_name else get_rule(RuleId.WEB_HEAP_TOO_LOW)
+        limit = min_heap
+    else:
+        rule = get_rule(RuleId.CE_HEAP_TOO_HIGH) if "CE process" in obj_name else get_rule(RuleId.WEB_HEAP_TOO_HIGH)
+        limit = max_heap
+    return [Problem(rule, sif_obj, obj_name, heap, limit)]
+
+
+def __audit_jvm_version(sif_obj: Union[Sif, AppNode], obj_name: str, jvm_props: dict[str, str]) -> list[Problem]:
+    """Audits the SIF for the JVM version used for a node (global SIF or App Node level)
+
+    :param obj: Object concerned by the audit (SIF or App Node)
+    :type obj: Sif or AppNode
+    :param str obj_name: String name of the object as it will appear in the audit warning, if any audit warning
+    :param dict jvm_props: Web or CE JVM Properties section of the SIF (global SIF or App Node level)
+    :return: List of problems found, or empty list
+    :rtype: list[Problem]
+    """
+    log.info("%s: Auditing JVM version", obj_name)
+    try:
+        str_v = jvm_props["java.specification.version"]
+        if str_v.startswith("1."):
+            str_v = str_v.split(".")[-1]
+        java_version = int(str_v)
+    except KeyError:
+        log.warning("%s: Can't find Java version in SIF, auditing this part is skipped", obj_name)
+        return []
+    try:
+        sq_version = sif_obj.version()
+    except KeyError:
+        log.warning("%s: Can't find SonarQube version in SIF, auditing this part is skipped", obj_name)
+        return []
+    java_compat = config.get_java_compatibility()
+    log.debug("Java compatibility matrix: %s", str(java_compat))
+    if java_version not in java_compat:
+        log.warning("%s: Java version %d not listed in compatibility matrix, skipping JVM version audit", obj_name, java_version)
+        return []
+    min_v, max_v = java_compat[java_version]
+    sq_v_str = ".".join([str(i) for i in sq_version])
+    if min_v <= sq_version <= max_v:
+        log.info("%s: SonarQube %s running on a supported java version (java %d)", obj_name, sq_v_str, java_version)
+        return []
+    return [Problem(get_rule(RuleId.SETTING_WEB_WRONG_JAVA_VERSION), sif_obj, obj_name, sq_v_str, java_version)]
+
+
+def __audit_workers(sif_obj: Union[Sif, AppNode], obj_name: str, audit_settings: ConfigSettings) -> list[Problem]:
+    """Audits the SIF for number of CE workers configured (global SIF or App Node level)
+
+    :param sif_obj: Object concerned by the audit (SIF or App Node)
+    :param str obj_name: String name of the object as it will appear in the audit warning, if any audit warning
+    :param dict ce_data: CE sections of the SIF (global SIF or App Node level)
+    :return: List of problems found, or empty list
+    :rtype: list[Problem]
+    """
+    ed = sif_obj.edition()
+    if ed in (c.CE, c.DE):
+        log.info("%s: %s edition, CE workers audit skipped...", obj_name, ed)
+        return []
+    try:
+        ce_workers = sif_obj.json[_CE_TASKS][_WORKER_COUNT]
+    except KeyError:
+        log.warning("%s: CE section missing from SIF, CE workers audit skipped...", obj_name)
+        return []
+    max_workers = audit_settings.get("audit.ce.maxEeWorkers", 6) if ed == c.DCE else audit_settings.get("audit.ce.maxEeWorkers", 4)
+    if ce_workers > max_workers:
+        return [Problem(get_rule(RuleId.TOO_MANY_CE_WORKERS), sif_obj, ce_workers, max_workers)]
+    log.info("%s: %d CE workers configured, correct compared to the max %d recommended", obj_name, ce_workers, max_workers)
+    return []
+
+
+def __audit_log_level(sif_obj: Union[Sif, AppNode], obj_name: str, logging_data: dict[str, str]) -> list[Problem]:
+    """Audits the SIF for the Web or CE process log level (global SIF or App Node level),
+    and returns Problem if it is DEBUG or TRACE
+
+    :param Sif | AppNode sif_obj: Object concerned by the audit (SIF or App Node)
+    :param str obj_name: String name of the object as it will appear in the audit warning, if any audit warning
+    :param dict logging_data: Web or CE Logging section of the SIF (global SIF or App Node level)
+    :return: List of problems found, or empty list
+    """
+    log.info("%s: Auditing log level", obj_name)
+    if (lvl := logging_data.get("Logs Level")) is None:
+        log.warning("%s: log level is missing, audit of log level is skipped...", obj_name)
+        return []
+    if lvl == "TRACE":
+        return [Problem(get_rule(RuleId.LOGS_IN_TRACE_MODE), sif_obj, obj_name)]
+    if lvl == "DEBUG":
+        return [Problem(get_rule(RuleId.LOGS_IN_DEBUG_MODE), sif_obj, obj_name)]
+    log.info("%s: Log level is '%s', this is fine", obj_name, lvl)
+    return []
+
+
+def audit_version(sif_obj: Union[Sif, AppNode], obj_name: str) -> list[Problem]:
+    """Audits the SIF for SonarQube version (global SIF or App Node level),
+    and returns Problem if it is below LTA (ex-LTS)
+
+    :param obj: Object concerned by the audit (SIF or App Node)
+    :param obj_name: String name of the object as it will appear in the audit warning, if any audit warning
+    :return: List of problems found, or empty list
+    """
+    if (sq_version := sif_obj.version()) is None:
+        log.warning("%s: Version information is missing, audit on node version is skipped...", obj_name)
+        return []
+    st_time = sif_obj.start_time()
+    log.debug("%s: version %s, start time = %s", obj_name, sutil.version_to_string(sq_version), str(st_time))
+    lta_str = next((k for k, v in _RELEASE_DATES.items() if st_time > v), None)
+    current_lta = sutil.string_to_version(lta_str) if lta_str else (5, 9, 0)
+    lta_str = sutil.version_to_string(current_lta[:2])
+    if sq_version >= current_lta:
+        log.info("%s: Version %s is correct wrt LTA (ex-LTS) %s", obj_name, sutil.version_to_string(sq_version), lta_str)
+        return []
+
+    return [Problem(get_rule(RuleId.BELOW_LTA), "", sutil.version_to_string(sq_version), lta_str)]
+
+
+def audit_ce(sif_obj: Union[Sif, AppNode], obj_name: str, audit_settings: ConfigSettings) -> list[Problem]:
+    """Audits the CE section of a SIF (global SIF or App Node level),
+    and returns list of Problem for each problem found
+
+    :param obj: Object concerned by the audit (SIF or App Node)
+    :param str obj_name: String name of the object as it will appear in the audit warning, if any audit warning
+    :return: List of problems found, or empty list
+    """
+    try:
+        nb_workers = int(sif_obj.json[_CE_TASKS][_WORKER_COUNT])
+    except KeyError:
+        nb_workers = 0
+
+    heap_min = max(audit_settings.get("audit.ce.minTotalHeap", 2048), audit_settings.get("audit.ce.minHeapPerWorker", 1024) * nb_workers)
+    heap_max = max(4096, audit_settings.get("audit.ce.mazHeapPerWorker", 2048) * nb_workers)
+    return (
+        __audit_background_tasks(sif_obj, obj_name, audit_settings)
+        + __audit_workers(sif_obj, obj_name, audit_settings)
+        + __audit_jvm(sif_obj, obj_name, sif_obj.json["Compute Engine JVM State"], (heap_min, heap_max))
+        + __audit_log_level(sif_obj, obj_name, sif_obj.json["Compute Engine Logging"])
+        + __audit_jvm_version(sif_obj, obj_name, sif_obj.json["Compute Engine JVM Properties"])
+    )
+
+
+def audit_web(sif_obj: Union[Sif, AppNode], obj_name: str, audit_settings: ConfigSettings) -> list[Problem]:
+    """Audits the Web section of a SIF (global SIF or App Node level), and returns list of Problem for each problem found
+
+    :param Sif | AppNode obj: Object concerned by the audit
+    :param str obj_name: String name of the object as it will appear in the audit warning, if any audit warning
+    :return: List of problems found, or empty list
+    """
+    heap_range = audit_settings.get("audit.web.nonDceHeapRange", "1024, 4096")
+    if sif_obj.edition() == c.DCE:
+        audit_settings.get("audit.web.dceHeapRange", "2048, 8192")
+    (heap_min, heap_max) = [int(s) for s in heap_range.split(",")]
+    return (
+        audit_version(sif_obj, obj_name)
+        + __audit_jvm(sif_obj, obj_name, sif_obj.json["Web JVM State"], (heap_min, heap_max))
+        + __audit_log_level(sif_obj, obj_name, sif_obj.json["Web Logging"])
+        + __audit_jvm_version(sif_obj, obj_name, sif_obj.json["Web JVM Properties"])
+    )
+
+
+def audit_plugins(sif_obj: Union[Sif, AppNode], obj_name: str, audit_settings: types.ConfigSettings) -> list[Problem]:
+    """Audit for the presence of 3rd party plugins outside a white list"""
+    if not audit_settings.get("audit.plugins", True):
+        log.info("Audit of 3rd party plugins skipped...")
+        return []
+    if "Plugins" not in sif_obj.json:
+        log.info("Plugins entry not found for %s, audit of 3rd party plugins skipped...", obj_name)
+        return []
+    whitelist = set(util.csv_to_list(audit_settings.get("audit.plugins.whitelist", "")))
+    if audit_settings.get("audit.plugins.updateCenterWhitelist", True):
+        whitelist = set(list(whitelist) + update_center.get_registered_plugins())
+    log.info("Auditing 3rd part plugins with whitelist '%s'", ", ".join(whitelist))
+    problems = []
+    for key, name in sif_obj.json["Plugins"].items():
+        if key not in whitelist:
+            problems.append(Problem(get_rule(RuleId.CUSTOM_PLUGIN), sif_obj, obj_name, key, name))
+    return problems

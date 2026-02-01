@@ -1,0 +1,407 @@
+#
+# sonar-tools
+# Copyright (C) 2019-2026 Olivier Korach
+# mailto:olivier.korach AT gmail DOT com
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU Lesser General Public
+# License as published by the Free Software Foundation; either
+# version 3 of the License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+# Lesser General Public License for more details.
+#
+# You should have received a copy of the GNU Lesser General Public License
+# along with this program; if not, write to the Free Software Foundation,
+# Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+#
+"""
+
+Abstraction of the SonarQube "component" concept
+
+"""
+
+from __future__ import annotations
+from typing import Any, Optional, TYPE_CHECKING
+import math
+import json
+
+from datetime import datetime
+from requests import RequestException
+
+from sonar.sqobject import SqObject
+import sonar.util.constants as c
+import sonar.logging as log
+from sonar import settings, measures, rules, exceptions
+import sonar.util.misc as util
+import sonar.utilities as sutil
+from sonar.api.manager import ApiOperation as Oper
+
+from sonar.audit.problem import Problem
+from sonar.audit.rules import get_rule, RuleId
+
+if TYPE_CHECKING:
+    from sonar.tasks import Task
+    from sonar.platform import Platform
+    from sonar.hotspots import Hotspot
+    from sonar.issues import Issue
+    from sonar.util.types import ApiPayload, ConfigSettings, KeyList
+
+
+class Component(SqObject):
+    """Abstraction of the Sonar component concept"""
+
+    def __init__(self, endpoint: Platform, data: ApiPayload) -> None:
+        """Constructor"""
+        super().__init__(endpoint, data)
+        self.key = next(data.get(k) for k in ("key", "projectKey", "componentKey", "project"))
+        self.branch: Optional[str] = None
+        self.name: Optional[str] = None
+        self.nbr_issues: Optional[int] = None
+        self.ncloc: Optional[int] = None
+        self._description: Optional[str] = None
+        self._last_analysis: Optional[datetime] = None
+        self._visibility: Optional[str] = None
+        self._new_code_start_date: Optional[datetime] = None
+
+    def __str__(self) -> str:
+        """String representation of object"""
+        return self.key
+
+    def component_key(self, **search_params: Any) -> str:
+        """Returns the key of the component from the search params"""
+        return next(iter(v for k, v in search_params.items() if k in ("project", "application", "portfolio")), self.key)
+
+    def reload(self, data: ApiPayload) -> Component:
+        """Loads a SonarQube API JSON payload in a Component"""
+        super().reload(data)
+        if "name" in data:
+            self.name = data["name"]
+        if "visibility" in data:
+            self._visibility = data["visibility"]
+        key = next((k for k in ("lastAnalysisDate", "analysisDate") if k in data), None)
+        if key in data:
+            self._last_analysis = sutil.string_to_datetime(data[key])
+        return self
+
+    def project(self) -> Component:
+        """Implemented in relevant subclasses (Project, Branch, PullRequest, Application, ApplicationBranch)"""
+        return self
+
+    def get_issues(self, **search_params: Any) -> dict[str, Issue]:
+        """Returns list of issues for a portfolios"""
+        from sonar.issues import Issue
+
+        log.info("Searching issues for %s with filters %s", self, search_params)
+        # Strip off project, application and portfolio search params
+        new_params = {k: v for k, v in search_params.items() if k not in ("project", "application", "portfolio")}
+        issue_list = Issue.search_by_project(endpoint=self.endpoint, project=self.key, **new_params)
+        self.nbr_issues = len(issue_list)
+        return issue_list
+
+    def get_hotspots(self, **search_params: Any) -> dict[str, Hotspot]:
+        """Returns list of hotspots for a component, optionally on branches or/and PRs"""
+        from sonar.hotspots import Hotspot
+
+        log.info("Searching hotspots for %s with filters %s", self, search_params)
+        # Strip off project, application and portfolio search params
+        new_params = {k: v for k, v in search_params.items() if k not in ("project", "application", "portfolio")}
+        return Hotspot.search(endpoint=self.endpoint, **(new_params | {"project": self.key}))
+
+    def count_specific_rules_issues(self, ruleset: list[str], **search_params: Any) -> dict[str, int]:
+        """Returns the count of issues of a component for a given ruleset"""
+        from sonar.issues import count_by_rule
+
+        key = self.project().key
+        params = {"components": key} if self.endpoint.version() >= (10, 0, 0) else {"componentKeys": key}
+        params = search_params | params | {"facets": "rules", "rules": [r.key for r in ruleset]}
+        return {k: v for k, v in count_by_rule(endpoint=self.endpoint, **params).items() if v > 0}
+
+    def count_third_party_issues(self, **search_params: Any) -> dict[str, int]:
+        """Returns the count of issues of a component  corresponding to 3rd party rules"""
+        key = self.component_key(**search_params)
+        params = {"components": key} if self.endpoint.version() >= (10, 0, 0) else {"componentKeys": key}
+        return self.count_specific_rules_issues(ruleset=rules.third_party(self.endpoint), **(search_params | params))
+
+    def count_instantiated_rules_issues(self, **search_params: Any) -> dict[str, int]:
+        """Returns the count of issues of a component corresponding to instantiated rules"""
+        key = self.component_key(**search_params)
+        params = {"components": key} if self.endpoint.version() >= (10, 0, 0) else {"componentKeys": key}
+        return self.count_specific_rules_issues(ruleset=rules.instantiated(self.endpoint), **(search_params | params))
+
+    def migration_export(self, export_settings: ConfigSettings, **search_params: Any) -> dict[str, Any]:
+        """Prepares all data for a sonar-migration export"""
+        from sonar.issues import Issue
+        from sonar.hotspots import Hotspot
+
+        json_data: dict[str, Any] = {"lastAnalysis": sutil.date_to_string(self.last_analysis())}
+        lang_distrib = self.get_measure("ncloc_language_distribution")
+        loc_distrib = {}
+        if lang_distrib:
+            loc_distrib = {m.split("=")[0]: int(m.split("=")[1]) for m in lang_distrib.split(";")}
+        loc_distrib["total"] = self.loc()
+        json_data["ncloc"] = loc_distrib
+        json_data["analysisHistory"] = {r[0]: int(r[2]) for r in self.get_measures_history(["ncloc"])}
+        if export_settings["SKIP_ISSUES"]:
+            log.debug("Issues count extract skipped for %s`", str(self))
+            return json_data
+
+        tpissues = self.count_third_party_issues(**search_params)
+        inst_issues = self.count_instantiated_rules_issues(**search_params)
+        key = self.component_key(**search_params)
+        params = {"components": key} if self.endpoint.version() >= (10, 0, 0) else {"componentKeys": key}
+        params = search_params | params
+        log.info("Counting issues for %s with params %s", str(self), str(params))
+        json_data["issues"] = {
+            "thirdParty": tpissues if len(tpissues) > 0 else 0,
+            "instantiatedRules": inst_issues if len(inst_issues) > 0 else 0,
+            "falsePositives": Issue.count(self.endpoint, **(params | {"issueStatuses": ["FALSE_POSITIVE"]})),
+        }
+        status = "accepted" if self.endpoint.version() >= c.ACCEPT_INTRO_VERSION else "wontFix"
+        json_data["issues"][status] = Issue.count(self.endpoint, issueStatuses=[status.upper()], **params)
+        params = search_params | {"project": key}
+        json_data["hotspots"] = {
+            "acknowledged": Hotspot.count(self.endpoint, **(params | {"resolution": ["ACKNOWLEDGED"]})),
+            "safe": Hotspot.count(self.endpoint, **(params | {"resolution": ["SAFE"]})),
+            "fixed": Hotspot.count(self.endpoint, **(params | {"resolution": ["FIXED"]})),
+        }
+        log.debug("%s has these notable issues %s", str(self), str(json_data["issues"]))
+
+        return json_data
+
+    def get_measures(self, metrics_list: KeyList) -> dict[str, measures.Measure]:
+        """Retrieves a project list of measures
+
+        :param list metrics_list: List of metrics to return
+        """
+        m = measures.Measure.search(self, metrics_list)
+        if "ncloc" in m and m["ncloc"]:
+            self.ncloc = 0 if not m["ncloc"].value else int(m["ncloc"].value)
+        return m
+
+    def get_measure(self, metric: str, fallback: Any = None) -> Any:
+        """Returns a component measure"""
+        meas = self.get_measures([metric])
+        return meas[metric].value if metric in meas and meas[metric] and meas[metric].value is not None else fallback
+
+    def loc(self) -> int:
+        """Returns a component nbr of LOC"""
+        if self.ncloc is None:
+            self.ncloc = int(self.get_measure("ncloc", fallback=0))
+        return self.ncloc
+
+    def get_navigation_data(self) -> ApiPayload:
+        """Returns a component navigation data"""
+        data = json.loads(self.get("navigation/component", params={"component": self.project().key, "branch": self.branch}).text)
+        self.reload(data)
+        return data
+
+    def refresh(self) -> Component:
+        """Refreshes a component data"""
+        return self.reload(self.get_navigation_data())
+
+    def last_analysis(self) -> Optional[datetime]:
+        """Returns a component last analysis"""
+        if not self._last_analysis:
+            key = next((k for k in ("lastAnalysisDate", "analysisDate") if self.sq_json and k in self.sq_json), None)
+            if not key:
+                self.get_navigation_data()
+            key = next((k for k in ("lastAnalysisDate", "analysisDate") if self.sq_json and k in self.sq_json), None)
+            if key:
+                self._last_analysis = sutil.string_to_datetime(self.sq_json[key])
+        return self._last_analysis
+
+    def new_code_start_date(self) -> Optional[datetime]:
+        """Returns the new code period start date of a component or None if this component has no new code start date"""
+        if self._new_code_start_date is None:
+            api, _, api_params, ret = self.endpoint.api.get_details(self, Oper.GET, component=self.project().key)
+            data = json.loads(self.get(api, params=api_params).text)[ret]
+            self.sq_json |= data
+            if "leakPeriodDate" in data:
+                self._new_code_start_date = sutil.string_to_datetime(data["leakPeriodDate"])
+        return self._new_code_start_date
+
+    def url(self) -> str:
+        """the SonarQube permalink to the project or app"""
+        return f"{self.base_url(local=False)}/dashboard?id={self.key}"
+
+    def visibility(self) -> str:
+        """Returns a component visibility (public or private)"""
+        if not self._visibility:
+            self._visibility = settings.Setting.get_visibility(self.endpoint, self.key).value
+        return self._visibility
+
+    def set_visibility(self, visibility: str) -> None:
+        """Sets a component visibility (public or private)"""
+        if visibility:
+            settings.set_visibility(self.endpoint, visibility=visibility, component=self.key)
+            self._visibility = visibility
+
+    def get_analyses(self, filter_in: Optional[list[str]] = None, filter_out: Optional[list[str]] = None, **search_params: Any) -> ApiPayload:
+        """Returns a component analyses"""
+        log.debug("%s: Getting history of analyses", self)
+        params = search_params | {"project": self.project().key, "branch": self.branch} if self.branch else {"project": self.project().key}
+        data = self.endpoint.get_paginated("project_analyses/search", return_field="analyses", **params)["analyses"]
+        if filter_in and len(filter_in) > 0:
+            data = [d for d in data if any(e["category"] in filter_in for e in d["events"])]
+        if filter_out and len(filter_out) > 0:
+            data = [d for d in data if all(e["category"] not in filter_out for e in d["events"])]
+        log.debug("%s: Analyses = %s", self, util.json_dump(data))
+        return data
+
+    def get_versions(self) -> dict[str, datetime]:
+        """Returns a dict of project versions and their dates"""
+        data = {a["projectVersion"]: sutil.string_to_datetime(a["date"]) for a in reversed(self.get_analyses(filter_in=["VERSION"]))}
+        log.debug("Component versions = %s", str(data.keys()))
+        return data
+
+    def get_ai_code_assurance(self) -> Optional[str]:
+        """
+        :return: The AI code assurance status of a project or a branch
+        """
+        version = self.endpoint.version()
+        log.debug("AI Code assurance version = %s", str(version))
+        if version < (10, 7, 0):
+            raise exceptions.UnsupportedOperation(f"AI code assurance is not available for {self.endpoint.edition()} edition version {str(version)}")
+        api = "project/get_ai_code_assurance"
+        if version >= (2025, 1, 0):
+            api = "project_branches/get_ai_code_assurance"
+        try:
+            return str(json.loads(self.get(api, params={"project": self.project().key, "branch": self.branch}).text)["aiCodeAssurance"]).upper()
+        except (ConnectionError, RequestException) as e:
+            sutil.handle_error(e, f"getting AI code assurance of {self}", catch_all=True)
+            if "Unknown url" in sutil.error_msg(e):
+                raise exceptions.UnsupportedOperation(
+                    f"AI code assurance is not available for {self.endpoint.edition()} edition version {str(version)}"
+                )
+        return None
+
+    def _audit_bg_task(self, audit_settings: ConfigSettings) -> list[Problem]:
+        """Audits project background tasks"""
+        if audit_settings.get(c.AUDIT_MODE_PARAM, "") == "housekeeper":
+            return []
+        # Cutting short if background task audit is disabled because getting last task is costly
+        if (
+            not audit_settings.get("audit.projects.exclusions", True)
+            and not audit_settings.get("audit.projects.analysisWarnings", True)
+            and not audit_settings.get("audit.projects.failedTasks", True)
+            and not audit_settings.get("audit.project.scm.disabled", True)
+        ):
+            log.debug("%s: Background task audit disabled, audit skipped", str(self))
+            return []
+        log.debug("Auditing last background task of %s", str(self))
+
+        if last_task := self.last_task():
+            last_task.concerned_object = self
+            return last_task.audit(audit_settings)
+        return []
+
+    def __audit_history_retention(self, audit_settings: ConfigSettings) -> list[Problem]:
+        """Audits whether a project has an excessive number of history data points
+
+        :param dict audit_settings: Options of what to audit and thresholds to raise problems
+        :return: List of problems found, or empty list
+        """
+        max_history = audit_settings.get("audit.projects.maxHistoryCount", 100)
+        if max_history == 0:
+            log.debug("Auditing %s history retention disabled, skipped...", str(self))
+            return []
+        log.debug("Auditing %s history retention", str(self))
+        history = self.get_analyses(filter_out=["QUALITY_GATE", "QUALITY_PROFILE", "SQ_UPGRADE"])
+        log.debug("%s has %d history data points, max allowed = %d", str(self), len(history), max_history)
+        if not history:
+            return []
+        history_len = len(history)
+        if history_len > max_history:
+            return [Problem(get_rule(RuleId.PROJ_HISTORY_COUNT), self, str(self), history_len)]
+        return []
+
+    def __audit_accepted_or_fp_issues(self, audit_settings: ConfigSettings) -> list[Problem]:
+        """Audits whether a project or branch has too many accepted or FP issues
+
+        :param dict audit_settings: Options of what to audit and thresholds to raise problems
+        :return: List of problems found, or empty list
+        """
+
+        loc_min = audit_settings.get("audit.projects.minLocSize", 10000)
+        fp_min = audit_settings.get("audit.projects.minLocPerFalsePositiveIssue", 500)
+        accepted_min = audit_settings.get("audit.projects.minLocPerAcceptedIssue", 500)
+        m_list = ["ncloc", "false_positive_issues", "accepted_issues" if self.endpoint.version() >= c.ACCEPT_INTRO_VERSION else "wont_fix_issues"]
+        d = {k: int(v.value) if v is not None else 0 for k, v in self.get_measures(m_list).items()}
+        ncloc, nb_accepted, nb_fp = (
+            d["ncloc"],
+            d["accepted_issues" if self.endpoint.version() >= c.ACCEPT_INTRO_VERSION else "wont_fix_issues"],
+            d["false_positive_issues"],
+        )
+        problems = []
+        if ncloc < loc_min:
+            return problems
+        if nb_accepted * accepted_min > ncloc:
+            problems.append(Problem(get_rule(RuleId.PROJ_TOO_MANY_ACCEPTED), self, str(self), nb_accepted, ncloc))
+        if nb_fp * fp_min > ncloc:
+            problems.append(Problem(get_rule(RuleId.PROJ_TOO_MANY_FP), self, str(self), nb_fp, ncloc))
+        return problems
+
+    def __audit_new_code(self, audit_settings: ConfigSettings) -> list[Problem]:
+        """Audits whether the object (project, branch, PR) new code does not exceed a certain amount
+
+        :param ConfigSettings audit_settings: Options of what to audit and thresholds to raise problems
+        :return: List of problems found, or empty list
+        """
+        max_new_lines = audit_settings.get("audit.projects.maxNewCodeLines", 25000)
+        if max_new_lines != 0 and (new_lines := self.get_measure("new_lines", 0)) > max_new_lines:
+            return [Problem(get_rule(RuleId.PROJ_TOO_MUCH_NEW_CODE), self, str(self), new_lines)]
+        return []
+
+    def audit_visibility(self, audit_settings: ConfigSettings) -> list[Problem]:
+        """Audits project visibility and return problems if project is public
+
+        :param audit_settings: Options and Settings (thresholds) to raise problems
+        :return: List of problems found, or empty list
+        """
+        if audit_settings.get(c.AUDIT_MODE_PARAM, "") == "housekeeper":
+            return []
+        if not audit_settings.get("audit.projects.visibility", True):
+            log.debug("Project/App/Portfolio visibility audit is disabled by configuration, skipping...")
+            return []
+        log.debug("Auditing %s visibility", str(self))
+        visi = self.visibility()
+        if visi != "private":
+            return [Problem(get_rule(RuleId.PROJ_VISIBILITY), self, str(self), visi)]
+        log.debug("%s visibility is 'private'", str(self))
+        return []
+
+    def _audit_component(self, audit_settings: ConfigSettings) -> list[Problem]:
+        """Audits a component (project, branch, PR) for various issues
+
+        :param ConfigSettings audit_settings: Options of what to audit and thresholds to raise problems
+        :return: List of problems found, or empty list
+        """
+        return (
+            self._audit_bg_task(audit_settings)
+            + self.__audit_history_retention(audit_settings)
+            + self.__audit_accepted_or_fp_issues(audit_settings)
+            + self.__audit_new_code(audit_settings)
+            + self.__audit_zero_loc(audit_settings)
+        )
+
+    def __audit_zero_loc(self, audit_settings: ConfigSettings) -> list[Problem]:
+        """Audits whether a component (project, branch, PR) has 0 LoC"""
+        if not audit_settings.get("audit.projects.zeroLoc", True):
+            log.debug("Auditing %s zero LOC disabled, skipped...", str(self))
+            return []
+        if self.last_analysis() and self.loc() == 0:
+            return [Problem(get_rule(RuleId.PROJ_ZERO_LOC), self, str(self))]
+        return []
+
+    def last_task(self) -> Optional[Task]:
+        """Returns the last analysis background task of a component, or none if not found"""
+        from sonar.tasks import Task
+
+        return Task.search_last(self.endpoint, component=self.key)
+
+    def component_data(self) -> dict[str, str]:
+        """Returns key data"""
+        return {"key": self.key, "name": self.name, "type": type(self).__name__.upper(), "branch": "", "url": self.url()}
