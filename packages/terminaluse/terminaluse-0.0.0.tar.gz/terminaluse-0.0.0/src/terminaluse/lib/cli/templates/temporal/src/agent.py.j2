@@ -1,0 +1,49 @@
+import os
+import sys
+
+# === DEBUG SETUP (TerminalUse CLI Debug Support) ===
+if os.getenv("TERMINALUSE_DEBUG_ENABLED") == "true":
+    try:
+        import debugpy
+        from terminaluse.lib.utils.logging import make_logger
+
+        logger = make_logger(__name__)
+        debug_port = int(os.getenv("TERMINALUSE_DEBUG_PORT", "5679"))
+        debug_type = os.getenv("TERMINALUSE_DEBUG_TYPE", "acp")
+        wait_for_attach = os.getenv("TERMINALUSE_DEBUG_WAIT_FOR_ATTACH", "false").lower() == "true"
+
+        debugpy.configure(subProcess=False)
+        debugpy.listen(debug_port)
+
+        logger.info(f"[{debug_type.upper()}] Debug server listening on port {debug_port}")
+
+        if wait_for_attach:
+            logger.info(f"[{debug_type.upper()}] Waiting for debugger to attach...")
+            debugpy.wait_for_client()
+            logger.info(f"[{debug_type.upper()}] Debugger attached!")
+        else:
+            logger.info(f"[{debug_type.upper()}] Ready for debugger attachment")
+
+    except ImportError:
+        print("debugpy not available. Install with: pip install debugpy")
+        sys.exit(1)
+    except Exception as e:
+        print(f"Debug setup failed: {e}")
+        sys.exit(1)
+# === END DEBUG SETUP ===
+
+from terminaluse.lib.sdk.agent_server import AgentServer
+
+
+# Create an agent server with Temporal
+# Temporal provides reliability and durability for long-running tasks
+server = AgentServer(temporal=True)
+
+
+# When using Temporal mode, handlers are managed by your workflow class.
+# See workflow.py for the actual handler implementations.
+#
+# The workflow handles:
+# - @workflow.run -> equivalent to @server.on_create
+# - @workflow.signal(name=SignalName.RECEIVE_EVENT) -> equivalent to @server.on_event
+# - Task cancellation is handled automatically by Temporal
