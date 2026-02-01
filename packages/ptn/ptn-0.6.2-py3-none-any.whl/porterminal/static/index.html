@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Terminal">
+    <meta name="theme-color" content="#1e1e1e">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="application-name" content="Terminal">
+    <meta name="msapplication-TileColor" content="#1e1e1e">
+    <meta name="msapplication-tap-highlight" content="no">
+    <meta name="format-detection" content="telephone=no">
+    <title>Terminal</title>
+
+    <!-- Icons (PWA disabled - not useful for tunnel-based access) -->
+    <link rel="icon" type="image/svg+xml" href="/static/icon.svg">
+  <script type="module" crossorigin src="/static/assets/app-BLXfMcUG.js"></script>
+  <link rel="stylesheet" crossorigin href="/static/assets/app-D-hntTUl.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Tab Bar with Shell Selector -->
+        <div id="tab-bar">
+            <span id="connection-dot"></span>
+            <button id="btn-textview" title="Plain Text View">TXT</button>
+            <!-- Tabs rendered by JS -->
+            <div id="shell-selector">
+                <select id="shell-select"><option>...</option></select>
+                <button id="btn-compose" title="Compose Mode">▤</button>
+                <button id="btn-settings" title="Settings">☰</button>
+                <button id="btn-info" title="Help">ⓘ</button>
+                <button id="btn-shutdown" title="Shutdown">⏻</button>
+            </div>
+        </div>
+
+        <!-- Terminal Area -->
+        <div id="terminal-container">
+            <div id="terminal"></div>
+        </div>
+
+        <!-- Compose Input (hidden by default) -->
+        <div id="compose-container" class="hidden">
+            <div id="compose-wrapper">
+                <textarea id="compose-textarea" rows="1"></textarea>
+                <span id="compose-placeholder" class="rainbow-text">Compose...</span>
+            </div>
+            <button id="compose-send" title="Send to terminal">➤</button>
+        </div>
+
+        <!-- Bottom Toolbar - Two rows -->
+        <!-- Buttons with data-key are generated from config/keys.ts -->
+        <div id="toolbar">
+            <div class="toolbar-row" id="toolbar-row1">
+                <button class="tool-btn" id="btn-escape">Esc</button>
+                <!-- Generated buttons inserted here -->
+                <button class="tool-btn icon" id="btn-backspace">⌫</button>
+            </div>
+            <div class="toolbar-row" id="toolbar-row2">
+                <button class="tool-btn modifier" id="btn-ctrl">Ctl</button>
+                <button class="tool-btn modifier" id="btn-alt">Alt</button>
+                <button class="tool-btn modifier" id="btn-shift">Sft</button>
+                <!-- Generated buttons inserted here -->
+                <button class="tool-btn icon" id="btn-paste">⎘</button>
+            </div>
+            <div class="toolbar-row hidden" id="toolbar-row3">
+                <!-- Custom buttons from config inserted here -->
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Floating Copy Button (iOS) -->
+    <button id="copy-button">Copy</button>
+
+    <!-- Connection Lost Overlay -->
+    <div id="disconnect-overlay" class="hidden">
+        <div id="disconnect-content">
+            <div id="disconnect-icon">○</div>
+            <div id="disconnect-text">Connection Lost</div>
+            <button id="disconnect-retry">Retry</button>
+        </div>
+    </div>
+
+    <!-- Help Popup -->
+    <div id="help-overlay" class="hidden" role="dialog" aria-modal="true" aria-labelledby="help-header">
+        <div id="help-content">
+            <button id="help-close" aria-label="Close">×</button>
+            <div id="help-header">Gestures</div>
+            <div id="help-body">
+                <div class="help-section">
+                    <div class="help-item"><span class="help-key">Swipe ← / →</span> History up/down</div>
+                    <div class="help-item"><span class="help-key">Long press</span> Start selection</div>
+                    <div class="help-item"><span class="help-key">Double tap</span> Select word</div>
+                    <div class="help-item"><span class="help-key">Pinch</span> Zoom</div>
+                </div>
+                <div class="help-section">
+                    <div class="help-title">Modifiers (Ctl, Alt, Sft)</div>
+                    <div class="help-item"><span class="help-key">Tap</span> Sticky (one use)</div>
+                    <div class="help-item"><span class="help-key">Double tap</span> Lock on/off</div>
+                </div>
+                <div class="help-section">
+                    <div class="help-title rainbow-text">Compose Mode (▤)</div>
+                    <div class="help-item">Type freely, then send to terminal</div>
+                    <div class="help-item"><span class="help-key">➤</span> Send text (or Enter if empty)</div>
+                </div>
+                <div class="help-section">
+                    <div class="help-title">Other</div>
+                    <div class="help-item"><span class="help-key">TXT</span> Plain text view</div>
+                    <div class="help-item"><span class="help-key">Hold ×</span> Close tab</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Popup -->
+    <div id="settings-overlay" class="hidden" role="dialog" aria-modal="true" aria-labelledby="settings-header">
+        <div id="settings-content">
+            <button id="settings-close" aria-label="Close">×</button>
+            <div id="settings-header">Settings</div>
+            <div id="settings-body">
+                <!-- General Section -->
+                <div class="settings-section">
+                    <div class="settings-section-title">General</div>
+                    <div class="settings-item">
+                        <label class="settings-label" for="settings-compose">
+                            <span class="settings-text">Compose Mode</span>
+                        </label>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="settings-compose" role="switch">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div class="settings-item">
+                        <label class="settings-label" for="settings-updates">
+                            <span class="settings-text">Update Notifications</span>
+                        </label>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="settings-updates" role="switch">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+                <!-- Security Section -->
+                <div class="settings-section" id="settings-security-section">
+                    <div class="settings-section-title">Security</div>
+                    <!-- Password row: toggle + inline actions -->
+                    <div class="settings-item settings-password-row">
+                        <label class="settings-label" for="settings-require-password">
+                            <span class="settings-text">Require Password</span>
+                            <span class="settings-desc" id="settings-password-status">Off</span>
+                        </label>
+                        <div class="settings-password-inline">
+                            <button class="settings-password-link" id="settings-set-password">Edit</button>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="settings-require-password" role="switch">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                    <!-- Password form (hidden by default) -->
+                    <div class="settings-password-form hidden" id="settings-password-form">
+                        <div class="settings-password-inputs">
+                            <input type="password" class="settings-password-input" id="settings-password-input" placeholder="New password" autocomplete="new-password">
+                            <input type="password" class="settings-password-input" id="settings-password-confirm" placeholder="Confirm" autocomplete="new-password">
+                        </div>
+                        <div class="settings-password-form-actions">
+                            <button class="settings-password-btn settings-password-cancel" id="settings-password-cancel">Cancel</button>
+                            <button class="settings-password-btn settings-password-save" id="settings-password-save">Save</button>
+                            <button class="settings-password-btn settings-password-clear hidden" id="settings-clear-password">Clear</button>
+                        </div>
+                    </div>
+                    <div class="settings-restart-notice hidden" id="settings-restart-notice">
+                        Restart server to apply changes
+                    </div>
+                    <!-- Show URL/QR toggle -->
+                    <div class="settings-item">
+                        <label class="settings-label" for="settings-show-url">
+                            <span class="settings-text">Show URL in CLI</span>
+                        </label>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="settings-show-url" role="switch">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+                <!-- Buttons Section (dynamic) -->
+                <div class="settings-section" id="settings-buttons-section">
+                    <div class="settings-section-title">Quick Buttons</div>
+                    <!-- Populated by JS -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Plain Text View Popup -->
+    <div id="textview-overlay" class="hidden">
+        <div id="textview-content">
+            <div id="textview-header">
+                <span id="textview-title">Text</span>
+                <button class="textview-zoom-btn" id="textview-zoom-out">−</button>
+                <button class="textview-zoom-btn" id="textview-zoom-in">+</button>
+                <button id="textview-close">×</button>
+            </div>
+            <pre id="textview-body"></pre>
+        </div>
+    </div>
+
+    <!-- Auth Overlay -->
+    <div id="auth-overlay" class="hidden">
+        <div id="auth-content">
+            <div id="auth-header">Authentication Required</div>
+            <form id="auth-form" autocomplete="on">
+                <div id="auth-error" class="hidden"></div>
+                <!-- Hidden username for browser password manager -->
+                <input type="text" name="username" autocomplete="username" value="porterminal" style="display:none" aria-hidden="true">
+                <input type="password" id="auth-password" name="password" placeholder="Enter password" autocomplete="current-password">
+                <button type="submit" id="auth-submit">Connect</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Update/Version Overlay -->
+    <div id="update-overlay" class="hidden">
+        <div id="update-content">
+            <div id="update-icon">↑</div>
+            <div id="update-title">Update Available</div>
+            <div id="update-versions">
+                <span id="update-current"></span>
+                <span id="update-arrow">→</span>
+                <span id="update-latest"></span>
+            </div>
+            <div id="update-instructions">
+                <div id="update-label">Run this command to update:</div>
+                <code id="update-command"></code>
+                <button id="update-copy" title="Copy to clipboard">Copy</button>
+            </div>
+            <div id="update-hint">Tap anywhere to dismiss</div>
+        </div>
+    </div>
+
+</body>
+</html>
