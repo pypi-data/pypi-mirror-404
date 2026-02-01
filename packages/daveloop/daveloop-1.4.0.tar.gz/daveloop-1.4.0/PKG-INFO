@@ -1,0 +1,391 @@
+Metadata-Version: 2.4
+Name: daveloop
+Version: 1.4.0
+Summary: Self-healing debug agent powered by Claude Code CLI
+Home-page: https://github.com/davebruzil/DaveLoop
+Author: Dave Bruzil
+Keywords: debugging ai claude automation agent
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.7
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Software Development :: Debuggers
+Classifier: Topic :: Software Development :: Quality Assurance
+Requires-Python: >=3.7
+Description-Content-Type: text/markdown
+Dynamic: author
+Dynamic: classifier
+Dynamic: description
+Dynamic: description-content-type
+Dynamic: home-page
+Dynamic: keywords
+Dynamic: requires-python
+Dynamic: summary
+
+ # DaveLoop
+                                                                                                                                          
+ ![DaveLoop Banner](https://github.com/user-attachments/assets/c0611446-41f2-4d10-ad0b-bcdde63bcfd3)
+
+ **DaveLoop** is a Claude CLI based debug agent designed to solve bugs in cases where Claude Code fails to one-shot them.
+ It feeds itself bugs iteratively until it resolves them or gets blocked. Each iteration builds on the previous one with
+ full context thanks to the `--continue` flag.
+
+ ---
+
+ ## How It Works
+
+ 1. You give it a bug description
+ 2. It analyzes, makes a hypothesis, and tries a fix
+ 3. If not fixed, it loops again with new context
+ 4. Keeps going until it outputs `[DAVELOOP:RESOLVED]`
+
+ ---
+
+ ## Why Use It
+
+ - Claude Code sometimes needs multiple attempts to fix complex bugs
+ - Race conditions, subtle logic errors, multi-file refactors
+ - You dont want to manually copy-paste context every iteration
+ - Autonomous operation means you dont need to press enter for permissions all the time
+
+ ---
+
+ ## Key Features
+
+ - **Persistent Context** - uses `claude --continue` so it remembers everything
+ - **Exit Signals** - explicitly tells you when done or blocked
+ - **Real-time Streaming** - watch it think and debug live
+ - **Pragmatic Exits** - if environment is broken, it documents the fix and exits
+ - **4-Level Reasoning** - KNOWN, UNKNOWN, HYPOTHESIS, and WHY
+
+ ---
+
+ ## The 4-Level Reasoning Protocol
+
+ ![Reasoning Example](https://github.com/user-attachments/assets/a1bbd83a-27f2-4543-9d48-ef089b3cbd75)
+
+ The reasoning protocol forces systematic debugging:
+
+ 1. **Prevents random changes** - cant just try stuff without stating why
+ 2. **Builds knowledge incrementally** - each iterations KNOWN grows
+ 3. **Explicit about uncertainty** - UNKNOWN list gets smaller or changes focus
+ 4. **Testable hypotheses** - you can verify if the guess matches symptoms
+ 5. **Clear action items** - NEXT ACTION is concrete and measurable
+
+ ---
+ ## INSTALL
+ ### Via pip  
+  ```bash                                                                                                   
+      pip install daveloop                                                                                                            
+  ```  
+
+ ## How to Use
+
+ ### Basic Usage
+
+ ```bash
+ python daveloop.py "your bug description here"
+ ```
+
+ **Example:**
+ ```bash
+ python daveloop.py "routes/order.ts has a race condition on wallet balance. two concurrent orders can overdraw the account"
+ ```
+
+ ---
+
+ ### From a File
+
+ If you have a detailed bug report:
+
+ ```bash
+ python daveloop.py --file bug-report.txt
+ ```
+
+ The file should contain the bug description. Can be as detailed as you want - stack traces, error logs, reproduction steps, whatever.    
+
+ ---
+
+ ### From Claude Code Chat
+
+ Just talk naturally to Claude Code:
+
+ ```
+ "daveloop this: mongodb connection error in lookup artist node"
+ ```
+
+ Or:
+
+ ```
+ "run daveloop on the jwt validation bug"
+ ```
+
+ Claude Code will automatically run:
+
+ ```bash
+ python daveloop.py "mongodb connection error in lookup artist node"
+ ```
+
+ No special commands needed. Just mention "daveloop" and describe the bug.
+
+ ---
+
+ ### With Options
+
+ ```bash
+ # Custom working directory
+ python daveloop.py "fix the bug" --dir /path/to/your/project
+
+ # Limit iterations (default is 20)
+ python daveloop.py "fix the bug" --max-iterations 10
+
+ # All together
+ python daveloop.py --file bug.txt --dir ./my-app --max-iterations 15
+ ```
+
+ ---
+
+ ## If Claude CLI Not Found
+
+ DaveLoop automatically searches for Claude CLI in common locations. But if you get:
+
+ ```
+ ERROR: Claude CLI not found!
+
+ Please install Claude Code CLI or set CLAUDE_CLI_PATH environment variable:
+   Windows: set CLAUDE_CLI_PATH=C:\path\to\claude.cmd
+   Linux/Mac: export CLAUDE_CLI_PATH=/path/to/claude
+
+ Install from: https://github.com/anthropics/claude-code
+ ```
+
+ ### Option 1: Set Environment Variable (Recommended)
+
+ Find where Claude CLI is installed:
+
+ **Windows:**
+ ```cmd
+ where claude.cmd
+ ```
+
+ **Linux/Mac:**
+ ```bash
+ which claude
+ ```
+
+ Then set the path:
+
+ **Windows (temporary - current session):**
+ ```cmd
+ set CLAUDE_CLI_PATH=C:\Users\YourName\AppData\Roaming\npm\claude.cmd
+ ```
+
+ **Windows (permanent):**
+ ```cmd
+ setx CLAUDE_CLI_PATH "C:\Users\YourName\AppData\Roaming\npm\claude.cmd"
+ ```
+
+ **Linux/Mac (add to ~/.bashrc or ~/.zshrc):**
+ ```bash
+ export CLAUDE_CLI_PATH=/usr/local/bin/claude
+ ```
+
+ ---
+
+ ### Option 2: Add to PATH
+
+ **Windows:**
+ 1. Search for "environment variables" in start menu
+ 2. Click "Environment Variables" button
+ 3. Under "User variables", find "Path"
+ 4. Add the directory containing claude.cmd
+ 5. Restart terminal
+
+ **Linux/Mac:**
+ ```bash
+ # Add to ~/.bashrc or ~/.zshrc
+ export PATH="$PATH:/path/to/claude/directory"
+ ```
+
+ ---
+
+ ### Option 3: Install/Reinstall Claude CLI
+
+ If Claude CLI isnt installed:
+
+ ```bash
+ npm install -g @anthropics/claude-code
+ ```
+
+ After setting the path, run DaveLoop again.
+
+ ---
+
+ ## What Happens When You Run It
+
+ 1. **Banner shows up** - you see the DAVELOOP ASCII art
+ 2. **Session info** - working dir, max iterations, prompt loaded
+ 3. **Bug report** - your description echoed back
+ 4. **Iteration 1 starts** - progress bar shows up
+ 5. **You see the reasoning** - KNOWN, UNKNOWN, HYPOTHESIS, NEXT ACTION
+ 6. **You see the actions** - file reads, edits, bash commands
+ 7. **Iteration completes** - either continues or exits
+
+ ---
+
+ ## Reading the Output
+
+ Output is color coded:
+
+ - **Blue** - reasoning blocks and actions
+ - **White** - normal text and code
+ - **Dim** - less important details
+ - **Green** - success messages
+ - **Red** - errors
+ - **Yellow** - warnings
+
+ Key things to watch for:
+
+ - **Reasoning blocks** - shows how its thinking through the problem
+ - **Tool usage** - what files its reading/editing
+ - **Exit signals** - `[Exit signal detected: RESOLVED]` means its done
+
+ ---
+
+ ## When It Finishes
+
+ ### Three Possible Outcomes:
+
+ **1. Success - Bug is Fixed**
+
+ ★ ★ ★  BUG SUCCESSFULLY RESOLVED  ★ ★ ★
+
+ Bug fixed in 3 iteration(s)!
+ ```
+
+ **2. Blocked - Needs Human Help**
+ ```
+ ERROR: Claude is blocked - needs human help
+ ```
+
+ Check the logs to see what it tried. Usually means:
+ - Environment issues (missing dependencies)
+ - Need clarification on requirements
+ - Need access to external systems
+
+ **3. Max Iterations - Ran Out of Attempts**
+ ```
+ WARNING: Max iterations (20) reached without resolution
+ ```
+
+ Check logs in `logs/` directory. Either:
+ - Increase max iterations
+ - Provide more context about the bug
+ - Manually help it past a blocker
+
+ ---
+
+ ## Logs Location
+
+ Every session creates logs:
+
+ ```
+ logs/
+   20240127_143022_iteration_01.log    <- first attempt
+   20240127_143022_iteration_02.log    <- second attempt
+   20240127_143022_summary.md          <- overview
+ ```
+
+ Session ID format: `YYYYMMDD_HHMMSS`
+
+ Useful for:
+ - Seeing what the agent tried
+ - Debugging why it got stuck
+ - Understanding its reasoning process
+ - Proving to your team that the AI actually fixed the bug
+
+ ---
+
+ ## Tips for Good Bug Descriptions
+
+ **Bad:**
+ ```bash
+ python daveloop.py "fix the bug"
+ ```
+ Too vague. What bug? Where?
+
+ **Better:**
+ ```bash
+ python daveloop.py "wallet balance goes negative when two users checkout simultaneously"
+ ```
+ Has symptom and context.
+
+ **Best:**
+ ```bash
+ python daveloop.py "RACE CONDITION: routes/order.ts wallet payment (lines 139-148). Balance check at line 141 happens BEFORE decrement   
+ at line 142. Two concurrent $100 orders both pass the check and overdraw wallet to -$100. Need atomic check+decrement."
+ ```
+
+ Has:
+ - Bug type (race condition)
+ - Location (file and lines)
+ - Reproduction (concurrent orders)
+ - Root cause (non-atomic operations)
+ - Suggested fix direction (atomic operation)
+
+ **More context = faster resolution = fewer iterations**
+
+ ---
+
+ ## Interrupting the Agent
+
+ If you need to stop it:
+ - Press `Ctrl+C` once - graceful shutdown
+ - Press `Ctrl+C` twice - force kill
+
+ Logs are saved even if interrupted.
+
+ ---
+
+ ## Testing Before Production
+
+ Run on test bugs first:
+
+ ```bash
+ # Simple test
+ python daveloop.py "create a file test.txt with 'hello world' and output [DAVELOOP:RESOLVED]"
+ ```
+
+ Should resolve in 1-2 iterations. If it works, youre good to go.
+
+ ---
+
+ ## Using with SWE-bench
+
+ For testing against real-world benchmark bugs:
+
+ ```bash
+ python daveloop_swebench.py --file django_hash_task.json --max-iterations 15
+ ```
+
+ Comes with pre-configured bugs from:
+ - Django ORM
+ - Pytest AST rewriting
+ - SymPy code generation
+ - Sklearn edge cases
+
+ ---
+
+ ## Tested On
+
+ - Juice-Shop security vulnerabilities (race conditions, NoSQL injection, ReDoS, path traversal)
+ - SWE-bench real-world bugs (Django ORM, Pytest AST, SymPy C-code generation)
+ - Production n8n workflow errors (MongoDB connection, webhook failures)
+
+ **Success rate significantly higher than one-shot attempts because of the iterative + reasoning approach**
