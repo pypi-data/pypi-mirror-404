@@ -1,0 +1,101 @@
+# TOPSIS Python Package
+
+This project implements the **TOPSIS (Technique for Order Preference by Similarity to Ideal Solution)** method as a command line tool.
+
+TOPSIS is a multi-criteria decision making technique used to rank alternatives based on their distance from an ideal best and ideal worst solution.
+
+---
+
+## Installation
+
+```bash
+pip install Topsis-Prigya-102313061
+```
+
+---
+
+## Input File Format
+
+The input must be a CSV file with:
+
+- First column: Names of alternatives
+- Remaining columns: Numeric criteria values
+
+### Example Input CSV
+
+| Laptop Model | Performance | Battery Life | Weight (kg) | Price ($) |
+| ------------ | ----------- | ------------ | ----------- | --------- |
+| Model A      | 90          | 8            | 1.8         | 1200      |
+| Model B      | 85          | 10           | 1.5         | 1500      |
+| Model C      | 88          | 7            | 2.0         | 1000      |
+| Model D      | 92          | 9            | 1.6         | 1800      |
+
+
+### Meaning of Criteria
+
+- Performance → Higher is better (+)
+- Battery Life → Higher is better (+)
+- Weight → Lower is better (-)
+- Price → Lower is better (-)
+
+---
+
+### Parameters Used
+
+- Weights vector = `[1, 1, 1, 1]`
+- Impacts vector = `[+, +, -, -]`
+
+---
+
+## Command Line Usage
+
+```bash
+topsis data.csv "1,1,1,1" "+,+,-,-" output.csv
+```
+
+---
+
+## Output
+
+The output CSV file will contain two additional columns:
+
+| Laptop Model | Topsis Score | Rank |
+| ------------ | ------------ | ---- |
+| Model A      | 0.534277     | 3    |
+| Model B      | 0.308368     | 4    |
+| Model C      | 0.691632     | 1    |
+| Model D      | 0.534737     | 2    |
+
+
+- **Topsis Score**
+- **Rank**
+
+---
+
+### Notes
+
+- The first column must contain the names of alternatives.
+- All remaining columns must contain numeric values only.
+- Number of weights and impacts must match the number of criteria columns.
+
+---
+
+## Requirements
+
+- Python 3.6+
+- pandas
+- numpy
+
+---
+
+## Author
+
+Prigya Goyal
+
+---
+
+## License
+
+This project is released under the **MIT License** for educational purposes.
+See the LICENSE file for details.
+
