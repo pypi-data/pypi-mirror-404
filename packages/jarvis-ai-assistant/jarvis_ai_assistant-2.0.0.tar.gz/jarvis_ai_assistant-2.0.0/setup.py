@@ -1,0 +1,191 @@
+# -*- coding: utf-8 -*-
+import subprocess
+import sys
+from setuptools import setup, find_packages
+from setuptools.command.install import install
+
+
+class PostInstallCommand(install):
+    """自定义安装命令，安装后自动安装 Playwright 浏览器驱动"""
+
+    def run(self):
+        install.run(self)
+        # 尝试安装 Playwright 浏览器驱动
+        try:
+            print("\n正在安装 Playwright 浏览器驱动...")
+            subprocess.check_call(
+                [sys.executable, "-m", "playwright", "install", "chromium"]
+            )
+            print("✅ Playwright 浏览器驱动安装成功！")
+        except subprocess.CalledProcessError:
+            print(
+                "⚠️  Playwright 浏览器驱动安装失败，您也可以稍后手动运行: python -m playwright install chromium"
+            )
+        except Exception as e:
+            print(f"⚠️  安装 Playwright 浏览器驱动时出错: {e}")
+
+
+setup(
+    name="jarvis-ai-assistant",
+    version="2.0.0",
+    author="skyfire",
+    author_email="skyfireitdiy@hotmail.com",
+    description="An AI assistant that uses various tools to interact with the system",
+    long_description=open("README.md", encoding="utf-8").read(),
+    long_description_content_type="text/markdown",
+    url="https://github.com/skyfireitdiy/Jarvis.git",
+    packages=find_packages(where="src"),
+    package_dir={"": "src"},
+    include_package_data=True,
+    package_data={
+        "jarvis": ["jarvis_data/**/*"],
+    },
+    install_requires=[
+        "requests==2.32.3",
+        "playwright==1.48.0",
+        "colorama==0.4.6",
+        "prompt_toolkit==3.0.50",
+        "pygments==2.19.1",
+        "fuzzywuzzy==0.18.0",
+        "fastapi==0.115.12",
+        "uvicorn==0.33.0",
+        "rich==14.0.0",
+        "python-Levenshtein==0.25.1",
+        "tiktoken==0.7.0",
+        "pillow==10.2.0",
+        "openai==1.78.1",
+        "tabulate==0.9.0",
+        "pyte==0.8.2",
+        "pyyaml>=5.3.1",
+        "jsonnet>=0.20.0",
+        "ddgr",
+        "jinja2>=3.0.0",
+        "lxml==6.0.0",
+        "markdownify>=1.1.0",
+        "typer",
+        "plotext==5.2.8",
+        "packaging",
+        "tree-sitter==0.25.2",
+        "tree-sitter-python==0.25.0",
+        "tree-sitter-javascript==0.25.0",
+        "tree-sitter-typescript==0.23.2",
+        "tree-sitter-rust==0.24.0",
+        "tree-sitter-go==0.25.0",
+        "tree-sitter-java==0.23.5",
+        "tree-sitter-cpp==0.23.4",
+        "tree-sitter-c==0.24.1",
+        "tree-sitter-json==0.24.8",
+        "tree-sitter-yaml==0.7.2",
+        "tree-sitter-markdown==0.5.1",
+        "tree-sitter-html==0.23.2",
+        "tree-sitter-css==0.25.0",
+        "tree-sitter-bash==0.25.1",
+        "tree-sitter-ruby==0.23.1",
+        "tree-sitter-php==0.24.1",
+        "tree-sitter-sql==0.3.11",
+    ],
+    cmdclass={
+        "install": PostInstallCommand,
+    },
+    extras_require={
+        "dev": ["pytest", "ruff", "mypy", "build", "twine"],
+        "clang16": ["clang==16.*"],
+        "clang17": ["clang==17.*"],
+        "clang18": ["clang==18.*"],
+        "clang19": ["clang==19.*"],
+        "clang20": ["clang==20.*"],
+        "clang21": ["clang==21.*"],
+        "tree-sitter-python": ["tree-sitter==0.25.2", "tree-sitter-python==0.25.0"],
+        "tree-sitter-javascript": [
+            "tree-sitter==0.25.2",
+            "tree-sitter-javascript==0.25.0",
+        ],
+        "tree-sitter-typescript": [
+            "tree-sitter==0.25.2",
+            "tree-sitter-typescript==0.23.2",
+        ],
+        "tree-sitter-rust": ["tree-sitter==0.25.2", "tree-sitter-rust==0.24.0"],
+        "tree-sitter-go": ["tree-sitter==0.25.2", "tree-sitter-go==0.25.0"],
+        "tree-sitter-java": ["tree-sitter==0.25.2", "tree-sitter-java==0.23.5"],
+        "tree-sitter-cpp": ["tree-sitter==0.25.2", "tree-sitter-cpp==0.23.4"],
+        "tree-sitter-c": ["tree-sitter==0.25.2", "tree-sitter-c==0.24.1"],
+        "tree-sitter-json": ["tree-sitter==0.25.2", "tree-sitter-json==0.24.8"],
+        "tree-sitter-yaml": ["tree-sitter==0.25.2", "tree-sitter-yaml==0.7.2"],
+        "tree-sitter-markdown": ["tree-sitter==0.25.2", "tree-sitter-markdown==0.5.1"],
+        "tree-sitter-html": ["tree-sitter==0.25.2", "tree-sitter-html==0.23.2"],
+        "tree-sitter-css": ["tree-sitter==0.25.2", "tree-sitter-css==0.25.0"],
+        "tree-sitter-bash": ["tree-sitter==0.25.2", "tree-sitter-bash==0.25.1"],
+        "tree-sitter-ruby": ["tree-sitter==0.25.2", "tree-sitter-ruby==0.23.1"],
+        "tree-sitter-php": ["tree-sitter==0.25.2", "tree-sitter-php==0.24.1"],
+        "tree-sitter-sql": ["tree-sitter==0.25.2", "tree-sitter-sql==0.3.11"],
+        "tree-sitter-all": [
+            "tree-sitter==0.25.2",
+            "tree-sitter-python==0.25.0",
+            "tree-sitter-javascript==0.25.0",
+            "tree-sitter-typescript==0.23.2",
+            "tree-sitter-rust==0.24.0",
+            "tree-sitter-go==0.25.0",
+            "tree-sitter-java==0.23.5",
+            "tree-sitter-cpp==0.23.4",
+            "tree-sitter-c==0.24.1",
+            "tree-sitter-json==0.24.8",
+            "tree-sitter-yaml==0.7.2",
+            "tree-sitter-markdown==0.5.1",
+            "tree-sitter-html==0.23.2",
+            "tree-sitter-css==0.25.0",
+            "tree-sitter-bash==0.25.1",
+            "tree-sitter-ruby==0.23.1",
+            "tree-sitter-php==0.24.1",
+            "tree-sitter-sql==0.3.11",
+        ],
+    },
+    entry_points={
+        "console_scripts": [
+            "jarvis=jarvis.jarvis_agent.jarvis:main",
+            "jarvis-agent-dispatcher=jarvis.jarvis_agent.jvsd_cli:app",
+            "jvs=jarvis.jarvis_agent.jarvis:main",
+            "jvsd=jarvis.jarvis_agent.jvsd_cli:main",
+            "jarvis-code-agent=jarvis.jarvis_code_agent.code_agent:main",
+            "jca=jarvis.jarvis_code_agent.code_agent:main",
+            "jarvis-code-agent-dispatcher=jarvis.jarvis_code_agent.jcad_cli:app",
+            "jcad=jarvis.jarvis_code_agent.jcad_cli:app",
+            "jarvis-smart-shell=jarvis.jarvis_smart_shell.main:main",
+            "jss=jarvis.jarvis_smart_shell.main:main",
+            "jarvis-platform-manager=jarvis.jarvis_platform_manager.main:main",
+            "jpm=jarvis.jarvis_platform_manager.main:main",
+            "jarvis-git-commit=jarvis.jarvis_git_utils.git_commiter:main",
+            "jgc=jarvis.jarvis_git_utils.git_commiter:main",
+            "jarvis-code-review=jarvis.jarvis_code_analysis.code_review:main",
+            "jcr=jarvis.jarvis_code_analysis.code_review:main",
+            "jarvis-git-squash=jarvis.jarvis_git_squash.main:main",
+            "jgs=jarvis.jarvis_git_squash.main:main",
+            "jarvis-multi-agent=jarvis.jarvis_multi_agent.main:main",
+            "jma=jarvis.jarvis_multi_agent.main:main",
+            "jarvis-agent=jarvis.jarvis_agent.main:main",
+            "ja=jarvis.jarvis_agent.main:main",
+            "jarvis-tool=jarvis.jarvis_tools.cli.main:main",
+            "jt=jarvis.jarvis_tools.cli.main:main",
+            "jarvis-memory-organizer=jarvis.jarvis_memory_organizer.memory_organizer:main",
+            "jmo=jarvis.jarvis_memory_organizer.memory_organizer:main",
+            "jarvis-methodology=jarvis.jarvis_methodology.main:main",
+            "jm=jarvis.jarvis_methodology.main:main",
+            "jarvis-sec=jarvis.jarvis_sec.cli:main",
+            "jsec=jarvis.jarvis_sec.cli:main",
+            "jarvis-c2rust=jarvis.jarvis_c2rust.cli:main",
+            "jc2r=jarvis.jarvis_c2rust.cli:main",
+            "jarvis-config=jarvis.jarvis_config.cli:app",
+            "jcfg=jarvis.jarvis_config.cli:app",
+            "jarvis-quick-config=jarvis.jarvis_utils.quick_config:app",
+            "jqc=jarvis.jarvis_utils.quick_config:app",
+        ],
+    },
+    python_requires="==3.12.*",
+    classifiers=[
+        "Development Status :: 3 - Alpha",
+        "Intended Audience :: Developers",
+        "License :: OSI Approved :: MIT License",
+        "Operating System :: POSIX :: Linux",
+        "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.12",
+    ],
+)
