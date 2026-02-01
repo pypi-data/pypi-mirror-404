@@ -1,0 +1,219 @@
+# https://peps.python.org/pep-0517/
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+# https://hatch.pypa.io/latest/config/metadata/
+[tool.hatch.version]
+source = "vcs"
+
+# https://peps.python.org/pep-0621/
+[project]
+name = "ome-writers"
+dynamic = ["version"]
+description = "OME-TIFF and OME-ZARR writer APIs designed for microscopy acquisition"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "BSD-3-Clause" }
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: BSD License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Typing :: Typed",
+]
+dependencies = [
+    "numpy>=2",
+    "typing-extensions>=4.10.0",
+    "yaozarrs[io]>=0.2.0",
+    "pydantic>=2.8",
+    "pydantic-extra-types>=2.11.0",
+]
+
+[project.optional-dependencies]
+tensorstore = [
+    "yaozarrs[write-tensorstore]>=0.2.0",
+    "tensorstore>=0.1.80; python_version >= '3.11'",
+]
+zarr-python = ["yaozarrs[write-zarr]>=0.2.0"]
+zarrs-python = [
+    "ome-writers[zarr-python]",
+    "zarrs>=0.2.1; python_version >= '3.11'",
+]
+acquire-zarr = ["acquire-zarr>=0.6.0; python_version < '3.14'"]
+tifffile = [
+    "tifffile>=2024.8.30",
+    "imagecodecs>=2024.9.22",
+    "ome-types>=0.6.1",
+    "pydantic>=2.8",
+]
+all = [
+    "ome-writers[tensorstore,zarr-python,zarrs-python,acquire-zarr,tifffile]",
+]
+
+[dependency-groups]
+# used for all tests
+test = [
+    "pytest>=8.4.2",
+    "pytest-cov>=7.0.0",
+    "yaozarrs[io]>=0.2.0",
+    "pytest-xdist>=3.8.0",
+    "useq-schema>=0.8.2",
+]
+# these mirror the extras above
+# but with additional dependencies for testing
+# these are the groups used on CI
+tensorstore = [
+    { include-group = 'test' },
+    "ome-writers[tensorstore]",
+    "tensorstore-stubs>=0.1.2",
+]
+zarr-python = [{ include-group = 'test' }, "ome-writers[zarr-python]"]
+zarrs-python = [{ include-group = 'test' }, "ome-writers[zarrs-python]"]
+acquire-zarr = [
+    { include-group = 'test' },
+    "ome-writers[acquire-zarr]",
+    "tensorstore>=0.1.78",       # just for read validation in tests
+]
+tifffile = [{ include-group = 'test' }, "ome-writers[tifffile]"]
+bioformats = [{ include-group = "tifffile" }, "scyjava>=1.12.1"]
+test-codspeed = [
+    { include-group = "test" },
+    "ome-writers[all]",
+    "pytest-codspeed",
+]
+dev = [
+    { include-group = "test" },
+    { include-group = 'tensorstore' },
+    { include-group = 'zarr-python' },
+    { include-group = 'zarrs-python' },
+    { include-group = 'acquire-zarr' },
+    { include-group = 'tifffile' },
+    "ipython>=8.37.0",
+    "pdbpp>=0.11.7 ; sys_platform != 'win32' and python_version < '3.13'",
+    "pyright>=1.1.405",
+    "rich>=14.1.0",
+    "ruff>=0.13.0",
+    "pytest-benchmark>=5.1.0",
+    "prek>=0.2.28",
+    "ty>=0.0.12",
+    "useq-schema>=0.8.2",
+    "pytest-xdist>=3.8.0",
+    "typer>=0.15.0",
+    "pdbpp>=0.12.0; sys_platform != 'win32'",
+]
+docs = [
+    "griffe-fieldz>=0.4.0",
+    "mkdocstrings-python>=2.0.1",
+    "zensical>=0.0.18",
+]
+
+[project.urls]
+homepage = "https://github.com/pymmcore-plus/ome-writers"
+repository = "https://github.com/pymmcore-plus/ome-writers"
+
+[tool.uv.sources]
+ome-writers = { workspace = true }
+
+# https://docs.astral.sh/ruff
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+src = ["src"]
+fix = true
+unsafe-fixes = true
+
+# https://docs.astral.sh/ruff/rules
+[tool.ruff.lint]
+pydocstyle = { convention = "numpy" }
+select = [
+    "E", # style errors
+    "W", # style warnings
+    "F", # flakes
+    # "D",    # pydocstyle
+    "D417", # Missing argument descriptions in Docstrings
+    "I",    # isort
+    "UP",   # pyupgrade
+    "C4",   # flake8-comprehensions
+    "B",    # flake8-bugbear
+    "A001", # flake8-builtins
+    "ANN",  # flake8-annotations
+    "RUF",  # ruff-specific rules
+    "TC",   # flake8-type-checking
+    "TID",  # flake8-tidy-imports
+]
+ignore = [
+    "ANN401", # allow the use of Any type
+    "D401",   # First line should be in imperative mood (remove to opt in)
+]
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*.py" = ["D", "S"]
+
+# https://docs.astral.sh/ruff/formatter/
+[tool.ruff.format]
+docstring-code-format = true
+skip-magic-trailing-comma = false # default is false
+
+# https://mypy.readthedocs.io/en/stable/config_file.html
+[tool.mypy]
+files = "src/**/"
+strict = true
+disallow_any_generics = false
+disallow_subclassing_any = false
+show_error_codes = true
+pretty = true
+
+[tool.pyright]
+include = ["src"]
+pythonVersion = "3.10"
+enableExperimentalFeatures = true
+reportArgumentType = false         # tough with pydantic type casting.
+reportAttributeAccessIssue = false # tough with pydantic 
+
+# https://docs.pytest.org/
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = ["tests"]
+filterwarnings = [
+    "error",
+    "ignore:Failing to pass a value:DeprecationWarning",
+    "ignore:Benchmarks are automatically disabled because xdist plugin is active:",
+    "ignore:Valgrind instrument ignores rounds:UserWarning",
+    "ignore:\\s*Output format could not be inferred from root_path:UserWarning",
+]
+
+# https://coverage.readthedocs.io/
+[tool.coverage.report]
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "@overload",
+    "except ImportError",
+    "raise NotImplementedError()",
+    "pass",
+]
+
+[tool.coverage.run]
+source = ["ome_writers"]
+
+[tool.check-manifest]
+ignore = [".pre-commit-config.yaml", ".ruff_cache/**/*", "tests/**/*"]
+
+[tool.typos.default]
+extend-ignore-identifiers-re = ["(?i)nd2?.*", "(?i)ome", "FOV"]
+
+[tool.ty.environment]
+python = "./.venv"
+
+[tool.ty.rules]
+invalid-argument-type = "ignore"
+unresolved-import = "ignore"
+possibly-missing-attribute = "ignore"
