@@ -1,0 +1,286 @@
+"""
+Transaction helper service.
+
+Encapsulates common transaction patterns to reduce code duplication
+in handlers.
+
+Includes deadlock retry logic using resilient-circuit for database
+operations that may encounter lock contention.
+"""
+
+from __future__ import annotations
+
+import logging
+import sqlite3
+from collections.abc import Sequence
+from datetime import timedelta
+from typing import TYPE_CHECKING
+
+from resilient_circuit import ExponentialDelay, RetryWithBackoffPolicy
+from resilient_circuit.exceptions import RetryLimitReached
+
+from stabilize.persistence.store import StoreTransaction
+
+if TYPE_CHECKING:
+    from stabilize.models.stage import StageExecution
+    from stabilize.persistence.store import WorkflowStore
+    from stabilize.queue.messages import Message
+    from stabilize.queue.queue import Queue
+
+logger = logging.getLogger(__name__)
+
+# Deadlock retry configuration using resilient-circuit
+DEADLOCK_BACKOFF = ExponentialDelay(
+    min_delay=timedelta(milliseconds=50),
+    max_delay=timedelta(seconds=5),
+    factor=2,
+    jitter=0.2,
+)
+
+
+def is_deadlock_error(error: Exception) -> bool:
+    """Check if an error is a database deadlock or lock contention error.
+
+    Detects deadlock conditions for:
+    - SQLite: "database is locked"
+    - PostgreSQL: SQLSTATE 40001 (serialization failure) or 40P01 (deadlock)
+    - Generic: ConcurrencyError from stabilize
+
+    Args:
+        error: The exception to check
+
+    Returns:
+        True if the error indicates a deadlock/lock contention
+    """
+    # Check for SQLite lock errors
+    if isinstance(error, sqlite3.OperationalError):
+        error_msg = str(error).lower()
+        if "database is locked" in error_msg or "locked" in error_msg:
+            return True
+
+    # Check for PostgreSQL deadlock/serialization errors
+    # psycopg2 uses pgcode attribute
+    pgcode = getattr(error, "pgcode", None)
+    if pgcode in ("40001", "40P01"):  # serialization_failure, deadlock_detected
+        return True
+
+    # Check error message for common deadlock patterns
+    error_msg = str(error).lower()
+    deadlock_patterns = [
+        "deadlock",
+        "lock wait timeout",
+        "database is locked",
+        "serialization failure",
+        "could not serialize",
+        "concurrent update",
+    ]
+    if any(pattern in error_msg for pattern in deadlock_patterns):
+        return True
+
+    # Check for stabilize ConcurrencyError (import locally to avoid circular import)
+    try:
+        from stabilize.errors import ConcurrencyError
+
+        if isinstance(error, ConcurrencyError):
+            return True
+    except ImportError:
+        pass
+
+    return False
+
+
+# Deadlock retry policy
+DEADLOCK_RETRY_POLICY = RetryWithBackoffPolicy(
+    max_retries=5,
+    backoff=DEADLOCK_BACKOFF,
+    should_handle=is_deadlock_error,
+)
+
+# More aggressive retry policy for critical error handling paths.
+# Error recording is critical - we should try harder to persist errors
+# even under high contention (e.g., multiple tasks failing simultaneously).
+ERROR_HANDLING_BACKOFF = ExponentialDelay(
+    min_delay=timedelta(milliseconds=25),  # Start faster
+    max_delay=timedelta(seconds=10),  # Allow longer max delay
+    factor=2,
+    jitter=0.3,  # More jitter to reduce thundering herd
+)
+
+ERROR_HANDLING_RETRY_POLICY = RetryWithBackoffPolicy(
+    max_retries=10,  # 2x normal retries for critical error paths
+    backoff=ERROR_HANDLING_BACKOFF,
+    should_handle=is_deadlock_error,
+)
+
+
+class TransactionHelper:
+    """Helper for executing atomic transactions with common patterns.
+
+    Includes automatic retry on deadlock/lock contention errors using
+    exponential backoff.
+    """
+
+    def __init__(self, repository: WorkflowStore, queue: Queue) -> None:
+        self.repository = repository
+        self.queue = queue
+
+    def execute_atomic(
+        self,
+        stage: StageExecution | None = None,
+        source_message: Message | None = None,
+        messages_to_push: Sequence[tuple[Message, int | None]] | None = None,
+        handler_name: str = "UnknownHandler",
+        require_atomic: bool = False,
+    ) -> None:
+        """
+        Execute an atomic transaction to update state and queue messages.
+
+        Automatically retries on deadlock/lock contention errors with
+        exponential backoff.
+
+        Args:
+            stage: Optional stage to store/update
+            source_message: Optional message to mark as processed
+            messages_to_push: List of (message, delay_seconds) tuples to push
+            handler_name: Name of the handler for logging/metrics
+            require_atomic: If True, raises RuntimeError if the transaction
+                           does not provide true database-level atomicity.
+                           Use this for critical operations that must not
+                           leave partial state on failure.
+
+        Raises:
+            RuntimeError: If require_atomic=True and transaction is not atomic
+            Exception: If the transaction fails after all retries
+        """
+        messages_to_push = messages_to_push or []
+
+        @DEADLOCK_RETRY_POLICY
+        def _execute() -> None:
+            with self.repository.transaction(self.queue) as txn:
+                # Validate atomicity if required
+                if require_atomic and not txn.is_atomic:
+                    raise RuntimeError(
+                        f"Atomic transaction required for {handler_name} but the "
+                        "configured storage backend does not provide true atomicity. "
+                        "Use SqliteWorkflowStore or PostgresWorkflowStore for "
+                        "production critical systems."
+                    )
+
+                if stage:
+                    txn.store_stage(stage)
+
+                if source_message and source_message.message_id:
+                    execution_id = getattr(source_message, "execution_id", None)
+                    txn.mark_message_processed(
+                        message_id=source_message.message_id,
+                        handler_type=handler_name,
+                        execution_id=execution_id,
+                    )
+
+                for msg, delay in messages_to_push:
+                    txn.push_message(msg, delay or 0)
+
+        try:
+            _execute()
+        except RetryLimitReached as e:
+            logger.error(
+                "Transaction failed after max retries due to lock contention: %s",
+                handler_name,
+            )
+            # Re-raise the original exception
+            raise e.__cause__ if e.__cause__ else e from e
+
+    def execute_atomic_critical(
+        self,
+        stage: StageExecution | None = None,
+        source_message: Message | None = None,
+        messages_to_push: Sequence[tuple[Message, int | None]] | None = None,
+        handler_name: str = "UnknownHandler",
+        require_atomic: bool = False,
+    ) -> None:
+        """
+        Execute an atomic transaction with more aggressive retry for critical paths.
+
+        Use this for error handling and other critical paths where failure to
+        persist state could leave the system in an inconsistent state or lose
+        important error information.
+
+        Uses ERROR_HANDLING_RETRY_POLICY with 10 retries (vs 5 for normal operations)
+        and more aggressive backoff settings.
+
+        Args:
+            stage: Optional stage to store/update
+            source_message: Optional message to mark as processed
+            messages_to_push: List of (message, delay_seconds) tuples to push
+            handler_name: Name of the handler for logging/metrics
+            require_atomic: If True, raises RuntimeError if the transaction
+                           does not provide true database-level atomicity.
+
+        Raises:
+            RuntimeError: If require_atomic=True and transaction is not atomic
+            Exception: If the transaction fails after all retries
+        """
+        messages_to_push = messages_to_push or []
+
+        @ERROR_HANDLING_RETRY_POLICY
+        def _execute() -> None:
+            with self.repository.transaction(self.queue) as txn:
+                if require_atomic and not txn.is_atomic:
+                    raise RuntimeError(
+                        f"Atomic transaction required for {handler_name} but the "
+                        "configured storage backend does not provide true atomicity. "
+                        "Use SqliteWorkflowStore or PostgresWorkflowStore for "
+                        "production critical systems."
+                    )
+
+                if stage:
+                    txn.store_stage(stage)
+
+                if source_message and source_message.message_id:
+                    execution_id = getattr(source_message, "execution_id", None)
+                    txn.mark_message_processed(
+                        message_id=source_message.message_id,
+                        handler_type=handler_name,
+                        execution_id=execution_id,
+                    )
+
+                for msg, delay in messages_to_push:
+                    txn.push_message(msg, delay or 0)
+
+        try:
+            _execute()
+        except RetryLimitReached as e:
+            logger.critical(
+                "CRITICAL: Transaction failed after max retries in error handling path: %s",
+                handler_name,
+            )
+            # Re-raise the original exception
+            raise e.__cause__ if e.__cause__ else e from e
+
+
+def require_atomic_transaction(txn: StoreTransaction, context: str = "operation") -> None:
+    """Validate that a transaction provides true atomicity.
+
+    Call this at the start of critical operations to ensure the configured
+    storage backend provides database-level atomicity guarantees.
+
+    Args:
+        txn: The transaction to validate
+        context: Description of the operation for error messages
+
+    Raises:
+        RuntimeError: If the transaction does not provide true atomicity
+
+    Example:
+        with repository.transaction(queue) as txn:
+            require_atomic_transaction(txn, "workflow completion")
+            txn.store_stage(stage)
+            txn.push_message(message)
+    """
+    if not txn.is_atomic:
+        raise RuntimeError(
+            f"Atomic transaction required for {context} but the configured "
+            "storage backend does not provide true atomicity. Use "
+            "SqliteWorkflowStore or PostgresWorkflowStore for production "
+            "critical systems."
+        )
