@@ -1,0 +1,305 @@
+Metadata-Version: 2.4
+Name: antiai
+Version: 0.1.0
+Summary: Advanced image protection system against AI training and unauthorized use
+Author-email: Miguel <miguel@alamopscloud.com>
+Maintainer-email: Miguel <miguel@alamopscloud.com>
+License: MIT
+Project-URL: Homepage, https://github.com/miguel/antiai
+Project-URL: Documentation, https://antiai.readthedocs.io
+Project-URL: Repository, https://github.com/miguel/antiai
+Project-URL: Bug Tracker, https://github.com/miguel/antiai/issues
+Keywords: image-protection,adversarial,watermarking,ai-protection,digital-rights,computer-vision
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: Intended Audience :: Science/Research
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Multimedia :: Graphics
+Classifier: Topic :: Scientific/Engineering :: Artificial Intelligence
+Classifier: Topic :: Security
+Classifier: Typing :: Typed
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: numpy>=1.24.0
+Requires-Dist: pillow>=10.0.0
+Requires-Dist: torch>=2.0.0
+Requires-Dist: torchvision>=0.15.0
+Requires-Dist: pywavelets>=1.4.1
+Requires-Dist: scipy>=1.11.0
+Requires-Dist: cryptography>=41.0.0
+Requires-Dist: pydantic>=2.0.0
+Requires-Dist: typing-extensions>=4.8.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.4.0; extra == "dev"
+Requires-Dist: pytest-cov>=4.1.0; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.21.0; extra == "dev"
+Requires-Dist: black>=23.7.0; extra == "dev"
+Requires-Dist: ruff>=0.0.285; extra == "dev"
+Requires-Dist: mypy>=1.5.0; extra == "dev"
+Requires-Dist: pre-commit>=3.3.3; extra == "dev"
+Requires-Dist: isort>=5.12.0; extra == "dev"
+Provides-Extra: docs
+Requires-Dist: mkdocs>=1.5.0; extra == "docs"
+Requires-Dist: mkdocs-material>=9.2.0; extra == "docs"
+Requires-Dist: mkdocstrings[python]>=0.22.0; extra == "docs"
+Provides-Extra: benchmark
+Requires-Dist: pytest-benchmark>=4.0.0; extra == "benchmark"
+Requires-Dist: memory-profiler>=0.61.0; extra == "benchmark"
+Dynamic: license-file
+
+# AntiAI - Advanced Image Protection System
+
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+
+**AntiAI** is a comprehensive Python library for protecting images against unauthorized AI training, style mimicry, and content theft. It implements state-of-the-art adversarial perturbations, invisible watermarking, and robust metadata management.
+
+## 🎯 Key Features
+
+- **Adversarial Protection**: Imperceptible perturbations that confuse AI models
+- **Invisible Watermarking**: Robust watermarks surviving compression and edits
+- **Metadata Management**: Complete authorship and copyright tracking
+- **File Integrity**: Cryptographic signatures and tampering detection
+- **Custom Format**: `.antiAI` format designed specifically for protection
+- **Easy Integration**: Simple API for encoding, decoding, and verification
+
+## 🚀 Quick Start
+
+### Installation
+```bash
+pip install antiai
+```
+
+### Basic Usage
+```python
+from antiai import AntiAIEncoder, AntiAIDecoder
+
+# Protect an image
+encoder = AntiAIEncoder()
+encoder.encode(
+    input_image="artwork.jpg",
+    output_path="artwork.antiAI",
+    author="Your Name",
+    protection_level=7  # 0-10
+)
+
+# Decode protected image
+decoder = AntiAIDecoder()
+image, metadata = decoder.decode("artwork.antiAI")
+
+print(f"Author: {metadata.author.name}")
+print(f"Protected: {metadata.protection.adversarial}")
+```
+
+## 📚 Documentation
+
+### Protection Mechanisms
+
+#### 1. Adversarial Perturbation
+
+Adds imperceptible noise that causes AI models to fail at:
+- Feature extraction
+- Style transfer
+- Content recognition
+```python
+from antiai.protection import AdversarialProtection
+
+protector = AdversarialProtection(strength=8)
+protected_image, metadata = protector.protect(original_image)
+
+print(f"PSNR: {metadata['quality']['psnr_db']:.2f} dB")  # >40 = imperceptible
+```
+
+#### 2. Invisible Watermarking
+
+Embeds identifying information using DWT-DCT:
+- Survives JPEG compression
+- Resistant to resizing
+- Extractable for proof of ownership
+```python
+from antiai.protection import InvisibleWatermark
+
+watermarker = InvisibleWatermark(strength=0.1)
+marked_image, metadata = watermarker.embed(image, "unique_id_12345")
+```
+
+#### 3. Metadata & Copyright
+
+Complete authorship tracking with:
+- Creator information
+- Copyright statements
+- Usage terms
+- AI training restrictions
+```python
+from antiai.protection.metadata import MetadataBuilder
+
+metadata = (
+    MetadataBuilder()
+    .set_author("Artist Name", email="artist@example.com")
+    .set_copyright("© 2025 Artist Name", license="All Rights Reserved")
+    .set_ai_restrictions(do_not_train=True, do_not_scrape=True)
+    .build()
+)
+```
+
+### File Format
+
+The `.antiAI` format structure:
+```
+[HEADER - 512 bytes]
+  - Magic bytes: "ANTIAI\x00\x01"
+  - Version, dimensions, protection level
+  
+[METADATA CHUNK]
+  - Author, copyright, creation date
+  - Protection details
+  
+[WATERMARK CHUNK]
+  - Invisible watermark data
+  
+[IMAGE DATA CHUNK]
+  - PNG-compressed protected image
+  
+[SIGNATURE - 256 bytes]
+  - SHA-256 integrity signature
+```
+
+## 🔍 Advanced Features
+
+### Batch Processing
+```python
+encoder = AntiAIEncoder()
+results = encoder.encode_batch(
+    input_images=["img1.jpg", "img2.jpg", "img3.jpg"],
+    output_dir="protected/",
+    author="Batch User",
+    protection_level=6
+)
+```
+
+### Verification
+```python
+from antiai import ProtectionVerifier
+
+verifier = ProtectionVerifier()
+result = verifier.verify("artwork.antiAI")
+
+if result['authentic']:
+    print("✓ Image is authentic and protected")
+else:
+    print(f"✗ Issues: {result['issues']}")
+```
+
+### Image Comparison
+```python
+verifier = ProtectionVerifier()
+comparison = verifier.compare_images("original.jpg", "copy.jpg")
+
+print(f"Similarity: {comparison['similarity_percent']:.1f}%")
+print(f"Likely same image: {comparison['likely_same_image']}")
+```
+
+## 🛠️ Tools
+
+The `examples/` folder includes ready-to-use tools:
+
+| Tool | Description |
+|------|-------------|
+| `viewer.py` | Minimalist GUI viewer for `.antiAI` files (Tkinter) |
+| `protect.py` | CLI tool for protecting images |
+| `demo.py` | Interactive demonstration of all features |
+
+```bash
+# View a protected image
+python examples/viewer.py
+
+# Protect an image from command line
+python examples/protect.py input.jpg -o output.antiAI --level 7
+
+# Run interactive demo
+python examples/demo.py
+```
+
+## 🛡️ Protection Levels
+
+| Level | Strength | Use Case | Quality Impact |
+|-------|----------|----------|----------------|
+| 0-2 | Minimal | Basic protection | Imperceptible |
+| 3-5 | Moderate | General use | Very minor |
+| 6-8 | Strong | Professional work | Minor |
+| 9-10 | Maximum | High-value art | Noticeable |
+
+## 📊 Performance
+
+Typical encoding performance on a modern CPU:
+
+- **Small images** (512x512): ~1-2 seconds
+- **Medium images** (1920x1080): ~3-5 seconds  
+- **Large images** (4K): ~10-15 seconds
+
+GPU acceleration (CUDA) can provide 2-4x speedup.
+
+## 🔬 Technical Details
+
+### Adversarial Algorithm
+
+- **Method**: Projected Gradient Descent (PGD)
+- **Loss Function**: Feature maximization
+- **Constraint**: L-infinity bounded perturbations
+- **Quality**: PSNR > 40 dB typical
+
+### Watermark Algorithm
+
+- **Transform**: Discrete Wavelet Transform (DWT)
+- **Embedding**: DCT coefficient modification
+- **Robustness**: Mid-frequency embedding
+- **Capacity**: ~0.1 bits per pixel
+
+## 🤝 Contributing
+
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+
+### Development Setup
+```bash
+git clone https://github.com/Ross-cripto/antiai.git
+cd antiai
+pip install -e ".[dev]"
+pre-commit install
+```
+
+### Running Tests
+```bash
+pytest test/ -v --cov=antiai
+```
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🙏 Acknowledgments
+
+- Inspired by [Glaze](https://glaze.cs.uchicago.edu/) and [Nightshade](https://nightshade.cs.uchicago.edu/)
+- Built with PyTorch, NumPy, and PIL
+- Special thanks to the computer vision and adversarial ML research communities
+
+## 📧 Contact
+
+- **Author**: Rosniel Miguel Allesta Fundora
+- **Email**:r16221639@gmail.com
+- **GitHub**: [@Ross-cripto](https://github.com/Ross-cripto)
+
+## 🔗 Links
+
+- [Issue Tracker](https://github.com/Ross-cripto/antiai/issues)
+
+---
+
+**Made with ❤️ to protect artists and creators from unauthorized AI use.**
