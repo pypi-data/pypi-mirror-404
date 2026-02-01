@@ -1,0 +1,140 @@
+[project]
+name = "kbkit"
+description = "KBKit: Kirkwood-Buff Analysis Toolkit"
+license = {file = "LICENSE"}
+version = "1.0.24"
+readme = "README.md"
+keywords = []
+authors = [{name = "Allison Peroutka"}]
+requires-python = ">=3.10"
+dependencies = [ "sphinx", "numpy>=2.3.2,<3", "natsort>=8.4.0,<9", "scipy>=1.16.1,<2", "pandas>=2.3.1,<3", "matplotlib>=3.10.5,<4", "seaborn>=0.13.2,<0.14", "gromacs>=0.0.0,<0.0.1", "pathlib>=1.0.1,<2", "mpltern>=1.0.4,<2", "plotly>=6.3.0,<7", "click>=8.2.1,<9", "pint<0.25", "uncertainties>=3.2.3,<4", "babel>=2.17.0,<3", "ipykernel>=6.30.1,<7", "tree-format>=0.1.2,<0.2", "furo>=2025.7.19,<2026", "sphinx-rtd-theme>=3.0.2,<4", "nbsphinx>=0.9.6,<0.10", "pandoc>=2.4,<3", "sphinx-copybutton>=0.5.2,<0.6", "sphinx-gallery>=0.19.0,<0.20", "rdkit>=2025.3.5,<2026", "sympy>=1.14.0,<2", "pytest>=8.4.1", "pytest-cov>=6.2.1", "stubs>=1.0.0", "mypy", "mdanalysis", "types-requests"]
+
+[project.urls]
+Homepage = "https://github.com/anl-sepsci/kbkit"
+Documentation = "https://kbkit.readthedocs.io/en/latest/"
+
+[dev-dependencies]
+pip = "*"
+types-requests = "*"
+
+[tool.pixi.project]
+channels = ["conda-forge"]
+platforms = ["linux-64", "osx-arm64"]
+
+[tool.pixi.dependencies]
+
+[tool.pixi.pypi-dependencies]
+kbkit = { path = ".", editable = true }
+
+[tool.pixi.environments]
+default = { solve-group = "default" }
+dev = { features = ["dev"], solve-group = "default"}
+
+[tool.pixi.feature.dev.tasks]
+fmt = { cmd="ruff format ." }
+lint = { cmd="ruff check . --fix" }
+types = { cmd="mypy ." }
+test = { cmd="pytest" }
+all = { depends-on = ["fmt", "lint", "types", "test"] }
+bump-version = { cmd = "python tools/bump_version.py" }
+tree-gen = { cmd = "python tools/tree_gen.py" }
+
+[tool.pixi.feature.dev.dependencies]
+pytest = ">=8.3"
+pytest-cov = ">=6.0"
+ruff = ">=0.11"
+mypy = ">=1.15"
+pre-commit = ">=4.2"
+numpy = ">=1.25"
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+    "B",  # bugbear
+    "D",  # pydocstyle
+    "E",  # pycodestyle errors
+    "F",  # pyflakes
+    "I",  # isort
+    "N",  # pep8-naming conventions
+    "W",  # pycodestyle warnings
+    "C4", # comprehensions
+    "PL", # pylint
+    "PT", # flake8-pytest-style
+    "PIE", # misc lints
+    "PYI", # flake8-pyi
+    "TID", # tidy imports
+    "TCH", # type-checking imports
+    "RUF", # Ruff-specific rules
+    "RSE", # flake8-raise
+    "ICN001", # unconventional-import-alias
+]
+ignore = [
+    "N806", # Non-lowercase variable in function
+    "N802", # function name should be lowercase
+    "N803", # Argument name should be lowercase
+    "PLR0911", # Too many returns
+    "PLR0912", # Too many branches
+    "PLR0913", # Too many arguments to function call
+    "PLR0914", # Too many locals
+    "PLR0915", # Too many statements
+    "PLR1702", # Too many nested-blocks
+    "E501", # Line too long
+    "D401", # First line of docstring should be in imperative mood
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = [
+    "F401", 
+    "F403",
+]
+"tests/*" = [
+    "F401", 
+    "F403",
+    "F841",
+    "E402",
+    "PT011",
+    "PLR2004",
+    "S101",     # Use of assert detected
+    "D",        # All docstring rules (D100-D417)
+    "ANN",      # All type annotation rules
+    "SLF001",   # Private member accessed
+    "ARG001",   # Unused function argument
+    "B017",
+    "PT017",
+    "PLC0415",
+    "RUF001",
+    "E741",
+    "F601",
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
+
+[tool.mypy]
+files = ["src/kbkit", "tests"]
+pretty = true
+ignore_missing_imports = true
+
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["src/kbkit", "tests"]
+addopts = "--doctest-modules"
+doctest_optionflags = "NORMALIZE_WHITESPACE"
+
+[build-system]
+build-backend = "hatchling.build"
+requires = ["hatchling"]
+
+[tool.hatch.build]
+include = [
+  "src/kbkit",
+  "tests",
+  "README.md",
+  "LICENSE"
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kbkit"]
