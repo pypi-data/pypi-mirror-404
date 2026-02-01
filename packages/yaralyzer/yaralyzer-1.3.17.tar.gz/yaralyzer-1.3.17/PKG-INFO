@@ -1,0 +1,159 @@
+Metadata-Version: 2.1
+Name: yaralyzer
+Version: 1.3.17
+Summary: Visualize and force decode YARA and regex matches found in a file or byte stream with colors. Lots of colors.
+Home-page: https://github.com/michelcrypt4d4mus/yaralyzer
+License: GPL-3.0-or-later
+Keywords: ascii art,binary,character encoding,color,cybersecurity,data visualization,decode,DFIR,encoding,infosec,maldoc,malicious,malware,malware analysis,regex,regular expressions,reverse engineering,reversing,security,threat assessment,threat hunting,threat intelligence,threat research,threatintel,visualization,yara
+Author: Michel de Cryptadamus
+Author-email: michel@cryptadamus.com
+Requires-Python: >=3.10,<4.0
+Classifier: Development Status :: 5 - Production/Stable
+Classifier: Environment :: Console
+Classifier: Intended Audience :: Information Technology
+Classifier: License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)
+Classifier: Programming Language :: Python
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Topic :: Artistic Software
+Classifier: Topic :: Scientific/Engineering :: Visualization
+Classifier: Topic :: Security
+Provides-Extra: img
+Requires-Dist: cairosvg (>=2.8.2,<3.0.0) ; extra == "img"
+Requires-Dist: chardet (>=5.0.0,<6.0.0)
+Requires-Dist: python-dotenv (>=1.1.1,<2.0.0)
+Requires-Dist: rich (==14.2.0)
+Requires-Dist: rich-argparse-plus (>=0.3.1,<0.4.0)
+Requires-Dist: yara-python (>=4.5.4,<5.0.0)
+Project-URL: Changelog, https://github.com/michelcrypt4d4mus/yaralyzer/blob/master/CHANGELOG.md
+Project-URL: Documentation, https://michelcrypt4d4mus.github.io/yaralyzer/
+Project-URL: Repository, https://github.com/michelcrypt4d4mus/yaralyzer
+Description-Content-Type: text/markdown
+
+[![GithubRelease](https://img.shields.io/github/v/release/michelcrypt4d4mus/yaralyzer?sort=semver)](https://pypi.org/project/yaralyzer/)
+![Release](https://img.shields.io/pypi/v/yaralyzer)
+![Downloads](https://img.shields.io/pypi/dm/yaralyzer)
+[![Tests](https://github.com/michelcrypt4d4mus/yaralyzer/actions/workflows/python-package.yml/badge.svg)](https://github.com/michelcrypt4d4mus/yaralyzer/actions/workflows/python-package.yml)
+![Python Version](https://img.shields.io/pypi/pyversions/yaralyzer)
+
+# THE YARALYZER
+
+![YARA match](https://github.com/michelcrypt4d4mus/yaralyzer/raw/master/doc/rendered_images/top_of_readme.png)
+
+Visually inspect all of the regex matches (and their sexier, more cloak and dagger cousins, the [YARA](https://github.com/VirusTotal/yara-python) matches) found in binary data and/or text. See what happens when you force various character encodings upon those matched bytes. [With colors](https://github.com/michelcrypt4d4mus/yaralyzer#example-output).
+
+#### Quick Start
+```sh
+pipx install yaralyzer
+
+# Scan against YARA definitions in a file:
+yaralyze --yara-rules /secret/vault/sigmunds_malware_rules.yara lacan_buys_the_dip.pdf
+
+# Scan against an arbitrary regular expression:
+yaralyze --regex-pattern 'good and evil.*of\s+\w+byte' --regex-modifier wide the_crypto_archipelago.exe
+
+# Scan against an arbitrary YARA hex pattern
+yaralyze --hex-pattern 'd0 93 d0 a3 d0 [-] 9b d0 90 d0 93' one_day_in_the_life_of_ivan_cryptosovich.bin
+```
+
+#### What It Do
+1. **See the actual bytes your YARA rules are matching.** No more digging around copy/pasting the start positions reported by YARA into your favorite hex editor. Displays both the bytes matched by YARA as well as a configurable number of bytes before and after each match in hexadecimal and "raw" python string representation.
+1. **Do the same for byte patterns and regular expressions without writing a YARA file.** If you're too lazy to write a YARA file but are trying to determine, say, whether there's a regular expression hidden somewhere in the file you could scan for the pattern `'/.+/'` and immediately get a window into all the bytes in the file that live between front slashes. Same story for quotes, BOMs, etc. Any regex YARA can handle is supported so the sky is the limit.
+1. **Detect the possible encodings of each set of matched bytes.** [`chardet`](https://github.com/chardet/chardet) is a sophisticated library for guessing character encodings and it is leveraged here.
+1. **Display the result of forcing various character encodings upon the matched areas.** Several default character encodings will be _forcibly_ attempted in the region around the match. [`chardet`](https://github.com/chardet/chardet) will also be leveraged to see if the bytes fit the pattern of _any_ known encoding. If `chardet` is confident enough (configurable) an attempt at decoding the bytes using that encoding will be displayed.
+1. **Export the matched regions/decodings to SVG, HTML, and colored text files.** Show off your ASCII art.
+
+#### Why It Do
+The Yaralyzer's functionality was extracted from [The Pdfalyzer](https://github.com/michelcrypt4d4mus/pdfalyzer) when it became apparent that visualizing and decoding pattern matches in binaries had more utility than just in a PDF analysis tool.
+
+[YARA](https://github.com/VirusTotal/yara-python), for those who are unaware[^1], is branded as a malware analysis/alerting tool but it's actually both a lot more and a lot less than that. One way to think about it is that YARA is a regular expression matching engine on steroids. It can locate regex matches in binaries like any regex engine but it can also do far wilder things like combine regexes in logical groups, compare regexes against all 256 XORed versions of a binary, check for `base64` and other encodings of the pattern, and more.  Maybe most importantly of all YARA provides a standard text based format for
+people to _share_ their 'roided regexes with the world. All these features are particularly useful when analyzing or reverse engineering malware, whose authors tend to invest a great deal of time into making stuff hard to find.
+
+But... that's also all YARA does. Everything else is up to the user. YARA's just a match engine and if you don't know what to match (or even what character encoding you might be able to match in) it only gets you so far. I found myself a bit frustrated trying to use YARA to look at all the matches of a few critical patterns:
+
+1. Bytes between escaped quotes (`\".+\"` and `\'.+\'`)
+1. Bytes between front slashes (`/.+/`). Front slashes demarcate a regular expression in many implementations and I was trying to see if any of the bytes matching this pattern were _actually_ regexes.
+
+YARA just tells you the byte position and the matched string but it can't tell you whether those bytes are UTF-8, UTF-16, Latin-1, etc. etc. (or none of the above). I also found myself wanting to understand what was going _in the region_ of the matched bytes and not just _in_ the matched bytes. In other words I wanted to scope the bytes immediately before and after whatever got matched.
+
+Enter **The Yaralyzer**, which lets you quickly scan the regions around matches while also showing you what those regions would look like if they were forced into various character encodings.
+
+**The Yaralyzer** isn't a malware reversing tool. It can't the things a tool like [CyberChef](https://gchq.github.io/CyberChef/) does and it doesn't try to. It's more intended to give you a quick visual overview of suspect regions in the binary so you can hone in on the areas you might want to inspect with a more serious tool.
+
+# Installation
+Install it with [`pipx`](https://pypa.github.io/pipx/) or `pip3`. `pipx` is a marginally better solution as it guarantees any packages installed with it will be isolated from the rest of your local python environment. Of course if you don't really have a local python environment this is a moot point and you can feel free to install with `pip`/`pip3`.
+```
+pipx install yaralyzer
+```
+
+
+# Usage
+Run `yaralyze -h` to see the command line options (screenshot below).
+
+![](https://github.com/michelcrypt4d4mus/yaralyzer/raw/master/doc/rendered_images/yaralyze_help.png)
+
+For info on exporting SVG images, HTML, etc., see [Example Output](#example-output).
+
+### Configuration
+If you place a file called `.yaralyzer` in your home directory or the current working directory then environment variables specified in that `.yaralyzer` file will be added to the environment each time yaralyzer is invoked. This provides a mechanism for permanently configuring various command line options so you can avoid typing them over and over. See the comments in the example file [`.yaralyzer.example`](.yaralyzer.example) for more info.
+
+Only one `.yaralyzer` file will be loaded and the working directory's `.yaralyzer` takes precedence over the home directory's `.yaralyzer`.
+
+### As A Library
+[`Yaralyzer`](yaralyzer/yaralyzer.py) is the main class. Auto generated documentation for `Yaralyzer`'s various classes and methods can be found [here](https://michelcrypt4d4mus.github.io/yaralyzer/). It has a variety of [alternate constructors](https://michelcrypt4d4mus.github.io/yaralyzer/api/yaralyzer/) supporting:
+
+1. Precompiled YARA rules
+1. Creating a YARA rule from a string
+1. Loading YARA rules from files
+1. Loading YARA rules from all `.yara` file in a directory
+1. Scanning `bytes`
+1. Scanning a file
+
+Should you want to iterate over the [`BytesMatch`](https://michelcrypt4d4mus.github.io/yaralyzer/api/bytes_match/) (like a `re.Match` object for a YARA match) and [`BytesDecoder`](https://michelcrypt4d4mus.github.io/yaralyzer/api/bytes_decoder/) (tracks decoding attempt stats) objects used by The Yaralyzer, you can do so like this:
+
+```python
+from yaralyzer.yaralyzer import Yaralyzer
+
+yaralyzer = Yaralyzer.for_rules_files(['/secret/rule.yara'], 'lacan_buys_the_dip.pdf')
+
+for bytes_match, bytes_decoder in yaralyzer.match_iterator():
+    do_stuff()
+```
+
+### Troubleshooting
+If you get a `yara.Error` with a numerical error code you can check what that code might mean [here](https://github.com/VirusTotal/yara/blob/master/libyara/include/yara/error.h).
+
+
+# Example Output
+The Yaralyzer can export visualizations to HTML, ANSI colored text, and both PNG and SVG vector images using the file export functionality that comes with [Rich](https://github.com/Textualize/rich) as well as a (somewhat limited) plain text JSON format.
+
+If you want to export `.png` images like the ones below directly from Yaralyzer you'll need to do one of these things:
+
+1. Install [Inkscape](https://inkscape.org/) (homebrew users can install it with `brew install --cask inkscape`)
+2. Ask for the `img` extra when installing Yaralyzer which will install [`cairosvg`](https://pypi.org/project/CairoSVG/): `pipx install yaralyzer[img]`. You'll also have to install the CairoSVG executable manually in different ways depending on your operating system, see [the CairoSVG docs](https://cairosvg.org/documentation/#installation) for the specifics.
+
+In our experience Inkscape and CairoSVG both work though we've seen some glitchiness in the rendered output using CairoSVG on SVGs rendered by Yaralyzer so Inkscape is the recommended option.
+
+
+#### Raw YARA match result:
+
+![](https://github.com/michelcrypt4d4mus/yaralyzer/raw/master/doc/rendered_images/yara_match_result.jpg)
+
+#### Display hex, raw python string, and various attempted decodings of both the match and the bytes before and after the match (configurable):
+
+![](https://github.com/michelcrypt4d4mus/yaralyzer/raw/master/doc/rendered_images/font_34_frontslash_scan.png)
+
+#### Bonus: see what `chardet.detect()` thinks about the likelihood your bytes are in a given encoding/language:
+
+![](https://github.com/michelcrypt4d4mus/yaralyzer/raw/master/doc/rendered_images/decoding_and_chardet_table_2.png)
+
+
+# Contributing
+Contributions are more than welcome; see [CONTRIBUTING.md](CONTRIBUTING.md) for details on environment setup, running the test suite, etc. There's also a TODO list over there of work that needs to be done.
+
+
+[^1]: As I was until recently.
+
