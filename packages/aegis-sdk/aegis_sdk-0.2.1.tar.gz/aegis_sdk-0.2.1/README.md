@@ -1,0 +1,620 @@
+# Aegis SDK
+
+[![PyPI version](https://img.shields.io/pypi/v/aegis-sdk.svg)](https://pypi.org/project/aegis-sdk/)
+[![Python versions](https://img.shields.io/pypi/pyversions/aegis-sdk.svg)](https://pypi.org/project/aegis-sdk/)
+[![License](https://img.shields.io/badge/license-Proprietary-blue.svg)](https://www.aegispreflight.com/)
+
+**On-premise PII detection and masking for AI applications.**
+
+Protect sensitive data before it reaches LLMs and AI tools — without data ever leaving your infrastructure.
+
+Aegis enables enterprise customers to detect and mask PII/PHI in real-time, with policy-based controls for different data destinations. The platform separates:
+
+- **Control Plane** (Aegis Cloud): License management, policy configuration, metrics dashboard
+- **Data Plane** (Customer Infrastructure): Detection, masking, decision-making
+
+## Installation
+
+```bash
+pip install aegis-sdk
+```
+
+With LLM integrations:
+```bash
+pip install aegis-sdk[openai]      # OpenAI support
+pip install aegis-sdk[anthropic]   # Anthropic/Claude support
+pip install aegis-sdk[langchain]   # LangChain support
+pip install aegis-sdk[all]         # All integrations
+```
+
+## Quick Start
+
+### Simple Text Processing
+
+```python
+from aegis_sdk import Aegis
+
+aegis = Aegis()
+
+# Process text before sending to AI tools
+result = aegis.process(
+    text="Contact john@example.com at 555-123-4567",
+    destination="AI_TOOL"
+)
+
+print(result.decision)       # ALLOWED_WITH_MASKING
+print(result.masked_content) # Contact j***@example.com at XXX-XXX-4567
+```
+
+### OpenAI Integration (Drop-in Replacement)
+
+```python
+from aegis_sdk import AegisOpenAI
+
+client = AegisOpenAI(
+    api_key="sk-...",
+    aegis_license_key="aegis_lic_..."
+)
+
+# Use exactly like the OpenAI client - PII is masked automatically
+response = client.chat.completions.create(
+    model="gpt-4",
+    messages=[{"role": "user", "content": user_input}]
+)
+```
+
+### Large File Processing (200MB+)
+
+```python
+from aegis_sdk import StreamingProcessor
+
+processor = StreamingProcessor(chunk_size_mb=10)
+
+result = processor.process_file(
+    input_path="customer_data.csv",
+    output_path="customer_data_masked.csv",
+    destination="VENDOR",
+    on_progress=lambda b, t, c: print(f"Processed {b / 1e6:.1f} MB")
+)
+
+print(f"Decision: {result.decision}")
+print(f"Processed: {result.mb_processed:.1f} MB")
+# Memory usage: constant ~30MB regardless of file size
+```
+
+## Features
+
+| Feature | Description |
+|---------|-------------|
+| **Pattern Detection** | Email, phone, SSN, credit card (Luhn validated), API secrets, IBAN, PHI keywords |
+| **Format-Preserving Masking** | `john@example.com` → `j***@example.com` |
+| **Policy-Based Decisions** | ALLOWED, ALLOWED_WITH_MASKING, BLOCKED |
+| **Streaming Processing** | 200MB+ files with constant 30MB memory |
+| **LLM Integrations** | OpenAI, Anthropic, LangChain drop-in wrappers |
+| **GDPR Compliance** | Metadata-only audit mode, no PII stored |
+| **Offline Support** | 7-day grace period, air-gapped deployment |
+
+## Decision Logic
+
+| Destination | PII Only | PHI Only | PHI + PII | API Secrets |
+|-------------|----------|----------|-----------|-------------|
+| AI_TOOL | Mask | Allow | Block | Mask |
+| VENDOR | Mask | Block | Block | Mask |
+| CUSTOMER | Allow | Allow | Allow | Block |
+
+## Core API
+
+### Aegis Class
+
+```python
+from aegis_sdk import Aegis
+
+aegis = Aegis(
+    license_key=None,       # Optional license key for cloud features
+    include_samples=True,   # Set False for GDPR compliance
+    policy_config=None      # Custom policy configuration
+)
+
+# Full processing
+result = aegis.process(text, destination="AI_TOOL")
+
+# Detection only
+detected = aegis.detect(text)  # Returns list[DetectedItem]
+
+# Masking only
+masked = aegis.mask(text)  # Returns masked string
+
+# Policy evaluation
+decision = aegis.evaluate(destination, detected)
+```
+
+### ProcessingResult
+
+```python
+result.decision        # Decision enum: ALLOWED, ALLOWED_WITH_MASKING, BLOCKED
+result.summary         # Human-readable explanation
+result.detected        # List of DetectedItem
+result.masked_content  # Masked text (None if blocked)
+result.suggested_fix   # Suggested action (for blocked content)
+result.bytes_processed # Number of bytes processed
+result.is_blocked      # True if decision is BLOCKED
+```
+
+### Detection Types
+
+| Type | Description | Example |
+|------|-------------|---------|
+| `EMAIL` | Email addresses | `john@example.com` |
+| `PHONE` | Phone numbers | `555-123-4567` |
+| `SSN` | Social Security Numbers | `123-45-6789` |
+| `CREDIT_CARD` | Credit cards (Luhn validated) | `4111-1111-1111-1111` |
+| `API_SECRET` | API keys and secrets | `sk-abc123...` |
+| `IBAN` | International Bank Account Numbers | `DE89370400440532013000` |
+| `PHI_KEYWORD` | Protected Health Information | `patient`, `diagnosis` |
+
+## Batch Processing
+
+### StreamingProcessor (Large Files)
+
+Process files of any size with constant memory usage (~30MB).
+
+```python
+from aegis_sdk import StreamingProcessor
+
+processor = StreamingProcessor(
+    chunk_size_mb=10,      # Process in 10MB chunks
+    policy_config=None,    # Custom policy
+    include_samples=True   # Include detection samples
+)
+
+result = processor.process_file(
+    input_path="large_file.txt",
+    output_path="large_file_masked.txt",  # Optional
+    destination="AI_TOOL",
+    on_progress=lambda b, t, c: print(f"{b/1e6:.1f} MB"),
+    stop_on_block=False    # Continue even if content would be blocked
+)
+
+# Result contains aggregated detections across all chunks
+print(f"Chunks: {result.chunks_processed}")
+print(f"Bytes: {result.bytes_processed}")
+print(f"Decision: {result.decision}")
+```
+
+### CSVStreamProcessor
+
+Specialized processor for CSV files with column-level detection.
+
+```python
+from aegis_sdk import CSVStreamProcessor
+
+processor = CSVStreamProcessor()
+
+# Auto-detect which columns contain PII
+column_types = processor.detect_columns("data.csv", sample_rows=100)
+# {0: ["EMAIL"], 2: ["PHONE", "SSN"]}
+
+# Process specific columns
+result = processor.process(
+    input_path="data.csv",
+    output_path="data_masked.csv",
+    destination="VENDOR",
+    has_header=True,
+    columns_to_mask=[0, 2, 5]  # Only mask these columns
+)
+```
+
+## LLM Integrations
+
+### LLM Gateway (Base)
+
+```python
+from aegis_sdk import AegisLLMGateway
+
+gateway = AegisLLMGateway(
+    policy_config=None,    # Custom policy
+    enable_audit=True,     # Enable local audit
+    audit_path="audit.log"
+)
+
+# Mask a single prompt
+result = gateway.mask_prompt(
+    prompt="My email is john@example.com",
+    destination="AI_TOOL",
+    reversible=True  # Enable unmask_response later
+)
+
+if result.is_blocked:
+    raise Exception(result.block_reason)
+
+print(result.masked_text)  # My email is j***@example.com
+
+# Mask chat messages
+masked_messages, detected = gateway.mask_messages(
+    messages=[
+        {"role": "system", "content": "You are helpful"},
+        {"role": "user", "content": "Contact john@example.com"}
+    ],
+    roles_to_mask=["user"]  # Only mask user messages
+)
+
+# Unmask LLM response (if reversible=True was used)
+original = gateway.unmask_response(response_text)
+```
+
+### OpenAI Wrapper
+
+```python
+from aegis_sdk import AegisOpenAI
+
+client = AegisOpenAI(
+    api_key="sk-...",
+    aegis_config={"custom": "policy"},
+    destination="AI_TOOL",
+    block_on_pii=True  # Raise error if PII detected
+)
+
+# Drop-in replacement for OpenAI client
+response = client.chat.completions.create(
+    model="gpt-4",
+    messages=[{"role": "user", "content": user_input}]
+)
+
+# PII is automatically masked before sending to OpenAI
+```
+
+### Anthropic Wrapper
+
+```python
+from aegis_sdk import AegisAnthropic
+
+client = AegisAnthropic(
+    api_key="sk-ant-...",
+    aegis_config=None
+)
+
+response = client.messages.create(
+    model="claude-3-opus-20240229",
+    max_tokens=1024,
+    messages=[{"role": "user", "content": user_input}]
+)
+```
+
+### LangChain Integration
+
+```python
+from aegis_sdk.llm.langchain_wrapper import (
+    AegisLangChainCallback,
+    create_aegis_chain
+)
+from langchain_openai import ChatOpenAI
+
+# Option 1: Use callback handler
+callback = AegisLangChainCallback(destination="AI_TOOL")
+llm = ChatOpenAI(callbacks=[callback])
+
+# Option 2: Create pre-wrapped chain
+chain = create_aegis_chain(
+    llm=ChatOpenAI(),
+    destination="AI_TOOL"
+)
+result = chain.invoke({"input": user_message})
+```
+
+## License Management
+
+### Online License Validation
+
+```python
+from aegis_sdk import LicenseManager
+
+manager = LicenseManager(
+    license_key="aegis_lic_...",
+    cache_dir=None,          # Default: ~/.aegis
+    cache_ttl=86400,         # 24 hour cache
+    grace_period_days=7,     # Offline grace period
+    api_endpoint="https://api.aegispreflight.com/v1"
+)
+
+# Validate license (uses cache if available)
+info = manager.validate()
+print(f"Org: {info.org_id}")
+print(f"Expires: {info.expires}")
+
+# Get policy configuration
+policy = manager.get_policy()
+
+# Check validity
+if manager.is_valid():
+    print("License is valid")
+```
+
+### Offline/Air-Gapped Mode
+
+```python
+from aegis_sdk import OfflineLicenseManager
+
+manager = OfflineLicenseManager(
+    license_file="/path/to/aegis_license.json"
+)
+
+info = manager.validate()
+# Works without any network access
+```
+
+## Metrics Reporting
+
+### Cloud Metrics (Async, Non-Blocking)
+
+```python
+from aegis_sdk import MetricsReporter
+
+reporter = MetricsReporter(
+    license_key="aegis_lic_...",
+    batch_size=100,        # Flush after 100 events
+    flush_interval=300,    # Or every 5 minutes
+    enabled=True
+)
+
+# Record processing results (non-blocking)
+reporter.record(
+    decision="ALLOWED_WITH_MASKING",
+    bytes_processed=1024,
+    detected_types=["EMAIL", "PHONE"],
+    detected_counts={"EMAIL": 2, "PHONE": 1},
+    destination="AI_TOOL",
+    duration_ms=15.5
+)
+
+# Or from a ProcessingResult
+reporter.record_from_result(result, destination="AI_TOOL")
+
+# Manual flush before shutdown
+reporter.flush()
+reporter.stop()
+```
+
+**Important**: No customer data is ever sent to cloud. Only aggregated counts and types.
+
+### Local Metrics (Air-Gapped)
+
+```python
+from aegis_sdk import LocalMetricsCollector
+
+collector = LocalMetricsCollector(
+    output_path="/var/log/aegis/metrics.jsonl",
+    rotation_size_mb=100
+)
+
+collector.record(
+    decision="ALLOWED_WITH_MASKING",
+    bytes_processed=1024,
+    detected_types=["EMAIL"],
+    detected_counts={"EMAIL": 1}
+)
+
+# Get summary
+summary = collector.get_summary()
+print(f"Total checks: {summary['total_checks']}")
+print(f"Bytes scanned: {summary['bytes_scanned']}")
+```
+
+## Audit Logging
+
+### Standard Audit Log
+
+```python
+from aegis_sdk import AuditLog
+
+audit = AuditLog(
+    log_path="/var/log/aegis/audit.jsonl",
+    metadata_only=False,    # Store samples (set True for GDPR)
+    rotation_days=30,       # Rotate after 30 days
+    rotation_size_mb=100,   # Or after 100MB
+    compress_rotated=True,  # Gzip old logs
+    retention_days=365,     # Delete logs older than 1 year
+    verify_chain=True       # Enable hash chain verification
+)
+
+# Log a processing event
+audit.log_processing(
+    decision="ALLOWED_WITH_MASKING",
+    destination="AI_TOOL",
+    detected=[{"type": "EMAIL", "count": 2}],
+    bytes_processed=1024,
+    source="batch_job",
+    user_id="user123",
+    session_id="sess_abc",
+    custom_fields={"job_id": "job_456"}
+)
+
+# Query audit log (returns iterator for memory efficiency)
+entries = list(audit.query(
+    start_time=datetime(2024, 1, 1),
+    end_time=datetime(2024, 12, 31),
+    decisions=["BLOCKED"],
+    limit=100
+))
+
+# Verify log integrity
+is_valid, error_msg = audit.verify_integrity()
+if not is_valid:
+    print(f"Chain integrity error: {error_msg}")
+```
+
+### GDPR Audit Log
+
+Specialized audit log that never stores PII samples.
+
+```python
+from aegis_sdk import GDPRAuditLog
+
+audit = GDPRAuditLog(
+    log_path="/var/log/aegis/gdpr_audit.jsonl"
+)
+# metadata_only is forced True - no samples ever stored
+
+# Log stores: {"type": "EMAIL", "count": 5}
+# NOT: {"type": "EMAIL", "sample": "j***@example.com"}
+
+# Generate GDPR data subject report
+report = audit.get_data_subject_report(
+    user_id="user123",
+    start_time=datetime(2024, 1, 1)
+)
+print(f"Processing events: {report['total_events']}")
+print(f"Data types processed: {report['detection_types']}")
+```
+
+## Configuration
+
+### Custom Policy
+
+```python
+from aegis_sdk import Aegis, PolicyEngine
+
+custom_policy = {
+    "destinations": {
+        "AI_TOOL": {
+            "allowed": [],
+            "masked": ["EMAIL", "PHONE", "CREDIT_CARD"],
+            "blocked": ["SSN", "PHI_KEYWORD"]
+        },
+        "INTERNAL": {
+            "allowed": ["EMAIL", "PHONE"],
+            "masked": [],
+            "blocked": ["CREDIT_CARD", "SSN"]
+        }
+    }
+}
+
+aegis = Aegis(policy_config=custom_policy)
+# Or
+policy = PolicyEngine(custom_policy)
+```
+
+### Environment Variables
+
+```bash
+AEGIS_LICENSE_KEY=aegis_lic_...    # License key
+AEGIS_CACHE_DIR=~/.aegis           # Cache directory
+AEGIS_API_ENDPOINT=https://api.aegispreflight.com/v1
+AEGIS_OFFLINE_MODE=false           # Enable offline mode
+AEGIS_METRICS_ENABLED=true         # Enable metrics reporting
+```
+
+## Performance
+
+| Operation | Latency | Memory |
+|-----------|---------|--------|
+| Text processing (1KB) | 5-15ms | ~10MB |
+| File processing (200MB) | 20-30s | 30MB constant |
+| LLM prompt masking | 5-15ms | ~10MB |
+| Metrics recording | <1ms (async) | ~5MB buffer |
+
+## Error Handling
+
+```python
+from aegis_sdk import (
+    AegisError,
+    AegisBlockedError,
+    LicenseValidationError,
+    PolicyError
+)
+
+try:
+    result = aegis.process(text, destination="AI_TOOL")
+except AegisBlockedError as e:
+    print(f"Content blocked: {e.message}")
+    print(f"Detected: {e.detected}")
+except LicenseValidationError as e:
+    print(f"License error: {e}")
+except PolicyError as e:
+    print(f"Policy error: {e}")
+except AegisError as e:
+    print(f"General error: {e}")
+```
+
+## Complete Example
+
+```python
+from aegis_sdk import (
+    Aegis,
+    AegisOpenAI,
+    MetricsReporter,
+    GDPRAuditLog,
+    LicenseManager
+)
+import time
+
+# Initialize components
+license_mgr = LicenseManager("aegis_lic_...")
+if not license_mgr.is_valid():
+    raise Exception("Invalid license")
+
+metrics = MetricsReporter("aegis_lic_...")
+audit = GDPRAuditLog("/var/log/aegis/audit.jsonl")
+
+# Create OpenAI client with Aegis protection
+client = AegisOpenAI(
+    api_key="sk-...",
+    aegis_config=license_mgr.get_policy()
+)
+
+# Process user request
+user_input = "My email is john@example.com, help me draft a response"
+
+start = time.time()
+try:
+    response = client.chat.completions.create(
+        model="gpt-4",
+        messages=[{"role": "user", "content": user_input}]
+    )
+
+    duration_ms = (time.time() - start) * 1000
+
+    # Record metrics (async, non-blocking)
+    metrics.record(
+        decision="ALLOWED_WITH_MASKING",
+        bytes_processed=len(user_input),
+        detected_types=["EMAIL"],
+        detected_counts={"EMAIL": 1},
+        duration_ms=duration_ms
+    )
+
+    # Log to audit (for compliance)
+    audit.log_processing(
+        decision="ALLOWED_WITH_MASKING",
+        destination="AI_TOOL",
+        detected=[{"type": "EMAIL", "count": 1}],
+        bytes_processed=len(user_input),
+        user_id="user123"
+    )
+
+    print(response.choices[0].message.content)
+
+except AegisBlockedError as e:
+    print(f"Request blocked: {e.message}")
+    audit.log_processing(
+        decision="BLOCKED",
+        destination="AI_TOOL",
+        detected=e.detected,
+        bytes_processed=len(user_input),
+        user_id="user123"
+    )
+
+# Cleanup
+metrics.stop()
+```
+
+## Support
+
+- **Documentation**: [docs.aegispreflight.com](https://docs.aegispreflight.com)
+- **Email**: support@aegispreflight.com
+- **Enterprise Sales**: sales@aegispreflight.com
+
+## License
+
+Proprietary - [Aegis Preflight](https://www.aegispreflight.com/)
+
+Copyright 2025 Aegis Preflight. All rights reserved.
