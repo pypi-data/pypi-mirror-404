@@ -1,0 +1,837 @@
+diff --git a/.pre-commit-config.yaml b/.pre-commit-config.yaml
+index f13aa14..38297a6 100644
+--- a/.pre-commit-config.yaml
++++ b/.pre-commit-config.yaml
+@@ -5,6 +5,7 @@ repos:
+       - id: trailing-whitespace
+       - id: end-of-file-fixer
+       - id: check-yaml
++        exclude: ^conda-recipe/meta\.yaml$
+       - id: check-json
+       - id: check-added-large-files
+         args: ["--maxkb=500"]
+diff --git a/conda-recipe/meta.yaml b/conda-recipe/meta.yaml
+new file mode 100644
+index 0000000..1fea53e
+--- /dev/null
++++ b/conda-recipe/meta.yaml
+@@ -0,0 +1,52 @@
++{% set name = "ennbo" %}
++{% set version = "0.1.6" %}
++
++package:
++  name: {{ name|lower }}
++  version: {{ version }}
++
++source:
++  url: https://pypi.io/packages/source/{{ name[0] }}/{{ name }}/{{ name }}-{{ version }}.tar.gz
++  sha256: ec4ca810c47cbeeedbc1d12b5100ac176e90400808a350bc234b294ca2519eea
++
++build:
++  noarch: python
++  number: 0
++  script: {{ PYTHON }} -m pip install . -vv --no-deps --no-build-isolation
++
++requirements:
++  host:
++    - python >=3.11
++    - pip
++    - hatchling
++  run:
++    - python >=3.11
++    - numpy >=1.26.4,<2.0.0
++    - pytorch >=2.5.1
++    - gpytorch >=1.13
++    - faiss-cpu >=1.9.0
++    - scipy >=1.15.3
++
++test:
++  imports:
++    - enn
++  commands:
++    - pip check
++  requires:
++    - pip
++
++about:
++  home: https://github.com/yubo-research/enn
++  license: MIT
++  license_family: MIT
++  license_file: LICENSE
++  summary: Epistemic Nearest Neighbors
++  description: |
++    ENN (Epistemic Nearest Neighbors) is a fast, non-parametric surrogate model
++    for Bayesian optimization. It provides uncertainty estimates using a
++    k-nearest-neighbors approach with epistemic uncertainty quantification.
++  dev_url: https://github.com/yubo-research/enn
++
++extra:
++  recipe-maintainers:
++    - dsweet99
+diff --git a/examples/demo_enn.ipynb b/examples/demo_enn.ipynb
+index 131c28d..c8775a7 100644
+--- a/examples/demo_enn.ipynb
++++ b/examples/demo_enn.ipynb
+@@ -318,6 +318,14 @@
+    "metadata": {},
+    "outputs": [],
+    "source": []
++  },
++  {
++   "cell_type": "code",
++   "execution_count": null,
++   "id": "471b4dea",
++   "metadata": {},
++   "outputs": [],
++   "source": []
+   }
+  ],
+  "metadata": {
+diff --git a/src/enn/enn/enn.py b/src/enn/enn/enn.py
+index 5cf1980..aeda886 100644
+--- a/src/enn/enn/enn.py
++++ b/src/enn/enn/enn.py
+@@ -1,6 +1,5 @@
+ from __future__ import annotations
+ 
+-from dataclasses import dataclass
+ from typing import TYPE_CHECKING
+ 
+ import numpy as np
+@@ -8,47 +7,7 @@ import numpy as np
+ if TYPE_CHECKING:
+     from .enn_normal import ENNNormal
+     from .enn_params import ENNParams, PosteriorFlags
+-
+-
+-@dataclass(frozen=True)
+-class _DrawInternals:
+-    idx: np.ndarray
+-    w_normalized: np.ndarray
+-    l2: np.ndarray
+-    mu: np.ndarray
+-    se: np.ndarray
+-
+-
+-def _compute_conditional_y_scale(
+-    model: "EpistemicNearestNeighbors", y_whatif: np.ndarray
+-):
+-    y_whatif = np.asarray(y_whatif, dtype=float)
+-    return model._compute_scale(  # noqa: SLF001
+-        np.concatenate([model.train_y, y_whatif], axis=0),
+-        0.0,
+-    )
+-
+-
+-def _draw_from_internals(
+-    model: "EpistemicNearestNeighbors",
+-    internals: _DrawInternals,
+-    *,
+-    function_seeds: np.ndarray | list[int],
+-) -> np.ndarray:
+-    from .enn_hash import normal_hash_batch_multi_seed
+-
+-    function_seeds = np.asarray(function_seeds, dtype=np.int64)
+-
+-    n, k, m = internals.idx.shape[0], internals.idx.shape[1], model.num_outputs
+-    if k == 0:
+-        return np.broadcast_to(internals.mu, (len(function_seeds), n, m)).copy()
+-    u = normal_hash_batch_multi_seed(function_seeds, internals.idx, m)
+-    weighted_u = np.sum(internals.w_normalized[np.newaxis, :, :, :] * u, axis=2)
+-    l2_safe = np.maximum(internals.l2, 1e-12)
+-    return (
+-        internals.mu[np.newaxis, :, :]
+-        + internals.se[np.newaxis, :, :] * weighted_u / l2_safe[np.newaxis, :, :]
+-    )
++from .enn_draw import _DrawInternals, compute_conditional_y_scale, draw_from_internals
+ 
+ 
+ class EpistemicNearestNeighbors:
+@@ -248,7 +207,7 @@ class EpistemicNearestNeighbors:
+ 
+         if flags is None:
+             flags = PosteriorFlags()
+-        y_scale = _compute_conditional_y_scale(self, y_whatif)
++        y_scale = compute_conditional_y_scale(self, y_whatif)
+         return compute_conditional_posterior(
+             self, x_whatif, y_whatif, x, params=params, flags=flags, y_scale=y_scale
+         )
+@@ -354,7 +313,7 @@ class EpistemicNearestNeighbors:
+         idx, w_normalized, l2, mu, se = self._compute_posterior_internals(
+             x, params, flags
+         )
+-        return _draw_from_internals(
++        return draw_from_internals(
+             self,
+             _DrawInternals(idx=idx, w_normalized=w_normalized, l2=l2, mu=mu, se=se),
+             function_seeds=function_seeds,
+@@ -386,11 +345,11 @@ class EpistemicNearestNeighbors:
+                 flags=flags,
+             )
+ 
+-        y_scale = _compute_conditional_y_scale(self, y_whatif)
++        y_scale = compute_conditional_y_scale(self, y_whatif)
+         internals = compute_conditional_posterior_draw_internals(
+             self, x_whatif, y_whatif, x, params=params, flags=flags, y_scale=y_scale
+         )
+-        return _draw_from_internals(
++        return draw_from_internals(
+             self,
+             _DrawInternals(
+                 idx=internals.idx,
+diff --git a/src/enn/enn/enn_draw.py b/src/enn/enn/enn_draw.py
+new file mode 100644
+index 0000000..b5cdf2a
+--- /dev/null
++++ b/src/enn/enn/enn_draw.py
+@@ -0,0 +1,48 @@
++from __future__ import annotations
++
++from dataclasses import dataclass
++from typing import TYPE_CHECKING
++
++import numpy as np
++
++if TYPE_CHECKING:
++    from .enn import EpistemicNearestNeighbors
++
++
++@dataclass(frozen=True)
++class _DrawInternals:
++    idx: np.ndarray
++    w_normalized: np.ndarray
++    l2: np.ndarray
++    mu: np.ndarray
++    se: np.ndarray
++
++
++def compute_conditional_y_scale(model: EpistemicNearestNeighbors, y_whatif: np.ndarray):
++    y_whatif = np.asarray(y_whatif, dtype=float)
++    return model._compute_scale(  # noqa: SLF001
++        np.concatenate([model.train_y, y_whatif], axis=0),
++        0.0,
++    )
++
++
++def draw_from_internals(
++    model: EpistemicNearestNeighbors,
++    internals: _DrawInternals,
++    *,
++    function_seeds: np.ndarray | list[int],
++) -> np.ndarray:
++    from .enn_hash import normal_hash_batch_multi_seed_fast
++
++    function_seeds = np.asarray(function_seeds, dtype=np.int64)
++
++    n, k, m = internals.idx.shape[0], internals.idx.shape[1], model.num_outputs
++    if k == 0:
++        return np.broadcast_to(internals.mu, (len(function_seeds), n, m)).copy()
++    u = normal_hash_batch_multi_seed_fast(function_seeds, internals.idx, m)
++    weighted_u = np.sum(internals.w_normalized[np.newaxis, :, :, :] * u, axis=2)
++    l2_safe = np.maximum(internals.l2, 1e-12)
++    return (
++        internals.mu[np.newaxis, :, :]
++        + internals.se[np.newaxis, :, :] * weighted_u / l2_safe[np.newaxis, :, :]
++    )
+diff --git a/src/enn/enn/enn_hash.py b/src/enn/enn/enn_hash.py
+index 6a37b2c..7932384 100644
+--- a/src/enn/enn/enn_hash.py
++++ b/src/enn/enn/enn_hash.py
+@@ -13,9 +13,8 @@ def normal_hash_batch_multi_seed(
+     from scipy.special import ndtri
+ 
+     num_seeds = len(function_seeds)
+-    unique_indices = np.unique(data_indices)
++    unique_indices, inverse = np.unique(data_indices, return_inverse=True)
+     num_unique = len(unique_indices)
+-    max_idx = int(unique_indices.max()) + 1
+ 
+     # Build grids for (seed, unique_idx, metric) combinations
+     seed_grid, idx_grid, metric_grid = np.meshgrid(
+@@ -40,8 +39,62 @@ def normal_hash_batch_multi_seed(
+     uniform_vals = np.clip(uniform_vals, 1e-10, 1.0 - 1e-10)
+     normal_vals = ndtri(uniform_vals).reshape(num_seeds, num_unique, num_metrics)
+ 
+-    # Build lookup table per seed and use vectorized indexing
+-    lookup = np.zeros((num_seeds, max_idx, num_metrics), dtype=float)
+-    lookup[:, unique_indices, :] = normal_vals
++    return normal_vals[:, inverse.ravel(), :].reshape(
++        num_seeds, *data_indices.shape, num_metrics
++    )
++
++
++def normal_hash_batch_multi_seed_fast(
++    function_seeds: np.ndarray, data_indices: np.ndarray, num_metrics: int
++) -> np.ndarray:
++    import numpy as np
++
++    function_seeds = np.asarray(function_seeds, dtype=np.int64)
++    data_indices = np.asarray(data_indices)
++    if num_metrics <= 0:
++        raise ValueError(num_metrics)
++
++    num_seeds = len(function_seeds)
++    unique_indices, inverse = np.unique(data_indices, return_inverse=True)
+ 
+-    return lookup[:, data_indices, :]
++    def _splitmix64(x: np.ndarray) -> np.ndarray:
++        # Overflow is intentional in uint64 arithmetic.
++        with np.errstate(over="ignore"):
++            x = x + np.uint64(0x9E3779B97F4A7C15)
++            z = x
++            z = (z ^ (z >> np.uint64(30))) * np.uint64(0xBF58476D1CE4E5B9)
++            z = (z ^ (z >> np.uint64(27))) * np.uint64(0x94D049BB133111EB)
++            z = z ^ (z >> np.uint64(31))
++            return z
++
++    # Deterministic hash -> Normal(0,1).
++    #
++    # This is intentionally NOT output-identical to normal_hash_batch_multi_seed.
++    # It is designed to be fast, deterministic, and order-invariant over
++    # (function_seed, data_index, metric_id).
++    seeds_u64 = function_seeds.astype(np.uint64, copy=False)
++    unique_u64 = unique_indices.astype(np.uint64, copy=False)
++    metric_u64 = np.arange(num_metrics, dtype=np.uint64)
++
++    normal_vals = np.empty((num_seeds, unique_indices.size, num_metrics), dtype=float)
++
++    p = np.uint64(1_000_003)
++    inv_2p53 = 1.0 / 9007199254740992.0
++
++    for si, s in enumerate(seeds_u64):
++        with np.errstate(over="ignore"):
++            base = (s * p + unique_u64) * p  # (num_unique,)
++        combined = base[:, None] + metric_u64[None, :]  # (num_unique, num_metrics)
++
++        r1 = _splitmix64(combined)
++        r2 = _splitmix64(combined ^ np.uint64(0xD2B74407B1CE6E93))
++
++        u1 = (r1 >> np.uint64(11)).astype(np.float64) * inv_2p53
++        u2 = (r2 >> np.uint64(11)).astype(np.float64) * inv_2p53
++        u1 = np.clip(u1, 1e-12, 1.0 - 1e-12)
++
++        normal_vals[si, :, :] = np.sqrt(-2.0 * np.log(u1)) * np.cos(2.0 * np.pi * u2)
++
++    return normal_vals[:, inverse.ravel(), :].reshape(
++        num_seeds, *data_indices.shape, num_metrics
++    )
+diff --git a/src/enn/turbo/proposal.py b/src/enn/turbo/proposal.py
+index c85da09..9ebdb4e 100644
+--- a/src/enn/turbo/proposal.py
++++ b/src/enn/turbo/proposal.py
+@@ -12,6 +12,9 @@ if TYPE_CHECKING:
+     from .turbo_gp import TurboGP
+ 
+ from .turbo_utils import gp_thompson_sample
++from .turbo_light_utils import select_uniform as _select_uniform
++
++select_uniform = _select_uniform
+ 
+ 
+ def mk_enn(
+@@ -80,21 +83,6 @@ def mk_enn(
+     return enn_model, fitted_params
+ 
+ 
+-def select_uniform(
+-    x_cand: np.ndarray,
+-    num_arms: int,
+-    num_dim: int,
+-    rng: Generator | Any,
+-    from_unit_fn: Callable[[np.ndarray], np.ndarray],
+-) -> np.ndarray:
+-    if x_cand.ndim != 2 or x_cand.shape[1] != num_dim:
+-        raise ValueError(x_cand.shape)
+-    if x_cand.shape[0] < num_arms:
+-        raise ValueError((x_cand.shape[0], num_arms))
+-    idx = rng.choice(x_cand.shape[0], size=num_arms, replace=False)
+-    return from_unit_fn(x_cand[idx])
+-
+-
+ def select_gp_thompson(
+     x_cand: np.ndarray,
+     num_arms: int,
+diff --git a/src/enn/turbo/turbo_light_utils.py b/src/enn/turbo/turbo_light_utils.py
+new file mode 100644
+index 0000000..79ef604
+--- /dev/null
++++ b/src/enn/turbo/turbo_light_utils.py
+@@ -0,0 +1,70 @@
++from __future__ import annotations
++
++import contextlib
++from dataclasses import dataclass
++from typing import Any, Callable, Iterator, TYPE_CHECKING
++
++import numpy as np
++
++if TYPE_CHECKING:
++    from numpy.random import Generator
++
++
++@dataclass(frozen=True)
++class Telemetry:
++    dt_fit: float
++    dt_sel: float
++    dt_gen: float = 0.0
++    dt_tell: float = 0.0
++
++
++@contextlib.contextmanager
++def record_duration(set_dt: Callable[[float], None]) -> Iterator[None]:
++    import time
++
++    t0 = time.perf_counter()
++    try:
++        yield
++    finally:
++        set_dt(time.perf_counter() - t0)
++
++
++def latin_hypercube(
++    num_points: int, num_dim: int, *, rng: Generator | Any
++) -> np.ndarray:
++    x = np.zeros((num_points, num_dim))
++    centers = (1.0 + 2.0 * np.arange(0.0, num_points)) / float(2 * num_points)
++    for j in range(num_dim):
++        x[:, j] = centers[rng.permutation(num_points)]
++    pert = rng.uniform(-1.0, 1.0, size=(num_points, num_dim)) / float(2 * num_points)
++    x += pert
++    return x
++
++
++def to_unit(x: np.ndarray | Any, bounds: np.ndarray | Any) -> np.ndarray:
++    lb = bounds[:, 0]
++    ub = bounds[:, 1]
++    if np.any(ub <= lb):
++        raise ValueError(bounds)
++    return (x - lb) / (ub - lb)
++
++
++def from_unit(x_unit: np.ndarray | Any, bounds: np.ndarray | Any) -> np.ndarray:
++    lb = np.asarray(bounds[:, 0])
++    ub = np.asarray(bounds[:, 1])
++    return lb + x_unit * (ub - lb)
++
++
++def select_uniform(
++    x_cand: np.ndarray,
++    num_arms: int,
++    num_dim: int,
++    rng: Generator | Any,
++    from_unit_fn: Callable[[np.ndarray], np.ndarray],
++) -> np.ndarray:
++    if x_cand.ndim != 2 or x_cand.shape[1] != num_dim:
++        raise ValueError(x_cand.shape)
++    if x_cand.shape[0] < num_arms:
++        raise ValueError((x_cand.shape[0], num_arms))
++    idx = rng.choice(x_cand.shape[0], size=num_arms, replace=False)
++    return from_unit_fn(x_cand[idx])
+diff --git a/src/enn/turbo/turbo_optimizer.py b/src/enn/turbo/turbo_optimizer.py
+index b4657de..cca8ddb 100644
+--- a/src/enn/turbo/turbo_optimizer.py
++++ b/src/enn/turbo/turbo_optimizer.py
+@@ -4,8 +4,7 @@ from typing import TYPE_CHECKING, Any
+ 
+ import numpy as np
+ 
+-from . import turbo_optimizer_utils, turbo_utils
+-from .turbo_mode_registry import make_impl, validate_config
++from . import turbo_light_utils, turbo_optimizer_utils
+ 
+ if TYPE_CHECKING:
+     from typing import Callable
+@@ -40,6 +39,8 @@ class TurboOptimizer:
+         rng: Generator,
+         config: TurboConfig | None = None,
+     ) -> None:
++        from .turbo_mode_registry import make_impl, validate_config
++
+         config = validate_config(mode, config)
+         self._config = config
+         bounds = np.asarray(bounds, dtype=float)
+@@ -67,8 +68,8 @@ class TurboOptimizer:
+             config.num_init if config.num_init is not None else 2 * self._num_dim
+         )
+         self._validate_init_params()
+-        self._init_lhd = turbo_utils.from_unit(
+-            turbo_utils.latin_hypercube(self._num_init, self._num_dim, rng=rng),
++        self._init_lhd = turbo_light_utils.from_unit(
++            turbo_light_utils.latin_hypercube(self._num_init, self._num_dim, rng=rng),
+             self._bounds,
+         )
+         self._init_idx, self._dt_fit, self._dt_gen, self._dt_sel, self._dt_tell = (
+@@ -91,8 +92,8 @@ class TurboOptimizer:
+             else float(self._tr_state.length)
+         )
+ 
+-    def telemetry(self) -> turbo_utils.Telemetry:
+-        return turbo_utils.Telemetry(
++    def telemetry(self) -> turbo_light_utils.Telemetry:
++        return turbo_light_utils.Telemetry(
+             dt_fit=self._dt_fit,
+             dt_gen=self._dt_gen,
+             dt_sel=self._dt_sel,
+@@ -139,8 +140,10 @@ class TurboOptimizer:
+         if not should_reset_init:
+             return None
+         self._y_tr_list, self._init_idx = [], new_init_idx
+-        self._init_lhd = turbo_utils.from_unit(
+-            turbo_utils.latin_hypercube(self._num_init, self._num_dim, rng=self._rng),
++        self._init_lhd = turbo_light_utils.from_unit(
++            turbo_light_utils.latin_hypercube(
++                self._num_init, self._num_dim, rng=self._rng
++            ),
+             self._bounds,
+         )
+         return self._get_init_lhd_points(num_arms)
+@@ -204,12 +207,12 @@ class TurboOptimizer:
+         self._dt_gen = time.perf_counter() - t0_gen
+ 
+         def from_unit_fn(x):
+-            return turbo_utils.from_unit(x, self._bounds)
++            return turbo_light_utils.from_unit(x, self._bounds)
+ 
+         def fallback_fn(x, n):
+-            from .proposal import select_uniform
+-
+-            return select_uniform(x, n, self._num_dim, self._rng, from_unit_fn)
++            return turbo_light_utils.select_uniform(
++                x, n, self._num_dim, self._rng, from_unit_fn
++            )
+ 
+         self._tr_state.validate_request(num_arms, is_fallback=is_fallback)
+ 
+@@ -243,7 +246,7 @@ class TurboOptimizer:
+     def tell(
+         self, x: np.ndarray, y: np.ndarray, y_var: np.ndarray | None = None
+     ) -> np.ndarray:
+-        with turbo_utils.record_duration(
++        with turbo_light_utils.record_duration(
+             lambda dt: setattr(self, "_dt_tell", float(dt))
+         ):
+             x, y, y_var, num_metrics = turbo_optimizer_utils.validate_tell_inputs(
+@@ -273,7 +276,7 @@ class TurboOptimizer:
+                     else np.empty((0, num_metrics), dtype=float)
+                 )
+ 
+-            x_unit = turbo_utils.to_unit(x, self._bounds)
++            x_unit = turbo_light_utils.to_unit(x, self._bounds)
+             self._x_obs_list.extend(x_unit.tolist())
+             self._y_obs_list.extend(y.tolist())
+             if y_var is not None:
+@@ -354,8 +357,8 @@ class TurboOptimizer:
+         )
+ 
+     def _draw_initial(self, num_arms: int) -> np.ndarray:
+-        return turbo_utils.from_unit(
+-            turbo_utils.latin_hypercube(num_arms, self._num_dim, rng=self._rng),
++        return turbo_light_utils.from_unit(
++            turbo_light_utils.latin_hypercube(num_arms, self._num_dim, rng=self._rng),
+             self._bounds,
+         )
+ 
+diff --git a/src/enn/turbo/turbo_utils.py b/src/enn/turbo/turbo_utils.py
+index d795633..800e971 100644
+--- a/src/enn/turbo/turbo_utils.py
++++ b/src/enn/turbo/turbo_utils.py
+@@ -1,11 +1,19 @@
+ from __future__ import annotations
+ 
+ import contextlib
+-from dataclasses import dataclass
+-from typing import TYPE_CHECKING, Any, Callable, Iterator
++from typing import TYPE_CHECKING, Any, Iterator
+ 
+ import numpy as np
+ 
++from . import turbo_light_utils as _light
++
++# Re-export lightweight helpers (single source of truth; avoids duplication).
++Telemetry = _light.Telemetry
++record_duration = _light.record_duration
++latin_hypercube = _light.latin_hypercube
++to_unit = _light.to_unit
++from_unit = _light.from_unit
++
+ if TYPE_CHECKING:
+     import torch
+     from numpy.random import Generator
+@@ -17,25 +25,6 @@ __all__ = [
+ ]
+ 
+ 
+-@dataclass(frozen=True)
+-class Telemetry:
+-    dt_fit: float
+-    dt_sel: float
+-    dt_gen: float = 0.0
+-    dt_tell: float = 0.0
+-
+-
+-@contextlib.contextmanager
+-def record_duration(set_dt: Callable[[float], None]) -> Iterator[None]:
+-    import time
+-
+-    t0 = time.perf_counter()
+-    try:
+-        yield
+-    finally:
+-        set_dt(time.perf_counter() - t0)
+-
+-
+ def _next_power_of_2(n: int) -> int:
+     if n <= 0:
+         return 1
+@@ -84,18 +73,6 @@ def get_gp_posterior_suppress_warning(model: Any, x_torch: Any) -> Any:
+         return model.posterior(x_torch)
+ 
+ 
+-def latin_hypercube(
+-    num_points: int, num_dim: int, *, rng: Generator | Any
+-) -> np.ndarray:
+-    x = np.zeros((num_points, num_dim))
+-    centers = (1.0 + 2.0 * np.arange(0.0, num_points)) / float(2 * num_points)
+-    for j in range(num_dim):
+-        x[:, j] = centers[rng.permutation(num_points)]
+-    pert = rng.uniform(-1.0, 1.0, size=(num_points, num_dim)) / float(2 * num_points)
+-    x += pert
+-    return x
+-
+-
+ def argmax_random_tie(values: np.ndarray | Any, *, rng: Generator | Any) -> int:
+     if values.ndim != 1:
+         raise ValueError(values.shape)
+@@ -236,20 +213,6 @@ def generate_raasp_candidates_uniform(
+     return raasp_uniform(center, lb, ub, num_candidates, num_pert=num_pert, rng=rng)
+ 
+ 
+-def to_unit(x: np.ndarray | Any, bounds: np.ndarray | Any) -> np.ndarray:
+-    lb = bounds[:, 0]
+-    ub = bounds[:, 1]
+-    if np.any(ub <= lb):
+-        raise ValueError(bounds)
+-    return (x - lb) / (ub - lb)
+-
+-
+-def from_unit(x_unit: np.ndarray | Any, bounds: np.ndarray | Any) -> np.ndarray:
+-    lb = np.asarray(bounds[:, 0])
+-    ub = np.asarray(bounds[:, 1])
+-    return lb + x_unit * (ub - lb)
+-
+-
+ def gp_thompson_sample(
+     model: Any,
+     x_cand: np.ndarray | Any,
+diff --git a/tests/test_enn_draw.py b/tests/test_enn_draw.py
+new file mode 100644
+index 0000000..1a21ed8
+--- /dev/null
++++ b/tests/test_enn_draw.py
+@@ -0,0 +1,44 @@
++from __future__ import annotations
++
++import numpy as np
++
++from enn.enn.enn import EpistemicNearestNeighbors
++from enn.enn.enn_draw import (
++    _DrawInternals,
++    compute_conditional_y_scale,
++    draw_from_internals,
++)
++
++
++def test_compute_conditional_y_scale_shape_and_finite():
++    rng = np.random.default_rng(0)
++    train_x = rng.standard_normal((10, 2))
++    train_y = rng.standard_normal((10, 3))
++    model = EpistemicNearestNeighbors(train_x, train_y, scale_x=False)
++
++    y_whatif = rng.standard_normal((4, 3))
++    y_scale = compute_conditional_y_scale(model, y_whatif)
++    assert y_scale.shape == (1, 3)
++    assert np.all(np.isfinite(y_scale))
++
++
++def test_draw_from_internals_k_zero_broadcasts_mu():
++    rng = np.random.default_rng(0)
++    train_x = rng.standard_normal((10, 2))
++    train_y = rng.standard_normal((10, 3))
++    model = EpistemicNearestNeighbors(train_x, train_y, scale_x=False)
++
++    n = 5
++    m = model.num_outputs
++    internals = _DrawInternals(
++        idx=np.zeros((n, 0), dtype=int),
++        w_normalized=np.zeros((n, 0, m), dtype=float),
++        l2=np.ones((n, m), dtype=float),
++        mu=rng.standard_normal((n, m)),
++        se=np.ones((n, m), dtype=float),
++    )
++
++    function_seeds = [1, 2, 3]
++    out = draw_from_internals(model, internals, function_seeds=function_seeds)
++    assert out.shape == (len(function_seeds), n, m)
++    assert np.allclose(out, np.broadcast_to(internals.mu, out.shape))
+diff --git a/tests/test_enn_hash_perf.py b/tests/test_enn_hash_perf.py
+new file mode 100644
+index 0000000..8028698
+--- /dev/null
++++ b/tests/test_enn_hash_perf.py
+@@ -0,0 +1,88 @@
++from __future__ import annotations
++
++import os
++import time
++
++import numpy as np
++import pytest
++
++from enn.enn.enn_hash import (
++    normal_hash_batch_multi_seed,
++    normal_hash_batch_multi_seed_fast,
++)
++
++
++@pytest.mark.skipif(
++    os.environ.get("ENN_HASH_PERF") != "1",
++    reason="Set ENN_HASH_PERF=1 to run this opt-in perf + persistence test.",
++)
++def test_normal_hash_batch_multi_seed_perf_save_and_compare(
++    tmp_path: pytest.TempPathFactory,
++):
++    # "Large-scale" parameters requested by user.
++    n = 1000
++    k = 10
++    m = 100
++    num_function_seeds = 100
++
++    expected_bytes = num_function_seeds * n * k * m * 8
++    # Guardrail: the output tensor alone is ~0.8GB for the requested parameters.
++    if (
++        expected_bytes > 800_000_000
++        and os.environ.get("ENN_HASH_PERF_ALLOW_LARGE") != "1"
++    ):
++        pytest.skip(
++            "This test would allocate ~0.8GB output. Set ENN_HASH_PERF_ALLOW_LARGE=1 to run."
++        )
++
++    rng = np.random.default_rng(0)
++    function_seeds = rng.integers(
++        0, np.iinfo(np.int64).max, size=(num_function_seeds,), dtype=np.int64
++    )
++    data_indices = rng.integers(0, 200_000, size=(n, k), dtype=np.int64)
++
++    baseline_path = tmp_path / "normal_hash_baseline.npz"
++
++    t0 = time.perf_counter()
++    baseline = normal_hash_batch_multi_seed(function_seeds, data_indices, num_metrics=m)
++    t1 = time.perf_counter()
++    baseline_s = t1 - t0
++
++    np.savez_compressed(
++        baseline_path,
++        function_seeds=function_seeds,
++        data_indices=data_indices,
++        num_metrics=np.array([m], dtype=np.int64),
++        baseline=baseline,
++        baseline_seconds=np.array([baseline_s], dtype=float),
++    )
++
++    loaded = np.load(baseline_path)
++    baseline_loaded = loaded["baseline"]
++
++    t2 = time.perf_counter()
++    candidate = normal_hash_batch_multi_seed_fast(
++        function_seeds, data_indices, num_metrics=m
++    )
++    t3 = time.perf_counter()
++    candidate_s = t3 - t2
++
++    assert baseline_loaded.shape == candidate.shape
++    # B-mode: candidate is not output-identical; just check determinism and
++    # approximate Normal(0,1) moments.
++    candidate2 = normal_hash_batch_multi_seed_fast(
++        function_seeds, data_indices, num_metrics=m
++    )
++    assert np.allclose(candidate, candidate2)
++
++    mean = float(candidate.mean())
++    var = float(candidate.var())
++    assert abs(mean) < 0.05
++    assert abs(var - 1.0) < 0.10
++
++    # Don't hard-assert speedup by default (timing is flaky across machines/load),
++    # but print to help local benchmarking.
++    print(
++        f"baseline={baseline_s:.3f}s candidate={candidate_s:.3f}s "
++        f"speedup={baseline_s / max(candidate_s, 1e-12):.2f}x"
++    )
+diff --git a/tests/test_enn_index.py b/tests/test_enn_index.py
+index 00062de..69c3a56 100644
+--- a/tests/test_enn_index.py
++++ b/tests/test_enn_index.py
+@@ -75,3 +75,22 @@ def test_normal_hash_batch_multi_seed_different_seeds():
+         np.array([2], dtype=np.int64), data_indices, num_metrics=1
+     )
+     assert not np.allclose(result1, result2)
++
++
++def test_posterior_function_draw_is_deterministic_for_fixed_function_seeds():
++    from enn.enn.enn import EpistemicNearestNeighbors
++    from enn.enn.enn_params import ENNParams
++
++    rng = np.random.default_rng(0)
++    train_x = rng.standard_normal((30, 2))
++    train_y = rng.standard_normal((30, 1))
++    model = EpistemicNearestNeighbors(train_x, train_y, scale_x=False)
++
++    x = rng.standard_normal((5, 2))
++    function_seeds = [123, 456]
++    params = ENNParams(k=5, epi_var_scale=1.0, ale_homoscedastic_scale=0.0)
++
++    y_new_1 = model.posterior_function_draw(x, params, function_seeds=function_seeds)
++    y_new_2 = model.posterior_function_draw(x, params, function_seeds=function_seeds)
++
++    assert np.allclose(y_new_1, y_new_2)
+diff --git a/tests/test_turbo_light_utils.py b/tests/test_turbo_light_utils.py
+new file mode 100644
+index 0000000..b6a6cdb
+--- /dev/null
++++ b/tests/test_turbo_light_utils.py
+@@ -0,0 +1,35 @@
++from __future__ import annotations
++
++import numpy as np
++
++from enn.turbo.turbo_light_utils import record_duration
++from enn.turbo.turbo_light_utils import select_uniform
++
++
++def test_record_duration_sets_dt():
++    dt: list[float] = []
++
++    def set_dt(x: float) -> None:
++        dt.append(float(x))
++
++    with record_duration(set_dt):
++        _ = sum(range(10_000))
++
++    assert len(dt) == 1
++    assert dt[0] >= 0.0
++
++
++def test_select_uniform_basic():
++    rng = np.random.default_rng(0)
++    x_cand = rng.standard_normal((20, 3))
++    bounds = np.array([[0.0, 1.0], [0.0, 2.0], [-1.0, 1.0]])
++
++    def from_unit_fn(x):
++        lb = bounds[:, 0]
++        ub = bounds[:, 1]
++        return lb + x * (ub - lb)
++
++    out = select_uniform(
++        x_cand, num_arms=5, num_dim=3, rng=rng, from_unit_fn=from_unit_fn
++    )
++    assert out.shape == (5, 3)
