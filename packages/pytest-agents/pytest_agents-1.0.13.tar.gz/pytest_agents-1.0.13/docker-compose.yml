@@ -1,0 +1,78 @@
+version: '3.8'
+
+services:
+  # pytest-agents main service
+  pytest-agents:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pytest-agents
+    volumes:
+      # Mount source code for development
+      - ./src:/app/src:ro
+      - ./tests:/app/tests:ro
+      # Mount for agent state persistence (optional)
+      - agent-data:/app/.agent-memory
+    environment:
+      # pytest-agents configuration
+      - PYTEST_AGENTS_PROJECT_ROOT=/app
+      - PYTEST_AGENTS_AGENT_PM_ENABLED=true
+      - PYTEST_AGENTS_AGENT_RESEARCH_ENABLED=true
+      - PYTEST_AGENTS_AGENT_INDEX_ENABLED=true
+      - PYTEST_AGENTS_AGENT_TIMEOUT=30
+      - PYTEST_AGENTS_AGENT_RETRY_COUNT=3
+      - PYTEST_AGENTS_LOG_LEVEL=INFO
+      - PYTEST_AGENTS_ENABLE_AGENT_CACHING=true
+      - PYTEST_AGENTS_ENABLE_PARALLEL_AGENTS=false
+    command: ["pytest-agents", "verify"]
+    networks:
+      - pytest-agents-network
+
+  # Test runner service
+  pytest-agents-test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pytest-agents-test
+    volumes:
+      - ./src:/app/src:ro
+      - ./tests:/app/tests:ro
+      - test-coverage:/app/htmlcov
+    environment:
+      - PYTEST_AGENTS_PROJECT_ROOT=/app
+      - PYTHONUNBUFFERED=1
+    command: ["uv", "run", "pytest", "-v", "--cov=src/pytest_agents", "--cov-report=html"]
+    networks:
+      - pytest-agents-network
+    profiles:
+      - test
+
+  # Development shell service
+  pytest-agents-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pytest-agents-dev
+    volumes:
+      - .:/app
+      - agent-data:/app/.agent-memory
+    environment:
+      - PYTEST_AGENTS_PROJECT_ROOT=/app
+      - PYTEST_AGENTS_LOG_LEVEL=DEBUG
+    command: ["/bin/bash"]
+    stdin_open: true
+    tty: true
+    networks:
+      - pytest-agents-network
+    profiles:
+      - dev
+
+networks:
+  pytest-agents-network:
+    driver: bridge
+
+volumes:
+  agent-data:
+    driver: local
+  test-coverage:
+    driver: local
