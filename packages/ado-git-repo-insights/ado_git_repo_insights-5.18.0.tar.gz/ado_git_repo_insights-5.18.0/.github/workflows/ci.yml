@@ -1,0 +1,1066 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '*.txt'
+      - 'LICENSE'
+      - '.gitignore'
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '*.txt'
+      - 'LICENSE'
+      - '.gitignore'
+
+# Canonical artifact names for badge-publish job
+# IMPORTANT: These names must match exactly between upload and download steps
+# Update both ARTIFACT_* env vars AND the corresponding upload steps when changing
+env:
+  # Python artifacts (uploaded from test job, ubuntu-latest/3.11 matrix leg only)
+  ARTIFACT_PYTHON_COVERAGE: coverage-ubuntu-latest-3.11
+  ARTIFACT_PYTHON_TESTS: test-results-ubuntu-latest-3.11
+  # TypeScript artifacts (uploaded from extension-tests job)
+  ARTIFACT_TS_COVERAGE: extension-coverage
+  ARTIFACT_TS_TESTS: extension-test-results
+
+jobs:
+  # Guard: Validate CI configuration guards (packageManager, composite action usage)
+  ci-guards:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate CI Guards
+        run: bash .github/scripts/validate-ci-guards.sh
+
+  # Guard: Enforce pnpm-only policy (no package-lock.json anywhere in workspace)
+  pnpm-lockfile-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for npm lockfile
+        run: |
+          set -euo pipefail
+          # Find all package-lock.json files, excluding only node_modules
+          # Zero exclusions policy: entire workspace must use pnpm
+          if ! FOUND=$(find . -name "package-lock.json" -not -path "./node_modules/*" 2>&1); then
+            echo "::error::find command failed: $FOUND"
+            exit 1
+          fi
+          if [ -n "$FOUND" ]; then
+            echo "::error::package-lock.json found:"
+            echo "$FOUND"
+            echo "::error::This repository uses pnpm exclusively. Remove package-lock.json and use pnpm install."
+            exit 1
+          fi
+          echo "[OK] No package-lock.json found anywhere - pnpm policy enforced"
+
+  # Security: Scan for leaked secrets
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for main branch scans
+
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2.3.9
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: --config=.gitleaks.toml
+        # Warn-only mode: don't block PRs, just report
+        continue-on-error: true
+
+  # Guard: Enforce pnpm-only policy (no npm ci/install in workflows, scripts, or package.json)
+  npm-command-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for npm install/ci commands
+        run: bash .github/scripts/check-npm-commands.sh
+
+  # Guard: Detect CRLF in files that run in Unix CI
+  line-ending-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for CRLF in Unix-executed files
+        run: |
+          set -euo pipefail
+          echo "Scanning for CRLF line endings in CI-executed files..."
+
+          FOUND_CRLF=false
+
+          # Check Husky hooks
+          if grep -rlI $'\r' .husky/ 2>/dev/null; then
+            echo "::error::CRLF detected in .husky/"
+            FOUND_CRLF=true
+          fi
+
+          # Check shell scripts
+          if find . -name "*.sh" -type f | xargs grep -lI $'\r' 2>/dev/null; then
+            echo "::error::CRLF detected in *.sh files"
+            FOUND_CRLF=true
+          fi
+
+          # Check .github/scripts
+          if grep -rlI $'\r' .github/scripts/ 2>/dev/null; then
+            echo "::error::CRLF detected in .github/scripts/"
+            FOUND_CRLF=true
+          fi
+
+          # Check scripts directory
+          if grep -rlI $'\r' scripts/ 2>/dev/null; then
+            echo "::error::CRLF detected in scripts/"
+            FOUND_CRLF=true
+          fi
+
+          # Check extension UI files (catches CRLF from npm packages like vss-web-extension-sdk)
+          if grep -rlI $'\r' extension/ui/ 2>/dev/null; then
+            echo "::error::CRLF detected in extension/ui/"
+            echo "::error::If copying from npm, use extension/scripts/copy-vss-sdk.sh to normalize line endings"
+            FOUND_CRLF=true
+          fi
+
+          # Check extension scripts
+          if grep -rlI $'\r' extension/scripts/ 2>/dev/null; then
+            echo "::error::CRLF detected in extension/scripts/"
+            FOUND_CRLF=true
+          fi
+
+          if [[ "$FOUND_CRLF" == "true" ]]; then
+            echo ""
+            echo "::error::CRLF line endings found in files that run in CI."
+            echo "Fix: Run 'git add --renormalize .' after adding .gitattributes"
+            exit 1
+          fi
+
+          echo "[OK] No CRLF detected in Unix-executed files"
+
+  # Guard: Verify UI bundle is in sync with extension/dist/ui (compiled JS)
+  ui-bundle-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python package
+        run: pip install -e .
+
+      - uses: ./.github/actions/setup-pnpm
+
+      - name: Install extension dependencies
+        working-directory: extension
+        run: pnpm install --frozen-lockfile
+
+      - name: Build UI bundles
+        working-directory: extension
+        run: pnpm run build:ui
+
+      - name: Stale Build Output Guard
+        run: |
+          echo "Checking for stale subdirectories in dist/ui/modules/..."
+          # After clean build, dist/ui/modules/ should not have subdirectories
+          # (modules are consolidated into single files, not split into charts/, ml/, shared/)
+          STALE_DIRS=$(find extension/dist/ui/modules -mindepth 1 -type d 2>/dev/null || true)
+          if [[ -n "$STALE_DIRS" ]]; then
+            echo "::error::Stale subdirectories in dist/ui/modules/ - build clean step may have failed"
+            echo "$STALE_DIRS"
+            exit 1
+          fi
+          echo "[OK] Build output structure is clean"
+
+      - name: No TypeScript in ui_bundle Guard
+        run: |
+          echo "Checking for TypeScript files in ui_bundle..."
+          TS_FILES=$(find src/ado_git_repo_insights/ui_bundle -name "*.ts" 2>/dev/null || true)
+          if [[ -n "$TS_FILES" ]]; then
+            echo "::error::TypeScript files found in ui_bundle (must contain only compiled JS):"
+            echo "$TS_FILES"
+            exit 1
+          fi
+          echo "[OK] No TypeScript files in ui_bundle"
+
+      - name: No ESM Syntax in ui_bundle Guard
+        run: |
+          echo "Checking for ESM import/export syntax in ui_bundle JS..."
+          ESM_MATCHES=$(grep -rE "^\s*(import|export)\s" src/ado_git_repo_insights/ui_bundle/*.js 2>/dev/null || true)
+          if [[ -n "$ESM_MATCHES" ]]; then
+            echo "::error::ESM import/export syntax found in ui_bundle JS (must be IIFE bundled):"
+            echo "$ESM_MATCHES" | head -10
+            echo "..."
+            echo "Fix: Run 'pnpm run build:ui' to generate IIFE-bundled JS"
+            exit 1
+          fi
+          echo "[OK] No ESM syntax in ui_bundle JS"
+
+      - name: Check UI Bundle Synchronization
+        run: |
+          echo "Verifying ui_bundle is synced with extension/dist/ui..."
+          python scripts/sync_ui_bundle.py
+          if ! git diff --quiet -- src/ado_git_repo_insights/ui_bundle; then
+            echo "::error::ui_bundle is out of sync with extension/dist/ui"
+            git diff --stat -- src/ado_git_repo_insights/ui_bundle
+            exit 1
+          fi
+          echo "[OK] UI bundle is in sync"
+        shell: bash
+
+  # Guard: Block task Major changes without explicit marker
+  task-major-guard:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check Task Major Version Change
+        env:
+          # SECURITY: GitHub context values must be passed via env to prevent command injection
+          BASE_REF: ${{ github.base_ref }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          set -euo pipefail
+
+          TASK_FILE="extension/tasks/extract-prs/task.json"
+
+          # Get base and head Major versions
+          # SECURITY: Use quoted variable to prevent injection
+          BASE_MAJOR=$(git show "origin/${BASE_REF}:${TASK_FILE}" 2>/dev/null | jq -r '.version.Major' || echo "0")
+          HEAD_MAJOR=$(jq -r '.version.Major' $TASK_FILE)
+
+          echo "Base task Major: $BASE_MAJOR"
+          echo "Head task Major: $HEAD_MAJOR"
+
+          if [[ "$BASE_MAJOR" != "$HEAD_MAJOR" ]]; then
+            echo "::error::Task Major version changed from $BASE_MAJOR to $HEAD_MAJOR"
+
+            # Check for BREAKING TASK CHANGE marker in PR title or commits
+            # SECURITY: PR_TITLE comes from env, safely quoted
+            COMMITS=$(git log "origin/${BASE_REF}..HEAD" --pretty=format:"%s" 2>/dev/null || echo "")
+
+            if [[ "$PR_TITLE" == *"BREAKING TASK CHANGE:"* ]] || [[ "$COMMITS" == *"BREAKING TASK CHANGE:"* ]]; then
+              echo "[OK] BREAKING TASK CHANGE marker found - Major bump approved"
+              echo "::warning::Remember to update extension-verification-test.yml and docs with new @$HEAD_MAJOR"
+            else
+              echo "::error::Task Major change requires 'BREAKING TASK CHANGE:' in PR title or commit message"
+              echo "::error::This prevents accidental breaking changes to pipeline consumers"
+              exit 1
+            fi
+          else
+            echo "[OK] Task Major unchanged ($HEAD_MAJOR)"
+          fi
+        shell: bash
+
+  # Guard: Block manual version bumps (semantic-release handles versioning)
+  version-guard:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for manual version changes
+        env:
+          # SECURITY: GitHub context values must be passed via env to prevent command injection
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          chmod +x scripts/check-version-unchanged.sh
+          # SECURITY: Use quoted variable to prevent injection
+          ./scripts/check-version-unchanged.sh "origin/${BASE_REF}"
+        shell: bash
+
+  # Guard: Block coverage threshold changes without explicit marker
+  # Prevents accidental lowering of coverage standards
+  # See: extension/COVERAGE_RATCHET.md for threshold update policy
+  threshold-change-guard:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for threshold changes
+        env:
+          # SECURITY: GitHub context values must be passed via env to prevent command injection
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+
+          echo "Checking for coverage threshold changes..."
+
+          # Detect changes to threshold configuration files
+          CHANGED=$(git diff "origin/${BASE_REF}...HEAD" --name-only | \
+            grep -E "(extension/jest\.config\.ts|pyproject\.toml)" || true)
+
+          if [ -z "$CHANGED" ]; then
+            echo "[OK] No threshold configuration files changed"
+            exit 0
+          fi
+
+          echo "Threshold config files changed: $CHANGED"
+
+          # Check for threshold-specific changes in Jest config
+          JEST_THRESHOLD=$(git diff "origin/${BASE_REF}...HEAD" -- extension/jest.config.ts | \
+            grep -E "^\+.*statements:|^\+.*branches:|^\+.*functions:|^\+.*lines:" || true)
+
+          # Check for threshold-specific changes in pyproject.toml
+          PY_THRESHOLD=$(git diff "origin/${BASE_REF}...HEAD" -- pyproject.toml | \
+            grep -E "^\+.*fail_under" || true)
+
+          if [ -z "$JEST_THRESHOLD" ] && [ -z "$PY_THRESHOLD" ]; then
+            echo "[OK] Config files changed but no threshold values modified"
+            exit 0
+          fi
+
+          echo "Threshold values changed:"
+          [ -n "$JEST_THRESHOLD" ] && echo "  Jest: $JEST_THRESHOLD"
+          [ -n "$PY_THRESHOLD" ] && echo "  Python: $PY_THRESHOLD"
+
+          # Require explicit [threshold-update] marker in any commit message
+          MARKER_FOUND=$(git log --oneline "origin/${BASE_REF}...HEAD" | \
+            grep -F "[threshold-update]" || true)
+
+          if [ -z "$MARKER_FOUND" ]; then
+            echo ""
+            echo "::error::Coverage threshold changed without [threshold-update] marker"
+            echo "::error::Add [threshold-update] to a commit message if this change is intentional"
+            echo ""
+            echo "See: extension/COVERAGE_RATCHET.md for threshold update policy"
+            echo "Formula: threshold = floor(actual_coverage - 2.0)"
+            exit 1
+          fi
+
+          echo "[OK] Threshold change approved via [threshold-update] marker"
+          echo "Marker found in: $MARKER_FOUND"
+        shell: bash
+
+  # Guard: Enforce centralized pagination token handling (SC-009)
+  # Prevents direct continuationToken string concatenation (parameter injection vector)
+  # See: specs/017-security-fixes/spec.md for security requirements
+  # Allowlist: .pagination-allowlist (edit to add new exceptions)
+  pagination-token-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for direct continuationToken usage
+        run: |
+          set -euo pipefail
+
+          echo "Checking for direct continuationToken usage outside pagination helper..."
+          echo "Allowlist: .pagination-allowlist"
+          echo ""
+
+          # Build glob exclusions from allowlist file
+          GLOB_ARGS=""
+          if [ -f ".pagination-allowlist" ]; then
+            while IFS= read -r line || [ -n "$line" ]; do
+              # Skip empty lines and comments
+              [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+              # Trim whitespace
+              pattern=$(echo "$line" | xargs)
+              [ -n "$pattern" ] && GLOB_ARGS="$GLOB_ARGS --glob '!$pattern'"
+            done < ".pagination-allowlist"
+          else
+            echo "::warning::Allowlist file .pagination-allowlist not found, using defaults"
+            GLOB_ARGS="--glob '!**/pagination.py' --glob '!**/test_pagination*.py' --glob '!specs/**' --glob '!**/*.md'"
+          fi
+
+          # Find continuationToken outside allowed paths
+          # Note: eval is safe here as GLOB_ARGS is built from repo-controlled allowlist file
+          VIOLATIONS=$(eval "rg -l 'continuationToken' $GLOB_ARGS src/ tests/ 2>/dev/null" || true)
+
+          if [ -n "$VIOLATIONS" ]; then
+            echo ""
+            echo "::error::Direct continuationToken usage found outside pagination helper"
+            echo ""
+            echo "Files with violations:"
+            echo "$VIOLATIONS" | while read -r file; do
+              echo "  - $file"
+              rg -n 'continuationToken' "$file" | head -3 | sed 's/^/      /'
+            done
+            echo ""
+            echo "Fix: Use add_continuation_token() from pagination.py instead of direct string manipulation"
+            echo "See: src/ado_git_repo_insights/extractor/pagination.py"
+            echo "To allowlist a file, add it to .pagination-allowlist"
+            exit 1
+          fi
+
+          echo "[OK] No direct continuationToken usage found outside allowed paths"
+        shell: bash
+
+  test:
+    # ============================================================================
+    # CANONICAL LEG: Coverage thresholds are based on ubuntu-latest + Python 3.11
+    # Do NOT change this matrix without updating threshold baseline in pyproject.toml
+    # See: extension/COVERAGE_RATCHET.md for ratchet formula and canonical environment
+    # ============================================================================
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.10", "3.11", "3.12"]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # For setuptools_scm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[dev]
+
+      - name: Verify Pandas Version Policy
+        run: |
+          python -c "
+          import sys
+          import pandas as pd
+          major = int(pd.__version__.split('.')[0])
+          py_minor = sys.version_info.minor
+          expected = 2 if py_minor == 10 else 3
+          if major != expected:
+              print(f'::error::Pandas major version mismatch: got {major}, expected {expected} for Python 3.{py_minor}')
+              sys.exit(1)
+          print(f'[OK] Pandas {pd.__version__} (major {major}) correct for Python 3.{py_minor}')
+          "
+
+      - name: Verify Ruff Version Consistency
+        run: |
+          # Extract ruff version from pre-commit config (strip v prefix and whitespace)
+          PRECOMMIT_RUFF=$(grep -A1 'ruff-pre-commit' .pre-commit-config.yaml | grep 'rev:' | sed 's/.*v//' | tr -d '[:space:]')
+          INSTALLED_RUFF=$(ruff --version | awk '{print $2}' | tr -d '[:space:]')
+          echo "Pre-commit ruff: [$PRECOMMIT_RUFF]"
+          echo "Installed ruff: [$INSTALLED_RUFF]"
+          if [[ "$PRECOMMIT_RUFF" != "$INSTALLED_RUFF" ]]; then
+            echo "::error::Ruff version mismatch! pre-commit has $PRECOMMIT_RUFF but installed is $INSTALLED_RUFF"
+            echo "Update .pre-commit-config.yaml or pyproject.toml to match"
+            exit 1
+          fi
+          echo "[OK] Ruff versions match: $INSTALLED_RUFF"
+        shell: bash
+
+      - name: Run pre-commit checks
+        run: |
+          pip install pre-commit
+          pre-commit run --all-files --show-diff-on-failure
+
+
+      - name: Run Tests with Coverage
+        id: pytest
+        run: |
+          # Run pytest with JUnit XML output for robust CI gating
+          # -q -ra: quiet mode with short test summary (passed/failed/skipped/xfailed/error)
+          # --junit-xml: machine-readable output for CI validation
+          # --cov-report=xml: coverage report for codecov
+          python -m pytest \
+            -q -ra \
+            --junit-xml=test-results.xml \
+            --cov-report=xml \
+            --tb=short \
+            2>&1 | tee pytest_output.txt
+          PYTEST_EXIT=${PIPESTATUS[0]}
+
+          # Always run validation even if pytest fails, to provide detailed diagnostics
+          echo "pytest_exit=$PYTEST_EXIT" >> $GITHUB_OUTPUT
+          exit $PYTEST_EXIT
+        shell: bash
+
+      - name: Validate Test Results (Python)
+        if: always() && matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+        run: |
+          # Two-phase validation for robust CI diagnostics
+          # Phase 1: Check if pytest produced output at all
+          if [ ! -f test-results.xml ]; then
+            echo "::error::test-results.xml not found - pytest likely failed to start"
+            echo ""
+            echo "================================================================================"
+            echo "DIAGNOSTIC: pytest did not produce JUnit XML output"
+            echo "================================================================================"
+            echo ""
+            echo "Common causes:"
+            echo "  1. Import error in test file or source code"
+            echo "  2. Syntax error in Python files"
+            echo "  3. Missing dependency"
+            echo "  4. Test collection failed"
+            echo ""
+            echo "Check the 'Run Tests with Coverage' step above for the actual error."
+            echo ""
+            if [ -f pytest_output.txt ]; then
+              echo "================================================================================"
+              echo "Last 50 lines of pytest output:"
+              echo "================================================================================"
+              tail -50 pytest_output.txt
+            fi
+            echo ""
+            echo "================================================================================"
+            exit 1
+          fi
+
+          # Phase 2: Validate test results using JUnit XML parsing
+          # MIN_COLLECTED: Minimum expected tests (update when adding/removing tests)
+          # MAX_SKIPS: Maximum allowed skipped tests (0 = no skips allowed in CI)
+          python .github/scripts/validate-test-results.py \
+            test-results.xml \
+            --min-collected=312 \
+            --max-skips=0
+        shell: bash
+
+      - name: Upload Python Coverage
+        uses: codecov/codecov-action@v5
+        if: matrix.python-version == '3.11' && matrix.os == 'ubuntu-latest'
+        with:
+          files: ./coverage.xml
+          flags: python
+          fail_ci_if_error: false
+
+      # Upload artifacts for badge-publish job (ubuntu-latest, Python 3.11 only)
+      # Artifact names defined in workflow-level env vars for single source of truth
+      - name: Upload Python coverage artifact
+        uses: actions/upload-artifact@v4
+        if: matrix.python-version == '3.11' && matrix.os == 'ubuntu-latest'
+        with:
+          name: ${{ env.ARTIFACT_PYTHON_COVERAGE }}
+          path: coverage.xml
+          retention-days: 1
+
+      - name: Upload Python test results artifact
+        uses: actions/upload-artifact@v4
+        if: matrix.python-version == '3.11' && matrix.os == 'ubuntu-latest'
+        with:
+          name: ${{ env.ARTIFACT_PYTHON_TESTS }}
+          path: test-results.xml
+          retention-days: 1
+
+
+  # Python Type Safety Gate (FR-001, FR-002)
+  # Immutable invariant: mypy MUST pass on all Python source files
+  # This enforces type safety as a hard gate - no exceptions without explicit
+  # type: ignore comments with justification per FR-012
+  mypy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[dev]
+
+      - name: Run mypy type check
+        run: |
+          echo "Running mypy on src/ with strict mode per pyproject.toml..."
+          mypy src/
+          echo "[OK] mypy type check passed - all Python type errors resolved"
+
+  # Suppression Audit Gate (FR-008, FR-009, FR-010, FR-011)
+  # Tracks suppression comment growth and blocks increases without acknowledgment
+  # Direct pushes to main with increases are always rejected (FR-010)
+  # FR-009: Diff is computed against baseline from main branch, not PR branch
+  suppression-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Need full history to access main branch
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run suppression audit against main baseline
+        env:
+          GITHUB_EVENT_PATH: ${{ github.event_path }}
+        run: |
+          echo "Running suppression audit against main branch baseline (FR-009)..."
+
+          # Fetch baseline from main branch for accurate diff
+          # This prevents bypass by updating baseline in same PR
+          if git show origin/main:.suppression-baseline.json > /tmp/main-baseline.json 2>/dev/null; then
+            echo "Using baseline from origin/main for comparison"
+            python scripts/audit-suppressions.py --diff --baseline /tmp/main-baseline.json
+          else
+            echo "No baseline on main branch - using committed baseline"
+            python scripts/audit-suppressions.py --diff
+          fi
+
+  # Phase 5: Test base installation without [ml] extras
+  # Enforces optional-dependency isolation - ML features must not leak into base
+  # Functional validation job: verifies base package works without [ml] extras.
+  # This is NOT a coverage job - coverage is enforced in the main 'test' job.
+  test-base-no-ml:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # For setuptools_scm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install base dependencies only (no [ml])
+        run: |
+          python -m pip install --upgrade pip
+          # Install base package WITHOUT [ml] extras
+          pip install -e .
+          # Install pytest only (no pytest-cov - coverage validated in main test job)
+          pip install pytest
+
+      - name: Verify optional dependencies NOT installed
+        run: |
+          # These should fail if [ml] was accidentally installed
+          if python -c "import prophet" >/dev/null 2>&1; then
+            echo "::error::Prophet should not be installed"
+            exit 1
+          fi
+          if python -c "import openai" >/dev/null 2>&1; then
+            echo "::error::OpenAI should not be installed"
+            exit 1
+          fi
+          echo "[OK] Optional ML dependencies correctly NOT installed"
+
+      - name: Run base-compatible tests
+        run: |
+          # Run tests that MUST work without [ml] extras (single invocation for efficiency)
+          # Override addopts to exclude coverage (pyproject.toml includes --cov)
+          pytest -v -o "addopts=-ra -q" \
+            tests/unit/test_ml_cli_flags.py \
+            tests/unit/test_insights_schema.py \
+            tests/unit/test_predictions_schema.py
+          # Test that CLI entrypoint doesn't import ML at parse time
+          python -c "from ado_git_repo_insights.cli import main; print('[OK] CLI imports OK')"
+          echo "[OK] All base tests passed without [ml] extras"
+
+
+  build:
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build Package
+        run: |
+          pip install build
+          python -m build
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  build-extension:
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-pnpm
+
+      - name: Install tfx-cli
+        run: npm install -g tfx-cli
+
+      - name: Install Extension Dependencies
+        working-directory: extension
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate Task Input Names
+        working-directory: extension
+        run: pnpm exec ts-node ../scripts/validate-task-inputs.ts
+
+      - name: Run Extension Task Unit Tests
+        run: node extension/tasks/extract-prs/index.test.js
+
+      - name: Build Extension (tsc + esbuild)
+        working-directory: extension
+        run: pnpm run build
+
+      - name: Stage Task Dependencies
+        working-directory: extension
+        run: pnpm run stage:tasks
+
+      - name: Package VSIX
+        working-directory: extension
+        run: tfx extension create --manifest-globs vss-extension.json
+
+      - name: Run VSIX Inspection Tests (Tier B)
+        working-directory: extension
+        env:
+          VSIX_REQUIRED: 'true'
+        run: pnpm run test:vsix
+
+      - name: Verify VSIX Exists (Shipping Invariant)
+        working-directory: extension
+        run: |
+          VSIX_COUNT=$(ls -1 *.vsix 2>/dev/null | wc -l)
+          if [ "$VSIX_COUNT" -eq 0 ]; then
+            echo "::error::No VSIX file found after packaging - shipping invariant violated"
+            exit 1
+          fi
+          echo "[OK] Found $VSIX_COUNT VSIX file(s)"
+          ls -la *.vsix
+
+      - name: Upload Extension Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vsix
+          path: extension/*.vsix
+
+  # Phase 3.5: Extension UI unit tests
+  # Note: Some extension tests (synthetic-fixtures, performance) call Python scripts
+  # ============================================================================
+  # CANONICAL LEG: Coverage thresholds are based on ubuntu-latest + Node 22
+  # Do NOT change this environment without updating threshold baseline in jest.config.ts
+  # See: extension/COVERAGE_RATCHET.md for ratchet formula and canonical environment
+  # ============================================================================
+  extension-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # For setuptools_scm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[dev]
+
+      - uses: ./.github/actions/setup-pnpm
+
+      - name: Install dependencies
+        working-directory: extension
+        run: pnpm install --frozen-lockfile
+
+      - name: TypeScript Type Check
+        working-directory: extension
+        run: pnpm run build:check
+
+      - name: ESLint
+        working-directory: extension
+        run: pnpm run lint
+
+      - name: Run Extension UI Tests
+        id: pnpm_test
+        working-directory: extension
+        run: |
+          # Run Jest with JUnit XML output for robust CI gating
+          pnpm run test:ci 2>&1 | tee pnpm_test_output.txt
+          PNPM_EXIT=${PIPESTATUS[0]}
+
+          echo "pnpm_exit=$PNPM_EXIT" >> $GITHUB_OUTPUT
+          exit $PNPM_EXIT
+
+      - name: Validate Test Results (Extension)
+        if: always()
+        run: |
+          # Two-phase validation for robust CI diagnostics
+          # Phase 1: Check if Jest produced output at all
+          if [ ! -f extension/test-results.xml ]; then
+            echo "::error::extension/test-results.xml not found - Jest likely failed to start"
+            echo ""
+            echo "================================================================================"
+            echo "DIAGNOSTIC: Jest did not produce JUnit XML output"
+            echo "================================================================================"
+            echo ""
+            echo "Common causes:"
+            echo "  1. Syntax error in test file or source code"
+            echo "  2. Missing pnpm dependency"
+            echo "  3. Jest configuration issue"
+            echo "  4. Test collection failed"
+            echo ""
+            echo "Check the 'Run Extension UI Tests' step above for the actual error."
+            echo ""
+            if [ -f extension/pnpm_test_output.txt ]; then
+              echo "================================================================================"
+              echo "Last 50 lines of Jest output:"
+              echo "================================================================================"
+              tail -50 extension/pnpm_test_output.txt
+            fi
+            echo ""
+            echo "================================================================================"
+            exit 1
+          fi
+
+          # Phase 2: Validate test results using JUnit XML parsing
+          # MIN_COLLECTED: 642 actual tests - 10 tolerance = 632
+          # Policy: Detects material drops while allowing normal growth
+          # Update threshold only when tests intentionally decrease (with PR justification)
+          # MAX_SKIPS: Maximum allowed skipped tests (5 for platform-specific edge cases)
+          python .github/scripts/validate-test-results.py \
+            extension/test-results.xml \
+            --min-collected=632 \
+            --max-skips=5
+        shell: bash
+
+      - name: Upload TypeScript Coverage
+        uses: codecov/codecov-action@v5
+        if: success()
+        with:
+          files: ./extension/coverage/lcov.info
+          flags: typescript
+          fail_ci_if_error: false
+
+      # Upload artifacts for badge-publish job
+      # Artifact names defined in workflow-level env vars for single source of truth
+      - name: Upload TypeScript coverage artifact
+        uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: ${{ env.ARTIFACT_TS_COVERAGE }}
+          path: extension/coverage/lcov.info
+          retention-days: 1
+
+      - name: Upload TypeScript test results artifact
+        uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: ${{ env.ARTIFACT_TS_TESTS }}
+          path: extension/test-results.xml
+          retention-days: 1
+
+  # Phase 4: Performance baseline integrity guard
+  baseline-integrity:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history needed to find baseline-update commits
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Check Baseline Integrity
+        run: node .github/scripts/check-baseline-integrity.js
+
+  # FR-034: Fresh-clone verification - proves deterministic builds without cache
+  # FR-011: Also serves as Python-free test isolation enforcement
+  fresh-clone-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-pnpm
+        with:
+          cache: 'false'  # Intentionally disabled to verify fresh install works
+
+      - name: Fresh install (no cache)
+        working-directory: extension
+        run: pnpm install --frozen-lockfile
+
+      - name: Build extension
+        working-directory: extension
+        run: pnpm run build
+
+      - name: Run unit tests (no Python)
+        working-directory: extension
+        run: pnpm test:unit
+
+      - name: Verify deterministic lockfile
+        working-directory: extension
+        run: |
+          if git diff --name-only | grep -q "pnpm-lock.yaml"; then
+            echo "::error::pnpm-lock.yaml changed after fresh install - lockfile not deterministic"
+            git diff pnpm-lock.yaml
+            exit 1
+          fi
+          echo "[OK] Lockfile is deterministic"
+
+  # Badge Publish: Generate and publish badge JSON to dedicated badges branch
+  # Runs only on push to main, after test jobs succeed
+  # FR-013, FR-014: Main-only, no PR publishes
+  # FR-024-FR-027: Publishes to dedicated badges branch only
+  badge-publish:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [test, extension-tests]
+    permissions:
+      contents: write  # Required to push to badges branch
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for branch operations
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Verify CI script dependencies
+        run: |
+          python -c "import defusedxml; print('[OK] defusedxml available')"
+          python .github/scripts/generate-badge-json.py --help > /dev/null
+          echo "[OK] generate-badge-json.py dependencies verified"
+
+      # Download artifacts - fail loudly if missing (no continue-on-error)
+      # Job depends on [test, extension-tests] so artifacts must exist
+      # Artifact names reference workflow-level env vars (single source of truth)
+      - name: Download Python coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_PYTHON_COVERAGE }}
+          path: ./artifacts/python
+
+      - name: Download Python test results
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_PYTHON_TESTS }}
+          path: ./artifacts/python
+
+      - name: Download TypeScript coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_TS_COVERAGE }}
+          path: ./artifacts/typescript
+
+      - name: Download TypeScript test results
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_TS_TESTS }}
+          path: ./artifacts/typescript
+
+      - name: Verify artifacts
+        run: |
+          echo "Verifying downloaded artifacts..."
+          ls -la ./artifacts/python/
+          ls -la ./artifacts/typescript/
+          echo "[OK] All required artifacts present"
+
+      # Generate badge JSON (first run)
+      # --artifacts-dir enforces realpath bounds checking (prevents path traversal)
+      - name: Generate badge JSON
+        run: |
+          python .github/scripts/generate-badge-json.py \
+            --artifacts-dir ./artifacts \
+            --python-coverage ./artifacts/python/coverage.xml \
+            --python-tests ./artifacts/python/test-results.xml \
+            --ts-coverage ./artifacts/typescript/lcov.info \
+            --ts-tests ./artifacts/typescript/test-results.xml \
+            --output /tmp/status.json
+
+          echo "Generated badge JSON:"
+          cat /tmp/status.json
+
+      # FR-018: Determinism check - generate twice and diff
+      - name: Verify determinism
+        run: |
+          python .github/scripts/generate-badge-json.py \
+            --artifacts-dir ./artifacts \
+            --python-coverage ./artifacts/python/coverage.xml \
+            --python-tests ./artifacts/python/test-results.xml \
+            --ts-coverage ./artifacts/typescript/lcov.info \
+            --ts-tests ./artifacts/typescript/test-results.xml \
+            --output /tmp/status-verify.json
+
+          if ! diff -q /tmp/status.json /tmp/status-verify.json; then
+            echo "::error::Determinism check failed - JSON output differs between runs"
+            diff /tmp/status.json /tmp/status-verify.json
+            exit 1
+          fi
+          echo "[OK] Determinism verified - identical output on re-run"
+
+      # FR-019: Validate JSON schema
+      - name: Validate JSON schema
+        run: |
+          pip install jsonschema==4.23.0
+          python -c "
+          import json
+          import jsonschema
+
+          with open('/tmp/status.json') as f:
+              data = json.load(f)
+          with open('.github/scripts/badge-schema.json') as f:
+              schema = json.load(f)
+
+          jsonschema.validate(data, schema)
+          print('[OK] JSON schema validation passed')
+          "
+
+      # Publish to badges branch
+      - name: Publish to badges branch
+        run: |
+          set -euo pipefail
+
+          # Preserve verification script before branch switch (script unavailable on badges branch)
+          mkdir -p .ci-tmp
+          cp .github/scripts/verify-badge-url.py .ci-tmp/verify-badge-url.py
+          test -f .ci-tmp/verify-badge-url.py || { echo "::error::Failed to preserve verification script"; exit 1; }
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Fetch badges branch or create orphan if doesn't exist
+          if git fetch origin badges:badges 2>/dev/null; then
+            echo "Checking out existing badges branch"
+            git checkout badges
+          else
+            echo "Creating new orphan badges branch"
+            git checkout --orphan badges
+            git rm -rf . 2>/dev/null || true
+          fi
+
+          # Copy status.json to branch root
+          cp /tmp/status.json status.json
+
+          # Commit and push
+          git add status.json
+          if git diff --staged --quiet; then
+            echo "No changes to commit - badge data unchanged"
+          else
+            git commit -m "chore: update badge data [skip ci]"
+            # Hard guard: verify we're on badges branch before pushing
+            test "$(git rev-parse --abbrev-ref HEAD)" = "badges" || { echo "::error::Not on badges branch"; exit 1; }
+            git push origin badges
+            echo "[OK] Badge data published to badges branch"
+          fi
+
+      # FR-010: Verify published JSON is accessible
+      - name: Verify badge URL accessibility
+        env:
+          BADGE_URL: https://raw.githubusercontent.com/${{ github.repository }}/badges/status.json
+        run: |
+          ls -la .ci-tmp/
+          python .ci-tmp/verify-badge-url.py

@@ -1,0 +1,150 @@
+#!/bin/sh
+# Pre-commit hook: Run formatting/linting checks on staged files
+# This prevents the pre-push "--all-files" from modifying files and breaking the push
+
+# Detect pre-commit installation
+if command -v pre-commit >/dev/null 2>&1; then
+    PRE_COMMIT="pre-commit"
+elif [ -f ".venv/Scripts/pre-commit.exe" ]; then
+    PRE_COMMIT=".venv/Scripts/pre-commit.exe"
+elif [ -f ".venv/bin/pre-commit" ]; then
+    PRE_COMMIT=".venv/bin/pre-commit"
+else
+    echo ""
+    echo "[pre-commit] ❌ pre-commit not found!"
+    echo "[pre-commit] Install with: pip install pre-commit"
+    echo "[pre-commit] Or activate your venv: source .venv/bin/activate (Linux) or .venv\\Scripts\\activate (Windows)"
+    exit 1
+fi
+
+# ALWAYS run global fixers (end-of-file, trailing-whitespace) on staged files
+# This prevents the pre-push --all-files from modifying unstaged files
+echo "[pre-commit] Running formatting checks on staged files..."
+$PRE_COMMIT run --hook-stage pre-commit || exit 1
+echo "[pre-commit] ✅ Formatting checks passed"
+
+# =============================================================================
+# VSS SDK Sync Guard (runs on EVERY commit)
+# =============================================================================
+# Ensures extension/ui/VSS.SDK.min.js matches the npm package.
+# This prevents silent drift when vss-web-extension-sdk updates.
+# If drift is detected, auto-sync and auto-stage the file.
+# =============================================================================
+
+SDK_SRC="extension/node_modules/vss-web-extension-sdk/lib/VSS.SDK.min.js"
+SDK_DEST="extension/ui/VSS.SDK.min.js"
+
+if [ -f "$SDK_SRC" ] && [ -f "$SDK_DEST" ]; then
+    # Normalize and compare (CRLF → LF)
+    SDK_SRC_HASH=$(cat "$SDK_SRC" | tr -d '\r' | sha256sum | cut -d' ' -f1)
+    SDK_DEST_HASH=$(cat "$SDK_DEST" | tr -d '\r' | sha256sum | cut -d' ' -f1)
+
+    if [ "$SDK_SRC_HASH" != "$SDK_DEST_HASH" ]; then
+        echo ""
+        echo "[pre-commit] 🔄 VSS SDK drift detected - syncing from npm package..."
+        (cd extension && node scripts/copy-vss-sdk.mjs)
+        git add "$SDK_DEST"
+        echo "[pre-commit] ✅ VSS SDK synced and staged"
+        echo ""
+    fi
+fi
+
+# =============================================================================
+# UI Bundle Build & Sync
+# =============================================================================
+# Automatically builds TypeScript and syncs to ui_bundle when UI-related files
+# are staged. This ensures CI never fails due to stale bundles.
+#
+# Trigger patterns (any of these staged triggers a rebuild):
+#   - extension/ui/*.ts          (TypeScript source)
+#   - extension/scripts/bundle-ui.mjs (build script)
+#   - extension/package.json     (dependencies)
+#   - extension/package-lock.json (lockfile)
+#   - extension/tsconfig*.json   (TypeScript config)
+# =============================================================================
+
+UI_BUILD_TRIGGERS=$(git diff --cached --name-only | grep -E '^extension/(ui/.*\.ts$|scripts/bundle-ui\.mjs$|package\.json$|package-lock\.json$|tsconfig.*\.json$)' || true)
+
+if [ -n "$UI_BUILD_TRIGGERS" ]; then
+    echo ""
+    echo "[pre-commit] 🔧 UI build triggers detected:"
+    echo "$UI_BUILD_TRIGGERS" | sed 's/^/  - /'
+    echo ""
+
+    # -------------------------------------------------------------------------
+    # Guard: Require node_modules to exist (don't run npm install in hooks)
+    # -------------------------------------------------------------------------
+    if [ ! -d "extension/node_modules" ]; then
+        echo "[pre-commit] ❌ extension/node_modules not found!"
+        echo ""
+        echo "  UI files are staged but dependencies are missing."
+        echo "  Run: cd extension && npm ci"
+        echo ""
+        exit 1
+    fi
+
+    # -------------------------------------------------------------------------
+    # Guard: Require clean working tree for extension/ui/ (staged == working)
+    # -------------------------------------------------------------------------
+    # This prevents building from unstaged changes that won't match the commit.
+    UI_UNSTAGED=$(git diff --name-only -- extension/ui/ || true)
+    if [ -n "$UI_UNSTAGED" ]; then
+        echo "[pre-commit] ❌ Unstaged changes in extension/ui/ detected!"
+        echo ""
+        echo "  The following files have unstaged changes:"
+        echo "$UI_UNSTAGED" | sed 's/^/    - /'
+        echo ""
+        echo "  Either stage them (git add) or stash them before committing."
+        echo "  This ensures the build matches exactly what you're committing."
+        echo ""
+        exit 1
+    fi
+
+    # -------------------------------------------------------------------------
+    # Build: Compile TypeScript to extension/dist/ui/
+    # -------------------------------------------------------------------------
+    echo "[pre-commit] 📦 Building UI bundles..."
+    if ! (cd extension && npm run build:ui); then
+        echo ""
+        echo "[pre-commit] ❌ UI build failed!"
+        echo "  Fix the build errors above and try again."
+        exit 1
+    fi
+
+    # -------------------------------------------------------------------------
+    # Sync: Copy from extension/dist/ui/ to src/ado_git_repo_insights/ui_bundle/
+    # -------------------------------------------------------------------------
+    echo "[pre-commit] 🔄 Syncing to ui_bundle..."
+    if ! python scripts/sync_ui_bundle.py; then
+        echo ""
+        echo "[pre-commit] ❌ UI bundle sync failed!"
+        exit 1
+    fi
+
+    # -------------------------------------------------------------------------
+    # Verify: Ensure sync produced no unexpected differences
+    # -------------------------------------------------------------------------
+    if ! git diff --quiet -- src/ado_git_repo_insights/ui_bundle; then
+        echo "[pre-commit] 📝 Staging ui_bundle changes..."
+        git add src/ado_git_repo_insights/ui_bundle
+    fi
+
+    # -------------------------------------------------------------------------
+    # Final check: Verify everything is in sync
+    # -------------------------------------------------------------------------
+    # Re-run sync and check for any remaining differences (catches edge cases)
+    python scripts/sync_ui_bundle.py >/dev/null 2>&1
+    if ! git diff --quiet -- src/ado_git_repo_insights/ui_bundle; then
+        echo ""
+        echo "[pre-commit] ❌ ui_bundle still differs after sync!"
+        echo ""
+        echo "  This indicates a problem with the sync process."
+        echo "  Differences:"
+        git diff --stat -- src/ado_git_repo_insights/ui_bundle
+        echo ""
+        exit 1
+    fi
+
+    echo "[pre-commit] ✅ UI built and synced successfully"
+    echo ""
+fi

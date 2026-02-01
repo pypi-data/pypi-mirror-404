@@ -1,0 +1,120 @@
+[build-system]
+requires = ["setuptools>=61.0", "setuptools_scm>=8.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ado-git-repo-insights"
+dynamic = ["version"]
+description = "Extract Azure DevOps Pull Request metrics to SQLite and generate PowerBI-compatible CSVs."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+    { name = "Odd Essentials, LLC", email = "admin@oddessentials.com" }
+]
+license = { text = "MIT" }
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "requests>=2.28.0",
+    "pyyaml>=6.0",
+    "pandas>=2.2.0,<3.0.0; python_version < '3.11'",
+    "pandas>=3.0.0; python_version >= '3.11'",
+    "azure-storage-blob>=12.0.0",  # Optional fallback storage
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "ruff==0.14.14",
+    "mypy>=1.0",
+    "pre-commit>=3.0",
+    "types-requests>=2.28.0",
+    "types-PyYAML>=6.0",
+    "pandas-stubs>=2.0.0,<3.0.0; python_version < '3.11'",
+    "pandas-stubs>=2.0.0; python_version >= '3.11'",
+    "jsonschema>=4.0",
+    "defusedxml==0.7.1",  # Safe XML parsing for CI scripts
+]
+ml = [
+    "prophet>=1.1.0",
+    "openai>=1.0.0",
+]
+
+[project.scripts]
+ado-insights = "ado_git_repo_insights.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+ado_git_repo_insights = ["ui_bundle/**/*"]
+
+[tool.setuptools_scm]
+# Configures setuptools_scm to use git tags for versioning
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "N", "S", "C4", "PT"]
+ignore = ["E501", "S101"]  # Allow long lines in some cases, allow assert in tests
+
+[tool.ruff.lint.isort]
+known-first-party = ["ado_git_repo_insights"]
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra -q --cov=src/ado_git_repo_insights --cov-report=term-missing"
+testpaths = ["tests"]
+pythonpath = ["src"]
+# Suppress ResourceWarning for unclosed database connections
+# These warnings come from pandas and test fixtures where the connection is
+# managed by the test framework and properly cleaned up at test teardown
+filterwarnings = [
+    "ignore::ResourceWarning",
+    "ignore:unclosed database:ResourceWarning",
+]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = false
+exclude = [
+    "^build/",
+    "^dist/",
+    "^\\.venv/",
+    "^scripts/",
+]
+
+[[tool.mypy.overrides]]
+module = [
+    "azure.storage.blob",
+    "prophet",
+    "openai",
+]
+ignore_missing_imports = true
+
+[tool.coverage.run]
+source = ["src/ado_git_repo_insights"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]
+fail_under = 75  # floor(77.59 - 2.0) = 75 per COVERAGE_RATCHET.md formula
+show_missing = true
