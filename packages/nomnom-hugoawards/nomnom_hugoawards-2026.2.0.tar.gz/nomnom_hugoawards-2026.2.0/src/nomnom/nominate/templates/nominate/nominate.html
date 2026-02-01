@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% load django_bootstrap5 %}
+{% load markdownify %}
+{% load i18n %}
+{% block title %}
+    Nominate for the {{ election.name }} - {{ CONVENTION_NAME }}
+{% endblock title %}
+{% block content %}
+    <div class="panel scrollable-div">
+        {% block email-control %}
+            {# This block is for the mobile interfaces; it only shows in small viewports #}
+            <div class="d-block d-md-none">
+                <div class="d-grid d-md-flex col-9">
+                    <button type="submit"
+                            form="nominating_ballot"
+                            name="save_and_email"
+                            class="btn btn-primary">{% translate "Email my nominations to me" %}</button>
+                </div>
+            </div>
+            {# This block is for the web interface; it only shows in larger viewports #}
+            <div class="sticky-top d-none d-md-inline-flex justify-content-end vote-email float-end">
+                <div class="d-grid d-md-flex col-9">
+                    <button type="submit"
+                            form="nominating_ballot"
+                            name="save_and_email"
+                            class="btn btn-primary">{% translate "Email my nominations to me" %}</button>
+                </div>
+            </div>
+        {% endblock email-control %}
+        <div class="d-flex justify-content-center h-100 pt-3 pt-md-0">
+            <!-- NOTE: should the id be login here? If so why?
+            Also check widths 9,7,6 ....
+          -->
+            <div class="col-md-9 col-lg-7 col-xl-10">
+                {% block instructions %}
+                    <div class="row pb-3">
+                        <div class="d-flex-row">{% include "nominate/bits/nomination_instructions.html" %}</div>
+                    </div>
+                {% endblock instructions %}
+                {% block form %}
+                    <form id="nominating_ballot" method="post">
+                        {% csrf_token %}
+                        {% for field in form.hidden_fields %}{{ field }}{% endfor %}
+                        {% for category, fieldset_list in form.fieldsets_grouped_by_category.items %}
+                            <!-- put anchor in here -->
+                            <div class="d-flex-row" id="category_{{ category.id }}">
+                                <fieldset>
+                                    <legend>{{ category.name | markdownify:"admin-label" }}</legend>
+                                    {% if category.description %}<p>{{ category.description | markdownify:"admin-content" }}</p>{% endif %}
+                                    {% if category.nominating_details %}
+                                        <details>
+                                            {{ category.nominating_details | markdownify:"admin-content" }}
+                                        </details>
+                                    {% endif %}
+                                    {% for fieldset in fieldset_list %}
+                                        <div class="row">
+                                            {% for field in fieldset %}
+                                                <div class="col">{% bootstrap_field field show_label=False success_css_class="has-error" layout="blank-safe" %}</div>
+                                            {% endfor %}
+                                        </div>
+                                    {% endfor %}
+                                </fieldset>
+                            </div>
+                            <div class="d-flex mb-3 align-items-end flex-column">
+                                <button type="submit"
+                                        class="btn btn-secondary"
+                                        name="save_all"
+                                        hx-trigger="click"
+                                        hx-target="#nominating_ballot"
+                                        hx-swap="outerHTML"
+                                        hx-disabled-elt="closest form"
+                                        hx-post
+                                        value="category_{{ category.id }}">
+                                    {% translate "Save as you go (saves all categories)" %}
+                                </button>
+                            </div>
+                        {% endfor %}
+                        <div class="d-flex-row mb-5">
+                            <button type="submit" class="btn btn-primary" name="save_all">{% translate "Save All" %}</button>
+                        </div>
+                    </form>
+                {% endblock %}
+            </div>
+        </div>
+    </div>
+{% endblock %}
