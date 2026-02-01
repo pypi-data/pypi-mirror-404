@@ -1,0 +1,29 @@
+# File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
+
+from typing import List, Optional
+from typing_extensions import TypeAlias
+
+from pydantic import Field as FieldInfo
+
+from ....._models import BaseModel
+
+__all__ = ["EmbedListResponse", "EmbedListResponseItem"]
+
+
+class EmbedListResponseItem(BaseModel):
+    id: str
+
+    embed_id: str = FieldInfo(alias="embedId")
+
+    agent_logo_url: Optional[str] = FieldInfo(alias="agentLogoUrl", default=None)
+
+    agent_name: Optional[str] = FieldInfo(alias="agentName", default=None)
+
+    primary_color: Optional[str] = FieldInfo(alias="primaryColor", default=None)
+
+    styling: Optional[object] = None
+
+    welcome_message: Optional[str] = FieldInfo(alias="welcomeMessage", default=None)
+
+
+EmbedListResponse: TypeAlias = List[EmbedListResponseItem]
