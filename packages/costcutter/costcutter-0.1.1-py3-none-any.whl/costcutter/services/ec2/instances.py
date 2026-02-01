@@ -1,0 +1,96 @@
+import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Any
+
+from boto3.session import Session
+from botocore.exceptions import ClientError
+
+from costcutter.reporter import get_reporter
+from costcutter.services.common import _get_account_id
+
+SERVICE: str = "ec2"
+RESOURCE: str = "instance"
+logger = logging.getLogger(__name__)
+
+
+def catalog_instances(session: Session, region: str) -> list[str]:
+    client = session.client(service_name="ec2", region_name=region)
+
+    arns: list[str] = []
+    try:
+        reservations = client.describe_instances().get("Reservations", [])
+        arns = [i.get("InstanceId") for r in reservations for i in r.get("Instances", [])]
+        logger.info("[%s][ec2][instance] Found %d instances", region, len(arns))
+    except ClientError as e:
+        logger.error("[%s][ec2][instance] Failed to describe instances: %s", region, e)
+        arns = []
+    return arns
+
+
+def cleanup_instance(session: Session, region: str, instance_id: Any, dry_run: bool = True) -> None:
+    reporter = get_reporter()
+    action = "catalog" if dry_run else "delete"
+    status = "discovered" if dry_run else "executing"
+    account = _get_account_id(session)
+    # Construct proper ARN for the instance resource
+    arn = f"arn:aws:ec2:{region}:{account}:instance/{instance_id}"
+    reporter.record(
+        region,
+        SERVICE,
+        RESOURCE,
+        action,
+        arn=arn,
+        meta={"status": status, "dry_run": dry_run},
+    )
+    client = session.client("ec2", region_name=region)
+    try:
+        response = client.terminate_instances(
+            InstanceIds=[instance_id],
+            Force=True,
+            SkipOsShutdown=True,
+            DryRun=dry_run,
+        )
+        ti = response.get("TerminatingInstances", [])
+        for inst in ti:
+            cur = inst.get("CurrentState", {}).get("Name")
+            prev = inst.get("PreviousState", {}).get("Name")
+            logger.info(
+                "[%s][ec2][instance] terminate requested instance_id=%s previous=%s current=%s dry_run=%s",
+                region,
+                inst.get("InstanceId"),
+                prev,
+                cur,
+                dry_run,
+            )
+        if not dry_run:
+            # Update reporter with success status
+            reporter.record(
+                region,
+                SERVICE,
+                RESOURCE,
+                "delete",
+                arn=arn,
+                meta={"status": "terminated", "dry_run": False},
+            )
+    except ClientError as e:
+        code = e.response.get("Error", {}).get("Code") if hasattr(e, "response") else None
+        if dry_run and code == "DryRunOperation":
+            logger.info("[%s][ec2][instance] dry-run terminate would succeed instance_id=%s", region, instance_id)
+        else:
+            logger.error("[%s][ec2][instance] terminate failed instance_id=%s error=%s", region, instance_id, e)
+            reporter.record(
+                region,
+                SERVICE,
+                RESOURCE,
+                "delete",
+                arn=arn,
+                meta={"status": "failed", "dry_run": dry_run, "error": str(e)},
+            )
+
+
+def cleanup_instances(session: Session, region: str, dry_run: bool = True, max_workers: int = 1) -> None:
+    arns: list = catalog_instances(session=session, region=region)
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        futures = [ex.submit(cleanup_instance, session, region, arn, dry_run) for arn in arns]
+        for fut in as_completed(futures):
+            fut.result()
