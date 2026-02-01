@@ -1,0 +1,437 @@
+import json
+import logging
+import re
+import uuid
+from typing import Any
+
+from appkit_assistant.backend.schemas import (
+    Chunk,
+    ChunkType,
+    Message,
+    MessageType,
+    Thinking,
+    ThinkingStatus,
+    ThinkingType,
+)
+
+logger = logging.getLogger(__name__)
+
+# Minimum number of consecutive links required to format as a list
+MIN_LINKS_FOR_LIST_FORMAT = 2
+
+
+def _format_consecutive_links_as_list(text: str) -> str:
+    """Format multiple consecutive markdown links as a bullet list.
+
+    Detects patterns where markdown links are concatenated directly without
+    spacing (e.g., `[text1](url1)[text2](url2)`) and converts them to a
+    properly formatted bullet list with human-readable link texts.
+
+    Args:
+        text: The markdown text to process.
+
+    Returns:
+        The text with consecutive links formatted as a bullet list.
+    """
+    # Pattern to match consecutive markdown links: [text](url)[text](url)
+    # This regex matches two or more consecutive links
+    consecutive_links_pattern = re.compile(
+        r"(\[[^\]]+\]\([^)]+\))(\[[^\]]+\]\([^)]+\))+", re.MULTILINE
+    )
+
+    def format_links_match(match: re.Match[str]) -> str:
+        """Convert matched consecutive links to a bullet list."""
+        full_match = match.group(0)
+
+        # Extract all individual links from the match
+        link_pattern = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
+        links = link_pattern.findall(full_match)
+
+        if len(links) < MIN_LINKS_FOR_LIST_FORMAT:
+            return full_match
+
+        # Format as a bullet list with proper spacing
+        formatted_links = "\n\n**Quellen:**\n"
+        for link_text, url in links:
+            formatted_links += f"- [{link_text}]({url})\n"
+
+        return formatted_links
+
+    return consecutive_links_pattern.sub(format_links_match, text)
+
+
+class ResponseAccumulator:
+    """
+    Accumulates chunks from streaming response into structured data
+    (Messages, Thinking items, etc.) for UI display.
+    """
+
+    def __init__(self):
+        self.current_reasoning_session: str = ""
+        self.current_tool_session: str = ""
+        self.thinking_items: list[Thinking] = []
+        self.image_chunks: list[Chunk] = []
+        self.messages: list[Message] = []
+        self.show_thinking: bool = False
+        self.current_activity: str = ""
+
+        # State for auth/errors
+        self.pending_auth_server_id: str = ""
+        self.pending_auth_server_name: str = ""
+        self.pending_auth_url: str = ""
+        self.auth_required: bool = False
+        self.error: str | None = None
+
+    @property
+    def auth_required_data(self) -> dict[str, str]:
+        """Return the auth data as a dictionary for compatibility."""
+        return {
+            "server_id": self.pending_auth_server_id,
+            "server_name": self.pending_auth_server_name,
+            "auth_url": self.pending_auth_url,
+        }
+
+    def attach_messages_ref(self, messages: list[Message]) -> None:
+        """Attach a reference to the mutable messages list from state."""
+        self.messages = messages
+
+    def process_chunk(self, chunk: Chunk) -> None:
+        """Process a single chunk and update internal state."""
+        # Update message ID if provided in metadata
+        if (
+            self.messages
+            and self.messages[-1].type == MessageType.ASSISTANT
+            and "message_id" in chunk.chunk_metadata
+        ):
+            self.messages[-1].id = chunk.chunk_metadata["message_id"]
+
+        if chunk.type == ChunkType.TEXT:
+            if self.messages and self.messages[-1].type == MessageType.ASSISTANT:
+                self.messages[-1].text += chunk.text
+                # Extract citations from metadata and add as annotations
+                self._extract_citations_to_annotations(chunk)
+
+        elif chunk.type in (ChunkType.THINKING, ChunkType.THINKING_RESULT):
+            self._handle_reasoning_chunk(chunk)
+
+        elif chunk.type in (
+            ChunkType.TOOL_CALL,
+            ChunkType.TOOL_RESULT,
+            ChunkType.ACTION,
+        ):
+            self._handle_tool_chunk(chunk)
+
+        elif chunk.type in (ChunkType.IMAGE, ChunkType.IMAGE_PARTIAL):
+            self.image_chunks.append(chunk)
+
+        elif chunk.type == ChunkType.COMPLETION:
+            self.show_thinking = False
+            # Post-process message text to format consecutive links as list
+            self._format_message_links()
+
+        elif chunk.type == ChunkType.AUTH_REQUIRED:
+            self._handle_auth_required_chunk(chunk)
+
+        elif chunk.type == ChunkType.PROCESSING:
+            self._handle_processing_chunk(chunk)
+
+        elif chunk.type == ChunkType.ANNOTATION:
+            self._handle_annotation_chunk(chunk)
+
+        elif chunk.type == ChunkType.ERROR:
+            # We append it to the message text if it's not a hard error,
+            # or creates a new message?
+            # Existing logic was appending a new message.
+            self.messages.append(Message(text=chunk.text, type=MessageType.ERROR))
+            self.error = chunk.text
+
+        else:
+            logger.warning("Unhandled chunk type: %s", chunk.type)
+
+    def _get_or_create_tool_session(self, chunk: Chunk) -> str:
+        tool_id = chunk.chunk_metadata.get("tool_id")
+        if tool_id:
+            self.current_tool_session = tool_id
+            return tool_id
+
+        if chunk.type == ChunkType.TOOL_CALL:
+            # Count existing tool calls
+            tool_count = sum(
+                1 for i in self.thinking_items if i.type == ThinkingType.TOOL_CALL
+            )
+            self.current_tool_session = f"tool_{tool_count}"
+            return self.current_tool_session
+
+        if self.current_tool_session:
+            return self.current_tool_session
+
+        # Fallback
+        tool_count = sum(
+            1 for i in self.thinking_items if i.type == ThinkingType.TOOL_CALL
+        )
+        self.current_tool_session = f"tool_{tool_count}"
+        return self.current_tool_session
+
+    def _handle_reasoning_chunk(self, chunk: Chunk) -> None:
+        if chunk.type == ChunkType.THINKING:
+            self.show_thinking = True
+            self.current_activity = "Denke nach..."
+
+        reasoning_session = self._get_or_create_reasoning_session(chunk)
+
+        status = ThinkingStatus.IN_PROGRESS
+        text = ""
+        if chunk.type == ChunkType.THINKING:
+            text = chunk.text
+        elif chunk.type == ChunkType.THINKING_RESULT:
+            status = ThinkingStatus.COMPLETED
+
+        item = self._get_or_create_thinking_item(
+            reasoning_session, ThinkingType.REASONING, text=text, status=status
+        )
+
+        if chunk.type == ChunkType.THINKING:
+            # Check if this is a streaming delta (has "delta" in metadata)
+            is_delta = chunk.chunk_metadata.get("delta") is not None
+            if is_delta:
+                # Streaming delta - append directly without separator
+                item.text = (item.text or "") + chunk.text
+            elif item.text and item.text != text:
+                # Non-delta chunk with different text - append with newline
+                item.text += f"\n{chunk.text}"
+            else:
+                # Initial text
+                item.text = text
+        elif chunk.type == ChunkType.THINKING_RESULT:
+            item.status = ThinkingStatus.COMPLETED
+            if chunk.text:
+                item.text += f" {chunk.text}"
+
+    def _get_or_create_reasoning_session(self, chunk: Chunk) -> str:
+        reasoning_session = chunk.chunk_metadata.get("reasoning_session")
+        if reasoning_session:
+            return reasoning_session
+
+        last_item = self.thinking_items[-1] if self.thinking_items else None
+
+        should_create_new = (
+            not self.current_reasoning_session
+            or (last_item and last_item.type == ThinkingType.TOOL_CALL)
+            or (
+                last_item
+                and last_item.type == ThinkingType.REASONING
+                and last_item.status == ThinkingStatus.COMPLETED
+            )
+        )
+
+        if should_create_new:
+            self.current_reasoning_session = f"reasoning_{uuid.uuid4().hex[:8]}"
+
+        return self.current_reasoning_session
+
+    def _handle_tool_chunk(self, chunk: Chunk) -> None:
+        tool_id = self._get_or_create_tool_session(chunk)
+
+        tool_name = chunk.chunk_metadata.get("tool_name", "Unknown")
+        server_label = chunk.chunk_metadata.get("server_label", "")
+        # Use server_label.tool_name format if both available
+        if server_label and tool_name and tool_name != "Unknown":
+            display_name = f"{server_label}.{tool_name}"
+        else:
+            display_name = tool_name
+
+        logger.debug(
+            "Tool chunk received: type=%s, tool_id=%s, tool_name=%s, "
+            "server_label=%s, display_name=%s",
+            chunk.type,
+            tool_id,
+            tool_name,
+            server_label,
+            display_name,
+        )
+
+        # Only update activity display if we have a real tool name
+        if (
+            chunk.type == ChunkType.TOOL_CALL
+            and display_name
+            and display_name != "Unknown"
+        ):
+            self.current_activity = f"Nutze Werkzeug: {display_name}..."
+
+        status = ThinkingStatus.IN_PROGRESS
+        text = ""
+        parameters = None
+        result = None
+        error = None
+
+        if chunk.type == ChunkType.TOOL_CALL:
+            parameters = chunk.chunk_metadata.get("parameters", chunk.text)
+            text = chunk.chunk_metadata.get("description", "")
+        elif chunk.type == ChunkType.TOOL_RESULT:
+            # Check error flag from metadata - don't rely on text content
+            # as valid results may contain words like "error" in data
+            # Note: metadata values may be strings, so check for "True" string
+            error_value = chunk.chunk_metadata.get("error")
+            is_error = error_value is True or error_value == "True"
+            status = ThinkingStatus.ERROR if is_error else ThinkingStatus.COMPLETED
+            result = chunk.text
+            if is_error:
+                error = chunk.text
+        else:
+            text = chunk.text
+
+        # Only pass tool_name if we have a real value
+        effective_tool_name = display_name if display_name != "Unknown" else None
+
+        item = self._get_or_create_thinking_item(
+            tool_id,
+            ThinkingType.TOOL_CALL,
+            text=text,
+            status=status,
+            tool_name=effective_tool_name,
+            parameters=parameters,
+            result=result,
+            error=error,
+        )
+
+        if chunk.type == ChunkType.TOOL_CALL:
+            item.parameters = parameters
+            item.text = text
+            # Only update tool_name if we have a better value and item needs it
+            if (
+                display_name
+                and display_name != "Unknown"
+                and (not item.tool_name or item.tool_name == "Unknown")
+            ):
+                item.tool_name = display_name
+            item.status = ThinkingStatus.IN_PROGRESS
+        elif chunk.type == ChunkType.TOOL_RESULT:
+            item.status = status
+            item.result = result
+            item.error = error
+            # Also update tool_name from result if item is missing it
+            if (
+                display_name
+                and display_name != "Unknown"
+                and (not item.tool_name or item.tool_name == "Unknown")
+            ):
+                item.tool_name = display_name
+        elif chunk.type == ChunkType.ACTION:
+            item.text += f"\n---\nAktion: {chunk.text}"
+
+    def _get_or_create_thinking_item(
+        self, item_id: str, thinking_type: ThinkingType, **kwargs: Any
+    ) -> Thinking:
+        for item in self.thinking_items:
+            if item.type == thinking_type and item.id == item_id:
+                return item
+
+        new_item = Thinking(type=thinking_type, id=item_id, **kwargs)
+        self.thinking_items.append(new_item)
+        return new_item
+
+    def _handle_auth_required_chunk(self, chunk: Chunk) -> None:
+        self.pending_auth_server_id = chunk.chunk_metadata.get("server_id", "")
+        self.pending_auth_server_name = chunk.chunk_metadata.get("server_name", "")
+        self.pending_auth_url = chunk.chunk_metadata.get("auth_url", "")
+        self.auth_required = True
+
+    def _handle_processing_chunk(self, chunk: Chunk) -> None:
+        """Handle file processing progress chunks."""
+        status = chunk.chunk_metadata.get("status", "")
+
+        # Skip empty/skipped chunks (used for signaling completion without UI)
+        if not chunk.text or status == "skipped":
+            return
+
+        # Show thinking panel when processing
+        self.show_thinking = True
+        self.current_activity = chunk.text
+
+        # Determine item status based on metadata
+        if status == "completed":
+            item_status = ThinkingStatus.COMPLETED
+        elif status in ("failed", "timeout"):
+            item_status = ThinkingStatus.ERROR
+        else:
+            item_status = ThinkingStatus.IN_PROGRESS
+
+        # Use a single processing item that gets updated
+        item = self._get_or_create_thinking_item(
+            "file_processing",
+            ThinkingType.PROCESSING,
+            text=chunk.text,
+            status=item_status,
+            tool_name="Dateiverarbeitung",
+        )
+
+        item.text = chunk.text
+        item.status = item_status
+
+        # Store error if present
+        if status in ("failed", "timeout"):
+            item.error = chunk.chunk_metadata.get("error", chunk.text)
+
+    def _handle_annotation_chunk(self, chunk: Chunk) -> None:
+        """Handle file annotation/citation chunks."""
+        if not self.messages:
+            return
+
+        last_message = self.messages[-1]
+        if last_message.type != MessageType.ASSISTANT:
+            return
+
+        # Extract annotation text (filename or source reference)
+        annotation_text = chunk.text
+        if annotation_text and annotation_text not in last_message.annotations:
+            last_message.annotations.append(annotation_text)
+
+    def _extract_citations_to_annotations(self, chunk: Chunk) -> None:
+        """Extract citations from TEXT chunk metadata and add as annotations."""
+        citations_json = chunk.chunk_metadata.get("citations")
+        if not citations_json:
+            return
+
+        if not self.messages:
+            return
+
+        last_message = self.messages[-1]
+        if last_message.type != MessageType.ASSISTANT:
+            return
+
+        try:
+            citations = json.loads(citations_json)
+        except json.JSONDecodeError:
+            logger.warning("Failed to parse citations JSON: %s", citations_json)
+            return
+
+        max_citation_length = 50
+        for citation in citations:
+            # Prefer document_title, fall back to cited_text excerpt
+            annotation_text = citation.get("document_title")
+            if not annotation_text:
+                cited_text = citation.get("cited_text", "")
+                # Use first N chars of cited_text as fallback
+                if len(cited_text) > max_citation_length:
+                    annotation_text = cited_text[:max_citation_length] + "..."
+                else:
+                    annotation_text = cited_text
+
+            if annotation_text and annotation_text not in last_message.annotations:
+                last_message.annotations.append(annotation_text)
+
+    def _format_message_links(self) -> None:
+        """Format consecutive markdown links in the last message as a bullet list.
+
+        This post-processes the accumulated message text to improve readability
+        when the LLM returns multiple links concatenated without proper spacing.
+        """
+        if not self.messages:
+            return
+
+        last_message = self.messages[-1]
+        if last_message.type != MessageType.ASSISTANT:
+            return
+
+        if last_message.text:
+            last_message.text = _format_consecutive_links_as_list(last_message.text)
