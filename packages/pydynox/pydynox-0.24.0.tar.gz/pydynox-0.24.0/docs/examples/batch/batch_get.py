@@ -1,0 +1,46 @@
+"""Async batch get example."""
+
+import asyncio
+
+from pydynox import DynamoDBClient, Model, ModelConfig
+from pydynox.attributes import NumberAttribute, StringAttribute
+
+client = DynamoDBClient()
+
+
+class User(Model):
+    model_config = ModelConfig(table="users", client=client)
+    pk = StringAttribute(partition_key=True)
+    sk = StringAttribute(sort_key=True)
+    name = StringAttribute()
+    age = NumberAttribute(default=0)
+
+
+async def main():
+    # First create some users
+    await client.put_item("users", {"pk": "USER#1", "sk": "PROFILE", "name": "John", "age": 30})
+    await client.put_item("users", {"pk": "USER#2", "sk": "PROFILE", "name": "Jane", "age": 25})
+    await client.put_item("users", {"pk": "USER#3", "sk": "PROFILE", "name": "Bob", "age": 35})
+
+    # Client-level batch get (async by default)
+    keys = [
+        {"pk": "USER#1", "sk": "PROFILE"},
+        {"pk": "USER#2", "sk": "PROFILE"},
+        {"pk": "USER#3", "sk": "PROFILE"},
+    ]
+    items = await client.batch_get("users", keys)
+    for item in items:
+        print(item["name"])
+
+    # Model-level batch get - returns typed instances
+    users = await User.batch_get(keys)
+    for user in users:
+        print(user.name, user.age)
+
+    # Return as dicts for better performance
+    users_dict = await User.batch_get(keys, as_dict=True)
+    for user in users_dict:
+        print(user["name"])
+
+
+asyncio.run(main())

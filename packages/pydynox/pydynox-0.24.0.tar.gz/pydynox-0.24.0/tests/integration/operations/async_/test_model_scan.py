@@ -1,0 +1,374 @@
+"""Integration tests for Model.scan() and Model.count() methods.
+
+Uses a dedicated table (scan_test_table) to avoid conflicts with other tests.
+Scan reads ALL items in a table, so it cannot share tables with other tests.
+"""
+
+import pytest
+from pydynox import Model, ModelConfig, set_default_client
+from pydynox.attributes import NumberAttribute, StringAttribute
+
+SCAN_TABLE = "scan_test_table"
+
+
+@pytest.fixture
+def scan_table(dynamo):
+    """Create a dedicated table for scan tests."""
+    if not dynamo.sync_table_exists(SCAN_TABLE):
+        dynamo.sync_create_table(
+            SCAN_TABLE,
+            partition_key=("pk", "S"),
+            sort_key=("sk", "S"),
+            wait=True,
+        )
+    yield dynamo
+    # Cleanup: delete all items after test (sync)
+    items = list(dynamo.sync_scan(SCAN_TABLE))
+    for item in items:
+        dynamo.sync_delete_item(SCAN_TABLE, {"pk": item["pk"], "sk": item["sk"]})
+
+
+@pytest.fixture
+def user_model(scan_table):
+    """Create a User model for testing."""
+    set_default_client(scan_table)
+
+    class User(Model):
+        model_config = ModelConfig(table=SCAN_TABLE)
+        pk = StringAttribute(partition_key=True)
+        sk = StringAttribute(sort_key=True)
+        name = StringAttribute()
+        age = NumberAttribute()
+        status = StringAttribute()
+
+    User._client_instance = None
+    return User
+
+
+@pytest.fixture
+def populated_users(scan_table, user_model):
+    """Create test data for scan tests."""
+    items = [
+        {"pk": "USER#1", "sk": "PROFILE", "name": "Alice", "age": 25, "status": "active"},
+        {"pk": "USER#2", "sk": "PROFILE", "name": "Bob", "age": 30, "status": "active"},
+        {"pk": "USER#3", "sk": "PROFILE", "name": "Charlie", "age": 17, "status": "inactive"},
+        {"pk": "USER#4", "sk": "PROFILE", "name": "Diana", "age": 22, "status": "active"},
+        {"pk": "USER#5", "sk": "PROFILE", "name": "Eve", "age": 35, "status": "inactive"},
+    ]
+    for item in items:
+        scan_table.sync_put_item(SCAN_TABLE, item)
+    return user_model
+
+
+@pytest.mark.asyncio
+async def test_model_scan_all_items(populated_users):
+    """Test Model.scan returns all items."""
+    User = populated_users
+
+    # WHEN we scan (async)
+    users = [u async for u in User.scan()]
+
+    # THEN all items are returned as model instances
+    assert len(users) == 5
+    for user in users:
+        assert isinstance(user, User)
+
+
+@pytest.mark.asyncio
+async def test_model_scan_with_filter(populated_users):
+    """Test Model.scan with filter_condition."""
+    User = populated_users
+
+    # WHEN we scan with filter (async)
+    users = [u async for u in User.scan(filter_condition=User.status == "active")]
+
+    # THEN only matching items are returned
+    assert len(users) == 3
+    for user in users:
+        assert user.status == "active"
+
+
+@pytest.mark.asyncio
+async def test_model_scan_with_numeric_filter(populated_users):
+    """Test Model.scan with numeric filter."""
+    User = populated_users
+
+    users = [u async for u in User.scan(filter_condition=User.age >= 25)]
+
+    assert len(users) == 3
+    for user in users:
+        assert user.age >= 25
+
+
+@pytest.mark.asyncio
+async def test_model_scan_with_complex_filter(populated_users):
+    """Test Model.scan with complex filter condition."""
+    User = populated_users
+
+    users = [
+        u async for u in User.scan(filter_condition=(User.status == "active") & (User.age >= 25))
+    ]
+
+    assert len(users) == 2
+    for user in users:
+        assert user.status == "active"
+        assert user.age >= 25
+
+
+@pytest.mark.asyncio
+async def test_model_scan_first(populated_users):
+    """Test Model.scan().first() returns first result."""
+    User = populated_users
+
+    user = await User.scan().first()
+
+    assert user is not None
+    assert isinstance(user, User)
+
+
+@pytest.mark.asyncio
+async def test_model_scan_first_with_filter(populated_users):
+    """Test Model.scan().first() with filter."""
+    User = populated_users
+
+    user = await User.scan(filter_condition=User.name == "Alice").first()
+
+    assert user is not None
+    assert user.name == "Alice"
+
+
+@pytest.mark.asyncio
+async def test_model_scan_first_empty(populated_users):
+    """Test Model.scan().first() returns None when no results."""
+    User = populated_users
+
+    user = await User.scan(filter_condition=User.name == "NONEXISTENT").first()
+
+    assert user is None
+
+
+@pytest.mark.asyncio
+async def test_model_scan_iteration(populated_users):
+    """Test Model.scan can be iterated with async for loop."""
+    User = populated_users
+
+    count = 0
+    async for user in User.scan():
+        assert isinstance(user, User)
+        count += 1
+
+    assert count == 5
+
+
+@pytest.mark.asyncio
+async def test_model_scan_empty_result(scan_table, user_model):
+    """Test Model.scan with no items in table."""
+
+    # Create a model pointing to a different table
+    class EmptyUser(Model):
+        model_config = ModelConfig(table="empty_test_table")
+        pk = StringAttribute(partition_key=True)
+        sk = StringAttribute(sort_key=True)
+
+    EmptyUser._client_instance = None
+
+    # Create the empty table
+    scan_table.sync_create_table(
+        "empty_test_table",
+        partition_key=("pk", "S"),
+        sort_key=("sk", "S"),
+    )
+
+    users = [u async for u in EmptyUser.scan()]
+
+    assert users == []
+
+    # Cleanup
+    scan_table.sync_delete_table("empty_test_table")
+
+
+@pytest.mark.asyncio
+async def test_model_scan_last_evaluated_key(populated_users):
+    """Test Model.scan exposes last_evaluated_key."""
+    User = populated_users
+
+    result = User.scan()
+
+    # None before iteration
+    assert result.last_evaluated_key is None
+
+    # iterate all (async)
+    _ = [u async for u in result]
+
+    # None after consuming all (no more pages)
+    assert result.last_evaluated_key is None
+
+
+@pytest.mark.asyncio
+async def test_model_scan_consistent_read(populated_users):
+    """Test Model.scan with consistent_read=True."""
+    User = populated_users
+
+    users = [u async for u in User.scan(consistent_read=True)]
+
+    assert len(users) == 5
+
+
+@pytest.mark.asyncio
+async def test_model_scan_with_limit(populated_users):
+    """Test Model.scan with limit returns only N items total."""
+    User = populated_users
+
+    # GIVEN 5 items in table
+    # WHEN we scan with limit=2
+    users = [u async for u in User.scan(limit=2)]
+
+    # THEN only 2 items are returned (limit stops iteration)
+    assert len(users) == 2
+
+
+# ========== COUNT TESTS ==========
+
+
+@pytest.mark.asyncio
+async def test_model_count_all(populated_users):
+    """Test Model.count returns total count."""
+    User = populated_users
+
+    # WHEN we count all items (async)
+    count, metrics = await User.count()
+
+    # THEN the count is correct
+    assert count == 5
+    assert metrics is not None
+    assert metrics.duration_ms > 0
+
+
+@pytest.mark.asyncio
+async def test_model_count_with_filter(populated_users):
+    """Test Model.count with filter_condition."""
+    User = populated_users
+
+    count, _ = await User.count(filter_condition=User.status == "active")
+
+    assert count == 3
+
+
+@pytest.mark.asyncio
+async def test_model_count_with_numeric_filter(populated_users):
+    """Test Model.count with numeric filter."""
+    User = populated_users
+
+    count, _ = await User.count(filter_condition=User.age >= 25)
+
+    assert count == 3
+
+
+@pytest.mark.asyncio
+async def test_model_count_with_complex_filter(populated_users):
+    """Test Model.count with complex filter."""
+    User = populated_users
+
+    count, _ = await User.count(filter_condition=(User.status == "active") & (User.age >= 25))
+
+    assert count == 2
+
+
+@pytest.mark.asyncio
+async def test_model_count_empty_table(scan_table, user_model):
+    """Test Model.count on empty table."""
+
+    # Create a model pointing to a different table
+    class EmptyUser(Model):
+        model_config = ModelConfig(table="empty_count_table")
+        pk = StringAttribute(partition_key=True)
+        sk = StringAttribute(sort_key=True)
+
+    EmptyUser._client_instance = None
+
+    # Create the empty table
+    scan_table.sync_create_table(
+        "empty_count_table",
+        partition_key=("pk", "S"),
+        sort_key=("sk", "S"),
+    )
+
+    count, _ = await EmptyUser.count()
+
+    assert count == 0
+
+    # Cleanup
+    scan_table.sync_delete_table("empty_count_table")
+
+
+@pytest.mark.asyncio
+async def test_model_count_no_matches(populated_users):
+    """Test Model.count when filter matches nothing."""
+    User = populated_users
+
+    count, _ = await User.count(filter_condition=User.name == "NONEXISTENT")
+
+    assert count == 0
+
+
+@pytest.mark.asyncio
+async def test_model_count_consistent_read(populated_users):
+    """Test Model.count with consistent_read=True."""
+    User = populated_users
+
+    count, _ = await User.count(consistent_read=True)
+
+    assert count == 5
+
+
+# ========== as_dict tests ==========
+
+
+@pytest.mark.asyncio
+async def test_model_scan_as_dict_returns_dicts(populated_users):
+    """Test Model.scan(as_dict=True) returns plain dicts."""
+    User = populated_users
+
+    users = [u async for u in User.scan(as_dict=True)]
+
+    assert len(users) == 5
+    for user in users:
+        assert isinstance(user, dict)
+        assert "pk" in user
+        assert "name" in user
+
+
+@pytest.mark.asyncio
+async def test_model_scan_as_dict_false_returns_models(populated_users):
+    """Test Model.scan(as_dict=False) returns Model instances."""
+    User = populated_users
+
+    users = [u async for u in User.scan(as_dict=False)]
+
+    assert len(users) == 5
+    for user in users:
+        assert isinstance(user, User)
+
+
+@pytest.mark.asyncio
+async def test_model_scan_as_dict_with_filter(populated_users):
+    """Test Model.scan(as_dict=True) works with filter_condition."""
+    User = populated_users
+
+    users = [u async for u in User.scan(filter_condition=User.status == "active", as_dict=True)]
+
+    assert len(users) == 3
+    for user in users:
+        assert isinstance(user, dict)
+        assert user["status"] == "active"
+
+
+@pytest.mark.asyncio
+async def test_model_scan_as_dict_first(populated_users):
+    """Test Model.scan(as_dict=True).first() returns dict."""
+    User = populated_users
+
+    user = await User.scan(as_dict=True).first()
+
+    assert user is not None
+    assert isinstance(user, dict)

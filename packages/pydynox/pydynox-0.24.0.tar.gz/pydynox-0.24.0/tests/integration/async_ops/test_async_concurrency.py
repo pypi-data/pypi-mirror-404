@@ -1,0 +1,165 @@
+"""Tests that prove async operations don't block the event loop."""
+
+import asyncio
+import time
+
+import pytest
+from pydynox import DynamoDBClient, Model, ModelConfig, set_default_client
+from pydynox.attributes import StringAttribute
+
+TABLE_NAME = "async_concurrency_test"
+
+
+@pytest.fixture
+def async_table(dynamo: DynamoDBClient):
+    """Create a test table for async tests."""
+    set_default_client(dynamo)
+    if not dynamo.sync_table_exists(TABLE_NAME):
+        dynamo.sync_create_table(
+            TABLE_NAME,
+            partition_key=("pk", "S"),
+            sort_key=("sk", "S"),
+            wait=True,
+        )
+    yield dynamo
+
+
+class Item(Model):
+    model_config = ModelConfig(table=TABLE_NAME)
+    pk = StringAttribute(partition_key=True)
+    sk = StringAttribute(sort_key=True)
+    data = StringAttribute()
+
+
+@pytest.mark.asyncio
+async def test_async_does_not_block_event_loop(async_table: DynamoDBClient):
+    """Prove that async operations allow other tasks to run.
+
+    This test runs a counter task alongside DynamoDB operations.
+    If async is working, the counter should increment while waiting for DynamoDB.
+    If it was blocking, the counter would stay at 0.
+    """
+    counter = 0
+    counter_running = True
+
+    async def increment_counter():
+        """Task that increments counter every 1ms."""
+        nonlocal counter
+        while counter_running:
+            counter += 1
+            await asyncio.sleep(0.001)  # 1ms
+
+    # GIVEN a counter task running in the background
+    counter_task = asyncio.create_task(increment_counter())
+
+    # WHEN we do DynamoDB operations
+    for i in range(5):
+        item = {"pk": "BLOCK#test", "sk": f"ITEM#{i}", "data": f"data-{i}"}
+        await async_table.put_item(TABLE_NAME, item)
+
+    # Stop counter
+    counter_running = False
+    await counter_task
+
+    # THEN the counter should have incremented (async didn't block)
+    assert counter > 0, "Counter should have incremented - async is not working!"
+
+
+@pytest.mark.asyncio
+@pytest.mark.flaky(reruns=3)
+async def test_concurrent_operations_faster_than_sequential(async_table: DynamoDBClient):
+    """Prove that concurrent async operations are faster than sequential.
+
+    If async is truly non-blocking, running N operations concurrently
+    should take roughly the same time as 1 operation, not N times longer.
+
+    Note: This test is flaky because LocalStack may have connection limits
+    that cause concurrent operations to queue up.
+    """
+    n_operations = 20
+
+    # GIVEN test items in the table
+    for i in range(n_operations):
+        item = {"pk": "SPEED#test", "sk": f"ITEM#{i}", "data": f"data-{i}"}
+        await async_table.put_item(TABLE_NAME, item)
+
+    # Warm up LocalStack
+    await async_table.get_item(TABLE_NAME, {"pk": "SPEED#test", "sk": "ITEM#0"})
+
+    # WHEN we measure sequential gets
+    start_seq = time.perf_counter()
+    for i in range(n_operations):
+        await async_table.get_item(TABLE_NAME, {"pk": "SPEED#test", "sk": f"ITEM#{i}"})
+    sequential_time = time.perf_counter() - start_seq
+
+    # AND measure concurrent gets
+    start_conc = time.perf_counter()
+    await asyncio.gather(
+        *[
+            async_table.get_item(TABLE_NAME, {"pk": "SPEED#test", "sk": f"ITEM#{i}"})
+            for i in range(n_operations)
+        ]
+    )
+    concurrent_time = time.perf_counter() - start_conc
+
+    # THEN concurrent should be faster
+    assert concurrent_time < sequential_time, "Concurrent should be faster than sequential"
+
+
+@pytest.mark.asyncio
+async def test_model_async_concurrent_saves(async_table: DynamoDBClient):
+    """Test that Model async saves can run concurrently."""
+    n_items = 10
+
+    # GIVEN multiple model instances
+    items = [Item(pk="MODEL#conc", sk=f"ITEM#{i}", data=f"data-{i}") for i in range(n_items)]
+
+    # WHEN we save all concurrently
+    await asyncio.gather(*[item.save() for item in items])
+
+    # THEN all items should be saved
+    for i in range(n_items):
+        loaded = await Item.get(pk="MODEL#conc", sk=f"ITEM#{i}")
+        assert loaded is not None
+        assert loaded.data == f"data-{i}"
+
+
+@pytest.mark.asyncio
+async def test_mixed_operations_concurrent(async_table: DynamoDBClient):
+    """Test running different operation types concurrently."""
+    # GIVEN some items in the table
+    for i in range(3):
+        item = {"pk": "MIXED#test", "sk": f"ITEM#{i}", "data": f"original-{i}"}
+        await async_table.put_item(TABLE_NAME, item)
+
+    # WHEN we run mixed operations concurrently (get, update, delete, put)
+    results = await asyncio.gather(
+        async_table.get_item(TABLE_NAME, {"pk": "MIXED#test", "sk": "ITEM#0"}),
+        async_table.update_item(
+            TABLE_NAME,
+            {"pk": "MIXED#test", "sk": "ITEM#1"},
+            updates={"data": "updated-1"},
+        ),
+        async_table.delete_item(TABLE_NAME, {"pk": "MIXED#test", "sk": "ITEM#2"}),
+        async_table.put_item(
+            TABLE_NAME,
+            {"pk": "MIXED#test", "sk": "ITEM#3", "data": "new-3"},
+        ),
+    )
+
+    # THEN get returns original data
+    get_result = results[0]
+    assert get_result is not None
+    assert get_result["data"] == "original-0"
+
+    # AND update applied
+    updated = await async_table.get_item(TABLE_NAME, {"pk": "MIXED#test", "sk": "ITEM#1"})
+    assert updated["data"] == "updated-1"
+
+    # AND delete removed the item
+    deleted = await async_table.get_item(TABLE_NAME, {"pk": "MIXED#test", "sk": "ITEM#2"})
+    assert deleted is None
+
+    # AND new item was created
+    new_item = await async_table.get_item(TABLE_NAME, {"pk": "MIXED#test", "sk": "ITEM#3"})
+    assert new_item["data"] == "new-3"

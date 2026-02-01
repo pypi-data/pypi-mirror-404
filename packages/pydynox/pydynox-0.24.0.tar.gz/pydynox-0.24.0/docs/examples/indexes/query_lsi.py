@@ -1,0 +1,82 @@
+"""Query LSI - find orders by customer with different sort keys."""
+
+import asyncio
+
+from pydynox import Model, ModelConfig, get_default_client
+from pydynox.attributes import NumberAttribute, StringAttribute
+from pydynox.indexes import LocalSecondaryIndex
+
+client = get_default_client()
+
+
+class Order(Model):
+    """Order model with LSI."""
+
+    model_config = ModelConfig(table="orders_lsi")
+
+    customer_id = StringAttribute(partition_key=True)
+    order_id = StringAttribute(sort_key=True)
+    status = StringAttribute()
+    total = NumberAttribute()
+    created_at = StringAttribute()
+
+    # LSI for querying by status
+    status_index = LocalSecondaryIndex(
+        index_name="status-index",
+        sort_key="status",
+    )
+
+
+async def main():
+    # Create table with LSI
+    if not await client.table_exists("orders_lsi"):
+        await client.create_table(
+            "orders_lsi",
+            partition_key=("customer_id", "S"),
+            sort_key=("order_id", "S"),
+            local_secondary_indexes=[
+                {
+                    "index_name": "status-index",
+                    "range_key": ("status", "S"),
+                    "projection": "ALL",
+                }
+            ],
+        )
+
+    # Create some orders
+    await Order(
+        customer_id="CUST#1",
+        order_id="ORD#001",
+        status="pending",
+        total=100,
+        created_at="2024-01-01",
+    ).save()
+    await Order(
+        customer_id="CUST#1",
+        order_id="ORD#002",
+        status="shipped",
+        total=250,
+        created_at="2024-01-02",
+    ).save()
+    await Order(
+        customer_id="CUST#1",
+        order_id="ORD#003",
+        status="pending",
+        total=75,
+        created_at="2024-01-03",
+    ).save()
+
+    # Query all orders for customer (using main table)
+    print("All orders for CUST#1:")
+    async for order in Order.query(partition_key="CUST#1"):
+        print(f"  {order.order_id}: {order.status} - ${order.total}")
+
+    # Query orders by status using LSI
+    print("\nPending orders for CUST#1 (via LSI):")
+    async for order in Order.status_index.query(
+        customer_id="CUST#1", sort_key_condition=Order.status == "pending"
+    ):
+        print(f"  {order.order_id}: ${order.total}")
+
+
+asyncio.run(main())

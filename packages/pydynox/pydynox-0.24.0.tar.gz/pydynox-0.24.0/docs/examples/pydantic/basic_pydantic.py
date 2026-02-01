@@ -1,0 +1,30 @@
+import asyncio
+
+from pydantic import BaseModel, EmailStr
+from pydynox import get_default_client
+from pydynox.integrations.pydantic import dynamodb_model
+
+# Get the default client (assumes set_default_client was called)
+client = get_default_client()
+
+
+@dynamodb_model(table="users", partition_key="pk", sort_key="sk", client=client)
+class User(BaseModel):
+    pk: str
+    sk: str
+    name: str
+    email: EmailStr
+    age: int = 0
+
+
+async def main():
+    # Pydantic validation works
+    user = User(pk="USER#1", sk="PROFILE", name="John", email="john@test.com")
+    await user.save()
+
+    # Get
+    user = await User.get(pk="USER#1", sk="PROFILE")
+    print(user.name)
+
+
+asyncio.run(main())

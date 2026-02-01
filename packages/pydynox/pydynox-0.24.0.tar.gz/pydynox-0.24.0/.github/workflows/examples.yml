@@ -1,0 +1,42 @@
+name: Test examples
+
+on:
+    pull_request:
+        branches: [main]
+        paths:
+            - "docs/examples/**"
+            - "tests/examples/**"
+            - ".github/workflows/examples.yml"
+    workflow_dispatch:
+
+jobs:
+    test-examples:
+        name: Test documentation examples
+        runs-on: ubuntu-latest
+
+        steps:
+            - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+            - name: Set up Python
+              uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+              with:
+                  python-version: "3.12"
+
+            - name: Build wheel
+              uses: PyO3/maturin-action@86b9d133d34bc1b40018696f782949dac11bd380 # v1.49.4
+              with:
+                  command: build
+                  args: --release --out dist
+                  sccache: true
+
+            - name: Create venv and install
+              run: |
+                  python -m venv .venv
+                  source .venv/bin/activate
+                  pip install dist/*.whl
+                  pip install testcontainers boto3 pydantic[email] pytest aws-lambda-powertools opentelemetry-api opentelemetry-sdk
+
+            - name: Run examples
+              run: |
+                  source .venv/bin/activate
+                  python tests/examples/run_all_examples.py

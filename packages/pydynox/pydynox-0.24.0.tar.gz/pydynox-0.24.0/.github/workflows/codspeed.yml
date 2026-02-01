@@ -1,0 +1,63 @@
+name: CodSpeed
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  CARGO_TERM_COLOR: always
+  UV_FROZEN: "1"
+  CARGO_PROFILE_RELEASE_DEBUG: "line-tables-only"
+  CARGO_PROFILE_RELEASE_STRIP: "false"
+
+jobs:
+  codspeed:
+    name: Run benchmarks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@61cb8a9741eeb8a550a1b8544337180c0fc8476b # v7.2.0
+        with:
+          enable-cache: true
+
+      - name: Cache cargo
+        uses: actions/cache@8b402f58fbc84540c8b491a91e594a4576fec3d7 # v5.0.2
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-codspeed-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Set up Python 3.12
+        run: uv python install 3.12
+
+      - name: Install Rust with llvm-tools
+        uses: dtolnay/rust-toolchain@4be9e76fd7c4901c61fb841f559994984270fce7 # stable
+        with:
+          components: llvm-tools
+
+      - name: Create venv and install dependencies
+        run: |
+          uv venv --python 3.12
+          uv pip install maturin pytest pytest-asyncio pytest-codspeed hypothesis "moto[dynamodb,server]" boto3 pydantic pynamodb testcontainers
+
+      - name: Build and install pydynox
+        run: uv run maturin develop --release
+
+      - name: Run benchmarks
+        uses: CodSpeedHQ/action@e736f0d2aeb36da38e9f08eca4dff7967408d154 # v4.8.2
+        with:
+          mode: walltime
+          run: uv run pytest --ignore=tests/benchmark --codspeed
