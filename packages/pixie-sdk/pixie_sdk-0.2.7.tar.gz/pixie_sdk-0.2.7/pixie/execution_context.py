@@ -1,0 +1,299 @@
+"""Execution context management for pause/resume functionality."""
+
+import logging
+from contextvars import ContextVar
+import threading
+from typing import Dict, Optional, Sequence
+from uuid import uuid4
+
+import janus
+from pydantic import JsonValue
+
+from pixie.types import (
+    AppRunCancelled,
+    RunStatus,
+    BreakpointDetail,
+    BreakpointTiming,
+    BreakpointType,
+    ExecutionContext,
+    BreakpointConfig,
+    AppRunUpdate,
+    InputRequired,
+    PromptForSpan,
+)
+
+# ContextVar for storing execution context per async task
+_execution_context: ContextVar[Optional[ExecutionContext]] = ContextVar(
+    "execution_context", default=None
+)
+
+# Global registry of active runs for mutation access
+_active_runs: Dict[str, ExecutionContext] = {}
+
+# Logger
+_logger = logging.getLogger(__name__)
+
+
+def init_run(run_id: str) -> ExecutionContext:
+    """Initialize a new execution context for a run in the current context.
+
+    Args:
+        run_id: Unique identifier for the run.
+
+    Returns:
+        The newly created ExecutionContext.
+
+    Raises:
+        RuntimeError: If an execution context is already set for the current context.
+    """
+    if _execution_context.get() is not None:
+        raise RuntimeError("Execution context is already set")
+    ctx = ExecutionContext(
+        run_id=run_id,
+        status_queue=janus.Queue(),
+        resume_event=threading.Event(),
+        breakpoint_config=None,
+    )
+    _execution_context.set(ctx)
+    _active_runs[run_id] = ctx
+    _logger.info("Initialized execution context for run_id=%s", run_id)
+    return ctx
+
+
+def reload_run_context(run_id: str) -> None:
+    """Reload the contextVar value from the global registry.
+
+    This should be called whenever exec context changes to ensure the current
+    context variable reflects the latest state.
+
+    Args:
+        run_id: Unique identifier for the run to reload.
+
+    Raises:
+        ValueError: If the run ID is not found in the registry.
+    """
+    ctx = get_run_context(run_id)
+    if not ctx:
+        raise ValueError(f"Run ID '{run_id}' not found")
+    if ctx:
+        _execution_context.set(ctx)
+
+
+def get_current_breakpoint_config() -> Optional[BreakpointConfig]:
+    """Get the current breakpoint configuration from execution context.
+
+    Returns:
+        The current BreakpointConfig if available, None otherwise.
+    """
+    ctx = _execution_context.get()
+    if ctx:
+        return ctx.breakpoint_config
+    return None
+
+
+def get_current_context() -> Optional[ExecutionContext]:
+    """Get the current execution context.
+
+    Returns:
+        The current ExecutionContext if available, None otherwise.
+    """
+    return _execution_context.get()
+
+
+def unregister_run(run_id: str) -> None:
+    """Unregister a run from the global active runs registry.
+
+    Args:
+        run_id: Unique identifier for the run to unregister.
+    """
+    if run_id in _active_runs:
+        del _active_runs[run_id]
+        _logger.info("Unregistered run: %s", run_id)
+
+
+def get_run_context(run_id: str) -> Optional[ExecutionContext]:
+    """Get execution context for a specific run ID.
+
+    Args:
+        run_id: Unique identifier for the run.
+
+    Returns:
+        The ExecutionContext for the run, or None if not found.
+    """
+    return _active_runs.get(run_id)
+
+
+def emit_status_update(
+    status: RunStatus | None,
+    user_input_requirement: InputRequired | None = None,
+    user_input: Optional[JsonValue] = None,
+    data: Optional[JsonValue] = None,
+    breakpt: Optional[BreakpointDetail] = None,
+    trace: Optional[dict] = None,
+    prompt_for_span: Optional[PromptForSpan] = None,
+) -> None:
+    """Emit a status update synchronously using sync queue interface.
+
+    This is a synchronous wrapper for emit_status_update that uses the sync
+    interface of janus queue. Use this when you need to emit updates from
+    synchronous code or different threads (e.g., span processors).
+
+    Args:
+        status: The status to emit, or None to end the stream
+        user_input_requirement: Optional input requirement (converted to schema)
+        user_input: Optional user input data
+        data: Optional data string
+        breakpt: Optional breakpoint details
+        trace: Optional trace data dict
+        prompt_for_span: Optional prompt information
+    """
+    ctx = _execution_context.get()
+    if ctx:
+        if status is None:
+            update = None
+            _logger.debug("Emitted terminal status update for run %s", ctx.run_id)
+        else:
+            # Convert InputRequired to JSON schema
+            user_input_schema = None
+            if user_input_requirement is not None:
+                user_input_schema = user_input_requirement.get_json_schema()
+
+            update = AppRunUpdate(
+                run_id=ctx.run_id,
+                status=status,
+                user_input=user_input,
+                user_input_schema=user_input_schema,
+                data=data,
+                breakpoint=breakpt,
+                trace=trace,
+                prompt_for_span=prompt_for_span,
+            )
+            _logger.debug(
+                "Emitted status update: %s for run %s", update.status, ctx.run_id
+            )
+        ctx.status_queue.sync_q.put(update)
+
+
+def set_breakpoint(
+    run_id: str,
+    timing: BreakpointTiming,
+    types: Sequence[BreakpointType],
+) -> BreakpointConfig:
+    """Set pause configuration for a run.
+
+    Args:
+        run_id: Unique identifier for the run.
+        timing: When to pause (BEFORE or AFTER).
+        types: List of breakpoint types to pause on.
+
+    Returns:
+        The created BreakpointConfig.
+
+    Raises:
+        ValueError: If the run ID is not found.
+    """
+    ctx = get_run_context(run_id)
+    if not ctx:
+        raise ValueError(f"Run ID '{run_id}' not found")
+
+    breakpt_config = BreakpointConfig(
+        id=uuid4().hex,
+        timing=timing,
+        breakpoint_types=list(types),
+    )
+    ctx.breakpoint_config = breakpt_config
+    _logger.info(
+        "Breakpoint set for run_id=%s, timing=%s, types=%s",
+        run_id,
+        breakpt_config.timing,
+        breakpt_config.breakpoint_types,
+    )
+    return breakpt_config
+
+
+def wait_for_resume() -> None:
+    """Block the current thread until the run is resumed.
+
+    This function will block until resume_run is called for the current execution context.
+    If the run is cancelled while waiting, it will raise AppRunCancelled.
+
+    Raises:
+        AppRunCancelled: If the run was cancelled during the pause.
+    """
+    ctx = _execution_context.get()
+    if ctx is None:
+        _logger.warning(
+            "No execution context found in current context, cannot wait for resume"
+        )
+        return
+
+    _logger.debug("Waiting for resume for run_id=%s, waiting for resume...", ctx.run_id)
+    ctx.resume_event.wait()
+    # Check one more time after waking up
+    if ctx.cancelled:
+        _logger.info("Run cancelled during pause for run_id=%s", ctx.run_id)
+        raise AppRunCancelled(f"Run {ctx.run_id} was cancelled")
+
+    ctx.breakpoint_config = None
+    _logger.debug("Cleared pause config for run %s", ctx.run_id)
+    ctx.resume_event.clear()
+    _logger.info("Resumed for run_id=%s", ctx.run_id)
+
+
+def resume_run(run_id: str) -> bool:
+    """Trigger resume for a paused run.
+
+    Args:
+        run_id: Unique identifier for the run to resume.
+
+    Returns:
+        True if the run was successfully resumed, False if already running.
+
+    Raises:
+        ValueError: If the run ID is not found.
+    """
+    ctx = get_run_context(run_id)
+    if not ctx:
+        raise ValueError(f"Run ID '{run_id}' not found")
+
+    if ctx.resume_event.is_set():
+        # Already resumed or not paused
+        _logger.info(
+            "Run_id=%s is not paused or already resumed",
+            run_id,
+        )
+        return False
+
+    ctx.resume_event.set()
+    _logger.debug("Trigger resume for run_id=%s", run_id)
+    return True
+
+
+def cancel_run() -> bool:
+    """Cancel a running or paused run.
+
+    Sets the cancellation flag which will cause the run to terminate.
+    If the run is paused, it will also trigger the resume event to unblock it.
+
+    Args:
+        run_id: The ID of the run to cancel
+
+    Returns:
+        True if the run was found and cancelled, False otherwise
+    """
+    ctx = _execution_context.get()
+    if not ctx:
+        _logger.warning(
+            "No execution context found in current context, cannot cancel run"
+        )
+        return False
+
+    if ctx.cancelled:
+        _logger.info("Run_id=%s is already cancelled", ctx.run_id)
+        return False
+
+    ctx.cancelled = True
+    ctx.resume_event.set()
+    _logger.info("Resume run and set cancellation flag for run_id=%s", ctx.run_id)
+
+    return True
