@@ -1,0 +1,265 @@
+# MCP Context Graph
+
+A self-contained, in-memory graph database for AI Agents. Provides semantic code understanding through the Model Context Protocol (MCP).
+
+## Why This Tool?
+
+AI coding assistants often struggle with large codebases. They either:
+- Read entire files (expensive, hits context limits)
+- Grep for text (misses semantic relationships)
+- Lose track of where functions are called from
+
+**MCP Context Graph solves this by building a semantic graph of your codebase** that the AI can query efficiently.
+
+### Key Differentiators
+
+| Feature | Benefit |
+|---------|---------|
+| **Token-Level Source Maps** | Stores minified signatures but can expand to exact original source with character-accurate mapping |
+| **Semantic Call Graph** | "Who calls this function?" answered in milliseconds, not by reading every file |
+| **Polyglot Engine** | Python, TypeScript, JavaScript parsed with tree-sitter grammars |
+| **Zero Install** | Run instantly with `uvx` - no pip install, no dependencies to manage |
+| **MCP Native** | Built for AI agents - exposes tools through Model Context Protocol |
+| **Smart Exclusions** | Respects `.gitignore`, skips `node_modules`, `.venv`, `__pycache__` automatically |
+| **Lazy Ingestion** | Files indexed on-demand, auto-refreshed when modified |
+
+### How It Works
+
+```
+Your Codebase                    MCP Context Graph                AI Agent
+     |                                  |                              |
+     |  ──── tree-sitter parse ────>    |                              |
+     |                                  |                              |
+     |  <── minified signatures ────    |                              |
+     |      + source maps               |                              |
+     |                                  |                              |
+     |                                  |  <── find_callers("fn") ──   |
+     |                                  |  ──> [caller1, caller2] ───> |
+     |                                  |                              |
+     |                                  |  <── expand_source(id) ────  |
+     |                                  |  ──> exact original code ─>  |
+```
+
+The AI gets fast semantic queries without loading entire files. When it needs the full source, it can expand specific symbols using source maps.
+
+## Features
+
+- **Polyglot Support**: Parses Python, TypeScript, and JavaScript using tree-sitter
+- **Source Maps**: Token-level provenance for precise context extraction
+- **Lazy Ingestion**: Files are indexed on-demand and refreshed automatically
+- **Zero Configuration**: Works instantly via `uvx` with sensible defaults
+
+## Installation
+
+### Primary Method (Recommended)
+
+No installation required. Run directly with `uvx`:
+
+```bash
+uvx mcp-context-graph /path/to/your/project
+```
+
+### Alternative: Install via pip/uv
+
+```bash
+# Using uv
+uv pip install mcp-context-graph
+
+# Using pip
+pip install mcp-context-graph
+```
+
+## How to Use
+
+MCP Context Graph runs as an MCP server that AI assistants can connect to. Configure it in your MCP client:
+
+### A. In Cline (VS Code)
+
+Add to your Cline MCP settings (`cline_mcp_settings.json`):
+
+```json
+{
+  "mcpServers": {
+    "context-graph": {
+      "command": "uvx",
+      "args": ["mcp-context-graph", "."],
+      "autoApprove": []
+    }
+  }
+}
+```
+
+The `.` argument uses the current workspace directory as the project root.
+
+### B. In Claude Desktop
+
+Add to your Claude Desktop configuration (`claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "context-graph": {
+      "command": "uvx",
+      "args": ["mcp-context-graph", "/absolute/path/to/your/project"]
+    }
+  }
+}
+```
+
+**Note**: Claude Desktop requires an absolute path. Relative paths like `.` will not work correctly.
+
+## Available Tools
+
+Once connected, the following tools are available to the AI agent:
+
+| Tool | Description |
+|------|-------------|
+| `index_project` | Full scan of project directory. Builds the code graph. |
+| `find_symbol` | Find function/class definitions by name. |
+| `find_callers` | Find all locations that call a specific function. |
+| `get_context` | Get a context window around a symbol (callers, callees). |
+| `expand_source` | De-minify a node using source maps for full original code. |
+| `debug_dump_graph` | Export the graph as Mermaid, JSON, or DOT format. |
+
+### Example Workflow
+
+1. **AI indexes the project:**
+   ```
+   index_project()
+   ```
+
+2. **AI finds a function definition:**
+   ```
+   find_symbol(name="calculate_tax", include_calls=true)
+   ```
+
+3. **AI explores what calls that function:**
+   ```
+   find_callers(name="calculate_tax")
+   ```
+
+4. **AI gets broader context (2 levels of connections):**
+   ```
+   get_context(name="calculate_tax", depth=2, format="markdown")
+   ```
+
+5. **AI expands a specific symbol to see full source:**
+   ```
+   expand_source(symbol_id="abc123")
+   ```
+
+## Source Maps: The Secret Sauce
+
+Most code indexers store either:
+- Full source code (expensive)
+- Just symbol names (loses context)
+
+MCP Context Graph stores **minified signatures** with **character-accurate source maps**:
+
+```python
+# Original (45 bytes)
+def calculate_tax(amount: float, rate: float) -> float:
+    """Calculate tax for the given amount."""
+    return amount * rate
+
+# Stored signature (minified)
+def calculate_tax(amount: float, rate: float) -> float: ...
+
+# Source map
+Segment(minified: 0-52, original: 0-52)  # signature preserved exactly
+```
+
+When the AI needs the full implementation, `expand_source` maps the minified offsets back to the original file and returns exact source code.
+
+## Benchmarks
+
+### Benchmark Results
+
+| Metric | Value |
+|--------|-------|
+| Files processed | 46 |
+| Nodes created | 624 |
+| Raw source size | 341.2 KB |
+| Minified size | 24.6 KB |
+| **Compression ratio** | **13.9x** |
+| Ingest time | 46 ms |
+| find_definition | 5 μs |
+| find_callers | 9 μs |
+| get_context(depth=2) | 5 μs |
+
+### Cost Efficiency (USD per 1,000 calls)
+
+*Token counts via OpenRouter API (exact)*
+
+| Model | Full File | Graph | Savings | % |
+|-------|-----------|-------|---------|---|
+| gpt-5.2 | $184.05 | $15.40 | **$168.65** | 91.6% |
+| gpt-4o-mini | $11.04 | $0.92 | **$10.12** | 91.6% |
+| claude-sonnet-4.5 | $281.17 | $25.41 | **$255.76** | 91.0% |
+| gemini-2.5-pro | $320.24 | $28.78 | **$291.46** | 91.0% |
+
+**Key takeaways:**
+- The AI can work with a **14x smaller** representation of your codebase
+- Queries complete in **microseconds**, not seconds
+- **91-93% cost savings** on context token usage across all major LLM providers
+- Full source is always available on-demand via source maps
+
+Run benchmarks on your own project:
+```bash
+OPENROUTER_API_KEY=your-key uv run python benchmarks/run_benchmarks.py /path/to/project
+```
+
+## CLI Usage
+
+```bash
+# Index current directory
+uvx mcp-context-graph .
+
+# Index a specific project
+uvx mcp-context-graph /path/to/project
+
+# Show version
+uvx mcp-context-graph --version
+```
+
+## Development
+
+### Prerequisites
+
+- Python 3.12+
+- [uv](https://github.com/astral-sh/uv) package manager
+
+### Setup
+
+```bash
+# Clone the repository
+git clone https://github.com/padobrik/mcp-context-graph.git
+cd mcp-context-graph
+
+# Install dependencies
+uv sync
+
+# Run tests
+uv run pytest tests/
+
+# Run linting
+uv run ruff check .
+
+# Run type checking
+uv run mypy src/
+```
+
+### Project Structure
+
+```
+src/mcp_context_graph/
+  core/           # Graph data structures (Node, Edge, Graph)
+  ingest/         # File parsing and graph construction
+  languages/      # Language-specific configurations (Python, TypeScript)
+  mcp/            # MCP server and tool handlers
+  provenance/     # Source map implementation
+```
+
+## License
+
+MIT License. See [LICENSE](LICENSE) for details.
