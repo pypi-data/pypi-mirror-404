@@ -1,0 +1,194 @@
+[project]
+name = "moai-adk"
+version = "1.12.11"
+description = "MoAI Agentic Development Kit - SPEC-First DDD with Alfred SuperAgent & Unified moai-core-* Skills"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "COPYLEFT-3.0"}
+authors = [
+    {name = "MoAI Team", email = "support@moduai.kr"}
+]
+keywords = ["agentic", "ai", "claude", "ddd", "spec-first", "alfred", "development", "toolkit"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "License :: Other/Proprietary License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Software Development :: Testing",
+    "Operating System :: OS Independent",
+    "Operating System :: Microsoft :: Windows :: Windows 10",
+    "Operating System :: Microsoft :: Windows :: Windows 11",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS"
+]
+dependencies = [
+    "click>=8.1.0",
+    "rich>=13.0.0",
+    "pyfiglet>=1.0.2",
+    "questionary>=2.0.0",
+    "InquirerPy>=0.3.4",  # Modern CLI prompts with fuzzy search
+    "gitpython>=3.1.45",
+    "packaging>=21.0",
+    "pyyaml>=6.0",
+    "jinja2>=3.0.0",
+    "requests>=2.28.0",
+    "psutil>=7.1.3",
+    "aiohttp>=3.13.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.4.2,<9.0.0",
+    "pytest-asyncio>=1.2.0",
+    "pytest-cov>=7.0.0",
+    "pytest-xdist>=3.8.0",
+    "pytest-benchmark>=4.0.0",
+    "hypothesis>=6.100.0",
+    "pytest-mock>=3.15.1",
+    "ruff>=0.1.0",
+    "mypy>=1.7.0",
+    "types-PyYAML>=6.0.0",
+    "types-requests>=2.28.0",
+    "black>=24.0.0"
+]
+security = [
+    "pip-audit>=2.7.0",
+    "bandit>=1.8.0"
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+norecursedirs = [".venv", ".git", "build", "dist", "*.egg-info"]
+addopts = "-v --strict-markers"  # Coverage removed for faster development
+markers = [
+    "e2e: End-to-end workflow tests",
+    "smoke: Critical smoke tests (blocking for deployment)",
+    "critical: Critical functionality tests",
+    "unit: Unit tests (isolated, no external dependencies)",
+    "integration: Integration tests (requires external services)",
+    "slow: Slow-running tests",
+]
+
+[tool.coverage.run]
+source = ["src/moai_adk"]
+omit = ["tests/*", "*/__pycache__/*"]
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+skip_covered = false
+fail_under = 0  # Non-blocking: coverage reported but not enforced
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N"]
+ignore = ["N999"]  # Allow hyphenated module names for skills (moai-workflow-project)
+
+[tool.mypy]
+python_version = "3.14"
+mypy_path = "src"
+explicit_package_bases = true
+warn_return_any = false
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = false
+check_untyped_defs = false
+disallow_incomplete_defs = false
+disallow_untyped_defs = false
+disallow_untyped_calls = false
+no_implicit_optional = false
+warn_no_return = false
+warn_unreachable = false
+strict_optional = false
+ignore_missing_imports = true
+
+# Hook scripts bypass strict type checking (local imports)
+[[tool.mypy.overrides]]
+module = ".claude.hooks.moai.*"
+ignore_errors = true
+
+# Core lib modules use standard checking
+[[tool.mypy.overrides]]
+module = ".claude.hooks.moai.lib.*"
+ignore_errors = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/moai_adk"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.2,<9.0.0",
+    "pytest-asyncio>=1.2.0",
+    "pytest-cov>=7.0.0",
+    "pytest-xdist>=3.8.0",
+    "pytest-benchmark>=4.0.0",
+    "hypothesis>=6.100.0",
+    "pytest-mock>=3.15.1",
+    "ruff>=0.1.0",
+    "mypy>=1.7.0",
+    "types-PyYAML>=6.0.0",
+    "types-requests>=2.28.0",
+    "black>=24.0.0",
+]
+security = [
+    "pip-audit>=2.7.0",
+    "bandit>=1.8.0",
+]
+
+
+# Exclude developer-only tools and utilities from package distribution
+# Only exclude specific files, not entire directories
+[tool.hatch.build]
+exclude = [
+    "src/moai_adk/templates/.moai/scripts/dev",  # Developer-only utilities
+    "src/moai_adk/templates/.moai/backups",  # Backup files
+    "src/moai_adk/templates/.moai/temp",  # Temporary files
+    "src/moai_adk/templates/.claude/commands/moai/99-release.md",  # Release command - local-only
+    "src/moai_adk/templates/.moai/release",  # Release scripts - local-only
+    "src/moai_adk/templates/README.md",  # README files - local-only
+    "src/moai_adk/templates/README.ko.md",  # README files - local-only
+    "src/moai_adk/templates/README.ja.md",  # README files - local-only
+    "src/moai_adk/templates/README.zh.md",  # README files - local-only
+
+    # ✅ INCLUDE: User-facing workflows (distributed to users)
+    # - ci-universal.yml (Multi-language CI/CD)
+    # - security-secrets-check.yml (Security scanner)
+    # - spec-issue-sync.yml (SPEC → GitHub Issue sync)
+
+    # ❌ EXCLUDE: MoAI-ADK internal workflows (development only)
+    "src/moai_adk/templates/.github/workflows/moai-gitflow.yml",
+    "src/moai_adk/templates/.github/workflows/moai-release-create.yml",
+    "src/moai_adk/templates/.github/workflows/moai-release-pipeline.yml",
+
+    "tests",  # Test directory
+    ".git",  # Git directory
+    ".github/workflows",  # GitHub Actions for MoAI-ADK itself (local development)
+]
+
+[project.scripts]
+moai-adk = "moai_adk.__main__:main"
+moai = "moai_adk.__main__:main"
+moai-worktree = "moai_adk.cli.worktree.__main__:main"
+moai-wt = "moai_adk.cli.worktree.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/modu-ai/moai-adk"
+Repository = "https://github.com/modu-ai/moai-adk"
+Issues = "https://github.com/modu-ai/moai-adk/issues"
+Changelog = "https://github.com/modu-ai/moai-adk/releases"
