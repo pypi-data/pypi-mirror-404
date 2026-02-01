@@ -1,0 +1,168 @@
+[tool.poetry]
+name = "ampel-core"
+version = "0.10.6a22"
+description = "Alice in Modular Provenance-Enabled Land"
+authors = ["Valery Brinnel"]
+maintainers = ["Jakob van Santen <jakob.van.santen@desy.de>"]
+license = "BSD-3-Clause"
+readme = "README.md"
+homepage = "https://ampelproject.github.io"
+repository = "https://github.com/AmpelProject/Ampel-core"
+documentation = "https://ampelproject.github.io/Ampel-core"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+    "Typing :: Typed",
+]
+packages = [{include = "ampel"}]
+exclude = [
+    "ampel/py.typed",
+]
+include = [
+  { path = "conf/**/*.yaml", format = "wheel" },
+  { path = "conf/**/*.yaml", format = "sdist" },
+  { path = "conf/**/*.yml",  format = "wheel" },
+  { path = "conf/**/*.yml",  format = "sdist" }
+]
+
+[tool.poetry.scripts]
+ampel = 'ampel.cli.main:main'
+
+[tool.poetry.plugins.cli]
+'job_Run_schema_file(s)' = 'ampel.cli.JobCommand'
+'process_Run_single_task' = 'ampel.cli.ProcessCommand'
+'run_Run_selected_process(es)_from_config' = 'ampel.cli.RunCommand'
+'log_Select,_format_and_either_view_(tail_mode_available)_or_save_logs' = 'ampel.cli.LogCommand'
+'view_Select,_load_and_save_fresh_"ampel_views"' = 'ampel.cli.ViewCommand'
+'db_Initialize,_dump,_delete_specific_databases_or_collections' = 'ampel.cli.DBCommand'
+'config_Build_or_update_config._Fetch_or_append_config_elements' = 'ampel.cli.ConfigCommand'
+'t2_Match_and_either_reset_or_view_raw_t2_documents' = 'ampel.cli.T2Command'
+'buffer_Match_and_view_or_save_ampel_buffers' = 'ampel.cli.BufferCommand'
+'event_Show_events_information' = 'ampel.cli.EventCommand'
+
+[tool.poetry.dependencies]
+ampel-interface = {version = ">=0.10.5a8,<0.11"}
+python = "^3.10"
+pymongo = "^4.0"
+schedule = "^1.0.0"
+xxhash = "^3.0.0"
+psutil = "^7.0.0"
+prometheus-client = ">=0.16"
+rich = "*"
+# queue
+mongomock = {version = "^4.3", optional = true}
+
+
+[tool.poetry.extras]
+queue = ["mongomock"]
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^9.0.0"
+pytest-cov = "^7.0.0"
+mypy = "^1.13.0"
+pytest-asyncio = "^1.0.0"
+pytest-mock = "^3.14.0"
+mongomock = "*"
+httpx = "^0.28.0"
+types-setuptools = "^65.1.0"
+types-PyYAML = "^6.0.12"
+types-requests = "^2.28.11.15"
+types-ujson = "^5.10.0.20240515"
+types-psutil = "^5.9.5.20240516"
+
+[build-system]
+requires = ["poetry-core>=1.0.0", "setuptools>=40.8.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "--showlocals -r a"
+filterwarnings = [
+    "error",
+    "default:Pydantic serializer warnings:UserWarning",
+    "default:There is no current event loop:DeprecationWarning",
+    "default:unclosed:ResourceWarning",
+    # warning deep in fastapi
+    "ignore:.*general_plain_validator_function.*:DeprecationWarning",
+]
+
+[tool.mypy]
+packages = ["ampel"]
+namespace_packages = true
+show_error_codes = true
+warn_unused_ignores = true
+enable_error_code = "ignore-without-code"
+plugins = [
+    "pydantic.mypy"
+]
+
+[tool.pydantic-mypy]
+init_typed = true
+
+[[tool.mypy.overrides]]
+module = "ampel.abstract.*"
+disable_error_code = "empty-body"
+
+[[tool.mypy.overrides]]
+module = [
+    "IPython.*",
+    "matplotlib",
+]
+ignore_missing_imports = true
+
+[tool.ruff]
+target-version = "py310"
+exclude = [
+    "docs",
+]
+
+[tool.ruff.lint]
+select = [
+    "E4",
+    "E7",
+    "E9",
+    "F",
+    "I",
+    "UP",
+    "B",
+    "DTZ",
+    "T20",
+    "PT",
+    "RET",
+    "SLF",
+    "SIM",
+    # # "ARG", # sometimes your arguments have to conform to an interface
+    # # "ERA", # seems to prohibit all comments, that's bad
+    "PL",
+    "PERF",
+    "RUF",
+]
+ignore = [
+	"E401", # Multiple imports on one line
+	"I001", # Import block is un-sorted or un-formatted
+	"SIM102", # Use a single `if` statement instead of nested `if` statements
+    "E741", # ambiguous variable name
+    "UP009", # UTF-8 encoding declaration is unnecessary
+    "PLR09", # too many (arguments|branches)
+    "PLR2004", # Magic value used in comparison
+    "RUF012", # mutable class properties (are harmless everywhere BaseModel is used)
+    "RUF018", # assignment expressions in asserts are fine
+    "RUF023", # unsorted __slots__ are fine
+]
+
+[tool.ruff.lint.per-file-ignores]
+"ampel/test/*" = [
+    "T20",
+    "E731",
+    "SLF001",
+]
+"ampel/cli/*" = ["T20"]
+"ampel/config/collector/*" = ["T20"]
+
+[tool.ruff.lint.flake8-bugbear]
+# Allow default arguments like, e.g., `data: List[str] = fastapi.Query(None)`.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["ampel"]

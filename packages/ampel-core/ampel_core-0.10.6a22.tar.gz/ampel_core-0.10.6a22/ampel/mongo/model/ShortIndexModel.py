@@ -1,0 +1,35 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# File:                Ampel-core/ampel/mongo/model/ShortIndexModel.py
+# License:             BSD-3-Clause
+# Author:              valery brinnel <firstname.lastname@gmail.com>
+# Date:                16.04.2020
+# Last Modified Date:  30.10.2025
+# Last Modified By:    valery brinnel <firstname.lastname@gmail.com>
+
+from typing import Any, Dict # noqa: UP035
+
+from ampel.base.AmpelBaseModel import AmpelBaseModel
+from ampel.mongo.model.FieldModel import FieldModel
+
+
+class ShortIndexModel(AmpelBaseModel):
+
+	field: str
+	args: None | Dict[str, Any] = None # noqa: UP006
+
+	def dict(self, **kwargs) ->  Dict[str, Any]: # noqa: UP006
+		if self.args:
+			return {
+				"index": [(self.field, 1)],
+				"args": self.args
+			}
+		return {"index": [(self.field, 1)]}
+
+
+	def get_id(self) -> str:
+		"""
+		Returns an indexId similar to what pymongo index_information outputs.
+		Ex: [('tranId', 1), ('channel', 1)] -> tranId_1_channel_1
+		"""
+		return FieldModel(field=self.field).get_id()

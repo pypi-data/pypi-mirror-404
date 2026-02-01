@@ -1,0 +1,37 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# File:                Ampel-core/ampel/demo/DemoPointT2Unit.py
+# License:             BSD-3-Clause
+# Author:              valery brinnel <firstname.lastname@gmail.com>
+# Date:                25.03.2020
+# Last Modified Date:  15.12.2022
+# Last Modified By:    valery brinnel <firstname.lastname@gmail.com>
+
+from random import randint
+from time import time
+
+from ampel.abstract.AbsPointT2Unit import AbsPointT2Unit
+from ampel.content.DataPoint import DataPoint
+from ampel.struct.UnitResult import UnitResult
+from ampel.types import UBson
+
+
+class DemoPointT2Unit(AbsPointT2Unit):
+
+	test_parameter: int = 1
+	chatty: bool = False
+
+	def process(self, datapoint: DataPoint) -> UBson | UnitResult:
+
+		ret = {
+			"datapoint_id": datapoint['id'],
+			"time": time(),
+			"test_parameter": self.test_parameter
+		}
+
+		if self.chatty:
+			self.logger.info(f"Parsing datapoint {datapoint['id']} (test_parameter={self.test_parameter})")
+
+		if randint(0, 1) > 0.5:
+			return ret
+		return UnitResult(code=10, tag="MY_CUSTOM_TAG", body=ret)
