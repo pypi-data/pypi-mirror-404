@@ -1,0 +1,244 @@
+from __future__ import annotations
+
+from datetime import date, datetime
+from decimal import Decimal
+from typing import TYPE_CHECKING, Any
+
+from clinicedc_constants import NEW
+from clinicedc_constants.units import EGFR_UNITS, PERCENT
+from clinicedc_utils import EgfrCkdEpi2009, EgfrCockcroftGault, egfr_percent_change
+from clinicedc_utils.constants import CKD_EPI, COCKCROFT_GAULT
+from dateutil.relativedelta import relativedelta
+from django.core.exceptions import ObjectDoesNotExist
+from django.db import transaction
+from django.utils import timezone
+
+from edc_reportable.models import ReferenceRangeCollection
+from edc_reportable.utils import get_grade_for_value
+from edc_utils.age import age
+
+from .get_drop_notification_model import get_egfr_drop_notification_model_cls
+
+if TYPE_CHECKING:
+    from edc_visit_tracking.typing_stubs import RelatedVisitProtocol
+
+
+class EgfrError(Exception):
+    pass
+
+
+class Egfr:
+    calculators: dict = {CKD_EPI: EgfrCkdEpi2009, COCKCROFT_GAULT: EgfrCockcroftGault}  # noqa: RUF012
+
+    def __init__(
+        self,
+        baseline_egfr_value: Decimal | float | None = None,
+        gender: str | None = None,
+        ethnicity: str | None = None,
+        age_in_years: int | None = None,
+        dob: date | None = None,
+        weight_in_kgs: Decimal | float | None = None,
+        report_datetime: datetime | None = None,
+        creatinine_value: Decimal | float | None = None,
+        creatinine_units: str | None = None,
+        formula_name: str | None = None,
+        value_threshold: Decimal | float | None = None,
+        percent_drop_threshold: Decimal | float | None = None,
+        reference_range_collection: ReferenceRangeCollection | None = None,
+        reference_range_collection_name: str | None = None,
+        calling_crf: Any | None = None,
+        related_visit: RelatedVisitProtocol | None = None,
+        assay_datetime: datetime | None = None,
+        egfr_drop_notification_model: str | None = None,
+    ):
+        self._egfr_value: Decimal | None = None
+        self._egfr_grade = None
+        self._egfr_drop_value: Decimal | None = None
+        self._egfr_drop_grade = None
+        self._formula_name = formula_name
+        self.assay_date: date | None = None
+        self.related_visit = None
+        self.baseline_egfr_value = baseline_egfr_value
+        self.calculator_cls = self.calculators.get(self.formula_name)
+        self.age_in_years = age_in_years
+        self.dob = dob
+        self.weight_in_kgs = weight_in_kgs
+        self.egfr_drop_notification_model = egfr_drop_notification_model
+        self.egfr_drop_units = PERCENT
+        self.egfr_units = EGFR_UNITS
+        self.ethnicity = ethnicity
+        self.gender = gender
+        if not reference_range_collection:
+            try:
+                self.reference_range_collection = ReferenceRangeCollection.objects.get(
+                    name=reference_range_collection_name
+                )
+            except ObjectDoesNotExist as e:
+                raise ObjectDoesNotExist(f"{e} Got {reference_range_collection_name}") from e
+        else:
+            self.reference_range_collection = reference_range_collection
+        self.report_datetime = report_datetime
+        self.value_threshold = value_threshold
+        self.percent_drop_threshold = percent_drop_threshold
+
+        if self.dob:
+            self.age_in_years = age(
+                born=self.dob,
+                reference_dt=self.report_datetime,
+            ).years
+        elif not self.dob and self.age_in_years:
+            self.dob = (self.report_datetime - relativedelta(years=self.age_in_years)).date()
+        else:
+            raise EgfrError("Expected `age_in_years` or `dob`. Got None for both.")
+
+        if calling_crf:
+            self.creatinine_units = calling_crf.creatinine_units
+            self.creatinine_value = calling_crf.creatinine_value
+            self.percent_drop_threshold = calling_crf.percent_drop_threshold
+            self.related_visit = calling_crf.related_visit
+            self.report_datetime = calling_crf.report_datetime
+            self.assay_date = calling_crf.assay_datetime.date()
+        else:
+            self.creatinine_units = creatinine_units
+            self.creatinine_value = creatinine_value
+            self.percent_drop_threshold = percent_drop_threshold
+            self.related_visit = related_visit
+            self.report_datetime = report_datetime
+            if assay_datetime:
+                self.assay_date = assay_datetime.date()
+
+        if self.percent_drop_threshold is not None and self.percent_drop_threshold < 1.0:
+            raise EgfrError(
+                "Attr `percent_drop_threshold` should be a percentage. "
+                f"Got {self.percent_drop_threshold}"
+            )
+
+        self.on_value_threshold_reached()
+
+        self.on_percent_drop_threshold_reached()
+
+    @property
+    def formula_name(self) -> str:
+        if self._formula_name not in self.calculators:
+            raise EgfrError(
+                f"Invalid formula_name. Expected one of {list(self.calculators.keys())}. "
+                f"Got {self._formula_name}."
+            )
+        return self._formula_name
+
+    def on_value_threshold_reached(self) -> None:
+        """A hook to respond if egfr value is at or beyond the value
+        threshold.
+        """
+        pass
+
+    def on_percent_drop_threshold_reached(self) -> None:
+        """A hook to respond if egfr percent drop from baseline
+        is at or beyond the percent drop threshold.
+        """
+        if (
+            self.egfr_drop_value
+            and self.percent_drop_threshold is not None
+            and self.egfr_drop_value >= self.percent_drop_threshold
+        ):
+            self.create_or_update_egfr_drop_notification()
+
+    @property
+    def egfr_value(self) -> float:
+        if self._egfr_value is None:
+            opts = dict(
+                gender=self.gender,
+                age_in_years=self.age_in_years,
+                creatinine_value=self.creatinine_value,
+                creatinine_units=self.creatinine_units,
+            )
+            if self.formula_name == COCKCROFT_GAULT:
+                opts.update(weight=self.get_weight_in_kgs())
+            elif self.formula_name == CKD_EPI:
+                opts.update(ethnicity=self.ethnicity)
+            self._egfr_value = self.calculator_cls(**opts).value
+        return self._egfr_value
+
+    @property
+    def egfr_grade(self) -> int | None:
+        if self._egfr_grade is None:
+            grading_data, _ = get_grade_for_value(
+                self.reference_range_collection,
+                value=self.egfr_value,
+                label="egfr",
+                gender=self.gender,
+                dob=self.dob,
+                report_datetime=self.report_datetime,
+                units=self.egfr_units,
+                age_units="years",
+            )
+            if grading_data:
+                self._egfr_grade = grading_data.grade
+        return self._egfr_grade
+
+    @property
+    def egfr_drop_value(self) -> float:
+        if self._egfr_drop_value is None:
+            if self.baseline_egfr_value:
+                egfr_drop_value = egfr_percent_change(
+                    float(self.egfr_value), float(self.baseline_egfr_value)
+                )
+            else:
+                egfr_drop_value = 0.0000
+            self._egfr_drop_value = max(egfr_drop_value, 0.0)
+        return self._egfr_drop_value
+
+    @property
+    def egfr_drop_grade(self) -> int | None:
+        if self._egfr_drop_grade is None:
+            grading_data, _ = get_grade_for_value(
+                self.reference_range_collection,
+                value=self.egfr_drop_value,
+                label="egfr_drop",
+                gender=self.gender,
+                dob=self.dob,
+                report_datetime=self.report_datetime,
+                units=self.egfr_drop_units,
+                age_units="years",
+            )
+            if grading_data:
+                self._egfr_drop_grade = grading_data.grade
+        return self._egfr_drop_grade
+
+    def get_weight_in_kgs(self) -> float | None:
+        return self.weight_in_kgs
+
+    def create_or_update_egfr_drop_notification(self):
+        """Creates or updates the `eGFR notification model`"""
+        with transaction.atomic():
+            try:
+                obj = self.egfr_drop_notification_model_cls.objects.get(
+                    subject_visit__id=self.related_visit.id
+                )
+            except ObjectDoesNotExist:
+                obj = self.egfr_drop_notification_model_cls.objects.create(
+                    subject_visit_id=self.related_visit.id,
+                    report_datetime=self.report_datetime,
+                    egfr_value=self.egfr_value,
+                    creatinine_date=self.assay_date,
+                    creatinine_value=self.creatinine_value,
+                    creatinine_units=self.creatinine_units,
+                    weight=self.get_weight_in_kgs(),
+                    egfr_percent_change=self.egfr_drop_value,
+                    report_status=NEW,
+                    site_id=self.related_visit.site.id,
+                )
+            else:
+                obj.egfr_value = self.egfr_value
+                obj.creatinine_value = self.creatinine_value
+                obj.weight = self.get_weight_in_kgs()
+                obj.egfr_percent_change = self.egfr_drop_value
+                obj.creatinine_date = self.assay_date
+                obj.modified = timezone.now()
+                obj.save()
+        obj.refresh_from_db()
+        return obj
+
+    @property
+    def egfr_drop_notification_model_cls(self):
+        return get_egfr_drop_notification_model_cls()
