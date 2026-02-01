@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  workflow_call:
+    inputs:
+      run-sonar:
+        required: false
+        default: false
+        type: boolean
+      run-dependency-check:
+        required: false
+        default: false
+        type: boolean
+    secrets:
+      SONAR_TOKEN:
+        required: false
+
+env:
+  UV_FROZEN: 1
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version-file: .python-version
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run linter
+        run: uv run ruff check .
+
+      - name: Run format check
+        run: uv run ruff format --check .
+
+      - name: Run type checker
+        run: uv run ty check
+
+      - name: Run dependency check
+        if: inputs.run-dependency-check
+        run: uv run pip-audit --skip-editable --verbose
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: ${{ !inputs.run-sonar && 1 || 0 }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version-file: .python-version
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run tests
+        run: uv run pytest
+
+      - name: Run SonarQube scan
+        if: inputs.run-sonar
+        uses: SonarSource/sonarqube-scan-action@v6
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
