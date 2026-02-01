@@ -1,0 +1,132 @@
+[project]
+name = "cheetah-greb"
+version = "2.1.2"
+description = "AI-powered intelligent code search - client package with grep, read, and AST analysis (GPU reranking via cloud API)"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [
+    {name = "Greb Team", email = "cheetahai69@gmail.com"},
+]
+keywords = ["code-search", "llm", "ai", "developer-tools", "mcp-server", "code-analysis"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
+    "Topic :: Software Development :: Code Generators",
+    "Topic :: Text Processing :: Indexing",
+    "Framework :: FastAPI",
+]
+
+dependencies = [
+    "openai>=1.0.0",
+    "pydantic>=2.0.2",
+    "httpx>=0.25.0",
+    "python-dotenv>=1.0.0",
+    "requests>=2.32.4",
+    "tiktoken>=0.5.0",
+    "mcp>=1.2.1",
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "sse-starlette>=1.6.0",
+    "starlette>=0.27.0",
+    # GPU dependencies removed - now server-side only
+    # fastembed, onnxruntime, flashrank moved to python-gpu-server
+    "tree-sitter>=0.24.0",
+    "tree-sitter-language-pack>=0.7.0",
+]
+
+[project.optional-dependencies]
+server = [
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+]
+mcp = [
+    "sse-starlette>=1.6.0",
+    "starlette>=0.27.0",
+]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "black>=23.10.0",
+    "isort>=5.12.0",
+    "mypy>=1.6.0",
+    "ruff>=0.1.0"
+]
+all = [
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "sse-starlette>=1.6.0",
+    "starlette>=0.27.0",
+]
+
+[project.scripts]
+greb = "greb.cli.main:main"
+greb-mcp = "greb.mcp_server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+exclude = [
+    # Server-side only (PROPRIETARY - NOT for distribution)
+    "src/server.py",
+    "src/pipeline/rerank.py",
+    "src/pipeline/orchestrator.py",
+    "src/pipeline/intelligent_orchestrator.py",
+    "src/pipeline/token_tracker.py",
+    # Client-side tools only (grep, read, AST)
+    # These ARE included in the package
+]
+artifacts = [
+    "src/.rgignore",
+    "src/binaries/**/*",
+]
+
+[tool.hatch.build.targets.wheel.sources]
+"src" = "greb"
+
+[tool.hatch.build.targets.sdist]
+exclude = [
+    ".env",
+    ".env.*",
+    ".env.local",
+    ".env.example",
+    "config/*.json",
+    "config/*.yaml",
+    "config/*.yml",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "*.pyc",
+    ".pytest_cache",
+    ".coverage",
+    "docs",
+    "tests",
+    ".gitignore",
+    ".python-version",
+    "uv.lock",
+    ".rgignore",
+    # Proprietary server-side files
+    "src/server.py",
+    "src/pipeline/rerank.py",
+    "src/pipeline/orchestrator.py",  
+    "src/pipeline/intelligent_orchestrator.py",
+    "src/pipeline/token_tracker.py",
+]
+
+[tool.hatch.envs.default]
+deps = [
+    "hatchling",
+    "wheel",
+    "build[virtualenv]"
+]
