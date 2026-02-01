@@ -1,0 +1,165 @@
+Metadata-Version: 2.4
+Name: obsidian-vault-rag
+Version: 0.1.0
+Summary: Obsidian RAG CLI - Ingest and Chat with your notes
+Project-URL: Homepage, https://github.com/sfilges/obsidian
+Project-URL: Repository, https://github.com/sfilges/obsidian
+Project-URL: Issues, https://github.com/sfilges/obsidian/issues
+Project-URL: Changelog, https://github.com/sfilges/obsidian/blob/master/CHANGELOG.md
+Project-URL: Documentation, https://github.com/sfilges/obsidian/blob/master/docs
+Author-email: Stefan Filges <stefan.filges@pm.me>
+License: MIT License
+        
+        Copyright (c) 2026 Stefan Filges
+        
+        Permission is hereby granted, free of charge, to any person obtaining a copy
+        of this software and associated documentation files (the "Software"), to deal
+        in the Software without restriction, including without limitation the rights
+        to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+        copies of the Software, and to permit persons to whom the Software is
+        furnished to do so, subject to the following conditions:
+        
+        The above copyright notice and this permission notice shall be included in all
+        copies or substantial portions of the Software.
+        
+        THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+        IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+        FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+        AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+        LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+        OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+        SOFTWARE.
+License-File: LICENSE
+Keywords: ai,mcp,obsidian,rag,vector-database
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Requires-Python: >=3.10
+Requires-Dist: docling==2.67.0
+Requires-Dist: einops
+Requires-Dist: httpx>=0.27.0
+Requires-Dist: lancedb==0.26.1
+Requires-Dist: langchain-docling==2.0.0
+Requires-Dist: langchain-text-splitters==1.1.0
+Requires-Dist: mcp==1.25.0
+Requires-Dist: pydantic==2.12.5
+Requires-Dist: pyyaml==6.0.3
+Requires-Dist: rich==13.7.0
+Requires-Dist: ruff>=0.14.11
+Requires-Dist: sentence-transformers==5.2.0
+Requires-Dist: tenacity>=8.2.0
+Requires-Dist: tqdm==4.67.1
+Requires-Dist: typer>=0.15.0
+Provides-Extra: dev
+Requires-Dist: bandit[toml]>=1.8.0; extra == 'dev'
+Requires-Dist: pre-commit>=4.0.0; extra == 'dev'
+Requires-Dist: ruff>=0.14.11; extra == 'dev'
+Provides-Extra: test
+Requires-Dist: pytest>=9.0.2; extra == 'test'
+Description-Content-Type: text/markdown
+
+# Obsidian Vault RAG
+
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![MCP Compatible](https://img.shields.io/badge/MCP-Compatible-green.svg)](https://modelcontextprotocol.io/)
+[![CI](https://github.com/sfilges/obsidian-vault-rag/actions/workflows/ci.yml/badge.svg)](https://github.com/sfilges/obsidian-vault-rag/actions/workflows/ci.yml)
+[![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
+[![PyPI version](https://img.shields.io/pypi/v/obsidian-vault-rag.svg)](https://pypi.org/project/obsidian-vault-rag/)
+[![Downloads](https://img.shields.io/pypi/dm/obsidian-vault-rag.svg)](https://pypi.org/project/obsidian-vault-rag/)
+
+**Obsidian Vault RAG** allows you to import your Obsidian markdown vault into a local LanceDB vector database and expose it via the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) for AI agents like Claude.
+
+## Features
+- **Local RAG**: No data leaves your machine; embeddings are stored locally in LanceDB.
+- **Smart Ingestion**: Splits notes into chunks and generates embeddings.
+- **PDF Support**: Converts research papers and PDFs to Markdown using [Docling](https://github.com/DS4SD/docling).
+- **Claude Integration**: Connect your vault directly to Claude Desktop.
+
+## Installation
+
+Clone the repository and install the package:
+
+```bash
+# Using pip
+pip install -e .
+
+# OR using uv (recommended for speed)
+uv pip install .
+```
+
+## Quick Start
+
+1.  **Configure**: Run the setup wizard to link your vault.
+    ```bash
+    obsidian config
+    ```
+2.  **Ingest**: Index your notes into the database.
+    ```bash
+    obsidian lance
+    ```
+3.  **Serve**: Start the MCP server (or connect Claude, see below).
+    ```bash
+    obsidian serve
+    ```
+
+## Manual File Creation
+
+To manually add files to your vault, you can use an [Obsidian Template](https://help.obsidian.md/Plugins/Templates) to automatically insert the required metadata.
+
+Create a template file in your Obsidian templates folder with the following content:
+
+```yaml
+---
+id: {{date:YYYYMMDDHHmm}}
+title: {{title}}
+authors: []
+type: note
+status: active
+created: {{date:YYYY-MM-DD}}
+tags: []
+source: "personal"
+---
+
+# {{title}}
+
+Your content here...
+```
+
+## Documentation
+
+- [**Usage Guide**](docs/usage.md): Detailed commands for ingestion, PDF conversion, and serving.
+- [**Configuration**](docs/configuration.md): Settings, environment variables, and logging.
+
+## Connect to Claude Desktop
+
+To chat with your notes in Claude Desktop, add the server to your configuration file:
+
+- **Mac**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+
+Add the following entry (replace `/path/to/your/python` with your actual Python executable path):
+
+```json
+{
+  "mcpServers": {
+    "obsidian-vault": {
+      "command": "/absolute/path/to/project/.venv/bin/python3",
+      "args": [
+        "-m",
+        "obsidian.cli",
+        "serve"
+      ]
+    }
+  }
+}
+```
+
+> **Tip:** You can find your python path by running `which python` (Mac/Linux) or `where python` (Windows) inside your project environment.
+
+## License
+
+MIT
