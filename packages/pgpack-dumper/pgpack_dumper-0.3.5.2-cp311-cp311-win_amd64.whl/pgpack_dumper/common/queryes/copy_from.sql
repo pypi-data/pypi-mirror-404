@@ -1,0 +1,2 @@
+copy {table_name}
+from stdin with (format binary);
