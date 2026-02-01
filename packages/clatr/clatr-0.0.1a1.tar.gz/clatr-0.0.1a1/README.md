@@ -1,0 +1,200 @@
+# CLATR - Comprehensive Linguistic Analysis of Text for Research
+
+## CLATR Status Notice
+
+CLATR is currently in a developmental and transitional state (version 0.0.1a1).
+This repository reflects an early-stage general linguistic analysis prototype that originated as an independent research project. While the architecture remains of interest, the active line of development has now shifted to ALASTR, a specialized speech transcript-focused fork designed to meet domain-specific needs.
+
+## Overview
+
+CLATR is a integrative Python pipeline designed for linguistic analysis of textual data, providing detailed insights for research and analysis. It facilitates preprocessing, multiple specialized linguistic analyses, and comprehensive output management, including aggregation, comparison, clustering, and EDA capabilities.
+
+## Features
+
+- **Preprocessing**: Tokenization and structuring of input text data
+- **Sentence/Document Level**: Controlled by `sentence_level` setting
+- **Output Options**: Raw tables, aggregated tables, clustering, visualizations
+- **Configurable Sections**: Enable/disable individual analyses via settings
+  - Graphemes
+  - Lexicon
+  - Morphology
+  - Syntax
+  - Phonology
+  - Semantics
+  - Mechanics
+
+## How It Works
+
+1. **Initialization**
+   - `OutputManager` reads settings and prepares output tables
+   - `PipelineManager` sets up selected analysis modules
+
+2. **Preprocessing**
+   - Input `.cha` files are parsed, speaker turns cleaned, and sentence/doc-level samples created
+
+3. **Analysis Pipeline**
+   - For each selected section:
+     - Raw tables are created per granularity (doc/sent)
+     - Each sample is processed and results collected
+     - Data is written to Excel, optionally clustered and aggregated
+     - Visualizations are generated
+
+4. **Output**
+   - Excel files saved under `/output/<section>/<granularity>`
+   - Clustering, aggregation, and visualizations are optional
+
+---
+
+## Installation
+
+We recommend installing CLATR into a dedicated virtual environment using Anaconda:
+
+### 1. Create and activate your environment:
+
+```bash
+conda create --name clatr python=3.12
+conda activate clatr
+```
+
+### 2. Install CLATR from GitHub:
+```bash
+pip install git+https://github.com/nmccloskey/clatr.git@main
+```
+
+### or from PyPI:
+```bash
+pip install clatr
+```
+
+
+---
+
+## Setup
+
+To prepare for running CLATR, complete the following steps:
+
+### 1. Create your working directory:
+
+We recommend creating a fresh project directory where you'll run your analysis.
+
+Example structure:
+
+```plaintext
+your_project/
+├── config.yaml           # Configuration file (see below)
+└── data/
+    └── input/            # Place your CHAT (.cha) files and/or Excel data here
+                          # (CLATR will make output and sqlite database directories)
+```
+
+### 2. Provide a `config.yaml` file
+
+This file specifies the directories, selected analysis sections, and tier structure.
+
+You can download the example config file from the repo or create your own like this:
+
+```yaml
+# Identify directories.
+input_dir: "clatr_data/input"
+output_dir: "clatr_data/output"
+output_label: "test"
+database_dir: "clatr_data/database"
+
+# Control tabular output,
+cluster: False
+aggregate: False
+compare_groups: False
+
+# and visual output.
+visualize: False
+cohen_d_threshold: 0.8
+max_feature_visuals: 5
+
+# Designate groupings.
+tiers: {
+    site: {partition: False, regex: AC|BU|TU},
+    test: {partition: False, regex: Pre|Post|Maint},
+    participantID: {partition: False, regex: (AC|BU|TU)\d+},
+    narrative: {partition: False, regex: CATGrandpa|BrokenWindow|RefusedUmbrella|CatRescue|BirthdayScene}
+}
+
+# Group by each tier and each combination.
+comparison_combos: [
+    [test],
+    [narrative],
+]
+
+all_comparison_combos: False
+compare_with_clusters: False
+
+# Group by each tier and each combination.
+aggregation_combos: [
+    [site],
+    [test],
+    [narrative],
+    [participantID],
+    [test, narrative],
+    [test, participantID]
+]
+
+all_aggregation_combos: False
+aggregate_with_clusters: False
+
+## CLATR-specific:
+# Specify granularity.
+sentence_level: False
+
+# Select analyses.
+sections: {
+    graphemes: False,
+    lexicon: True,
+    morphology: False,
+    syntax: False,
+    phonology: False,
+    semantics: False,
+    mechanics: False
+}
+
+ngrams: 5
+
+dep_trees: False
+
+# .cha files
+exclude_speakers: [INV]
+
+```
+
+## Running the Program
+
+Once installed, CLATR can be run from any directory using the command-line interface:
+
+```bash
+clatr
+```
+
+## Status and Contact
+
+This tool is released as a public **beta** version and is still under active development. While the core functionality is stable and has been used in research contexts, there are aspects of robustness, error handling, and user-friendliness which still want refinement.
+
+I warmly welcome feedback, feature suggestions, or bug reports. Feel free to reach out by:
+
+- Submitting an issue through the GitHub Issues tab
+
+- Emailing me directly at: nsm [at] temple.edu
+
+Thanks for your interest and collaboration!
+
+## Repository Notes
+
+This repository reflects a clean reinitialization of the development history as of April 2025. Earlier commits were removed to:
+
+1. Respect data privacy for sensitive clinical transcript content, even though all `.cha` files used during development were de-identified
+2. Eliminate unnecessary storage of output, logs, and database files that were not properly excluded in the previous `.gitignore`
+
+No core functionality or implementation history has been lost, and the full pipeline has been preserved in its final state. All future development will follow a transparent version-controlled workflow.
+
+## Citation
+
+If using CLATR in your research, please cite:
+
+> McCloskey, N., et al. (2025, April). *The RASCAL pipeline: User-friendly and time-saving computational resources for coding and analyzing language samples*. Poster presented at the Aphasia Access Leadership Summit, Pittsburgh, PA.
