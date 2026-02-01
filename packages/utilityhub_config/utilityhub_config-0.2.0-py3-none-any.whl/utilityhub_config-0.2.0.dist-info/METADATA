@@ -1,0 +1,323 @@
+Metadata-Version: 2.3
+Name: utilityhub_config
+Version: 0.2.0
+Summary: A deterministic, typed configuration engine for serious automation systems
+Author: Rajesh Das
+Author-email: Rajesh Das <rajesh@hyperoot.dev>
+Requires-Dist: pydantic>=2.12.5
+Requires-Dist: pyyaml>=6.0.3
+Requires-Dist: python-dotenv>=1.2.1
+Requires-Python: >=3.12
+Description-Content-Type: text/markdown
+
+# utilityhub_config
+
+A **deterministic, typed configuration loader** for modern Python applications. Load settings from multiple sources with clear precedence, comprehensive metadata tracking, and detailed validation errors.
+
+## Features ✨
+
+- **Multi-source configuration loading** with explicit precedence order
+- **Strongly typed** with Pydantic v2+ (full type safety)
+- **Metadata tracking** — see which source provided each field
+- **Multiple formats** — TOML, YAML, .env, environment variables
+- **Rich error reporting** — Validation failures show sources, checked files, and precedence
+- **Zero magic** — Deterministic, transparent resolution order
+
+## Installation
+
+```bash
+pip install utilityhub_config
+```
+
+## Quick Start
+
+```python
+from pydantic import BaseModel
+from utilityhub_config import load_settings
+
+class Config(BaseModel):
+    database_url: str = "sqlite:///default.db"
+    debug: bool = False
+
+# Load settings and metadata
+settings, metadata = load_settings(Config)
+
+# Type-safe access (no casting needed)
+print(settings.database_url)
+
+# Track which source provided a field
+source = metadata.get_source("database_url")
+print(f"database_url came from: {source.source}")
+```
+
+## How It Works
+
+Settings are resolved in **strict precedence order** (lowest to highest):
+
+1. **Defaults** — Field defaults from your Pydantic model
+2. **Global config** — `~/.config/{app_name}/{app_name}.{toml,yaml}`
+3. **Project config** — `{cwd}/{app_name}.{toml,yaml}` or `{cwd}/config/*.{toml,yaml}` (or explicit file via `config_file` parameter)
+4. **Dotenv** — `.env` file in current directory
+5. **Environment variables** — `{APP_NAME}_{FIELD_NAME}` or `{FIELD_NAME}`
+6. **Runtime overrides** — Passed via `overrides` parameter (highest priority)
+
+Each level overrides the previous one. Only sources that exist are consulted.
+
+## Examples
+
+### Basic usage with model defaults
+
+```python
+from pydantic import BaseModel
+from utilityhub_config import load_settings
+
+class PizzaShopConfig(BaseModel):
+    shop_name: str = "lazy_pepperoni_palace"
+    delivery_radius_km: int = 5
+    accepts_orders: bool = False  # closed by default
+
+settings, metadata = load_settings(PizzaShopConfig)
+print(f"🍕 {settings.shop_name} is {'open' if settings.accepts_orders else 'closed'}")
+```
+
+### Override with environment variables
+
+```python
+import os
+
+# Friday night rush: OPEN ALL THE STORES!
+os.environ["ACCEPTS_ORDERS"] = "true"
+os.environ["DELIVERY_RADIUS_KM"] = "15"
+
+settings, metadata = load_settings(PizzaShopConfig)
+print(f"🚗 Delivering pizza up to {settings.delivery_radius_km}km away!")
+```
+
+### Runtime overrides (highest priority)
+
+```python
+# Emergency: meteor incoming, expand radius and accept everything!
+settings, metadata = load_settings(
+    PizzaShopConfig,
+    overrides={
+        "accepts_orders": True,
+        "delivery_radius_km": 100,
+        "shop_name": "doomsday_pizza_bunker"
+    }
+)
+print(f"🚀 {settings.shop_name} now delivers {settings.delivery_radius_km}km!")
+```
+
+### Custom app name and config directory
+
+```python
+settings, metadata = load_settings(
+    PizzaShopConfig,
+    app_name="pizza_empire",
+    cwd="/etc/pizza_shops/"
+)
+# Looks for: /etc/pizza_shops/pizza_empire.toml or .yaml
+```
+
+### Load from explicit config file (NEW!)
+
+```python
+from pathlib import Path
+
+# Use a specific config file (auto-detects YAML, YML, or TOML from extension)
+settings, metadata = load_settings(
+    PizzaShopConfig,
+    config_file=Path("/etc/pizza/production.yaml")
+)
+
+# Still respects precedence: env vars and overrides can override the config file
+os.environ["ACCEPTS_ORDERS"] = "true"
+settings, metadata = load_settings(
+    PizzaShopConfig,
+    config_file=Path("/etc/pizza/production.yaml")
+)
+# ACCEPTS_ORDERS will be true (from env), others from config file
+```
+
+### Environment variable prefix
+
+```python
+os.environ["PIZZASHOP_ACCEPTS_ORDERS"] = "true"
+os.environ["PIZZASHOP_DELIVERY_RADIUS_KM"] = "42"
+
+settings, metadata = load_settings(
+    PizzaShopConfig,
+    env_prefix="PIZZASHOP"
+)
+# Will check: PIZZASHOP_ACCEPTS_ORDERS, then ACCEPTS_ORDERS (in that order)
+print(f"🍕 Accepting orders: {settings.accepts_orders}")
+```
+
+### Inspect metadata (detective mode 🕵️)
+
+```python
+settings, metadata = load_settings(PizzaShopConfig)
+
+# Which source provided this field?
+source = metadata.get_source("delivery_radius_km")
+print(f"Delivery radius came from: {source.source}")
+print(f"Location: {source.source_path or 'model defaults'}")
+print(f"Raw value: {source.raw_value}")
+
+# Track all field origins
+for field, source_info in metadata.per_field.items():
+    print(f"  {field}: from {source_info.source}")
+```
+
+## Configuration Files
+
+### TOML example (`pizza_empire.toml`)
+
+```toml
+# 🍕 Pizza Empire Global Settings
+shop_name = "the_great_carb_dispensary"
+delivery_radius_km = 5
+accepts_orders = false
+
+# The business secret sauce 🔥
+[quality]
+cheese_ratio = 0.42  # more cheese = more problems (and happiness)
+crust_crispiness = "perfect"
+pineapple_tolerance = 0.0  # this is not a debate
+
+[timings]
+avg_prep_time_minutes = 15
+delivery_timeout_minutes = 45
+```
+
+### YAML example (`pizza_empire.yaml`)
+
+```yaml
+# 🍕 Pizza Empire Configuration
+shop_name: the_great_carb_dispensary
+delivery_radius_km: 5
+accepts_orders: false
+
+# The art of pizza
+quality:
+  cheese_ratio: 0.42
+  crust_crispiness: "perfect"
+  pineapple_tolerance: 0.0
+
+timings:
+  avg_prep_time_minutes: 15
+  delivery_timeout_minutes: 45
+```
+
+### Dotenv example (`.env`)
+
+```bash
+# 🍕 Quick overrides for this deployment
+SHOP_NAME=emergency_pizza_hut
+DELIVERY_RADIUS_KM=100
+ACCEPTS_ORDERS=true
+CHEESE_RATIO=0.99
+PINEAPPLE_TOLERANCE=0.0  # NEVER SURRENDER
+```
+
+## API Reference
+
+### `load_settings(model, *, app_name=None, cwd=None, env_prefix=None, config_file=None, overrides=None)`
+
+Load and validate settings from all sources.
+
+**Parameters:**
+
+- `model` (type[T]): A Pydantic BaseModel subclass to validate and populate.
+- `app_name` (str | None): Application name for config file lookup. Defaults to lowercased model class name.
+- `cwd` (Path | None): Working directory for config file search. Defaults to current directory.
+- `env_prefix` (str | None): Optional prefix for environment variables (e.g., `"MYAPP"`).
+- `config_file` (Path | None): **NEW!** Explicit config file path to load. If provided, skips auto-discovery and loads this file as the project config source. File format is auto-detected from extension (`.yaml`, `.yml`, or `.toml`). Must exist and be readable. Still respects precedence order — environment variables and overrides can override values from this file.
+- `overrides` (dict[str, Any] | None): Runtime overrides (highest precedence).
+
+**Returns:**
+
+A tuple `(settings, metadata)` where:
+- `settings` is an instance of your model type (fully type-safe, no casting needed).
+- `metadata` is a `SettingsMetadata` object tracking field sources.
+
+**Raises:**
+
+- `ConfigValidationError` — If validation fails, includes detailed context:
+  - Validation errors from Pydantic
+  - Files that were checked
+  - Precedence order
+  - Which source provided each field
+- `ConfigError` — If `config_file` is provided but doesn't exist, is not a file, or has an unsupported format.
+
+### `SettingsMetadata`
+
+Tracks where each field value came from.
+
+- `per_field: dict[str, FieldSource]` — Field name to source mapping.
+- `get_source(field: str) -> FieldSource | None` — Look up a single field's source.
+
+### `FieldSource`
+
+- `source: str` — Source name (`"defaults"`, `"env"`, `"project"`, etc.).
+- `source_path: str | None` — File path or env var name.
+- `raw_value: Any` — The raw value before type coercion.
+
+## Known Limitations
+
+- **Nested types**: Complex nested Pydantic models in TOML/YAML are supported (Pydantic handles validation), but the loader doesn't do special merging. Flat dictionaries are recommended.
+- **Case sensitivity**: Dotenv keys are normalized to lowercase; model field names are case-sensitive.
+- **Variable expansion**: Dotenv values don't expand environment variables (e.g., `$HOME` won't expand). Use `python-dotenv` directly if needed.
+
+## Error Handling
+
+When validation fails, you get a detailed error with full context (perfect for debugging at 3 AM):
+
+```python
+from utilityhub_config import load_settings
+from utilityhub_config.errors import ConfigValidationError
+
+class PizzaShopConfig(BaseModel):
+    delivery_radius_km: int  # REQUIRED (no default, no pizza!)
+
+try:
+    settings, metadata = load_settings(PizzaShopConfig)
+except ConfigValidationError as e:
+    # Shows:
+    # - What validation failed
+    # - Which files were checked
+    # - The precedence order
+    # - Which source provided each field
+    print(e)  # Complete context for debugging!
+```
+
+Output example:
+```
+Validation failed
+
+Validation errors:
+input should be a valid integer [type=int_parsing, input_value=None, input_type=NoneType]
+
+Files checked:
+ - ~/.config/pizzashop/pizzashop.toml
+ - ~/.config/pizzashop/pizzashop.yaml
+ - /home/user/.env
+
+Precedence (low -> high):
+defaults -> global -> project -> dotenv -> env -> overrides
+
+Field sources:
+ - delivery_radius_km: defaults (None)
+```
+
+## Contributing
+
+For issues, improvements, or questions, please open an issue or pull request.
+
+## Documentation
+
+Full documentation and examples will be available at: **[docs link TBD]**
+
+---
+
+**License**: See project LICENSE file.
