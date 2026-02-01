@@ -1,0 +1,1 @@
+"""TUI Catalog Explorer package."""
