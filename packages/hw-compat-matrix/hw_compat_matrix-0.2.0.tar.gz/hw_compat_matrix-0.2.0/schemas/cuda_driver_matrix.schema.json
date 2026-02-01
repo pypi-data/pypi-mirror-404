@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ATTMOS/hw-compat-matrix/schemas/cuda_driver_matrix.schema.json",
+  "title": "CUDA Driver Matrix",
+  "description": "Maps CUDA toolkit versions to minimum driver versions",
+  "type": "object",
+  "required": ["schema_version", "platform", "entries"],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Schema version number"
+    },
+    "platform": {
+      "type": "string",
+      "pattern": "^[a-z0-9_]+$",
+      "description": "Platform identifier (e.g., linux_x86_64)"
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/CudaDriverEntry"
+      },
+      "description": "List of CUDA-driver version mappings"
+    }
+  },
+  "$defs": {
+    "CudaDriverEntry": {
+      "type": "object",
+      "required": ["toolkit_version", "variant", "min_driver"],
+      "properties": {
+        "toolkit_version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+$",
+          "description": "CUDA toolkit version (e.g., 12.8)"
+        },
+        "variant": {
+          "type": "string",
+          "enum": ["ga", "update"],
+          "description": "Release variant"
+        },
+        "update": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Update number (only for variant=update)"
+        },
+        "min_driver": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+(\\.[0-9]+)?$",
+          "description": "Minimum driver version"
+        }
+      },
+      "if": {
+        "properties": {
+          "variant": { "const": "update" }
+        }
+      },
+      "then": {
+        "required": ["update"]
+      }
+    }
+  }
+}
