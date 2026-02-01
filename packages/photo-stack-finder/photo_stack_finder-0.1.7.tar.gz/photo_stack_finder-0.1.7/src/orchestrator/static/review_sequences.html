@@ -1,0 +1,1554 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sequence Similarity Review</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 10px;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: white;
+            border-radius: 8px;
+            padding: 8px 16px;
+            margin-bottom: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header-left h1 {
+            color: #2d3748;
+            margin: 0;
+            font-size: 1.1rem;
+        }
+
+        .stats {
+            display: flex;
+            gap: 16px;
+            align-items: center;
+        }
+
+        .stat {
+            display: flex;
+            align-items: baseline;
+            gap: 4px;
+        }
+
+        .stat-value {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: #2d3748;
+        }
+
+        .stat-label {
+            font-size: 0.75rem;
+            color: #718096;
+        }
+
+        /* Progress bar removed */
+
+        /* Fixed controls */
+        .controls-fixed {
+            position: sticky;
+            top: 10px;
+            z-index: 100;
+            background: white;
+            border-radius: 8px;
+            padding: 10px 16px;
+            margin-bottom: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        /* Sequence controls panel (floating above table) */
+        .sequence-controls-panel {
+            position: sticky;
+            top: 75px; /* Below main controls */
+            z-index: 90;
+            background: white;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            display: grid;
+            grid-template-columns: 100px 1fr; /* Match table: index column + sequences */
+            gap: 12px;
+            align-items: flex-start;
+        }
+
+        .sequence-controls-index {
+            min-width: 100px; /* Match row-label width */
+            font-weight: 600;
+            color: #4a5568;
+            text-align: center;
+            align-self: center;
+        }
+
+        .sequence-controls-sequences {
+            display: flex;
+            gap: 12px;
+            overflow-x: auto;
+        }
+
+        .sequence-control-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            min-width: 150px;
+            padding: 8px;
+            border: 2px solid #e2e8f0;
+            border-radius: 6px;
+            background: #f7fafc;
+        }
+
+        .sequence-control-item.disabled {
+            opacity: 0.5;
+            background: #edf2f7;
+        }
+
+        .sequence-control-header {
+            font-size: 0.75rem;
+            color: #4a5568;
+            font-weight: 600;
+            text-align: center;
+        }
+
+        .sequence-control-buttons {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        /* Controls row in table header */
+        .controls-row th {
+            padding: 12px 8px;
+            vertical-align: middle;
+        }
+
+        .control-cell {
+            text-align: center;
+        }
+
+        .control-cell-content {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+        }
+
+        /* Group display removed - info will be in table */
+        .current-group-display {
+            display: none;
+            padding: 15px;
+            background: #f8fafc;
+            border-radius: 10px;
+            border: 2px solid #e2e8f0;
+        }
+
+        .group-counter {
+            font-size: 1.4rem;
+            font-weight: 600;
+            color: #2d3748;
+            margin-bottom: 8px;
+        }
+
+        .group-status {
+            font-size: 1rem;
+            color: #718096;
+        }
+
+        .group-status.approved {
+            color: #38a169;
+            font-weight: 600;
+        }
+
+        .group-status.rejected {
+            color: #e53e3e;
+            font-weight: 600;
+        }
+
+        .controls-grid {
+            display: grid;
+            grid-template-columns: 1fr auto 1fr;
+            gap: 20px;
+            align-items: center;
+        }
+
+        .main-actions {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+        }
+
+        .nav-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-start;
+        }
+
+        .utility-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+
+        .btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn-large {
+            font-size: 16px;
+            padding: 16px 32px;
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #e53e3e 0%, #c53030 100%);
+        }
+
+        .btn-warning {
+            background: linear-gradient(135deg, #ed8936 0%, #dd6b20 100%);
+        }
+
+        .btn-secondary {
+            background: linear-gradient(135deg, #718096 0%, #4a5568 100%);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        /* Sequence table display */
+        .sequence-container {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            overflow-x: auto;
+            overflow-y: auto;
+            position: relative;
+            max-height: calc(100vh - 180px);
+        }
+
+        .sequence-container.approved {
+            border: 3px solid #48bb78;
+            background: linear-gradient(135deg, #f0fff4 0%, #c6f6d5 100%);
+        }
+
+        .sequence-container.rejected {
+            border: 3px solid #e53e3e;
+            background: linear-gradient(135deg, #fed7d7 0%, #feb2b2 100%);
+        }
+
+        .sequence-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            min-width: 800px;
+        }
+
+        .sequence-table thead tr:first-child th {
+            position: sticky;
+            top: 0;
+            background: white;
+            border-bottom: 2px solid #e2e8f0;
+            z-index: 10;
+        }
+
+        .sequence-table thead tr:nth-child(2) th {
+            /* Not sticky - scrolls with content */
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        .sequence-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .sequence-header th {
+            padding: 15px 10px;
+            text-align: center;
+            font-weight: 600;
+            font-size: 0.9rem;
+            border-right: 1px solid rgba(255,255,255,0.2);
+            min-width: 150px;
+            vertical-align: top;
+        }
+
+        .sequence-header th:first-child {
+            min-width: 100px;
+        }
+
+        .sequence-header th:last-child {
+            border-right: none;
+        }
+
+        .sequence-header .dir-name {
+            font-size: 0.85rem;
+            font-weight: 500;
+            margin-bottom: 4px;
+            opacity: 0.9;
+        }
+
+        .sequence-header .template-name {
+            font-size: 0.75rem;
+            font-weight: 400;
+            opacity: 0.8;
+            margin-bottom: 8px;
+        }
+
+        .sequence-header .checkbox-container {
+            margin-top: 8px;
+        }
+
+        .sequence-header input[type="checkbox"] {
+            transform: scale(1.3);
+            margin: 0;
+            cursor: pointer;
+        }
+
+        .sequence-header label {
+            font-size: 0.7rem;
+            margin-left: 6px;
+            cursor: pointer;
+        }
+
+        .sequence-row {
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .sequence-row:last-child {
+            border-bottom: none;
+        }
+
+        .sequence-row:hover {
+            background: #f8fafc;
+        }
+
+        .row-label {
+            padding: 15px;
+            font-weight: 600;
+            color: #4a5568;
+            background: #f7fafc;
+            text-align: center;
+            vertical-align: middle;
+            border-right: 1px solid #e2e8f0;
+            min-width: 100px;
+        }
+
+        .sequence-info-cell {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            font-weight: 700;
+            padding: 12px;
+            text-align: center;
+            vertical-align: middle;
+            border-right: 1px solid #e2e8f0;
+            min-width: 100px;
+        }
+
+        .sequence-number {
+            font-size: 1.1rem;
+            display: block;
+        }
+
+        .sequence-status {
+            font-size: 0.7rem;
+            display: block;
+            margin-top: 4px;
+            opacity: 0.9;
+        }
+
+        .sequence-status.approved {
+            color: #c6f6d5;
+        }
+
+        .sequence-status.rejected {
+            color: #fed7d7;
+        }
+
+        .photo-cell {
+            padding: 10px;
+            text-align: center;
+            vertical-align: middle;
+            border-right: 1px solid #e2e8f0;
+            position: relative;
+            min-width: 150px;
+        }
+
+        .photo-cell:last-child {
+            border-right: none;
+        }
+
+        .photo-cell.missing {
+            background: #f7fafc;
+            color: #a0aec0;
+            font-style: italic;
+            font-size: 0.9rem;
+        }
+
+        .photo-item {
+            position: relative;
+            border-radius: 8px;
+            overflow: hidden;
+            transition: all 0.2s;
+            cursor: pointer;
+            max-width: 120px;
+            margin: 0 auto;
+            border: 2px solid transparent;
+        }
+
+        .photo-item:hover {
+            transform: scale(1.05);
+        }
+
+        .photo-item.exemplar {
+            border-color: #48bb78;
+            box-shadow: 0 0 12px rgba(72, 187, 120, 0.4);
+        }
+
+        .photo-item.attention-test {
+            border-color: #e53e3e;
+            animation: pulse-red 2s infinite;
+        }
+
+        @keyframes pulse-red {
+            0%, 100% {
+                box-shadow: 0 0 12px rgba(229, 62, 62, 0.4);
+                border-color: #e53e3e;
+            }
+            50% {
+                box-shadow: 0 0 20px rgba(229, 62, 62, 0.8);
+                border-color: #fc8181;
+            }
+        }
+
+        .photo-item img {
+            width: 100%;
+            height: 90px;
+            object-fit: cover;
+            display: block;
+            background: #f7fafc;
+        }
+
+        .photo-info {
+            padding: 6px;
+            background: white;
+            font-size: 0.65rem;
+            color: #718096;
+            border-top: 1px solid #e2e8f0;
+        }
+
+        .photo-filename {
+            font-weight: 500;
+            margin-bottom: 2px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            text-align: center;
+        }
+
+        .similarity-score {
+            position: absolute;
+            top: 4px;
+            right: 4px;
+            padding: 2px 6px;
+            border-radius: 10px;
+            font-size: 0.6rem;
+            font-weight: 600;
+            color: white;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.7);
+            backdrop-filter: blur(2px);
+        }
+
+        .score-high { background: rgba(72, 187, 120, 0.9); }
+        .score-medium { background: rgba(237, 137, 54, 0.9); }
+        .score-low { background: rgba(229, 62, 62, 0.9); }
+
+        .exemplar-badge {
+            position: absolute;
+            top: 4px;
+            left: 4px;
+            background: rgba(72, 187, 120, 0.9);
+            color: white;
+            font-size: 0.6rem;
+            font-weight: 600;
+            padding: 2px 4px;
+            border-radius: 4px;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.7);
+        }
+
+        /* Delete buttons */
+        .delete-btn {
+            background: #e53e3e;
+            color: white;
+            border: none;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.65rem;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+
+        .delete-btn:hover {
+            background: #c53030;
+            transform: scale(1.05);
+        }
+
+        .delete-photo-btn {
+            position: absolute;
+            bottom: 4px;
+            right: 4px;
+            padding: 2px 5px;
+            font-size: 0.6rem;
+            z-index: 10;
+        }
+
+        .delete-row-btn {
+            margin-left: 8px;
+            padding: 3px 8px;
+            font-size: 0.7rem;
+        }
+
+        .delete-seq-btn {
+            margin-left: 8px;
+            padding: 4px 10px;
+            font-size: 0.7rem;
+        }
+
+        .seek-btn {
+            margin-left: 8px;
+            padding: 4px 10px;
+            font-size: 0.9rem;
+            background: linear-gradient(135deg, #4299e1 0%, #3182ce 100%);
+            border: none;
+            color: white;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: all 0.2s;
+        }
+
+        .seek-btn:hover {
+            background: linear-gradient(135deg, #3182ce 0%, #2c5282 100%);
+            transform: translateY(-1px);
+        }
+
+        .seek-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        @keyframes highlight-cell {
+            0% { background-color: #fef3c7; }
+            100% { background-color: transparent; }
+        }
+
+        .cell-highlight {
+            animation: highlight-cell 1.5s ease-out;
+        }
+
+        /* Marked for deletion */
+        .marked-for-deletion {
+            opacity: 0.3;
+            position: relative;
+        }
+
+        .marked-for-deletion::after {
+            content: '✗ MARKED FOR DELETION';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(229, 62, 62, 0.95);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-weight: 600;
+            font-size: 0.7rem;
+            z-index: 20;
+            white-space: nowrap;
+        }
+
+
+        /* Alert system */
+        #alert-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-width: 400px;
+        }
+
+        .alert {
+            padding: 15px 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(100%);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .alert-success {
+            background: #d4edda;
+            color: #155724;
+            border: 2px solid #48bb78;
+        }
+
+        .alert-info {
+            background: #e6fffa;
+            color: #2c7a7b;
+            border: 2px solid #38b2ac;
+        }
+
+        .alert-warning {
+            background: #fffaf0;
+            color: #7c2d12;
+            border: 2px solid #ed8936;
+        }
+
+        .alert-error {
+            background: #fed7d7;
+            color: #721c24;
+            border: 2px solid #e53e3e;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        /* Loading state */
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #718096;
+        }
+
+        .loading::after {
+            content: '';
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #e2e8f0;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-left: 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Responsive design */
+        @media (max-width: 1400px) {
+            .sequence-table {
+                font-size: 0.9rem;
+            }
+            .photo-item img {
+                height: 80px;
+            }
+            .sequence-header th {
+                min-width: 130px;
+            }
+        }
+
+        @media (max-width: 1200px) {
+            .sequence-table {
+                font-size: 0.85rem;
+            }
+            .photo-item img {
+                height: 70px;
+            }
+            .sequence-header th {
+                min-width: 120px;
+                padding: 12px 8px;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .controls-grid {
+                grid-template-columns: 1fr;
+                gap: 15px;
+            }
+
+            .nav-actions,
+            .utility-actions {
+                justify-content: center;
+            }
+
+            .stats {
+                justify-content: center;
+            }
+
+            .sequence-container {
+                padding: 15px;
+                overflow-x: auto;
+            }
+
+            .sequence-header th {
+                min-width: 100px;
+                padding: 10px 5px;
+                font-size: 0.75rem;
+            }
+
+            .photo-item img {
+                height: 60px;
+            }
+
+            .photo-item {
+                max-width: 100px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Compact header -->
+        <div class="header">
+            <div class="header-left">
+                <h1>🔗 Sequence Similarity Review</h1>
+            </div>
+            <div class="stats">
+                <div class="stat">
+                    <span class="stat-value" id="approved-count">0</span>
+                    <span class="stat-label">Approved</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-value" id="rejected-count">0</span>
+                    <span class="stat-label">Rejected</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-value" id="remaining-count">0</span>
+                    <span class="stat-label">Remaining</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-value" id="total-groups">0</span>
+                    <span class="stat-label">Total</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Fixed controls -->
+        <div class="controls-fixed hidden" id="controls-panel">
+            <!-- Current group display -->
+            <div class="current-group-display" id="group-display">
+                <div class="group-counter" id="group-counter">Loading...</div>
+                <div class="group-status" id="group-status">Please wait while we load your sequence groups</div>
+            </div>
+
+            <!-- Control grid -->
+            <div class="controls-grid">
+                <!-- Navigation -->
+                <div class="nav-actions">
+                    <button class="btn btn-secondary" onclick="previousGroup()" id="prev-btn">
+                        ← Previous
+                    </button>
+                    <button class="btn btn-secondary" onclick="nextGroup()" id="next-btn">
+                        Next →
+                    </button>
+                    <button class="btn btn-secondary" onclick="jumpToGroup()" id="jump-btn">
+                        🎯 Jump to...
+                    </button>
+                </div>
+
+                <!-- Main actions -->
+                <div class="main-actions">
+                    <button class="btn btn-success btn-large" onclick="approveGroup()" id="approve-btn">
+                        ✓ Approve Group
+                    </button>
+                    <button class="btn btn-danger btn-large" onclick="rejectGroup()" id="reject-btn">
+                        ✗ Reject Group
+                    </button>
+                    <button class="btn btn-warning" onclick="resetSelections()" id="reset-btn">
+                        ↻ Reset Selections
+                    </button>
+                </div>
+
+                <!-- Utility actions -->
+                <div class="utility-actions">
+                    <button class="btn btn-warning" onclick="bulkApproveAll()" id="bulk-btn">
+                        ✓ Approve All
+                    </button>
+                    <button class="btn" onclick="saveProgress()" id="save-btn">
+                        💾 Save
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sequence display -->
+        <div id="loading-state" class="loading">
+            Loading sequence groups
+        </div>
+
+        <div id="sequence-content" class="hidden">
+            <div class="sequence-container" id="sequence-container">
+                <!-- Table with controls in header will be populated by JavaScript -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Alert container -->
+    <div id="alert-container"></div>
+
+<script src="/review_common.js"></script>
+    <script>
+        // Read stage_id from URL query parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const stageId = urlParams.get('stage_id');
+
+        // Application state
+        let sequenceGroups = [];
+        let currentGroupIndex = 0;
+        let decisions = {}; // group_index -> 'approved'/'rejected'
+        let sequenceSelections = {}; // group_index -> {sequence_name: boolean}
+        let deletionMarks = {}; // group_index -> {photos: Set, rows: Set, sequences: Set}
+        let removedSequences = {}; // group_index -> Set<seqIndex> (sequences removed from display)
+        let seekPositions = {}; // group_index -> {seqIndex: rowIndex} (last seek position per column)
+        let useServerImages = false;
+        let attentionTestCount = 0;
+
+        // === Interface functions required by review_common.js ===
+        function getTotalGroups() {
+            return sequenceGroups.length;
+        }
+
+        function getDecisions() {
+            return decisions;
+        }
+
+        async function saveProgressImpl() {
+            // Build decisions object from both decisions and deletion marks
+            const reviewDecisions = {};
+            for (let i = 0; i < sequenceGroups.length; i++) {
+                const decision = decisions[i];
+                const marks = deletionMarks[i];
+
+                if (decision || (marks && (marks.photos.size > 0 || marks.rows.size > 0 || marks.sequences.size > 0))) {
+                    reviewDecisions[i] = {
+                        decision: decision || 'pending',
+                        deletions: marks ? {
+                            photos: Array.from(marks.photos || []),
+                            rows: Array.from(marks.rows || []),
+                            sequences: Array.from(marks.sequences || [])
+                        } : {photos: [], rows: [], sequences: []}
+                    };
+                }
+            }
+
+            try {
+                if (useServerImages) {
+                    const response = await fetch('/api/review/sequences/save', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(reviewDecisions)
+                    });
+                    const result = await response.json();
+                    if (response.ok && result.status === 'saved') {
+                        showAlert(`✓ Saved ${result.saved_count} decisions to server`, 'success');
+                    } else {
+                        showAlert('Failed to save decisions: ' + (result.message || 'Unknown error'), 'error');
+                    }
+                } else {
+                    // Local save via download
+                    const dataStr = JSON.stringify({
+                        type: 'sequence_review_decisions',
+                        timestamp: new Date().toISOString(),
+                        total_groups: sequenceGroups.length,
+                        decisions: reviewDecisions
+                    }, null, 2);
+                    const blob = new Blob([dataStr], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `sequence_decisions_${Date.now()}.json`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    showAlert(`✓ Downloaded decisions file`, 'success');
+                }
+            } catch (error) {
+                console.error('Save error:', error);
+                showAlert('Error saving progress: ' + error.message, 'error');
+            }
+        }
+
+        // Optional callback for review_common.js navigation hooks
+        function onGroupChange(newIndex) {
+            // Reset seek positions when navigating to a different group
+            if (seekPositions[newIndex]) {
+                seekPositions[newIndex] = {};
+            }
+        }
+        // === End interface functions ===
+
+        // Initialize the application
+        async function initializeApp() {
+            try {
+                showAlert('Loading sequence groups...', 'info');
+
+                // Check if server API is available
+                useServerImages = await checkServerAvailable();
+
+                // Load sequence groups data
+                await loadSequenceGroups();
+
+                // Setup UI
+                setupUI();
+
+                // Display initial state
+                displayCurrentGroup();
+                updateStats();
+
+                showAlert(`✓ Loaded ${sequenceGroups.length} sequence groups`, 'success');
+
+            } catch (error) {
+                console.error('Initialization error:', error);
+                showAlert('Failed to load sequence groups: ' + error.message, 'error');
+                document.getElementById('loading-state').innerHTML = '<p style="color: red;">Error: No sequence data available. Please run the pipeline first.</p>';
+            }
+        }
+
+        async function checkServerAvailable() {
+            try {
+                const response = await fetch('/api/review/status');
+                return response.ok;
+            } catch {
+                return false;
+            }
+        }
+
+        async function loadSequenceGroups() {
+            try {
+                // Build API URL with optional stage_id parameter
+                let apiUrl = '/api/review/sequences/groups';
+                if (stageId) {
+                    apiUrl += `?stage_id=${stageId}`;
+                }
+
+                // Fetch from server API (server is always available since we're served by it)
+                const response = await fetch(apiUrl);
+
+                if (!response.ok) {
+                    throw new Error('Could not load sequence groups data');
+                }
+
+                const data = await response.json();
+                if (!data.groups || data.groups.length === 0) {
+                    throw new Error('No sequence groups found');
+                }
+
+                sequenceGroups = data.groups;
+                attentionTestCount = data.attention_test_count || 0;
+
+            } catch (error) {
+                console.error('Failed to load sequence data:', error);
+                throw error;
+            }
+        }
+
+        function setupUI() {
+            // Hide loading, show content
+            document.getElementById('loading-state').classList.add('hidden');
+            document.getElementById('sequence-content').classList.remove('hidden');
+            document.getElementById('controls-panel').classList.remove('hidden');
+        }
+
+        function updateStats() {
+            const total = sequenceGroups.length;
+            const approved = Object.values(decisions).filter(d => d === 'approved').length;
+            const rejected = Object.values(decisions).filter(d => d === 'rejected').length;
+            const reviewed = approved + rejected;
+            const remaining = total - reviewed;
+
+            document.getElementById('total-groups').textContent = total;
+            document.getElementById('approved-count').textContent = approved;
+            document.getElementById('rejected-count').textContent = rejected;
+            document.getElementById('remaining-count').textContent = remaining;
+        }
+
+        function formatPhotoMetadata(photo) {
+            // Format metadata from photo object (no API call needed)
+            // All photos have width/height - if image can't be loaded, PhotoFile creation fails
+            const sizeMB = (photo.file_size / (1024 * 1024)).toFixed(1);
+            return `${sizeMB} MB • ${photo.width}×${photo.height}`;
+        }
+
+        function displayCurrentGroup() {
+            if (currentGroupIndex >= sequenceGroups.length) return;
+
+            const group = sequenceGroups[currentGroupIndex];
+            const decision = decisions[currentGroupIndex];
+
+            // Scroll to top of page when changing groups
+            window.scrollTo(0, 0);
+
+            // Update container styling
+            const container = document.getElementById('sequence-container');
+            container.className = 'sequence-container';
+
+            if (decision === 'approved') {
+                container.classList.add('approved');
+            } else if (decision === 'rejected') {
+                container.classList.add('rejected');
+            }
+
+            // Build sequence table with controls in header
+            container.innerHTML = createSequenceTableHTML(group, currentGroupIndex);
+
+            // Update navigation buttons
+            document.getElementById('prev-btn').disabled = currentGroupIndex === 0;
+            document.getElementById('next-btn').disabled = currentGroupIndex >= sequenceGroups.length - 1;
+
+            updateStats();
+        }
+
+        function createSequenceTableHTML(group, groupIndex) {
+            // Initialize selections if not exists
+            if (!(groupIndex in sequenceSelections)) {
+                sequenceSelections[groupIndex] = {};
+                group.sequences.forEach(seq => {
+                    sequenceSelections[groupIndex][seq.name] = true; // All included by default
+                });
+            }
+
+            const selections = sequenceSelections[groupIndex];
+
+            // Create controls row (first row in thead)
+            let controlsRowHTML = '<tr class="controls-row">';
+            controlsRowHTML += '<th class="control-cell">Controls</th>'; // Index column
+
+            group.sequences.forEach((seq, seqIdx) => {
+                // Skip removed sequences
+                if (isSequenceRemoved(groupIndex, seqIdx)) {
+                    return;
+                }
+
+                controlsRowHTML += `
+                    <th class="control-cell">
+                        <div class="control-cell-content">
+                            <div style="display: flex; gap: 4px;">
+                                <button class="delete-btn delete-seq-btn" onclick="event.preventDefault(); removeSequenceWithConfirm(${groupIndex}, ${seqIdx})" title="Remove this sequence from the group">
+                                    Remove
+                                </button>
+                                <button class="seek-btn" onclick="event.preventDefault(); seekNextPhoto(${groupIndex}, ${seqIdx})" title="Scroll to next photo in this sequence">
+                                    ⬇
+                                </button>
+                            </div>
+                        </div>
+                    </th>
+                `;
+            });
+
+            controlsRowHTML += '</tr>';
+
+            // Create template header row (second row in thead)
+            const decision = decisions[groupIndex];
+            let statusHTML = '';
+            let statusClass = '';
+            if (decision === 'approved') {
+                statusHTML = '✓ APPROVED';
+                statusClass = 'approved';
+            } else if (decision === 'rejected') {
+                statusHTML = '✗ REJECTED';
+                statusClass = 'rejected';
+            } else {
+                statusHTML = 'Under Review';
+            }
+
+            let headerHTML = '<tr class="sequence-header">';
+
+            // Get created_by field if available
+            const createdBy = group.created_by || 'Unknown';
+            const referenceTemplate = group.reference_template || '';
+
+            headerHTML += `<th class="sequence-info-cell">
+                <span class="sequence-number">${referenceTemplate || `Group ${groupIndex + 1}`}</span>
+                <span class="sequence-status ${statusClass}">${statusHTML}</span>
+                <div style="font-size: 0.65rem; margin-top: 6px; opacity: 0.85;">${createdBy}</div>
+            </th>`;
+
+            group.sequences.forEach((seq, seqIdx) => {
+                // Skip removed sequences
+                if (isSequenceRemoved(groupIndex, seqIdx)) {
+                    return;
+                }
+
+                headerHTML += `
+                    <th>
+                        <div class="dir-name">${seq.parent_dir}</div>
+                        <div class="template-name">${seq.template_name}</div>
+                    </th>
+                `;
+            });
+            headerHTML += '</tr>';
+
+            // Create table rows
+            let rowsHTML = '';
+            group.rows.forEach((row, rowIdx) => {
+                // Count how many photos exist in this row (skip rows with only one photo - nothing to compare)
+                const photoCount = row.photos.filter(p => p !== null && p !== undefined).length;
+                if (photoCount <= 1) {
+                    return; // Skip this row - nothing to compare
+                }
+
+                // Display position_key (INDEX_T tuple) as row identifier
+                const positionLabel = row.position_key.join('_');
+
+                const isRowMarked = isRowMarkedForDeletion(groupIndex, row.row_index);
+                rowsHTML += `<tr class="sequence-row" data-row-position="${row.row_index}">`;
+                rowsHTML += `<td class="row-label ${isRowMarked ? 'marked-for-deletion' : ''}">
+                    ${positionLabel}
+                    <button class="delete-btn delete-row-btn" onclick="event.preventDefault(); toggleRowDelete(${groupIndex}, ${row.row_index})">
+                        ${isRowMarked ? 'Unmark' : 'Del'}
+                    </button>
+                </td>`;
+
+                group.sequences.forEach((seq, seqIdx) => {
+                    // Skip removed sequences
+                    if (isSequenceRemoved(groupIndex, seqIdx)) {
+                        return;
+                    }
+
+                    const photo = row.photos[seqIdx];
+
+                    if (!photo) {
+                        // Missing photo
+                        rowsHTML += `<td class="photo-cell missing" data-seq-index="${seqIdx}">—</td>`;
+                    } else {
+                        let imgSrc, imgOnError = '';
+                        if (useServerImages) {
+                            imgSrc = `/api/review/thumbnail/${photo.id}?size=120`;
+                            imgOnError = `onerror="this.onerror=null; this.src='data:image/svg+xml,%3Csvg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'120\\' height=\\'90\\'%3E%3Crect width=\\'120\\' height=\\'90\\' fill=\\'%23fca5a5\\'/%3E%3Ctext x=\\'50%25\\' y=\\'50%25\\' text-anchor=\\'middle\\' dy=\\'.3em\\' font-family=\\'Arial\\' font-size=\\'10\\' fill=\\'%23991b1b\\'%3ENot found%3C/text%3E%3C/svg%3E';"`;
+                        } else {
+                            const filename = encodeURIComponent(photo.filename).replace(/'/g, '%27');
+                            imgSrc = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='90'%3E%3Crect width='120' height='90' fill='%23f7fafc'/%3E%3Ctext x='50%25' y='35%25' text-anchor='middle' font-family='Arial' font-size='8' fill='%23718096'%3E${filename}%3C/text%3E%3Ctext x='50%25' y='65%25' text-anchor='middle' font-family='Arial' font-size='7' fill='%23a0aec0'%3E${(photo.similarity_score * 100).toFixed(0)}%25 similar%3C/text%3E%3C/svg%3E`;
+                        }
+
+                        // Determine similarity score class
+                        let scoreClass = 'score-low';
+                        if (photo.similarity_score >= 0.8) scoreClass = 'score-high';
+                        else if (photo.similarity_score >= 0.6) scoreClass = 'score-medium';
+
+                        let photoClass = 'photo-item';
+                        if (photo.is_exemplar) photoClass += ' exemplar';
+                        if (photo.attention_test) photoClass += ' attention-test';
+                        const isPhotoMarked = isPhotoMarkedForDeletion(groupIndex, photo.id);
+                        if (isPhotoMarked) photoClass += ' marked-for-deletion';
+
+                        const cellClass = 'photo-cell';
+                        const photoTitle = `${photo.filename}\nSimilarity: ${(photo.similarity_score * 100).toFixed(1)}%${photo.is_exemplar ? '\n✓ Exemplar (best quality)' : ''}${photo.attention_test ? '\n⚠️ Attention test - check carefully!' : ''}`;
+                        const detailsId = `seq-photo-details-${groupIndex}-${row.row_index}-${photo.id}`;
+                        const photoDetails = formatPhotoMetadata(photo);
+                        const imgOnClick = useServerImages ? `onclick="showFullImage(${photo.id}, '${photo.filename.replace(/'/g, "\\'")}')"` : '';
+
+                        // Only show similarity score if it exists (not null/undefined)
+                        const scoreHTML = (photo.similarity_score !== null && photo.similarity_score !== undefined)
+                            ? `<div class="similarity-score ${scoreClass}">${(photo.similarity_score * 100).toFixed(0)}%</div>`
+                            : '';
+
+                        rowsHTML += `
+                            <td class="${cellClass}" data-seq-index="${seqIdx}">
+                                <div class="${photoClass}" title="${photoTitle}">
+                                    <img src="${imgSrc}" alt="${photo.filename}" ${imgOnError} ${imgOnClick} style="cursor: pointer;">
+                                    ${scoreHTML}
+                                    <button class="delete-btn delete-photo-btn" onclick="event.preventDefault(); togglePhotoDelete(${groupIndex}, ${photo.id})">
+                                        ${isPhotoMarked ? '↺' : '✗'}
+                                    </button>
+                                    <div class="photo-info">
+                                        <div class="photo-filename">
+                                            ${photo.filename}
+                                        </div>
+                                        <div id="${detailsId}" style="font-size: 0.6rem; color: #a0aec0; margin-top: 2px;">
+                                            ${photoDetails}
+                                        </div>
+                                    </div>
+                                </div>
+                            </td>
+                        `;
+                    }
+                });
+
+                rowsHTML += '</tr>';
+            });
+
+            return `
+                <table class="sequence-table">
+                    <thead>
+                        ${controlsRowHTML}
+                        ${headerHTML}
+                    </thead>
+                    <tbody>
+                        ${rowsHTML}
+                    </tbody>
+                </table>
+            `;
+        }
+
+        function toggleSequence(groupIndex, sequenceName) {
+            if (!sequenceSelections[groupIndex]) {
+                sequenceSelections[groupIndex] = {};
+            }
+
+            sequenceSelections[groupIndex][sequenceName] = !sequenceSelections[groupIndex][sequenceName];
+
+            // Re-render current group to update styling
+            displayCurrentGroup();
+
+            const action = sequenceSelections[groupIndex][sequenceName] ? 'included' : 'excluded';
+            const seqDisplayName = sequenceName.split('/').pop() || sequenceName;
+            showAlert(`Sequence "${seqDisplayName}" ${action}`, 'info');
+        }
+
+        function resetSelections() {
+            const group = sequenceGroups[currentGroupIndex];
+            sequenceSelections[currentGroupIndex] = {};
+            group.sequences.forEach(seq => {
+                sequenceSelections[currentGroupIndex][seq.name] = true;
+            });
+
+            displayCurrentGroup();
+            showAlert('All sequences included', 'info');
+        }
+
+        function approveGroup() {
+            const group = sequenceGroups[currentGroupIndex];
+            const selections = sequenceSelections[currentGroupIndex];
+
+            // Check for attention tests in selected sequences
+            const hasAttentionTest = group.rows.some(row =>
+                row.photos.some(photo =>
+                    photo &&
+                    photo.attention_test &&
+                    selections[group.sequences[photo.sequence_index].name]
+                )
+            );
+
+            if (hasAttentionTest) {
+                if (!confirm('⚠️ This group contains obvious mismatches (red pulsing borders). Are you sure you want to approve it?\n\nThis might be an attention test to ensure you\'re reviewing carefully.')) {
+                    showAlert('Approval cancelled - please review the red-bordered photos', 'warning');
+                    return;
+                }
+                showAlert('Attention test passed - continuing with approval', 'success');
+            }
+
+            // Check if any sequences are excluded
+            const excludedSequences = Object.entries(selections)
+                .filter(([_, included]) => !included)
+                .map(([name, _]) => name.split('/').pop() || name);
+
+            if (excludedSequences.length > 0) {
+                const message = `Approving with ${excludedSequences.length} sequence(s) excluded: ${excludedSequences.join(', ')}`;
+                showAlert(message, 'info');
+            }
+
+            decisions[currentGroupIndex] = 'approved';
+            showAlert(`Group ${currentGroupIndex + 1} approved`, 'success');
+            displayCurrentGroup();
+            advanceToNext();
+        }
+
+        function rejectGroup() {
+            decisions[currentGroupIndex] = 'rejected';
+            showAlert(`Group ${currentGroupIndex + 1} rejected`, 'info');
+            displayCurrentGroup();
+            advanceToNext();
+        }
+
+        function advanceToNext() {
+            // Find next unreviewed group
+            for (let i = currentGroupIndex + 1; i < sequenceGroups.length; i++) {
+                if (!(i in decisions)) {
+                    currentGroupIndex = i;
+                    displayCurrentGroup();
+                    return;
+                }
+            }
+
+            // If all reviewed, just move to next
+            if (currentGroupIndex < sequenceGroups.length - 1) {
+                currentGroupIndex++;
+                displayCurrentGroup();
+            }
+        }
+
+        function bulkApproveAll() {
+            const unreviewed = [];
+            for (let i = 0; i < sequenceGroups.length; i++) {
+                if (!(i in decisions)) {
+                    unreviewed.push(i);
+                }
+            }
+
+            if (unreviewed.length === 0) {
+                showAlert('All groups already reviewed', 'info');
+                return;
+            }
+
+            if (confirm(`Approve ${unreviewed.length} remaining groups with current sequence selections?\n\nThis will use default selections (all sequences included) for groups you haven't customized.`)) {
+                unreviewed.forEach(i => {
+                    decisions[i] = 'approved';
+                    // Ensure default selections exist
+                    if (!(i in sequenceSelections)) {
+                        sequenceSelections[i] = {};
+                        sequenceGroups[i].sequences.forEach(seq => {
+                            sequenceSelections[i][seq.name] = true;
+                        });
+                    }
+                });
+                showAlert(`✓ Approved ${unreviewed.length} groups`, 'success');
+                displayCurrentGroup();
+            }
+        }
+
+        // Deletion marking functions
+        function initDeletionMarks(groupIndex) {
+            if (!deletionMarks[groupIndex]) {
+                deletionMarks[groupIndex] = {
+                    photos: new Set(),
+                    rows: new Set(),
+                    sequences: new Set()
+                };
+            }
+        }
+
+        function togglePhotoDelete(groupIndex, photoId) {
+            initDeletionMarks(groupIndex);
+            const marks = deletionMarks[groupIndex].photos;
+            if (marks.has(photoId)) {
+                marks.delete(photoId);
+            } else {
+                marks.add(photoId);
+            }
+            displayCurrentGroup();
+        }
+
+        function toggleRowDelete(groupIndex, rowPosition) {
+            initDeletionMarks(groupIndex);
+            const marks = deletionMarks[groupIndex].rows;
+            if (marks.has(rowPosition)) {
+                marks.delete(rowPosition);
+            } else {
+                marks.add(rowPosition);
+            }
+            displayCurrentGroup();
+        }
+
+        function removeSequenceWithConfirm(groupIndex, seqIndex) {
+            const group = sequenceGroups[groupIndex];
+            const seq = group.sequences[seqIndex];
+
+            // Check if already removed
+            if (removedSequences[groupIndex]?.has(seqIndex)) {
+                return; // Already removed, shouldn't happen but be safe
+            }
+
+            // Show confirmation dialog
+            const seqName = `${seq.parent_dir}/${seq.template_name}`;
+            if (!confirm(`Remove sequence "${seqName}" from this group?\n\nThis will hide the column from the display and exclude all photos in it from the final output.`)) {
+                return; // User cancelled
+            }
+
+            // Initialize removal set if needed
+            if (!removedSequences[groupIndex]) {
+                removedSequences[groupIndex] = new Set();
+            }
+
+            // Mark sequence as removed
+            removedSequences[groupIndex].add(seqIndex);
+
+            // Unselect the sequence (mark as not included)
+            if (sequenceSelections[groupIndex]) {
+                sequenceSelections[groupIndex][seq.name] = false;
+            }
+
+            // Also mark for deletion in the deletion marks
+            initDeletionMarks(groupIndex);
+            deletionMarks[groupIndex].sequences.add(seqIndex);
+
+            // Re-render the group to remove the column
+            displayCurrentGroup();
+        }
+
+        function isPhotoMarkedForDeletion(groupIndex, photoId) {
+            return deletionMarks[groupIndex]?.photos?.has(photoId) || false;
+        }
+
+        function isRowMarkedForDeletion(groupIndex, rowPosition) {
+            return deletionMarks[groupIndex]?.rows?.has(rowPosition) || false;
+        }
+
+        function isSequenceMarkedForDeletion(groupIndex, seqIndex) {
+            return deletionMarks[groupIndex]?.sequences?.has(seqIndex) || false;
+        }
+
+        function isSequenceRemoved(groupIndex, seqIndex) {
+            return removedSequences[groupIndex]?.has(seqIndex) || false;
+        }
+
+        function seekNextPhoto(groupIndex, seqIndex) {
+            const group = sequenceGroups[groupIndex];
+
+            // Initialize seek position tracker if needed
+            if (!seekPositions[groupIndex]) {
+                seekPositions[groupIndex] = {};
+            }
+
+            // Get current seek position (or start at -1)
+            let currentPos = seekPositions[groupIndex][seqIndex] ?? -1;
+
+            // Find next row with a photo in this column
+            let foundRow = null;
+            for (let i = 0; i < group.rows.length; i++) {
+                const checkIdx = (currentPos + 1 + i) % group.rows.length;
+                const row = group.rows[checkIdx];
+                const photo = row.photos[seqIndex];
+
+                if (photo !== null && photo !== undefined) {
+                    foundRow = checkIdx;
+                    seekPositions[groupIndex][seqIndex] = checkIdx;
+                    break;
+                }
+            }
+
+            if (foundRow === null) {
+                showAlert('No photos found in this sequence column', 'info');
+                return;
+            }
+
+            // Scroll to the row
+            const row = group.rows[foundRow];
+            const rowElement = document.querySelector(`[data-row-position="${foundRow}"]`);
+            if (rowElement) {
+                rowElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+                // Highlight the cell
+                const cellElement = rowElement.querySelector(`[data-seq-index="${seqIndex}"]`);
+                if (cellElement) {
+                    cellElement.classList.add('cell-highlight');
+                    setTimeout(() => {
+                        cellElement.classList.remove('cell-highlight');
+                    }, 1500);
+                }
+            }
+        }
+
+        // Utility functions
+        function downloadJSON(data, filename) {
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        // showAlert and showFullImage are provided by review_common.js
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (sequenceGroups.length === 0) return;
+
+            switch (e.key.toLowerCase()) {
+                case 'a':
+                    e.preventDefault();
+                    approveGroup();
+                    break;
+                case 'r':
+                    e.preventDefault();
+                    rejectGroup();
+                    break;
+                case 's':
+                    e.preventDefault();
+                    if (e.ctrlKey || e.metaKey) {
+                        saveProgress();
+                    } else {
+                        // Skip to next (no decision)
+                        nextGroup();
+                    }
+                    break;
+                case 'arrowleft':
+                    e.preventDefault();
+                    previousGroup();
+                    break;
+                case 'arrowright':
+                    e.preventDefault();
+                    nextGroup();
+                    break;
+                case 'escape':
+                    e.preventDefault();
+                    resetSelections();
+                    break;
+            }
+        });
+
+        // Initialize when page loads
+        window.addEventListener('load', () => {
+            initializeApp();
+
+            // Show keyboard shortcuts after a delay
+            setTimeout(() => {
+                showAlert('💡 Shortcuts: A=approve, R=reject, S=skip, ←→=navigate, Esc=reset, Ctrl+S=save', 'info');
+            }, 2000);
+        });
+    </script>
+</body>
+</html>
