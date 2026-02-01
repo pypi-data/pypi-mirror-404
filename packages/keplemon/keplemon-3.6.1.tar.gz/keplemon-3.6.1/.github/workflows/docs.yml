@@ -1,0 +1,46 @@
+name: Deploy MkDocs site
+
+permissions:
+  contents: read
+  id-token: write
+  pages: write
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.13'
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y libssl-dev
+          python -m pip install --upgrade pip
+          pip install ".[dev]"
+
+      - name: Build site
+        run: |
+          PYTHONPATH=stubs mkdocs build --clean --verbose
+
+      - name: Add CNAME for custom domain
+        run: echo 'keplemon.citra.space' > site/CNAME
+
+      - uses: actions/configure-pages@v3
+
+      - name: Upload Pages Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - uses: actions/deploy-pages@v4
