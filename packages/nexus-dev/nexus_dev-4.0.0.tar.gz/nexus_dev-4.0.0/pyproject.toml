@@ -1,0 +1,147 @@
+[project]
+name = "nexus-dev"
+version = "4.0.0"
+description = "MCP server for persistent AI coding assistant memory with local RAG"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.13"
+authors = [
+    {name = "Marco Mornati", email = "marco@mornati.net"}
+]
+keywords = ["mcp", "rag", "ai", "coding", "assistant", "vector-database", "lancedb"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+dependencies = [
+    "mcp>=1.25.0",                      # MCP Python SDK with FastMCP
+    "lancedb>=0.26.0",                  # Vector database
+    "openai>=1.60.0",                   # OpenAI embeddings
+    "httpx>=0.28.0",                    # Async HTTP for Ollama
+    "click>=8.1.0",                     # CLI framework
+    "pyarrow>=18.0.0",                  # Arrow for LanceDB
+    "pydantic>=2.10.0",                 # Data validation
+    "pyyaml>=6.0.0",                    # YAML parsing for agent configs
+    "tree-sitter>=0.24.0",              # Parser library
+    "tree-sitter-language-pack>=0.7.0", # Pre-built parsers (100+ languages)
+    "jsonschema>=4.18.0",               # JSON schema validation
+    "pandas>=2.0.0",                    # DataFrame support for LanceDB
+    "falkordblite>=0.7.0",              # Graph & KV database (Redis + FalkorDB)
+]
+
+[project.optional-dependencies]
+google = ["google-cloud-aiplatform>=1.38.0"]
+aws = ["boto3>=1.34.0"]
+voyage = ["voyageai>=0.1.0"]
+cohere = ["cohere>=4.37.0"]
+all = ["nexus-dev[google,aws,voyage,cohere]"]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.25.0",
+    "pytest-cov>=6.0.0",
+    "ruff>=0.9.0",
+    "mypy>=1.14.0",
+    "types-PyYAML>=6.0.0",
+]
+
+[project.scripts]
+nexus-init = "nexus_dev.cli:init_command"
+nexus-index = "nexus_dev.cli:index_command"
+nexus-reindex = "nexus_dev.cli:reindex_command"
+nexus-index-mcp = "nexus_dev.cli:index_mcp_command_entry"
+nexus-status = "nexus_dev.cli:status_command"
+nexus-inspect = "nexus_dev.cli:inspect_command"
+nexus-clean = "nexus_dev.cli:clean_command"
+nexus-dev = "nexus_dev.server:main"
+nexus-mcp = "nexus_dev.cli:mcp_command_entry"
+nexus-agent = "nexus_dev.cli:agent_command_entry"
+nexus-import-github = "nexus_dev.cli:import_github_command"
+nexus-search = "nexus_dev.cli:search_command"
+nexus-export = "nexus_dev.cli:export_command"
+
+
+[project.urls]
+Homepage = "https://github.com/mmornati/nexus-dev"
+Repository = "https://github.com/mmornati/nexus-dev"
+Issues = "https://github.com/mmornati/nexus-dev/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/nexus_dev"]
+
+[tool.hatch.build.targets.wheel.shared-data]
+"src/nexus_dev/agent_templates" = "nexus_dev/agent_templates"
+"src/nexus_dev/templates" = "nexus_dev/templates"
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "ANN", "B", "C4", "SIM"]
+# SIM105: try-except-pass used intentionally for silent failures
+# ANN401: Any type required for tree-sitter nodes
+ignore = ["SIM105", "ANN401"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["ANN"]  # No type annotations required in tests
+"tests/conftest.py" = ["ANN", "W293"]  # W293: Whitespace in string literals is intentional
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+
+# Ignore missing stubs for external libraries without type annotations
+[[tool.mypy.overrides]]
+module = [
+    "lancedb",
+    "lancedb.*",
+    "pyarrow",
+    "pyarrow.*",
+    "tree_sitter",
+    "tree_sitter.*",
+    "tree_sitter_language_pack",
+    "tree_sitter_language_pack.*",
+    "vertexai",
+    "vertexai.*",
+    "voyageai",
+    "voyageai.*",
+    "cohere",
+    "cohere.*",
+    "boto3",
+    "boto3.*",
+    "falkordblite",
+    "falkordblite.*",
+    "redislite",
+    "redislite.*",
+]
+ignore_missing_imports = true
+
+# Allow less strict typing for modules heavily interfacing with untyped libraries
+[[tool.mypy.overrides]]
+module = [
+    "nexus_dev.database",
+    "nexus_dev.embeddings",
+    "nexus_dev.chunkers.python_chunker",
+    "nexus_dev.chunkers.javascript_chunker",
+    "nexus_dev.chunkers.java_chunker",
+    "nexus_dev.kv_store",
+    "nexus_dev.graph_store",
+    "nexus_dev.hybrid_db",
+]
+warn_return_any = false
+disallow_untyped_defs = false
+disable_error_code = ["attr-defined", "arg-type", "union-attr", "index", "return-value"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
