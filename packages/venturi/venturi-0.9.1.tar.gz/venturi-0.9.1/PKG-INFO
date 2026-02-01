@@ -1,0 +1,152 @@
+Metadata-Version: 2.4
+Name: venturi
+Version: 0.9.1
+Summary: A hackable blueprint for training neural networks using PyTorch and Lightning.
+Project-URL: Homepage, https://github.com/chcomin/venturi
+Project-URL: Repository, https://github.com/chcomin/venturi
+Author: Cesar Comin
+License: MIT License
+        
+        Copyright (c) 2026 Cesar Henrique Comin
+        
+        Permission is hereby granted, free of charge, to any person obtaining a copy
+        of this software and associated documentation files (the "Software"), to deal
+        in the Software without restriction, including without limitation the rights
+        to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+        copies of the Software, and to permit persons to whom the Software is
+        furnished to do so, subject to the following conditions:
+        
+        The above copyright notice and this permission notice shall be included in all
+        copies or substantial portions of the Software.
+        
+        THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+        IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+        FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+        AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+        LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+        OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+        SOFTWARE.
+License-File: LICENSE
+Keywords: configuration,deep-learning,lightning,pytorch
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Topic :: Scientific/Engineering :: Artificial Intelligence
+Requires-Python: >=3.13
+Requires-Dist: lightning>=2.6.0
+Requires-Dist: matplotlib>=3.10.8
+Requires-Dist: numpy>=2.3.5
+Requires-Dist: pandas>=3.0.0
+Requires-Dist: pillow>=12.1.0
+Requires-Dist: pyyaml>=6.0.3
+Requires-Dist: torch>=2.9.1
+Requires-Dist: torchmetrics>=1.8.2
+Requires-Dist: tqdm>=4.67.1
+Provides-Extra: dev
+Requires-Dist: build>=1.4; extra == 'dev'
+Requires-Dist: mypy>=1.11; extra == 'dev'
+Requires-Dist: pytest-cov>=5.0; extra == 'dev'
+Requires-Dist: pytest-mock>=3.15; extra == 'dev'
+Requires-Dist: pytest>=8.0; extra == 'dev'
+Requires-Dist: ruff>=0.4.0; extra == 'dev'
+Requires-Dist: twine>=5.0; extra == 'dev'
+Requires-Dist: types-pyyaml; extra == 'dev'
+Provides-Extra: examples
+Requires-Dist: optuna>=4.7.0; extra == 'examples'
+Requires-Dist: torchvision>=0.24.1; extra == 'examples'
+Requires-Dist: wandb>=0.23.1; extra == 'examples'
+Description-Content-Type: text/markdown
+
+<div align="center">
+
+<img src="assets/logo.png" alt="Venturi Logo" width="160">
+
+# Venturi
+
+**A hackable blueprint for training neural networks.**
+
+[![PyPI](https://img.shields.io/pypi/v/venturi?style=flat-square&logo=pypi&logoColor=white)](https://pypi.org/project/venturi/)
+[![Python](https://img.shields.io/pypi/pyversions/venturi?style=flat-square&logo=python&logoColor=white)](https://pypi.org/project/venturi/)
+[![License](https://img.shields.io/pypi/l/venturi?style=flat-square)](https://github.com/chcomin/venturi/blob/main/LICENSE)
+
+<p align="center">
+  <a href="#installation">Installation</a> •
+  <a href="#quick-start">Quick Start</a> •
+  <a href="#examples">Examples</a>
+</p>
+
+</div>
+
+---
+
+**A hackable blueprint for training neural networks using PyTorch and Lightning.**
+
+Venturi is a minimalist alternative to Hydra and LightningCLI. It prioritizes code transparency and flexibility. By separating experiment parameters from logic, it enables complex experiment registration without the bloat of heavy configuration frameworks.
+
+## Why Venturi?
+
+Most configuration frameworks force you to learn their specific DSL or hide logic behind complex abstractions. Venturi takes a different approach:
+
+* **Auditable Core:** The entire package logic resides in just two files: `config.py` and `core.py`. You can read, understand, and modify the inner workings.
+* **Zero-Overhead Configuration:** No enforced `argparse` or `pydantic` validation by default. You instantiate Python objects directly from YAML. Validation is opt-in, not mandatory.
+* **Global Context:** The full YAML configuration is passed to the main classes used for training. This allows you to define complex relationships (e.g., dynamically setting model depth based on dataset size) without changing the training loop.
+* **Inheritance-First Design:** The experiment lifecycle is defined by classes designed to be subclassed when custom training logic is necessary.
+
+## Installation
+
+Install the core package:
+
+```bash
+pip install venturi
+```
+
+To run the provided examples, install the optional dependencies:
+
+```bash
+pip install "venturi[examples]"
+```
+
+## Quick Start
+
+### 1. Scaffold a Project
+Generate a standard directory structure and a default configuration file:
+
+```bash
+venturi create path/to/project
+```
+
+This creates a [base_config.yaml](https://github.com/chcomin/venturi/tree/master/venturi/base_config.yaml) file containing the default blueprints.
+
+### 2. Define Your Experiment
+Venturi uses a hierarchical configuration system. You load a base configuration and override it with experiment-specific YAMLs.
+
+```python
+from venturi import Config, Experiment
+
+# 1. Load the project defaults
+args = Config("base_config.yaml")
+
+# 2. Overlay custom experiment parameters
+args.update_from_yaml("experiments/my_custom_config.yaml")
+
+# 3. Initialize and Run
+experiment = Experiment(args)
+experiment.fit()
+```
+
+## Examples
+
+Some examples are provided in the examples directory:
+
+| Example | Description |
+| :--- | :--- |
+| **[Configuration](https://github.com/chcomin/venturi/tree/master/examples/0_start_here)** | The core concept: instantiating arbitrary Python objects directly from YAML and mixing multiple config files |
+| **[Basic Usage](https://github.com/chcomin/venturi/tree/master/examples/basic_usage)** | A complete image segmentation experiment setup |
+| **[Base Config](https://github.com/chcomin/venturi/tree/master/venturi/base_config.yaml)** | The reference file describing all standard Venturi parameters |
+
+## Design Philosophy
+
+Venturi is built on the principle that **research code should be hackable**.
+
+1.  **Transparency:** You should not have to dig through a call stack of 50 internal functions to understand how your configurations are parsed.
+2.  **Flexibility:** If you want to add Pydantic validation, you can add it *before* passing the config to the `Experiment` class. It is not baked into the core.
+3.  **Portability:** By avoiding complex CLI dependency injection, your experiments remain standard Python scripts that are easy to debug and deploy.
