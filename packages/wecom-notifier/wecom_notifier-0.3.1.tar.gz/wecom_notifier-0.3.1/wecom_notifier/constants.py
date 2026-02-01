@@ -1,0 +1,73 @@
+"""
+常量定义 - 向后兼容模块
+
+此模块保持向后兼容：
+- 通用常量从 core.constants 导入
+- 企微特定常量从 platforms.wecom.constants 导入
+"""
+
+# 从核心模块导入通用常量
+from wecom_notifier.core.constants import (
+    # 频率限制
+    DEFAULT_RATE_LIMIT,
+    DEFAULT_TIME_WINDOW,
+    # 分段设置
+    DEFAULT_SEGMENT_INTERVAL,
+    # 重试设置
+    DEFAULT_MAX_RETRIES,
+    DEFAULT_RETRY_DELAY,
+    DEFAULT_BACKOFF_FACTOR,
+    # HTTP设置
+    DEFAULT_TIMEOUT,
+    # Markdown语法标记
+    MARKDOWN_LINK_PATTERN,
+    MARKDOWN_IMAGE_PATTERN,
+    MARKDOWN_CODE_BLOCK_PATTERN,
+    MARKDOWN_TABLE_ROW_PATTERN,
+    # 页码格式设置
+    PAGE_INDICATOR_FORMAT,
+    MAX_PAGE_INDICATOR_BYTES,
+    # 通用消息类型
+    MSG_TYPE_TEXT,
+    MSG_TYPE_MARKDOWN,
+)
+
+# 从企微平台导入企微特定常量
+from wecom_notifier.platforms.wecom.constants import (
+    MSG_TYPE_MARKDOWN_V2,
+    MSG_TYPE_IMAGE,
+    MAX_BYTES_PER_MESSAGE,
+    RATE_LIMIT_MAX_RETRIES,
+    RATE_LIMIT_WAIT_TIME,
+    ERRCODE_SUCCESS,
+    ERRCODE_WEBHOOK_INVALID,
+    ERRCODE_RATE_LIMIT,
+)
+
+__all__ = [
+    # 通用常量
+    "DEFAULT_RATE_LIMIT",
+    "DEFAULT_TIME_WINDOW",
+    "DEFAULT_SEGMENT_INTERVAL",
+    "DEFAULT_MAX_RETRIES",
+    "DEFAULT_RETRY_DELAY",
+    "DEFAULT_BACKOFF_FACTOR",
+    "DEFAULT_TIMEOUT",
+    "MARKDOWN_LINK_PATTERN",
+    "MARKDOWN_IMAGE_PATTERN",
+    "MARKDOWN_CODE_BLOCK_PATTERN",
+    "MARKDOWN_TABLE_ROW_PATTERN",
+    "PAGE_INDICATOR_FORMAT",
+    "MAX_PAGE_INDICATOR_BYTES",
+    "MSG_TYPE_TEXT",
+    "MSG_TYPE_MARKDOWN",
+    # 企微特定常量
+    "MSG_TYPE_MARKDOWN_V2",
+    "MSG_TYPE_IMAGE",
+    "MAX_BYTES_PER_MESSAGE",
+    "RATE_LIMIT_MAX_RETRIES",
+    "RATE_LIMIT_WAIT_TIME",
+    "ERRCODE_SUCCESS",
+    "ERRCODE_WEBHOOK_INVALID",
+    "ERRCODE_RATE_LIMIT",
+]
