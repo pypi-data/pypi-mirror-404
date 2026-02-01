@@ -1,0 +1,378 @@
+# MCP.Tools
+
+---
+## get_data_info
+```python
+def get_data_info(data_path: str | Path,
+                  vars_list: List[str] | None = None,
+                  encoding: str = "utf-8") -> str:
+    ...
+```
+
+**Input Parameters**:
+- `data_path`: Absolute filesystem path or URL to data file (required)
+- `vars_list`: Optional variable subset specification for selective analysis (default: null, all variables)
+- `encoding`: Character encoding for text-based formats (default: UTF-8, ignored for .dta)
+
+**Return Structure**:
+Serialized JSON string containing multi-layered metadata:
+```json
+{
+  "overview": {"source": <path>, "obs": <int>, "var_numbers": <int>, "var_list": [<array>]},
+  "info_config": {"metrics": [<array>], "max_display": <int>, "decimal_places": <int>},
+  "vars_detail": {<variable_name>: {"var": <str>, "type": <str>, "summary": {...}}},
+  "saved_path": <cache_file_path>
+}
+```
+
+**Operational Examples**:
+```python
+# Local file analysis
+get_data_info("/data/econometrics/survey.dta")
+get_data_info("~/Documents/exports/quarterly.csv", vars_list=["gdp", "inflation", "unemployment"])
+
+# Remote data ingestion
+get_data_info("https://repository.org/datasets/panel_data.xlsx")
+
+# Encoded source handling
+get_data_info("/data/legacy/latin1_data.csv", encoding="latin1")
+```
+
+**Implementation Architecture**:
+The tool operates through a multi-layered abstraction cascade. At the foundation lies a polymorphic class hierarchy where `DataInfoBase` defines the abstract interface for format-specific handlers (`DtaDataInfo`, `CsvDataInfo`, `ExcelDataInfo`). Content integrity verification employs MD5 hashing with configurable suffix length for cache identification. Configuration propagation follows a precedence chain: runtime parameters override environment variables (`STATA_MCP_DATA_INFO_DECIMAL_PLACES`, `STATA_MCP_DATA_INFO_STRING_KEEP_NUMBER`), which in turn override TOML-based configuration at `~/.statamcp/config.toml`.
+
+Statistical computation leverages pandas DataFrame operations with NumPy backend. The metrics system implements a configurable computation pipeline where default metrics (`obs`, `mean`, `stderr`, `min`, `max`) can be extended through configuration to include quartiles (`q1`, `q3`) and distribution shape measures (`skewness`, `kurtosis`). Type dispatch separates string variables (observation counting with unique value sampling under `max_display` threshold) from numeric variables (central tendency, dispersion, and distribution shape computation with `decimal_places` precision rounding).
+
+Caching strategy employs content-addressable storage where hash computation determines cache file naming: `data_info__<name>_<ext>__hash_<suffix>.json`. Cache resolution occurs at invocation time, with automatic regeneration on content hash divergence. The cache directory defaults to `~/.statamcp/.cache/` but can be overridden to project-specific `stata-mcp-tmp/` locations through the `cache_dir` parameter.
+
+---
+
+## stata_do
+```python
+def stata_do(dofile_path: str,
+             log_file_name: str | None = None,
+             is_read_log: bool = True) -> Dict[str, Union[str, None]]:
+    ...
+```
+
+**Input Parameters**:
+- `dofile_path`: Absolute or relative path to target .do file (required)
+- `log_file_name`: Custom log filename without timestamp (optional, auto-generated if null)
+- `is_read_log`: Boolean flag for log content retrieval (default: true)
+
+**Return Structure**:
+Dictionary containing execution metadata and optional log payload:
+```python
+{
+  "log_file_path": "<absolute_path_to_stata_log>",
+  "log_content": "<full_log_text_or_'Not_read_log'>"
+}
+```
+Error condition returns: `{"error": "<exception_message>"}`
+
+**Operational Examples**:
+```python
+# Standard execution with log retrieval
+stata_do("/Users/project/stata-mcp-dofile/20250104153045.do")
+
+# Custom log naming
+stata_do("~/analysis/regression_pipeline.do", log_file_name="quarterly_results")
+
+# Execution without log reading
+stata_do("/tmp/estimation.do", is_read_log=False)
+```
+
+**Implementation Architecture**:
+The tool encapsulates the `StataDo` executor class which implements platform-specific command invocation strategies. Cross-platform abstraction abstracts Stata executable location through the `StataFinder` class: macOS probes `/Applications/Stata/` hierarchy, Windows interrogates Program Files registry, and Linux queries system PATH for `stata-mp`. The execution pipeline involves do-file staging, Stata CLI invocation with `-b` batch mode flag, log file redirection, and exit code monitoring.
+
+Log file management operates within the `stata-mcp-log/` directory structure with automatic timestamp generation when `log_file_name` is omitted. The executor implements differential log handling based on `is_read_log` flag: when enabled, performs file read operation and returns content; when disabled, returns placeholder string to minimize I/O overhead.
+
+Exception handling categorizes failures into three tiers: `FileNotFoundError` for missing do-file artifacts, `RuntimeError` for Stata execution failures or log generation issues, and `PermissionError` for insufficient execution or write permissions. Error conditions return dictionary with `"error"` key rather than raising exceptions to maintain MCP protocol compatibility.
+
+---
+
+## write_dofile
+```python
+def write_dofile(content: str, 
+                 encoding: str | None = None) -> str:
+    ...
+```
+
+**Input Parameters**:
+- `content`: Stata command sequence to persist (required)
+- `encoding`: Character encoding for file output (optional, defaults to UTF-8)
+
+**Return Structure**:
+String containing absolute POSIX-compliant path to generated do-file
+
+**Operational Examples**:
+```python
+# Basic regression analysis
+write_dofile("""
+use "/data/survey.dta", clear
+regress income age education experience
+outreg2 using "`output_path'/results.doc", replace
+""")
+
+# Time series analysis with encoding specification
+write_dofile("""
+tsset date
+arima gdp, ar(1) ma(1)
+predict forecast
+""", encoding="latin1")
+
+# Data transformation pipeline
+write_dofile("""
+gen log_gdp = ln(gdp)
+gen diff_income = d(income)
+xtset country_id year
+xtreg diff_income log_gdp, fe
+""")
+```
+
+**Implementation Architecture**:
+The tool implements atomic file creation within the `stata-mcp-dofile/` directory hierarchy. File naming employs ISO 8601 basic format timestamp generation (`YYYYMMDDHHMMSS.do`) ensuring temporal uniqueness and chronological sorting. The write operation utilizes Python's built-in `open()` function with mode `"w"` and specified encoding parameter, performing implicit file creation and truncation for atomic write semantics.
+
+Integration with output redirection commands (`outreg2`, `esttab`) requires coordination with the `results_doc_path` prompt to establish output directory paths prior to do-file generation. This separation of concerns enables deterministic output path management across multiple Stata execution cycles.
+
+The tool does not perform syntactic validation or semantic analysis of the Stata code content. Code correctness, command sequencing, and macro expansion validity remain the responsibility of the calling context. Error handling wraps file I/O operations in try-except blocks with structured logging for success/failure tracking.
+
+---
+
+## append_dofile
+```python
+def append_dofile(original_dofile_path: str,
+                  content: str,
+                  encoding: str | None = None) -> str:
+    ...
+```
+
+**Input Parameters**:
+- `original_dofile_path`: Source file path for content extension (may be invalid or empty)
+- `content`: Stata code to append (required)
+- `encoding`: Character encoding (optional, defaults to UTF-8)
+
+**Return Structure**:
+String containing absolute path to new do-file (either modified copy or newly created artifact)
+
+**Operational Examples**:
+```python
+# Extend existing analysis
+append_dofile(
+    "/Users/project/stata-mcp-dofile/base_analysis.do",
+    "xtreg y x1 x2, fe robust"
+)
+
+# Fail-safe creation when source missing
+append_dofile(
+    "/nonexistent/path.do",
+    "regress y x"
+)
+# Returns new file path with provided content
+
+# Code composition for iterative analysis
+append_dofile(
+    previous_dofile_path,
+    """
+predict residuals, residuals
+summarize residuals
+"""
+)
+```
+
+**Implementation Architecture**:
+The tool implements a fail-safe composition strategy through three-phase operation: validation phase checks `original_dofile_path` existence and accessibility via `Path.exists()` probe; composition phase performs conditional content assembly where valid source files trigger read operations followed by concatenation, while invalid paths trigger new file creation; persistence phase writes combined content to a new timestamped artifact in `stata-mcp-dofile/` hierarchy.
+
+Critical design characteristic: source files remain unmodified. All composition operations create new artifacts with fresh timestamps, ensuring source immutability and preserving provenance. Newline integrity maintenance examines source file termination; if source content lacks trailing newline, separator insertion occurs before content append.
+
+The tool does not perform syntactic coherence validation between original and appended content. Macro variable scoping, temporary variable naming conflicts, and command sequence validity require manual coordination by the caller. Similar to `write_dofile`, output redirection path management necessitates prior `results_doc_path` invocation for commands requiring explicit output file specification.
+
+Platform-specific path resolution utilizes `pathlib.Path` for cross-platform compatibility. File read operations employ specified encoding parameter with fallback to UTF-8 default. Error handling wraps I/O operations with silent failure on read errors, treating read exceptions equivalent to missing source files.
+
+---
+## mk_dir
+```python
+def mk_dir(path: str) -> bool:
+    ...
+```
+
+**Input Parameters**:
+- `path`: Directory path specification (string, required, non-empty)
+
+**Return Structure**:
+Boolean indicating directory existence verification post-creation (true: exists, false: creation failed)
+
+**Operational Examples**:
+```python
+# Single directory creation
+mk_dir("/Users/project/outputs")
+# Returns: True
+
+# Recursive hierarchy creation
+mk_dir("~/analysis/2025/q1/january")
+# Creates: analysis/, analysis/2025/, analysis/2025/q1/, analysis/2025/q1/january/
+
+# Cross-platform paths
+mk_dir("C:\\Users\\project\\data")  # Windows
+mk_dir("/home/user/analysis")       # Unix
+```
+
+**Implementation Architecture**:
+The tool implements secure directory creation through the `pathvalidate` library's `sanitize_filepath()` function with platform-specific validation. Sanitization phase removes directory traversal sequences, normalizes path separators, and validates character encoding. Path resolution converts sanitized input to absolute form via `Path.resolve()`, eliminating symbolic links and relative path components.
+
+Directory creation employs `Path.mkdir()` with parameters `mode=0o755` (rwxr-xr-x: owner read/write/execute, group/others read/execute), `exist_ok=True` (idempotent operation), and `parents=True` (recursive creation). Permission configuration follows Unix filesystem conventions with read/execute for group and others enabling directory traversal and listing.
+
+Exception hierarchy provides granular failure diagnostics: `ValueError` raised for invalid path detection via `ValidationError` from sanitization phase; `PermissionError` raised for insufficient directory creation permissions detected by OS; `OSError` raised for filesystem-level failures (disk full, quota exceeded, readonly filesystem). All exceptions propagate to caller with descriptive messages.
+
+Post-creation verification performs boolean existence check via `Path.exists()` combined with `Path.is_dir()` to confirm successful directory creation and differentiate between directories and files with identical names.
+
+---
+
+## load_figure
+```python
+def load_figure(figure_path: str) -> Image:
+    ...
+```
+
+**Input Parameters**:
+- `figure_path`: Absolute path to image file (required)
+
+**Return Structure**:
+FastMCP `Image` object containing image data for MCP transport and display
+
+**Operational Examples**:
+```python
+# Load Stata-generated graph
+load_figure("/Users/project/exports/regression_results.png")
+
+# Load exported figure
+load_figure("~/analysis/timeseries_plot.jpg")
+```
+
+**Implementation Architecture**:
+The tool implements image asset loading from the local filesystem using FastMCP's native `Image` class wrapper. Path validation checks file existence via `Path.exists()` probe; missing assets trigger `FileNotFoundError` exception with descriptive message. Successful invocations construct `Image` object with file path as initialization parameter, enabling automatic file reading and MIME type detection by the underlying MCP framework.
+
+Supported formats depend on FastMCP implementation but typically include PNG (Portable Network Graphics) and JPEG (Joint Photographic Experts Group). The tool performs no format validation or conversion; unsupported formats generate errors during Image object construction or transport phase.
+
+Error logging writes structured messages to logging infrastructure prior to exception propagation, enabling audit trail of failed load attempts. The tool performs no image processing, resizing, or format conversion—operations occur at display/rendering time by the MCP client application.
+
+---
+
+## read_file
+```python
+def read_file(file_path: str, 
+              encoding: str = "utf-8") -> str:
+    ...
+```
+
+**Input Parameters**:
+- `file_path`: Absolute path to target file (required)
+- `encoding`: Character encoding for text decoding (optional, defaults to UTF-8)
+
+**Return Structure**:
+String containing complete file content decoded with specified encoding
+
+**Operational Examples**:
+```python
+# Read Stata log file
+read_file("/Users/project/stata-mcp-log/20250104153045.log")
+
+# Read configuration with encoding
+read_file("~/.statamcp/config.toml", encoding="utf-8")
+
+# Read exported results
+read_file("~/analysis/tables/regression_results.txt")
+```
+
+**Implementation Architecture**:
+The tool implements generic file reading via Python's built-in `open()` function with mode `"r"` and specified encoding parameter. Path validation checks file existence through `Path.exists()`; missing files raise `FileNotFoundError` with descriptive message including invalid path. File reading utilizes context manager (`with` statement) for automatic file handle closure and resource cleanup.
+
+Content reading performs single operation `file.read()` retrieving entire file content into memory as string. For large files exceeding available memory, this approach triggers `MemoryError`; however, typical use cases involve log files, configuration files, and result tables within reasonable size bounds.
+
+Error handling categorizes failures: `FileNotFoundError` for non-existent paths, `IOError` for I/O operation failures (permission denied, disk read error, filesystem corruption), and `UnicodeDecodeError` for encoding mismatches (though not explicitly caught, propagates to caller with encoding information). Success operations log structured messages including file path for audit trail.
+
+---
+
+## ado_package_install
+```python
+def ado_package_install(package: str,
+                        source: str = "ssc",
+                        is_replace: bool = True,
+                        package_source_from: str | None = None) -> str:
+    ...
+```
+
+**Input Parameters**:
+- `package`: Package identifier (required)
+  - SSC: package name (e.g., "outreg2")
+  - GitHub: "username/reponame" format (e.g., "sepinetam/texiv")
+  - net: package name with `package_source_from` specifying source
+- `source`: Distribution source (optional, default: "ssc")
+  - Options: "ssc", "github", "net"
+- `is_replace`: Force replacement flag (optional, default: true)
+- `package_source_from`: Source URL or directory for 'net' installations (optional)
+
+**Return Structure**:
+String containing complete Stata execution log from installation operation
+
+**Operational Examples**:
+```python
+# SSC package installation
+ado_package_install("outreg2", source="ssc")
+
+# GitHub package installation
+ado_package_install("sepinetam/texiv", source="github")
+
+# Network installation
+ado_package_install("custompkg", source="net", package_source_from="https://example.com/stata/")
+
+# Force reinstall
+ado_package_install("estout", source="ssc", is_replace=True)
+```
+
+**Implementation Architecture**:
+The tool implements platform-divergent installation strategies. Unix systems (macOS/Linux) execute through specialized installer classes inheriting from base installer interface: `SSC_Install` invokes `ssc install <package>, replace` via Stata CLI; `GITHUB_Install` executes `github install <username/reponame>, replace`; `NET_Install` runs `net install <package> from(<source>), replace`. Windows systems bypass direct installation, instead generating temporary do-file via `write_dofile` and delegating to `stata_do` execution.
+
+Installation verification occurs through message parsing where installer classes examine Stata output for success indicators. The `check_installed_from_msg()` method performs regex or substring matching to identify successful installation patterns. Failed installations trigger error logging with full message capture via debug-level logging.
+
+Performance considerations advise against unnecessary invocations due to network latency, repository lookup overhead, and redundant installation attempts when packages already exist in Stata's ado directory. The tool implements no local installation cache—each invocation queries remote repositories or filesystem.
+
+---
+
+## help
+> macOS and Linux only
+
+```python
+def help(cmd: str) -> str:
+    ...
+```
+
+**Input Parameters**:
+- `cmd`: Stata command name (required, e.g., "regress", "describe", "xtset")
+
+**Return Structure**:
+String containing Stata help text output with optional cache status prefix (e.g., "Cached result for regress: ...")
+
+**Operational Examples**:
+```python
+# Regression command help
+help("regress")
+
+# Panel data commands
+help("xtset")
+help("xtreg")
+
+# Data management
+help("merge")
+help("reshape")
+```
+
+**Implementation Architecture**:
+The tool implements Stata command documentation retrieval through CLI invocation with caching layer. Documentation requests execute Stata in batch mode with `help <cmd>` command, capturing stdout for return value. The `StataHelp` class manages invocation through platform-specific Stata CLI paths detected by `StataFinder`.
+
+Caching architecture maintains help text cache at `~/.statamcp/help/` directory with file-based storage keyed by command name. Cache behavior controllable via environment variables: `STATA_MCP_CACHE_HELP` (default: true) enables/disables caching; `STATA_MCP_SAVE_HELP` controls cache persistence. Cached results include prefix message indicating cache status: "Cached result for {cmd}: ..." versus live help text.
+
+Dual decoration pattern registers tool as both MCP resource and executable function. Resource URI pattern `help://stata/{cmd}` enables URI-based access through MCP resource protocol, while function decorator `@stata_mcp.tool()` enables direct invocation. This dual registration provides flexible access patterns for different MCP client implementations.
+
+Cache invalidation requires manual deletion of cache files or environment variable configuration; no TTL-based expiration exists. Help text language depends on Stata installation locale; multilingual support requires separate Stata installations or locale reconfiguration.
+
