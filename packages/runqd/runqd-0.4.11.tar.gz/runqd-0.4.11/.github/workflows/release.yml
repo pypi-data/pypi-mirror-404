@@ -1,0 +1,72 @@
+name: Release
+
+on:
+    push:
+        tags:
+            - "v[0-9]+.[0-9]+.[0-9]+"
+    workflow_dispatch:
+
+concurrency:
+    group: ${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: false
+
+permissions:
+    contents: write
+
+jobs:
+    create-release:
+        name: Create GitHub Release
+        runs-on: ubuntu-latest
+        timeout-minutes: 15
+        outputs:
+            version: ${{ steps.extract_version.outputs.version }}
+            upload_url: ${{ steps.create_release.outputs.upload_url }}
+        steps:
+            - uses: actions/checkout@v6
+              with:
+                  fetch-depth: 0
+
+            - name: Extract version from tag
+              id: extract_version
+              run: |
+                  VERSION=${GITHUB_REF#refs/tags/}
+                  echo "version=$VERSION" >> $GITHUB_OUTPUT
+                  echo "Version: $VERSION"
+
+            - name: Generate changelog
+              id: changelog
+              run: |
+                  PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+                  if [ -n "$PREV_TAG" ]; then
+                    CHANGES=$(git log --oneline --pretty=format:"* %s" $PREV_TAG..HEAD)
+                  else
+                    CHANGES=$(git log --oneline --pretty=format:"* %s")
+                  fi
+
+                  cat << 'EOF' > release_notes.md
+                  ## What's Changed
+
+                  EOF
+                  echo "$CHANGES" >> release_notes.md
+                  cat << 'EOF' >> release_notes.md
+
+                  EOF
+
+                  if [ -n "$PREV_TAG" ]; then
+                    echo "" >> release_notes.md
+                    echo "**Full Changelog**: https://github.com/AndPuQing/gflow/compare/$PREV_TAG...${{ steps.extract_version.outputs.version }}" >> release_notes.md
+                  fi
+
+                  cat release_notes.md
+
+            - name: Create Release
+              id: create_release
+              uses: softprops/action-gh-release@v2
+              with:
+                  tag_name: ${{ steps.extract_version.outputs.version }}
+                  name: Release ${{ steps.extract_version.outputs.version }}
+                  body_path: release_notes.md
+                  draft: false
+                  prerelease: false
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
