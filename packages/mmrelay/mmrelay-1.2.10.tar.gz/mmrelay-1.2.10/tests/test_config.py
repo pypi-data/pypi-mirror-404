@@ -1,0 +1,1659 @@
+import json
+import os
+import sys
+import tempfile
+import unittest
+from unittest.mock import MagicMock, mock_open, patch
+
+# Add src to path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+
+import mmrelay.config
+from mmrelay.config import (
+    _convert_env_bool,
+    _convert_env_float,
+    _convert_env_int,
+    apply_env_config_overrides,
+    get_app_path,
+    get_base_dir,
+    get_config_paths,
+    get_data_dir,
+    get_e2ee_store_dir,
+    get_log_dir,
+    get_meshtastic_config_value,
+    get_plugin_data_dir,
+    is_e2ee_enabled,
+    load_config,
+    load_credentials,
+    load_database_config_from_env,
+    load_logging_config_from_env,
+    load_matrix_config_from_env,
+    load_meshtastic_config_from_env,
+    save_credentials,
+    set_secure_file_permissions,
+    validate_yaml_syntax,
+)
+
+
+class TestConfig(unittest.TestCase):
+    def setUp(self):
+        # Reset the global config before each test
+        """
+        Reset the global configuration state before each test to ensure test isolation.
+        """
+        mmrelay.config.relay_config = {}
+        mmrelay.config.config_path = None
+
+    def test_get_base_dir_linux(self):
+        # Test default base dir on Linux
+        """
+        Test that get_base_dir() returns the default base directory on Linux systems.
+        """
+        with (
+            patch("sys.platform", "linux"),
+            patch("mmrelay.config.custom_data_dir", None),
+        ):
+            base_dir = get_base_dir()
+            self.assertEqual(base_dir, os.path.expanduser("~/.mmrelay"))
+
+    @patch("mmrelay.config.platformdirs.user_data_dir")
+    def test_get_base_dir_windows(self, mock_user_data_dir):
+        # Test default base dir on Windows
+        """
+        Test that get_base_dir returns the correct default base directory on Windows when platform detection and user data directory are mocked.
+        """
+        with (
+            patch("mmrelay.config.sys.platform", "win32"),
+            patch("mmrelay.config.custom_data_dir", None),
+        ):
+            mock_user_data_dir.return_value = "C:\\Users\\test\\AppData\\Local\\mmrelay"
+            base_dir = get_base_dir()
+            self.assertEqual(base_dir, "C:\\Users\\test\\AppData\\Local\\mmrelay")
+
+    @patch("mmrelay.config.os.path.isfile")
+    @patch("builtins.open")
+    @patch("mmrelay.config.yaml.load")
+    def test_load_config_from_file(self, mock_yaml_load, mock_open, mock_isfile):
+        # Mock a config file
+        """
+        Test that `load_config` loads and returns configuration data from a specified YAML file when the file exists.
+        """
+        mock_yaml_load.return_value = {"key": "value"}
+        mock_isfile.return_value = True
+
+        # Test loading from a specific path
+        config = load_config(config_file="myconfig.yaml")
+        self.assertEqual(config, {"key": "value"})
+
+    @patch("mmrelay.config.os.path.isfile")
+    def test_load_config_not_found(self, mock_isfile):
+        # Mock no config file found
+        """
+        Test that `load_config` returns an empty dictionary when no configuration file is found.
+        """
+        mock_isfile.return_value = False
+
+        # Test that it returns an empty dict
+        with patch("sys.argv", ["mmrelay"]):
+            config = load_config()
+            self.assertEqual(config, {})
+
+    def test_get_config_paths_linux(self):
+        # Test with no args on Linux
+        """
+        Test that `get_config_paths` returns the default Linux configuration file path when no command-line arguments are provided.
+        """
+        with (
+            patch("sys.platform", "linux"),
+            patch("sys.argv", ["mmrelay"]),
+            patch("mmrelay.config.custom_data_dir", None),
+        ):
+            paths = get_config_paths()
+            self.assertIn(os.path.expanduser("~/.mmrelay/config.yaml"), paths)
+
+    @patch("mmrelay.config.os.makedirs")
+    @patch("mmrelay.config.platformdirs.user_config_dir")
+    def test_get_config_paths_windows(self, mock_user_config_dir, mock_makedirs):
+        # Test with no args on Windows
+        """
+        Test that `get_config_paths` returns the correct configuration file path on Windows.
+
+        Simulates a Windows environment and verifies that the returned config paths include the expected Windows-specific config file location.
+        """
+        with (
+            patch("mmrelay.config.sys.platform", "win32"),
+            patch("sys.argv", ["mmrelay"]),
+        ):
+            mock_user_config_dir.return_value = (
+                "C:\\Users\\test\\AppData\\Local\\mmrelay\\config"
+            )
+            paths = get_config_paths()
+            expected_path = os.path.join(
+                "C:\\Users\\test\\AppData\\Local\\mmrelay\\config", "config.yaml"
+            )
+            self.assertIn(expected_path, paths)
+            # Verify makedirs was called but don't actually create directories
+            mock_makedirs.assert_called_once()
+
+    @patch("mmrelay.config.os.makedirs")
+    def test_get_data_dir_linux(self, mock_makedirs):
+        """
+        Test that get_data_dir returns the default data directory path on Linux platforms.
+        """
+        with (
+            patch("sys.platform", "linux"),
+            patch("mmrelay.config.custom_data_dir", None),
+        ):
+            data_dir = get_data_dir()
+            self.assertEqual(data_dir, os.path.expanduser("~/.mmrelay/data"))
+
+    @patch("mmrelay.config.os.makedirs")
+    def test_get_log_dir_linux(self, mock_makedirs):
+        """
+        Test that get_log_dir() returns the default logs directory on Linux platforms.
+        """
+        with (
+            patch("sys.platform", "linux"),
+            patch("mmrelay.config.custom_data_dir", None),
+        ):
+            log_dir = get_log_dir()
+            self.assertEqual(log_dir, os.path.expanduser("~/.mmrelay/logs"))
+
+    @patch("mmrelay.config.os.makedirs")
+    def test_get_plugin_data_dir_linux(self, mock_makedirs):
+        """
+        Test that get_plugin_data_dir returns correct plugin data directory paths on Linux.
+
+        Ensures the function resolves both the default plugins data directory and a plugin-specific directory for the Linux platform.
+        """
+        with (
+            patch("sys.platform", "linux"),
+            patch("mmrelay.config.custom_data_dir", None),
+        ):
+            plugin_data_dir = get_plugin_data_dir()
+            self.assertEqual(
+                plugin_data_dir, os.path.expanduser("~/.mmrelay/data/plugins")
+            )
+            plugin_specific_dir = get_plugin_data_dir("my_plugin")
+            self.assertEqual(
+                plugin_specific_dir,
+                os.path.expanduser("~/.mmrelay/data/plugins/my_plugin"),
+            )
+
+
+class TestConfigEdgeCases(unittest.TestCase):
+    """Test configuration edge cases and error handling."""
+
+    def setUp(self):
+        """
+        Resets the global configuration state to ensure test isolation before each test.
+        """
+        mmrelay.config.relay_config = {}
+        mmrelay.config.config_path = None
+
+    @patch("mmrelay.config.os.path.isfile")
+    @patch("builtins.open")
+    @patch("mmrelay.config.yaml.load")
+    def test_config_migration_scenarios(self, mock_yaml_load, mock_open, mock_isfile):
+        """
+        Test migration of configuration files from an old format to a new format.
+
+        Simulates loading a legacy configuration file missing newer fields and verifies that loading proceeds without errors, preserving original data and handling missing fields gracefully.
+        """
+        # Simulate old config format (missing new fields)
+        old_config = {
+            "matrix": {
+                "homeserver": "https://matrix.org",
+                "username": "@bot:matrix.org",
+                "password": "secret",
+            },
+            "meshtastic": {"connection_type": "serial", "serial_port": "/dev/ttyUSB0"},
+        }
+
+        mock_yaml_load.return_value = old_config
+        mock_isfile.return_value = True
+
+        # Load config and verify migration
+        config = load_config(config_file="old_config.yaml")
+
+        # Should contain original data
+        self.assertEqual(config["matrix"]["homeserver"], "https://matrix.org")
+        self.assertEqual(config["meshtastic"]["connection_type"], "serial")
+
+        # Should handle missing fields gracefully
+        self.assertIsInstance(config, dict)
+
+    @patch("mmrelay.config.os.path.isfile")
+    @patch("builtins.open")
+    @patch("mmrelay.config.yaml.load")
+    def test_partial_config_handling(self, mock_yaml_load, mock_open, mock_isfile):
+        """
+        Test that loading a partial or incomplete configuration file does not cause errors.
+
+        Ensures that configuration files missing sections or fields are loaded without exceptions, and missing keys are handled gracefully.
+        """
+        # Test with minimal config
+        minimal_config = {
+            "matrix": {
+                "homeserver": "https://matrix.org"
+                # Missing username, password, etc.
+            }
+            # Missing meshtastic section entirely
+        }
+
+        mock_yaml_load.return_value = minimal_config
+        mock_isfile.return_value = True
+
+        # Should load without error
+        config = load_config(config_file="minimal_config.yaml")
+
+        # Should contain what was provided
+        self.assertEqual(config["matrix"]["homeserver"], "https://matrix.org")
+
+        # Should handle missing sections gracefully
+        self.assertNotIn("username", config.get("matrix", {}))
+
+    @patch("mmrelay.config.os.path.isfile")
+    @patch("builtins.open")
+    @patch("mmrelay.config.yaml.load")
+    def test_config_validation_error_messages(
+        self, mock_yaml_load, mock_open, mock_isfile
+    ):
+        """
+        Test loading of invalid configuration structures and ensure they are returned as dictionaries.
+
+        This test verifies that when a configuration file contains invalid types or values, the `load_config` function still loads and returns the raw configuration dictionary. Validation and error messaging are expected to occur outside of this function.
+        """
+        # Test with invalid YAML structure
+        invalid_config = {
+            "matrix": "not_a_dict",  # Should be a dictionary
+            "meshtastic": {
+                "connection_type": "invalid_type"  # Invalid connection type
+            },
+        }
+
+        mock_yaml_load.return_value = invalid_config
+        mock_isfile.return_value = True
+
+        # Should load but config validation elsewhere should catch issues
+        config = load_config(config_file="invalid_config.yaml")
+
+        # Config should load (validation happens elsewhere)
+        self.assertIsInstance(config, dict)
+        self.assertEqual(config["matrix"], "not_a_dict")
+
+    @patch("mmrelay.config.os.path.isfile")
+    @patch("builtins.open")
+    def test_corrupted_config_file_handling(self, mock_open, mock_isfile):
+        """
+        Test that loading a corrupted YAML configuration file is handled gracefully.
+
+        Simulates a YAML parsing error and verifies that `load_config` does not raise uncaught exceptions and returns a dictionary as fallback.
+        """
+        import yaml  # type: ignore[import-untyped]
+
+        mock_isfile.return_value = True
+
+        # Simulate YAML parsing error
+        mock_open.return_value.__enter__.return_value.read.return_value = (
+            "invalid: yaml: content: ["
+        )
+
+        with patch(
+            "mmrelay.config.yaml.load", side_effect=yaml.YAMLError("Invalid YAML")
+        ):
+            # Should handle YAML errors gracefully
+            try:
+                config = load_config(config_file="corrupted.yaml")
+                # If no exception, should return empty dict or handle gracefully
+                self.assertIsInstance(config, dict)
+            except yaml.YAMLError:
+                # If exception is raised, it should be a YAML error
+                pass
+
+    @patch("mmrelay.config.os.path.isfile")
+    def test_missing_config_file_fallback(self, mock_isfile):
+        """
+        Test that loading configuration with a missing file returns an empty dictionary without raising exceptions.
+        """
+        mock_isfile.return_value = False
+
+        with patch("sys.argv", ["mmrelay"]):
+            config = load_config()
+
+            # Should return empty dict when no config found
+            self.assertEqual(config, {})
+
+            # Should not crash or raise exceptions
+            self.assertIsInstance(config, dict)
+
+    @patch("mmrelay.config.os.path.isfile")
+    @patch("builtins.open")
+    @patch("mmrelay.config.yaml.load")
+    def test_config_with_environment_variables(
+        self, mock_yaml_load, mock_open, mock_isfile
+    ):
+        """
+        Test loading a configuration file containing environment variable references.
+
+        Ensures that configuration values with environment variable placeholders are loaded as raw strings, without expansion, as expected at this stage.
+        """
+        # Config with environment variable references
+        env_config = {
+            "matrix": {
+                "homeserver": "${MATRIX_HOMESERVER}",
+                "access_token": "${MATRIX_TOKEN}",
+            },
+            "meshtastic": {"serial_port": "${MESHTASTIC_PORT}"},
+        }
+
+        mock_yaml_load.return_value = env_config
+        mock_isfile.return_value = True
+
+        # Set environment variables
+        with patch.dict(
+            os.environ,
+            {
+                "MATRIX_HOMESERVER": "https://test.matrix.org",
+                "MATRIX_TOKEN": "test_token_123",
+                "MESHTASTIC_PORT": "/dev/ttyUSB1",
+            },
+        ):
+            config = load_config(config_file="env_config.yaml")
+
+            # Should load the raw config (environment variable expansion happens elsewhere)
+            self.assertEqual(config["matrix"]["homeserver"], "${MATRIX_HOMESERVER}")
+            self.assertEqual(config["matrix"]["access_token"], "${MATRIX_TOKEN}")
+
+    def test_config_path_resolution_edge_cases(self):
+        """
+        Test that configuration path resolution correctly handles relative and absolute paths.
+
+        Ensures that get_config_paths returns absolute paths for both relative and absolute config file arguments, covering edge cases in path normalization.
+        """
+        # Mock argparse Namespace object for relative path
+        mock_args = MagicMock()
+        mock_args.config = "../config/test.yaml"
+
+        paths = get_config_paths(args=mock_args)
+
+        # Should include the absolute version of the relative path
+        expected_path = os.path.abspath("../config/test.yaml")
+        self.assertIn(expected_path, paths)
+
+        # Mock argparse Namespace object for absolute path
+        mock_args.config = "/absolute/path/config.yaml"
+
+        paths = get_config_paths(args=mock_args)
+
+        # Should include the absolute path
+        self.assertIn("/absolute/path/config.yaml", paths)
+
+    @patch("mmrelay.config.platformdirs.user_data_dir")
+    @patch("mmrelay.config.os.makedirs")
+    @patch("mmrelay.config.sys.platform", "win32")
+    def test_get_data_dir_windows(self, mock_makedirs, mock_user_data_dir):
+        """Test get_data_dir on Windows platform."""
+        mock_user_data_dir.return_value = "C:\\Users\\test\\AppData\\Local\\mmrelay"
+
+        result = get_data_dir()
+
+        self.assertEqual(result, "C:\\Users\\test\\AppData\\Local\\mmrelay")
+        mock_user_data_dir.assert_called_once_with("mmrelay", None)
+        mock_makedirs.assert_called_once_with(
+            "C:\\Users\\test\\AppData\\Local\\mmrelay", exist_ok=True
+        )
+
+    @patch("mmrelay.config.platformdirs.user_log_dir")
+    @patch("mmrelay.config.os.makedirs")
+    @patch("mmrelay.config.sys.platform", "win32")
+    def test_get_log_dir_windows(self, mock_makedirs, mock_user_log_dir):
+        """Test get_log_dir on Windows platform."""
+        mock_user_log_dir.return_value = (
+            "C:\\Users\\test\\AppData\\Local\\mmrelay\\Logs"
+        )
+
+        result = get_log_dir()
+
+        self.assertEqual(result, "C:\\Users\\test\\AppData\\Local\\mmrelay\\Logs")
+        mock_user_log_dir.assert_called_once_with("mmrelay", None)
+        mock_makedirs.assert_called_once_with(
+            "C:\\Users\\test\\AppData\\Local\\mmrelay\\Logs", exist_ok=True
+        )
+
+    @patch("mmrelay.config.os.makedirs")
+    def test_get_config_paths_permission_error(self, mock_makedirs):
+        """Test get_config_paths when directory creation fails."""
+        # Mock OSError when creating user config directory
+        mock_makedirs.side_effect = [OSError("Permission denied"), None, None]
+
+        paths = get_config_paths()
+
+        # Should still return paths even if user config dir creation fails
+        self.assertIsInstance(paths, list)
+        self.assertGreater(len(paths), 0)
+
+
+class TestEnvironmentVariableHelpers(unittest.TestCase):
+    """Test environment variable conversion helper functions."""
+
+    def test_convert_env_bool_valid_true(self):
+        """Test conversion of valid true boolean values."""
+        true_values = ["true", "True", "TRUE", "1", "yes", "YES", "on", "ON"]
+        for value in true_values:
+            with self.subTest(value=value):
+                self.assertTrue(_convert_env_bool(value, "TEST_VAR"))
+
+    def test_convert_env_bool_valid_false(self):
+        """Test conversion of valid false boolean values."""
+        false_values = ["false", "False", "FALSE", "0", "no", "NO", "off", "OFF"]
+        for value in false_values:
+            with self.subTest(value=value):
+                self.assertFalse(_convert_env_bool(value, "TEST_VAR"))
+
+    def test_convert_env_bool_invalid(self):
+        """Test conversion of invalid boolean values."""
+        invalid_values = ["maybe", "invalid", "2", "truee", "falsee"]
+        for value in invalid_values:
+            with self.subTest(value=value):
+                with self.assertRaises(ValueError) as cm:
+                    _convert_env_bool(value, "TEST_VAR")
+                self.assertIn("Invalid boolean value for TEST_VAR", str(cm.exception))
+
+    def test_convert_env_int_valid(self):
+        """Test conversion of valid integer values."""
+        self.assertEqual(_convert_env_int("42", "TEST_VAR"), 42)
+        self.assertEqual(_convert_env_int("-10", "TEST_VAR"), -10)
+        self.assertEqual(_convert_env_int("0", "TEST_VAR"), 0)
+
+    def test_convert_env_int_with_range(self):
+        """Test integer conversion with range validation."""
+        self.assertEqual(
+            _convert_env_int("50", "TEST_VAR", min_value=1, max_value=100), 50
+        )
+
+        with self.assertRaises(ValueError) as cm:
+            _convert_env_int("0", "TEST_VAR", min_value=1)
+        self.assertIn("must be >= 1", str(cm.exception))
+
+        with self.assertRaises(ValueError) as cm:
+            _convert_env_int("101", "TEST_VAR", max_value=100)
+        self.assertIn("must be <= 100", str(cm.exception))
+
+    def test_convert_env_int_invalid(self):
+        """Test conversion of invalid integer values."""
+        with self.assertRaises(ValueError) as cm:
+            _convert_env_int("not_a_number", "TEST_VAR")
+        self.assertIn("Invalid integer value for TEST_VAR", str(cm.exception))
+
+    def test_convert_env_float_valid(self):
+        """Test conversion of valid float values."""
+        self.assertEqual(_convert_env_float("3.14", "TEST_VAR"), 3.14)
+        self.assertEqual(_convert_env_float("-2.5", "TEST_VAR"), -2.5)
+        self.assertEqual(_convert_env_float("42", "TEST_VAR"), 42.0)
+
+    def test_convert_env_float_with_range(self):
+        """Test float conversion with range validation."""
+        self.assertEqual(
+            _convert_env_float("2.5", "TEST_VAR", min_value=2.0, max_value=3.0), 2.5
+        )
+
+        with self.assertRaises(ValueError) as cm:
+            _convert_env_float("1.5", "TEST_VAR", min_value=2.0)
+        self.assertIn("must be >= 2.0", str(cm.exception))
+
+    def test_convert_env_float_invalid(self):
+        """Test conversion of invalid float values."""
+        with self.assertRaises(ValueError) as cm:
+            _convert_env_float("not_a_float", "TEST_VAR")
+        self.assertIn("Invalid float value for TEST_VAR", str(cm.exception))
+
+
+class TestMeshtasticEnvironmentVariables(unittest.TestCase):
+    """Test Meshtastic configuration loading from environment variables."""
+
+    def setUp(self):
+        """Clear environment variables before each test."""
+        self.env_vars = [
+            "MMRELAY_MESHTASTIC_CONNECTION_TYPE",
+            "MMRELAY_MESHTASTIC_HOST",
+            "MMRELAY_MESHTASTIC_PORT",
+            "MMRELAY_MESHTASTIC_SERIAL_PORT",
+            "MMRELAY_MESHTASTIC_BLE_ADDRESS",
+            "MMRELAY_MESHTASTIC_BROADCAST_ENABLED",
+            "MMRELAY_MESHTASTIC_MESHNET_NAME",
+            "MMRELAY_MESHTASTIC_MESSAGE_DELAY",
+        ]
+        for var in self.env_vars:
+            if var in os.environ:
+                del os.environ[var]
+
+    def tearDown(self):
+        """
+        Clear environment variables named in self.env_vars from the process environment.
+
+        This teardown helper removes each variable listed in self.env_vars from os.environ if present, ensuring test isolation by reverting any environment changes made during a test. It mutates the process environment and returns None.
+        """
+        for var in self.env_vars:
+            if var in os.environ:
+                del os.environ[var]
+
+    def test_load_meshtastic_tcp_config(self):
+        """Test loading TCP Meshtastic configuration."""
+        os.environ["MMRELAY_MESHTASTIC_CONNECTION_TYPE"] = "tcp"
+        os.environ["MMRELAY_MESHTASTIC_HOST"] = "192.168.1.100"
+        os.environ["MMRELAY_MESHTASTIC_PORT"] = "4403"
+
+        config = load_meshtastic_config_from_env()
+
+        self.assertIsNotNone(config)
+        self.assertEqual(config["connection_type"], "tcp")
+        self.assertEqual(config["host"], "192.168.1.100")
+        self.assertEqual(config["port"], 4403)
+
+    def test_load_meshtastic_serial_config(self):
+        """Test loading serial Meshtastic configuration."""
+        os.environ["MMRELAY_MESHTASTIC_CONNECTION_TYPE"] = "serial"
+        os.environ["MMRELAY_MESHTASTIC_SERIAL_PORT"] = "/dev/ttyUSB0"
+
+        config = load_meshtastic_config_from_env()
+
+        self.assertIsNotNone(config)
+        self.assertEqual(config["connection_type"], "serial")
+        self.assertEqual(config["serial_port"], "/dev/ttyUSB0")
+
+    def test_load_meshtastic_ble_config(self):
+        """Test loading BLE Meshtastic configuration."""
+        os.environ["MMRELAY_MESHTASTIC_CONNECTION_TYPE"] = "ble"
+        os.environ["MMRELAY_MESHTASTIC_BLE_ADDRESS"] = "AA:BB:CC:DD:EE:FF"
+
+        config = load_meshtastic_config_from_env()
+
+        self.assertIsNotNone(config)
+        self.assertEqual(config["connection_type"], "ble")
+        self.assertEqual(config["ble_address"], "AA:BB:CC:DD:EE:FF")
+
+    def test_load_meshtastic_operational_settings(self):
+        """Test loading operational Meshtastic settings."""
+        os.environ["MMRELAY_MESHTASTIC_BROADCAST_ENABLED"] = "true"
+        os.environ["MMRELAY_MESHTASTIC_MESHNET_NAME"] = "Test Mesh"
+        os.environ["MMRELAY_MESHTASTIC_MESSAGE_DELAY"] = "2.5"
+
+        config = load_meshtastic_config_from_env()
+
+        self.assertIsNotNone(config)
+        self.assertEqual(config["broadcast_enabled"], True)
+        self.assertEqual(config["meshnet_name"], "Test Mesh")
+        self.assertEqual(config["message_delay"], 2.5)
+
+    def test_invalid_connection_type(self):
+        """Test invalid connection type handling."""
+        os.environ["MMRELAY_MESHTASTIC_CONNECTION_TYPE"] = "invalid"
+
+        config = load_meshtastic_config_from_env()
+        self.assertIsNone(config)
+
+    def test_invalid_port(self):
+        """Test invalid port handling."""
+        os.environ["MMRELAY_MESHTASTIC_PORT"] = "invalid_port"
+
+        config = load_meshtastic_config_from_env()
+        self.assertIsNone(config)
+
+    def test_port_out_of_range(self):
+        """Test port out of range handling."""
+        os.environ["MMRELAY_MESHTASTIC_PORT"] = "70000"
+
+        config = load_meshtastic_config_from_env()
+        self.assertIsNone(config)
+
+    def test_invalid_message_delay(self):
+        """Test invalid message delay handling."""
+        os.environ["MMRELAY_MESHTASTIC_MESSAGE_DELAY"] = "1.0"  # Below minimum of 2.0
+
+        config = load_meshtastic_config_from_env()
+        self.assertIsNone(config)
+
+    def test_no_env_vars_returns_none(self):
+        """Test that no environment variables returns None."""
+        config = load_meshtastic_config_from_env()
+        self.assertIsNone(config)
+
+
+class TestLoggingEnvironmentVariables(unittest.TestCase):
+    """Test logging configuration loading from environment variables."""
+
+    def setUp(self):
+        """
+        Clear logging-related environment variables before each test.
+
+        Executed before each test case; removes MMRELAY_LOGGING_LEVEL and MMRELAY_LOG_FILE from os.environ to ensure tests run without influence from external logging configuration.
+        """
+        self.env_vars = ["MMRELAY_LOGGING_LEVEL", "MMRELAY_LOG_FILE"]
+        for var in self.env_vars:
+            if var in os.environ:
+                del os.environ[var]
+
+    def tearDown(self):
+        """
+        Clear environment variables named in self.env_vars from the process environment.
+
+        This teardown helper removes each variable listed in self.env_vars from os.environ if present, ensuring test isolation by reverting any environment changes made during a test. It mutates the process environment and returns None.
+        """
+        for var in self.env_vars:
+            if var in os.environ:
+                del os.environ[var]
+
+    def test_load_logging_level(self):
+        """Test loading logging level."""
+        os.environ["MMRELAY_LOGGING_LEVEL"] = "DEBUG"
+
+        config = load_logging_config_from_env()
+
+        self.assertIsNotNone(config)
+        self.assertEqual(config["level"], "debug")
+
+    def test_load_log_file(self):
+        """Test loading log file path."""
+        os.environ["MMRELAY_LOG_FILE"] = "/app/logs/mmrelay.log"
+
+        config = load_logging_config_from_env()
+
+        self.assertIsNotNone(config)
+        self.assertEqual(config["filename"], "/app/logs/mmrelay.log")
+        self.assertTrue(config["log_to_file"])
+
+    def test_invalid_logging_level(self):
+        """Test invalid logging level handling."""
+        os.environ["MMRELAY_LOGGING_LEVEL"] = "INVALID"
+
+        config = load_logging_config_from_env()
+        self.assertIsNone(config)
+
+    def test_no_env_vars_returns_none(self):
+        """Test that no environment variables returns None."""
+        config = load_logging_config_from_env()
+        self.assertIsNone(config)
+
+
+class TestDatabaseEnvironmentVariables(unittest.TestCase):
+    """Test database configuration loading from environment variables."""
+
+    def setUp(self):
+        """
+        Ensure the MMRELAY_DATABASE_PATH environment variable is removed before each test to avoid cross-test contamination.
+        """
+        if "MMRELAY_DATABASE_PATH" in os.environ:
+            del os.environ["MMRELAY_DATABASE_PATH"]
+
+    def tearDown(self):
+        """Clear environment variables after each test."""
+        if "MMRELAY_DATABASE_PATH" in os.environ:
+            del os.environ["MMRELAY_DATABASE_PATH"]
+
+    def test_load_database_path(self):
+        """Test loading database path."""
+        os.environ["MMRELAY_DATABASE_PATH"] = "/app/data/custom.sqlite"
+
+        config = load_database_config_from_env()
+
+        self.assertIsNotNone(config)
+        self.assertEqual(config["path"], "/app/data/custom.sqlite")
+
+    def test_no_env_vars_returns_none(self):
+        """Test that no environment variables returns None."""
+        config = load_database_config_from_env()
+        self.assertIsNone(config)
+
+
+class TestEnvironmentVariableIntegration(unittest.TestCase):
+    """Test integration of environment variables with configuration loading."""
+
+    def setUp(self):
+        """Clear environment variables before each test."""
+        self.all_env_vars = [
+            "MMRELAY_MESHTASTIC_CONNECTION_TYPE",
+            "MMRELAY_MESHTASTIC_HOST",
+            "MMRELAY_MESHTASTIC_PORT",
+            "MMRELAY_LOGGING_LEVEL",
+            "MMRELAY_DATABASE_PATH",
+        ]
+        for var in self.all_env_vars:
+            if var in os.environ:
+                del os.environ[var]
+
+    def tearDown(self):
+        """
+        Remove any environment variables listed in self.all_env_vars.
+
+        Iterates over self.all_env_vars and deletes each key from os.environ if present.
+        Used in test teardown to ensure environment state is cleared between tests.
+        """
+        for var in self.all_env_vars:
+            if var in os.environ:
+                del os.environ[var]
+
+    def test_apply_env_config_overrides_empty_config(self):
+        """Test applying environment variable overrides to empty configuration."""
+        os.environ["MMRELAY_MESHTASTIC_CONNECTION_TYPE"] = "tcp"
+        os.environ["MMRELAY_MESHTASTIC_HOST"] = "192.168.1.100"
+        os.environ["MMRELAY_LOGGING_LEVEL"] = "INFO"
+        os.environ["MMRELAY_DATABASE_PATH"] = "/app/data/test.sqlite"
+
+        config = apply_env_config_overrides({})
+
+        self.assertIn("meshtastic", config)
+        self.assertEqual(config["meshtastic"]["connection_type"], "tcp")
+        self.assertEqual(config["meshtastic"]["host"], "192.168.1.100")
+
+        self.assertIn("logging", config)
+        self.assertEqual(config["logging"]["level"], "info")
+
+        self.assertIn("database", config)
+        self.assertEqual(config["database"]["path"], "/app/data/test.sqlite")
+
+    def test_apply_env_config_overrides_existing_config(self):
+        """Test applying environment variable overrides to existing configuration."""
+        base_config = {
+            "meshtastic": {
+                "connection_type": "serial",
+                "serial_port": "/dev/ttyUSB0",
+                "meshnet_name": "Original Name",
+            },
+            "logging": {"level": "warning"},
+        }
+
+        os.environ["MMRELAY_MESHTASTIC_CONNECTION_TYPE"] = "tcp"
+        os.environ["MMRELAY_MESHTASTIC_HOST"] = "192.168.1.100"
+        os.environ["MMRELAY_LOGGING_LEVEL"] = "DEBUG"
+
+        config = apply_env_config_overrides(base_config)
+
+        # Environment variables should override existing values
+        self.assertEqual(config["meshtastic"]["connection_type"], "tcp")
+        self.assertEqual(config["meshtastic"]["host"], "192.168.1.100")
+        # Existing values not overridden should remain
+        self.assertEqual(config["meshtastic"]["serial_port"], "/dev/ttyUSB0")
+        self.assertEqual(config["meshtastic"]["meshnet_name"], "Original Name")
+        # Logging level should be overridden
+        self.assertEqual(config["logging"]["level"], "debug")
+
+    @patch("mmrelay.config.yaml.load")
+    @patch("builtins.open")
+    @patch("mmrelay.config.os.path.isfile")
+    def test_load_config_with_env_overrides(
+        self, mock_isfile, mock_open, mock_yaml_load
+    ):
+        """Test that load_config applies environment variable overrides."""
+        # Mock file existence and YAML loading
+        mock_isfile.return_value = True
+        mock_yaml_load.return_value = {
+            "meshtastic": {"connection_type": "serial", "serial_port": "/dev/ttyUSB0"}
+        }
+
+        # Set environment variables
+        os.environ["MMRELAY_MESHTASTIC_CONNECTION_TYPE"] = "tcp"
+        os.environ["MMRELAY_MESHTASTIC_HOST"] = "192.168.1.100"
+
+        config = load_config("/fake/config.yaml")
+
+        # Should have both file config and env var overrides
+        self.assertEqual(config["meshtastic"]["connection_type"], "tcp")  # From env var
+        self.assertEqual(config["meshtastic"]["host"], "192.168.1.100")  # From env var
+        self.assertEqual(
+            config["meshtastic"]["serial_port"], "/dev/ttyUSB0"
+        )  # From file
+
+    def test_no_env_vars_returns_empty_dict(self):
+        """Test that no environment variables returns empty dict."""
+        config = apply_env_config_overrides({})
+        self.assertEqual(config, {})
+
+
+class TestFilePermissions(unittest.TestCase):
+    """Test file permission setting functionality."""
+
+    @patch("sys.platform", "linux")
+    @patch("mmrelay.config.os.chmod")
+    def test_set_secure_file_permissions_unix(self, mock_chmod):
+        """Test secure file permission setting on Unix systems."""
+        tmp_path = os.path.join(tempfile.gettempdir(), "test_file")
+        set_secure_file_permissions(tmp_path)
+        mock_chmod.assert_called_once_with(tmp_path, 0o600)
+
+    @patch("sys.platform", "win32")
+    @patch("mmrelay.config.os.chmod")
+    def test_set_secure_file_permissions_windows(self, mock_chmod):
+        """Test secure file permission setting on Windows systems."""
+        set_secure_file_permissions("C:\\temp\\test_file")
+        # Windows should not call chmod
+        mock_chmod.assert_not_called()
+
+
+class TestAppPath(unittest.TestCase):
+    """Test application path resolution."""
+
+    def test_get_app_path_unfrozen(self):
+        """Test application path resolution for unfrozen applications."""
+        with (
+            patch("mmrelay.config.sys.frozen", False, create=True),
+            patch("mmrelay.config.os.path.dirname", return_value="/app"),
+        ):
+            result = get_app_path()
+            self.assertEqual(result, "/app")
+
+    def test_get_app_path_frozen(self):
+        """Test application path resolution for frozen applications."""
+        with patch("mmrelay.config.sys.frozen", True, create=True):
+            with patch("mmrelay.config.sys.executable", "/app/mmrelay.exe"):
+                result = get_app_path()
+                self.assertEqual(result, "/app")
+
+
+class TestE2EESupport(unittest.TestCase):
+    """Test E2EE enablement detection."""
+
+    def test_is_e2ee_enabled_various_configs(self):
+        """Test E2EE enablement detection across various configurations."""
+        test_cases = [
+            # Legacy key
+            (
+                {"matrix": {"encryption": {"enabled": True}}},
+                True,
+                "legacy e2ee enabled",
+            ),
+            (
+                {"matrix": {"encryption": {"enabled": False}}},
+                False,
+                "legacy e2ee disabled",
+            ),
+            (
+                {"matrix": {"encryption": {"enabled": "false"}}},
+                False,
+                "legacy e2ee string false",
+            ),
+            # New key
+            ({"matrix": {"e2ee": {"enabled": True}}}, True, "new e2ee enabled"),
+            ({"matrix": {"e2ee": {"enabled": False}}}, False, "new e2ee disabled"),
+            (
+                {"matrix": {"e2ee": {"enabled": "true"}}},
+                False,
+                "new e2ee string true",
+            ),
+            # Mixed keys (OR logic)
+            (
+                {
+                    "matrix": {
+                        "encryption": {"enabled": False},
+                        "e2ee": {"enabled": True},
+                    }
+                },
+                True,
+                "mixed legacy false, new true",
+            ),
+            (
+                {
+                    "matrix": {
+                        "encryption": {"enabled": True},
+                        "e2ee": {"enabled": False},
+                    }
+                },
+                True,
+                "mixed legacy true, new false",
+            ),
+            # Edge cases
+            ({}, False, "empty config"),
+            ({"meshtastic": {}}, False, "no matrix section"),
+            ({"matrix": {}}, False, "empty matrix section"),
+        ]
+        for config, expected, description in test_cases:
+            with self.subTest(description=description):
+                result = is_e2ee_enabled(config)
+                self.assertEqual(result, expected)
+
+
+class TestCredentials(unittest.TestCase):
+    """Test credential loading and saving functionality."""
+
+    @patch("mmrelay.config.os.path.exists", return_value=True)
+    @patch("builtins.open", new_callable=mock_open)
+    @patch(
+        "mmrelay.config.json.load",
+        side_effect=json.JSONDecodeError("Invalid JSON", "", 0),
+    )
+    def test_load_credentials_invalid_json(
+        self, _mock_json_load, _mock_open, _mock_exists
+    ):
+        """Test credential loading with invalid JSON."""
+        result = load_credentials()
+        self.assertIsNone(result)
+
+    @patch("mmrelay.config.os.path.exists", return_value=True)
+    @patch("builtins.open", new_callable=mock_open)
+    @patch("mmrelay.config.json.load")
+    def test_load_credentials_success(self, mock_json_load, _mock_open, _mock_exists):
+        """Test successful credential loading from JSON file."""
+        mock_json_load.return_value = {"user_id": "test", "access_token": "token"}
+        result = load_credentials()
+        self.assertEqual(result, {"user_id": "test", "access_token": "token"})
+
+    @patch("mmrelay.config.os.path.exists", return_value=True)
+    @patch("mmrelay.config.os.path.isdir", return_value=False)
+    @patch("builtins.open", new_callable=mock_open)
+    @patch("mmrelay.config.json.load")
+    def test_load_credentials_from_env_var(
+        self,
+        mock_json_load,
+        _mock_open,
+        _mock_isdir,
+        _mock_exists,
+    ):
+        """Test credential loading using MMRELAY_CREDENTIALS_PATH."""
+        mock_json_load.return_value = {"user_id": "env", "access_token": "token"}
+        with patch.dict(os.environ, {"MMRELAY_CREDENTIALS_PATH": "/custom/creds.json"}):
+            result = load_credentials()
+        self.assertEqual(result, {"user_id": "env", "access_token": "token"})
+
+    @patch("mmrelay.config.os.path.exists", return_value=True)
+    @patch("builtins.open", side_effect=OSError("Permission denied"))
+    def test_load_credentials_os_error(self, _mock_open, _mock_exists):
+        """Test credential loading with an OSError."""
+        result = load_credentials()
+        self.assertIsNone(result)
+
+    @patch("mmrelay.config.os.makedirs", side_effect=OSError("Permission denied"))
+    def test_save_credentials_directory_creation_failure(self, _mock_makedirs):
+        """Test credential saving when directory creation fails."""
+        credentials = {"user_id": "test"}
+        result = save_credentials(credentials)
+        self.assertIsNone(result)
+
+    @patch("mmrelay.config.get_base_dir", return_value="/fake/dir")
+    @patch("mmrelay.config.os.makedirs")
+    @patch("builtins.open", side_effect=OSError("Permission denied"))
+    def test_save_credentials_file_open_failure(
+        self, _mock_open, _mock_makedirs, _mock_get_base_dir
+    ):
+        """Test credential saving when opening file fails."""
+        credentials = {"user_id": "test"}
+        result = save_credentials(credentials)
+        self.assertIsNone(result)
+
+    @patch("mmrelay.config.get_base_dir", return_value="/fake/dir")
+    @patch("mmrelay.config.os.makedirs")
+    @patch("mmrelay.config.os.path.join", side_effect=os.path.join)
+    @patch("mmrelay.config.os.path.dirname", side_effect=os.path.dirname)
+    @patch("mmrelay.config.os.path.isdir", return_value=False)
+    @patch("builtins.open", new_callable=mock_open)
+    def test_save_credentials_trailing_separator_treated_as_dir(
+        self,
+        _mock_open,
+        _mock_makedirs,
+        _mock_dirname,
+        _mock_join,
+        _mock_get_base_dir,
+        _mock_isdir,
+    ):
+        """Test credentials_path with trailing separator is treated as directory."""
+        credentials = {"user_id": "test", "access_token": "token"}
+
+        from mmrelay import config as config_module
+
+        original_relay_config = config_module.relay_config.copy()
+        try:
+            config_module.relay_config = {}
+            with patch.dict(os.environ, {"MMRELAY_CREDENTIALS_PATH": "/custom/dir/"}):
+                save_credentials(credentials)
+
+            _mock_makedirs.assert_called_once()
+            _mock_open.assert_called_once()
+            call_args = _mock_open.call_args
+            final_path = call_args[0][0]
+            self.assertTrue(
+                final_path.endswith("credentials.json"),
+                f"Should append credentials.json: {final_path}",
+            )
+            self.assertEqual(
+                final_path,
+                "/custom/dir/credentials.json",
+                "Should append credentials.json to directory path with trailing separator",
+            )
+        finally:
+            config_module.relay_config = original_relay_config
+
+    @patch("mmrelay.config.get_base_dir", return_value="/fake/dir")
+    @patch("mmrelay.config.os.makedirs")
+    @patch("mmrelay.config.os.path.join", side_effect=os.path.join)
+    @patch("mmrelay.config.os.path.isdir", return_value=False)
+    @patch("builtins.open", new_callable=mock_open)
+    def test_save_credentials_from_env_var(
+        self,
+        _mock_open,
+        _mock_makedirs,
+        _mock_join,
+        _mock_get_base_dir,
+        _mock_isdir,
+    ):
+        """Test save_credentials uses MMRELAY_CREDENTIALS_PATH environment variable."""
+        credentials = {"user_id": "test", "access_token": "token"}
+
+        from mmrelay import config as config_module
+
+        original_relay_config = config_module.relay_config.copy()
+        try:
+            config_module.relay_config = {}
+            with patch.dict(
+                os.environ, {"MMRELAY_CREDENTIALS_PATH": "/custom/creds.json"}
+            ):
+                save_credentials(credentials)
+
+            _mock_makedirs.assert_called_once()
+            _mock_open.assert_called_once()
+            call_args = _mock_open.call_args
+            final_path = call_args[0][0]
+            self.assertEqual(
+                final_path,
+                "/custom/creds.json",
+                "Should use path from MMRELAY_CREDENTIALS_PATH environment variable",
+            )
+        finally:
+            config_module.relay_config = original_relay_config
+
+    @patch("mmrelay.config.get_base_dir", return_value="/fake/dir")
+    @patch("mmrelay.config.os.makedirs")
+    @patch("mmrelay.config.os.path.join", side_effect=os.path.join)
+    @patch("mmrelay.config.os.path.isdir", return_value=False)
+    @patch("builtins.open", new_callable=mock_open)
+    def test_save_credentials_from_relay_config(
+        self,
+        _mock_open,
+        _mock_makedirs,
+        _mock_join,
+        _mock_get_base_dir,
+        _mock_isdir,
+    ):
+        """Test save_credentials uses relay_config['credentials_path'] when env var not set."""
+        credentials = {"user_id": "test", "access_token": "token"}
+
+        from mmrelay import config as config_module
+
+        original_relay_config = config_module.relay_config.copy()
+        try:
+            config_module.relay_config = {"credentials_path": "/config/creds.json"}
+
+            save_credentials(credentials)
+
+            _mock_makedirs.assert_called_once()
+            _mock_open.assert_called_once()
+            call_args = _mock_open.call_args
+            final_path = call_args[0][0]
+            self.assertEqual(
+                final_path,
+                "/config/creds.json",
+                "Should use path from relay_config['credentials_path']",
+            )
+        finally:
+            config_module.relay_config = original_relay_config
+
+    @patch("mmrelay.config.get_base_dir", return_value="/fake/dir")
+    @patch("mmrelay.config.os.makedirs")
+    @patch("mmrelay.config.os.path.join", side_effect=os.path.join)
+    @patch("mmrelay.config.os.path.isdir", return_value=False)
+    @patch("builtins.open", new_callable=mock_open)
+    def test_save_credentials_from_matrix_config(
+        self,
+        _mock_open,
+        _mock_makedirs,
+        _mock_join,
+        _mock_get_base_dir,
+        _mock_isdir,
+    ):
+        """Test save_credentials uses relay_config['matrix']['credentials_path'] as fallback."""
+        credentials = {"user_id": "test", "access_token": "token"}
+
+        from mmrelay import config as config_module
+
+        original_relay_config = config_module.relay_config.copy()
+        try:
+            config_module.relay_config = {
+                "matrix": {"credentials_path": "/matrix/creds.json"}
+            }
+
+            save_credentials(credentials)
+
+            _mock_makedirs.assert_called_once()
+            _mock_open.assert_called_once()
+            call_args = _mock_open.call_args
+            final_path = call_args[0][0]
+            self.assertEqual(
+                final_path,
+                "/matrix/creds.json",
+                "Should use path from relay_config['matrix']['credentials_path']",
+            )
+        finally:
+            config_module.relay_config = original_relay_config
+
+    @patch("mmrelay.config.get_base_dir", return_value="/fake/dir")
+    @patch("mmrelay.config.os.makedirs")
+    @patch("mmrelay.config.os.path.join", side_effect=os.path.join)
+    @patch("builtins.open", new_callable=mock_open)
+    def test_save_credentials_from_matrix_config_not_dict(
+        self,
+        _mock_open,
+        _mock_makedirs,
+        _mock_join,
+        _mock_get_base_dir,
+    ):
+        """Test save_credentials when matrix config is not a dict."""
+        credentials = {"user_id": "test", "access_token": "token"}
+
+        from mmrelay import config as config_module
+
+        original_relay_config = config_module.relay_config.copy()
+        try:
+            config_module.relay_config = {"matrix": "not_a_dict"}
+
+            save_credentials(credentials)
+
+            _mock_makedirs.assert_called_once()
+            _mock_open.assert_called_once()
+            call_args = _mock_open.call_args
+            final_path = call_args[0][0]
+            self.assertEqual(
+                final_path,
+                "/fake/dir/credentials.json",
+                "Should use get_base_dir() when matrix config is not a dict",
+            )
+        finally:
+            config_module.relay_config = original_relay_config
+
+    @patch("mmrelay.config.get_base_dir", return_value="/actual/directory")
+    @patch("mmrelay.config.os.makedirs")
+    @patch("mmrelay.config.os.path.join", side_effect=os.path.join)
+    @patch("mmrelay.config.os.path.isdir", return_value=True)
+    @patch("builtins.open", new_callable=mock_open)
+    def test_save_credentials_actual_directory_path(
+        self,
+        _mock_open,
+        _mock_makedirs,
+        _mock_join,
+        _mock_get_base_dir,
+        _mock_isdir,
+    ):
+        """Test save_credentials when path is an actual directory (via os.path.isdir)."""
+        credentials = {"user_id": "test", "access_token": "token"}
+
+        from mmrelay import config as config_module
+
+        original_relay_config = config_module.relay_config.copy()
+        try:
+            config_module.relay_config = {}
+            with patch.dict(
+                os.environ, {"MMRELAY_CREDENTIALS_PATH": "/actual/directory"}
+            ):
+                save_credentials(credentials)
+
+            _mock_makedirs.assert_called_once()
+            _mock_open.assert_called_once()
+            call_args = _mock_open.call_args
+            final_path = call_args[0][0]
+            self.assertEqual(
+                final_path,
+                "/actual/directory/credentials.json",
+                "Should append credentials.json to actual directory",
+            )
+        finally:
+            config_module.relay_config = original_relay_config
+
+    @patch("mmrelay.config.get_base_dir", return_value="/custom/dir")
+    @patch("mmrelay.config.os.makedirs")
+    @patch.object(os.path, "altsep", "\\")
+    @patch("builtins.open", new_callable=mock_open)
+    def test_save_credentials_altsep_path_detection(
+        self, _mock_open, _mock_makedirs, _mock_get_base_dir
+    ):
+        """Test save_credentials detects path ending with altsep (Windows separator) as directory."""
+        credentials = {"user_id": "test", "access_token": "token"}
+
+        from mmrelay import config as config_module
+
+        original_relay_config = config_module.relay_config.copy()
+        try:
+            config_module.relay_config = {}
+            with patch.dict(os.environ, {"MMRELAY_CREDENTIALS_PATH": "/custom/dir/"}):
+                save_credentials(credentials)
+
+            _mock_open.assert_called_once()
+            call_args = _mock_open.call_args
+            final_path = call_args[0][0]
+            self.assertTrue(
+                final_path.endswith("credentials.json"),
+                f"Should append credentials.json: {final_path}",
+            )
+        finally:
+            config_module.relay_config = original_relay_config
+
+    @patch("mmrelay.config.get_base_dir", return_value="/base/dir")
+    @patch("mmrelay.config.os.makedirs")
+    @patch("mmrelay.config.os.path.join", side_effect=os.path.join)
+    @patch("mmrelay.config.os.path.dirname", return_value="")
+    @patch("mmrelay.config.os.path.basename", return_value="creds.json")
+    @patch("mmrelay.config.os.path.isdir", return_value=False)
+    @patch("mmrelay.config.os.path.expanduser", side_effect=lambda x: x)
+    @patch("builtins.open", new_callable=mock_open)
+    def test_save_credentials_empty_config_dir_uses_base_dir(
+        self,
+        _mock_open,
+        _mock_expanduser,
+        _mock_isdir,
+        _mock_basename,
+        _mock_dirname,
+        _mock_join,
+        _mock_makedirs,
+        _mock_get_base_dir,
+    ):
+        """Test save_credentials uses get_base_dir when config_dir is empty."""
+        credentials = {"user_id": "test", "access_token": "token"}
+
+        from mmrelay import config as config_module
+
+        original_relay_config = config_module.relay_config.copy()
+        try:
+            config_module.relay_config = {}
+            with patch.dict(os.environ, {"MMRELAY_CREDENTIALS_PATH": "creds.json"}):
+                save_credentials(credentials)
+
+            _mock_makedirs.assert_called_once()
+            _mock_open.assert_called_once()
+            call_args = _mock_open.call_args
+            final_path = call_args[0][0]
+            self.assertEqual(
+                final_path,
+                "/base/dir/creds.json",
+                "Should use get_base_dir when config_dir is empty",
+            )
+            _mock_get_base_dir.assert_called()
+        finally:
+            config_module.relay_config = original_relay_config
+
+
+class TestYAMLValidation(unittest.TestCase):
+    """Test YAML syntax validation."""
+
+    def test_validate_yaml_syntax_valid(self):
+        """Test YAML syntax validation for valid YAML."""
+        result = validate_yaml_syntax("key: value\nother: 123", "test.yaml")
+        self.assertTrue(result[0])  # is_valid should be True
+
+    def test_validate_yaml_syntax_invalid(self):
+        """Test YAML syntax validation for invalid YAML."""
+        result = validate_yaml_syntax(
+            "key: value\n  invalid: - item1\n  - item2", "test.yaml"
+        )
+        self.assertFalse(result[0])  # is_valid should be False
+        self.assertIn("YAML parsing error", result[1])
+
+    def test_validate_yaml_syntax_empty(self):
+        """Test YAML syntax validation for empty content."""
+        result = validate_yaml_syntax("", "test.yaml")
+        self.assertTrue(result[0])  # Empty content is technically valid
+
+    def test_validate_yaml_syntax_equals_instead_of_colon(self):
+        """Test YAML validation for content using '=' instead of ':'"""
+        result = validate_yaml_syntax("key = value", "test.yaml")
+        self.assertFalse(result[0])
+        self.assertIn("Use ':' instead of '='", result[1])
+
+    def test_validate_yaml_syntax_non_standard_bool(self):
+        """Test YAML validation for non-standard boolean values."""
+        result = validate_yaml_syntax("key: yes", "test.yaml")
+        self.assertTrue(result[0])  # Should be valid but with a warning
+        self.assertIn("Style warning", result[1])
+        self.assertIn("Consider using 'true' or 'false'", result[1])
+
+
+class TestE2EEStoreDir(unittest.TestCase):
+    """Test E2EE store directory creation."""
+
+    @patch("mmrelay.config.get_base_dir", return_value="/home/user/.mmrelay")
+    @patch("mmrelay.config.os.makedirs")
+    def test_get_e2ee_store_dir_creates_directory(self, mock_makedirs, _mock_base_dir):
+        """Test E2EE store directory creation when it doesn't exist."""
+        result = get_e2ee_store_dir()
+        expected_path = "/home/user/.mmrelay/store"
+        self.assertEqual(result, expected_path)
+        mock_makedirs.assert_called_once_with(expected_path, exist_ok=True)
+
+    @patch(
+        "mmrelay.config.get_base_dir",
+        return_value=os.path.join(tempfile.gettempdir(), ".mmrelay"),
+    )
+    @patch("mmrelay.config.os.makedirs")
+    def test_get_e2ee_store_dir_existing_directory(self, mock_makedirs, mock_base_dir):
+        """Test E2EE store directory when it already exists."""
+        result = get_e2ee_store_dir()
+        expected_path = os.path.join(tempfile.gettempdir(), ".mmrelay", "store")
+        self.assertEqual(result, expected_path)
+        mock_base_dir.assert_called_once()
+        mock_makedirs.assert_called_once_with(expected_path, exist_ok=True)
+
+
+class TestLoadConfigUncoveredLines(unittest.TestCase):
+    """Test uncovered lines in load_config function."""
+
+    def setUp(self):
+        """Reset global config state before each test."""
+        mmrelay.config.relay_config = {}
+        mmrelay.config.config_path = None
+
+    @patch("mmrelay.config.os.path.isfile", return_value=False)
+    @patch("mmrelay.config.apply_env_config_overrides")
+    def test_load_config_env_only_returns_config(self, mock_apply_env, _mock_isfile):
+        """Test that when env vars provide config, it logs and returns that config."""
+        mock_apply_env.return_value = {"meshtastic": {"connection_type": "tcp"}}
+
+        with patch("mmrelay.config.get_config_paths", return_value=["/fake/path.yaml"]):
+            config = load_config()
+
+        self.assertEqual(config, {"meshtastic": {"connection_type": "tcp"}})
+
+    @patch("mmrelay.config.os.path.isfile", return_value=False)
+    @patch("mmrelay.config.apply_env_config_overrides", return_value={})
+    def test_load_config_import_error_logs_debug(self, _mock_apply_env, _mock_isfile):
+        """Test that ImportError from msg_suggest_generate_config logs debug with exc_info."""
+        with patch("mmrelay.config.get_config_paths", return_value=["/fake/path.yaml"]):
+            with patch(
+                "builtins.__import__",
+                side_effect=ImportError("No module named 'cli_utils'"),
+            ):
+                config = load_config()
+
+        self.assertEqual(config, {})
+
+    @patch("mmrelay.config.os.path.isfile", return_value=False)
+    @patch("mmrelay.config.apply_env_config_overrides", return_value={})
+    def test_load_config_cli_suggestion_message(self, _mock_apply_env, _mock_isfile):
+        """Test that CLI suggestion message is logged when import succeeds."""
+        with patch("mmrelay.config.get_config_paths", return_value=["/fake/path.yaml"]):
+            with patch(
+                "mmrelay.cli_utils.msg_suggest_generate_config",
+                return_value="Generate config with: mmrelay generate-config",
+            ):
+                config = load_config()
+
+        self.assertEqual(config, {})
+
+
+class TestGetMeshtasticConfigValueUncoveredLines(unittest.TestCase):
+    """Test uncovered lines in get_meshtastic_config_value function."""
+
+    @patch("mmrelay.config.os.path.isfile", return_value=False)
+    @patch("mmrelay.config.apply_env_config_overrides", return_value={})
+    def test_get_meshtastic_config_value_invalid_section_type(
+        self, _mock_apply_env, _mock_isfile
+    ):
+        """Test that when meshtastic section is not a dict, it resets to empty dict."""
+        with patch("mmrelay.config.get_config_paths", return_value=["/fake/path.yaml"]):
+            config = {"meshtastic": "not_a_dict"}
+
+        result = get_meshtastic_config_value(
+            config, "connection_type", default="serial"
+        )
+        self.assertEqual(result, "serial")
+
+    @patch("mmrelay.config.os.path.isfile", return_value=False)
+    @patch("mmrelay.config.apply_env_config_overrides", return_value={})
+    @patch("mmrelay.config.os.makedirs")
+    def test_get_meshtastic_config_value_required_missing_import_error(
+        self, _mock_makedirs, _mock_apply_env, _mock_isfile
+    ):
+        """Test that when required key is missing and import fails, lambda is used."""
+        with patch("mmrelay.config.get_config_paths", return_value=["/fake/path.yaml"]):
+            config = {"meshtastic": {}}
+
+        with patch(
+            "builtins.__import__",
+            side_effect=ImportError("No module named 'cli_utils'"),
+        ):
+            with self.assertRaises(KeyError) as cm:
+                get_meshtastic_config_value(config, "connection_type", required=True)
+
+        self.assertIn(
+            "Required configuration 'meshtastic.connection_type' is missing",
+            str(cm.exception),
+        )
+
+    # Tests for Matrix environment variable loading
+    @patch.dict(
+        os.environ,
+        {
+            "MMRELAY_MATRIX_HOMESERVER": "https://matrix.example.org",
+            "MMRELAY_MATRIX_BOT_USER_ID": "@bot:example.org",
+            "MMRELAY_MATRIX_PASSWORD": "test_password",
+        },
+        clear=True,
+    )
+    def test_load_matrix_config_from_env(self):
+        """Test that Matrix configuration is loaded from environment variables."""
+        config = load_matrix_config_from_env()
+        self.assertIsNotNone(config)
+        self.assertEqual(config["homeserver"], "https://matrix.example.org")
+        self.assertEqual(config["bot_user_id"], "@bot:example.org")
+        self.assertEqual(config["password"], "test_password")
+
+    @patch.dict(os.environ, {}, clear=True)
+    def test_load_matrix_config_from_env_empty(self):
+        """Test that Matrix config returns None when no env vars are set."""
+        config = load_matrix_config_from_env()
+        self.assertIsNone(config)
+
+    @patch.dict(
+        os.environ,
+        {
+            "MMRELAY_MATRIX_HOMESERVER": "https://matrix.example.org",
+            "MMRELAY_MESHTASTIC_HOST": "meshtastic.local",
+        },
+        clear=True,
+    )
+    def test_apply_env_config_overrides_with_matrix(self):
+        """Test that Matrix env vars are applied via apply_env_config_overrides."""
+        config = {}
+        result = apply_env_config_overrides(config)
+
+        self.assertIn("matrix", result)
+        self.assertEqual(result["matrix"]["homeserver"], "https://matrix.example.org")
+        self.assertIn("meshtastic", result)
+        self.assertEqual(result["meshtastic"]["host"], "meshtastic.local")
+
+    @patch.dict(
+        os.environ,
+        {
+            "MMRELAY_MATRIX_PASSWORD": "env_password",
+        },
+        clear=True,
+    )
+    def test_apply_env_config_overrides_matrix_password_override(self):
+        """Test that Matrix password from env overrides config file password."""
+        config = {
+            "matrix": {
+                "homeserver": "https://matrix.example.org",
+                "bot_user_id": "@bot:example.org",
+                "password": "config_password",
+            }
+        }
+        result = apply_env_config_overrides(config)
+
+        # Environment variable should override config file
+        self.assertEqual(result["matrix"]["password"], "env_password")
+        # Other values should remain
+        self.assertEqual(result["matrix"]["homeserver"], "https://matrix.example.org")
+        self.assertEqual(result["matrix"]["bot_user_id"], "@bot:example.org")
+
+
+class TestConfigUncoveredLines(unittest.TestCase):
+    """Test uncovered lines in config.py."""
+
+    @patch("mmrelay.config.os.path.exists")
+    @patch("mmrelay.config.get_base_dir", return_value="/test/base")
+    def test_load_credentials_no_file_windows(self, _mock_get_base_dir, mock_exists):
+        """
+        Verifies that on Windows, when the base credentials directory exists but credentials.json is missing, load_credentials returns None and directory contents are logged.
+
+        Patches:
+        - os.path.exists to simulate base directory present and credentials file absent
+        - sys.platform to "win32"
+        - os.listdir to return a sample directory listing
+        - mmrelay.config.logger.debug to capture debug messages
+
+        Asserts:
+        - The function returns None
+        - A debug message containing "Directory contents" was emitted
+        """
+
+        def mock_exists_side_effect(path):
+            """
+            Emulate os.path.exists for tests by treating '/test/base' as present and '/test/base/credentials.json' as absent.
+
+            Returns:
+                `True` if `path` is '/test/base', `False` otherwise (including '/test/base/credentials.json').
+            """
+            if path == "/test/base/credentials.json":
+                return False
+            elif path == "/test/base":
+                return True
+            return False
+
+        mock_exists.side_effect = mock_exists_side_effect
+
+        with patch("sys.platform", "win32"), patch(
+            "mmrelay.config.os.listdir", return_value=["config.yaml"]
+        ):
+            log_debug = []
+
+            def mock_debug(*args, **_kwargs):
+                """
+                Record the first positional argument into the module-level `log_debug` list.
+
+                Parameters:
+                    *args: Positional arguments; if provided, `args[0]` is appended to `log_debug`.
+                    **_kwargs: Keyword arguments are accepted and ignored.
+                """
+                log_debug.append(args[0])
+
+            with patch.object(mmrelay.config.logger, "debug", side_effect=mock_debug):
+                result = load_credentials()
+                self.assertIsNone(result)
+                self.assertTrue(any("Directory contents" in msg for msg in log_debug))
+
+    @patch("mmrelay.config.os.path.isdir", return_value=False)
+    @patch("mmrelay.config.os.path.expanduser", return_value="credentials.json")
+    @patch("mmrelay.config.get_base_dir", return_value="/test/base")
+    @patch("mmrelay.config.os.path.exists", return_value=True)
+    @patch(
+        "builtins.open",
+        new_callable=mock_open,
+        read_data=json.dumps({"access_token": "test"}),
+    )
+    def test_load_credentials_path_without_dirname(
+        self,
+        _mock_open,
+        _mock_exists,
+        _mock_base,
+        _mock_expand,
+        _mock_isdir,
+    ):
+        """Test load_credentials with path without dirname (lines 594-595)."""
+        with patch.dict(os.environ, {"MMRELAY_CREDENTIALS_PATH": "credentials.json"}):
+            result = load_credentials()
+            self.assertEqual(result, {"access_token": "test"})
+
+    @patch("mmrelay.config.get_base_dir", return_value="/test/base")
+    @patch("mmrelay.config.os.makedirs")
+    @patch("builtins.open", new_callable=mock_open)
+    @patch("mmrelay.config.set_secure_file_permissions")
+    @patch("mmrelay.config.os.path.exists", return_value=True)
+    def test_save_credentials_verification(
+        self,
+        _mock_exists,
+        _mock_perm,
+        _mock_open,
+        _mock_mkdir,
+        _mock_base,
+    ):
+        """Test save_credentials verification (line 693)."""
+        log_debug = []
+        with patch.object(
+            mmrelay.config.logger, "debug", side_effect=lambda x: log_debug.append(x)
+        ):
+            save_credentials({"access_token": "test"})
+            self.assertTrue(
+                any("Verified credentials.json exists" in msg for msg in log_debug)
+            )
+
+    @patch("mmrelay.config.get_base_dir", return_value="/test/base")
+    @patch("mmrelay.config.os.makedirs", side_effect=OSError("Permission denied"))
+    def test_save_credentials_windows_error_guidance(self, _mock_mkdir, _mock_base):
+        """Test save_credentials Windows error guidance (lines 701-704)."""
+        log_error = []
+
+        def mock_error(*args, **_kwargs):
+            """
+            Record the first positional argument as an error message in the shared `log_error` list.
+
+            Parameters:
+                *args: Positional arguments where the first element is the error message to record.
+                **_kwargs: Ignored.
+            """
+            log_error.append(args[0])
+
+        with patch("sys.platform", "win32"), patch.object(
+            mmrelay.config.logger, "error", side_effect=mock_error
+        ):
+            save_credentials({"access_token": "test"})
+            self.assertTrue(
+                any(
+                    "On Windows, ensure the application has write permissions" in msg
+                    for msg in log_error
+                )
+            )
+
+    def test_get_mapping_section_not_dict(self):
+        """Test _get_mapping_section when section exists but is not dict (lines 493-497)."""
+        log_warning = []
+
+        def mock_warning(*args, **_kwargs):
+            """
+            Capture a warning message by appending the first positional argument to the `log_warning` list.
+
+            Parameters:
+                *args: The first positional argument is treated as the warning message to record; any additional positional arguments are ignored.
+                **kwargs: Ignored.
+            """
+            log_warning.append(args[0])
+
+        with patch.object(mmrelay.config.logger, "warning", side_effect=mock_warning):
+            config = {"section": "not a dict"}
+            result = mmrelay.config._get_mapping_section(config, "section")
+            self.assertIsNone(result)
+            self.assertTrue(any("not a mapping" in msg for msg in log_warning))
+
+    @patch(
+        "mmrelay.config._load_config_from_env_mapping", return_value={"level": "debug"}
+    )
+    def test_load_logging_config_with_filename(self, mock_load):
+        """Test load_logging_config_from_env with filename (lines 349-350)."""
+        mock_load.return_value = {"filename": "/test/log.txt"}
+        config = load_logging_config_from_env()
+        self.assertTrue(config.get("log_to_file"))
+
+    @patch("mmrelay.config.os.path.isfile", return_value=True)
+    @patch("builtins.open", new_callable=mock_open, read_data="")
+    @patch("mmrelay.config.yaml.load", return_value=None)
+    def test_load_config_empty_file(self, _mock_load, _mock_open, _mock_isfile):
+        """Test load_config with empty file (line 958)."""
+        config = load_config("/test/empty.yaml")
+        self.assertEqual(config, {})
+
+
+if __name__ == "__main__":
+    unittest.main()
