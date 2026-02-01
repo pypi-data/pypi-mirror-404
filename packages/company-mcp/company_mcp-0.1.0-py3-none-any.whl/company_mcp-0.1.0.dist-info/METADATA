@@ -1,0 +1,184 @@
+Metadata-Version: 2.4
+Name: company-mcp
+Version: 0.1.0
+Summary: MCP server for extracting AI companies and funding information from articles
+Project-URL: Homepage, https://github.com/yourusername/company-mcp
+Project-URL: Repository, https://github.com/yourusername/company-mcp
+Author-email: Your Name <your@email.com>
+License-Expression: MIT
+License-File: LICENSE
+Keywords: ai,company,extraction,funding,mcp
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Requires-Python: >=3.12
+Requires-Dist: beautifulsoup4>=4.12.0
+Requires-Dist: httpx>=0.27.0
+Requires-Dist: mcp[cli]>=1.0.0
+Requires-Dist: openai>=1.0.0
+Requires-Dist: python-dotenv>=1.0.0
+Requires-Dist: starlette>=0.38.0
+Requires-Dist: uvicorn>=0.30.0
+Description-Content-Type: text/markdown
+
+# Company MCP
+
+一个用于从文章中提取公司信息的 MCP (Model Context Protocol) 服务器，可识别 AI 领域公司及其融资信息。
+
+## 功能
+
+- 从给定的文章 URL 中提取所有公司名称
+- 判断每个公司是否为 AI 领域公司
+- 判断每个公司是否有融资信息
+- 使用 OpenRouter 对接 xiaomi/mimo-v2-flash 模型进行分析
+
+## 安装
+
+```bash
+pip install company-mcp
+```
+
+或者从源码安装：
+
+```bash
+git clone https://github.com/yourusername/company-mcp.git
+cd company-mcp
+pip install -e .
+```
+
+## 配置
+
+创建 `.env` 文件或设置环境变量：
+
+```bash
+OPENROUTER_API_KEY="your-openrouter-api-key"
+OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"
+```
+
+## 使用方式
+
+### 1. Stdio 模式（推荐用于 Claude Desktop）
+
+```bash
+company-mcp
+```
+
+在 Claude Desktop 的配置文件中添加：
+
+**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+**Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "company-mcp": {
+      "command": "company-mcp",
+      "env": {
+        "OPENROUTER_API_KEY": "your-api-key"
+      }
+    }
+  }
+}
+```
+
+### 2. SSE 模式（HTTP 服务器）
+
+```bash
+company-mcp-sse
+```
+
+服务器将在 `http://localhost:8000` 启动。
+
+端点：
+- `GET /health` - 健康检查
+- `GET /sse` - SSE 连接端点
+- `POST /messages/` - 消息处理端点
+
+配置客户端连接到 SSE 端点：
+
+```json
+{
+  "mcpServers": {
+    "company-mcp": {
+      "url": "http://localhost:8000/sse"
+    }
+  }
+}
+```
+
+## 工具说明
+
+### extract_companies
+
+从文章 URL 中提取公司信息。
+
+**输入参数：**
+- `url` (string, 必需): 文章的 URL 地址
+
+**输出示例：**
+
+```json
+{
+  "url": "https://example.com/article",
+  "companies": [
+    {
+      "company": "DeepWisdom（深度赋智）",
+      "reason": "是AI领域的，且官宣连续完成 A 轮及 A + 轮融资，累计金额达 3100 万美元",
+      "match": true
+    },
+    {
+      "company": "OpenAI",
+      "reason": "本文中没涉及到融资",
+      "match": false
+    }
+  ],
+  "total_count": 2,
+  "match_count": 1
+}
+```
+
+## 发布到 PyPI
+
+1. 注册 PyPI 账号: https://pypi.org/account/register/
+
+2. 安装构建工具：
+```bash
+pip install build twine
+```
+
+3. 构建包：
+```bash
+python -m build
+```
+
+4. 上传到 PyPI：
+```bash
+twine upload dist/*
+```
+
+5. 上传到 TestPyPI（测试）：
+```bash
+twine upload --repository testpypi dist/*
+```
+
+## 开发
+
+```bash
+# 安装依赖
+uv sync
+
+# 运行 stdio 服务器
+uv run company-mcp
+
+# 运行 SSE 服务器
+uv run company-mcp-sse
+
+# 使用 MCP Inspector 测试
+npx @modelcontextprotocol/inspector company-mcp
+```
+
+## License
+
+MIT
