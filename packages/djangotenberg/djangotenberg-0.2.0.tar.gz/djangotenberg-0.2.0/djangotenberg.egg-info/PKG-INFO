@@ -1,0 +1,153 @@
+Metadata-Version: 2.4
+Name: djangotenberg
+Version: 0.2.0
+Summary: Django Gotenberg
+Author-email: Nutchapon Metmaolee <nutchapon.met1002@gmail.com>
+License: MIT
+Classifier: Framework :: Django
+Classifier: Framework :: Django :: 4.2
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: MIT License
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: Django>=4.2
+Requires-Dist: djangorestframework>=3.16
+Requires-Dist: requests>=2.32
+Dynamic: license-file
+
+# Djangotenberg
+
+Djangotenberg is a library for connecting and using the Gotenberg PDF generator within your modern Django project. It allows you to convert HTML to PDF and manage PDF files easily.
+
+## Supported Tools
+
+Currently, Djangotenberg supports the following Gotenberg tools:
+
+*   **Chromium**: For converting HTML code to PDF files.
+*   **PDF Engines**: For manipulating PDF files.
+    *   Merge PDFs: Combine multiple PDF files.
+    *   Read Metadata: Read metadata from PDF files.
+    *   Write Metadata: Edit or add metadata to PDF files.
+
+## Requirements
+
+*   Python >= 3.9
+*   Django >= 4.2
+*   djangorestframework >= 3.16
+*   requests >= 2.32
+*   **Gotenberg Server**: A running Gotenberg server is required (running via Docker is recommended).
+
+## Installation
+
+Install the library via pip:
+(Assuming the package is named `djangotenberg`)
+
+```bash
+pip install djangotenberg
+```
+
+Or install from Source code:
+
+```bash
+pip install .
+```
+
+## Setup & Configuration
+
+1.  Add `djangotenberg` to `INSTALLED_APPS` in your `settings.py`:
+
+    ```python
+    # settings.py
+
+    INSTALLED_APPS = [
+        # ...
+        'rest_framework',
+        'djangotenberg',
+        # ...
+    ]
+    ```
+
+2.  Define `GOTENBERG_CONFIG` in `settings.py` to specify the Gotenberg server location:
+
+    ```python
+    # settings.py
+
+    GOTENBERG_CONFIG = {
+        # Gotenberg server URL (Required)
+        "GOTENBERG_URL": "http://localhost:3000",
+        
+        # API timeout in seconds (Optional, Default: 10)
+        "GOTENBERG_API_TIMEOUT": 10,
+    }
+    ```
+
+## Usage
+
+### 1. Using Client (Python Code)
+
+You can use `APIClient` to send commands directly to Gotenberg.
+
+```python
+from djangotenberg.client import APIClient
+from djangotenberg.properties import Property, PageSize
+
+client = APIClient()
+
+# Example: Convert HTML string to PDF
+html_content = "<h1>Hello, Djangotenberg!</h1>"
+
+# Optional: Configure PDF properties
+properties = Property() \
+    .single_page(True) \
+    .page_size(PageSize.A4_PAGE_SIZE) \
+    .margin_top(0.5) \
+    .build()
+
+response = client.html_to_pdf(html_content, properties=properties)
+
+if response.ok:
+    with open("output.pdf", "wb") as f:
+        f.write(response.content)
+```
+
+### 2. Using Django Views (REST Framework)
+
+Djangotenberg provides a pre-configured URL configuration that you can include directly in your project's `urls.py`.
+
+> **Note:** `PDFView` has `permission_classes = [IsAuthenticated]` set by default. Therefore, calling the API requires a Token or Login.
+
+**urls.py**
+
+```python
+from django.urls import path, include
+
+urlpatterns = [
+    # ...
+    path('api/', include('djangotenberg.urls')),
+    # ...
+]
+```
+
+**Available Endpoints:**
+
+Once installed and included (assuming mapped to `/api/`), you can access the API at the following endpoints:
+
+*   `POST /api/pdf-engine/html-to-pdf/`: Convert HTML string to PDF
+    *   Body:
+        ```json
+        { 
+            "html": "<h1>Content</h1>",
+            "properties": {
+                "singlePage": true,
+                "paperWidth": 8.27,
+                "paperHeight": 11.69
+            }
+        }
+        ```
+*   `POST /api/pdf-engine/merge/`: Merge multiple PDF files
+*   `POST /api/pdf-engine/read-metadata/`: Read PDF Metadata
+*   `POST /api/pdf-engine/write-metadata/`: Write PDF Metadata
+
+## License
+This project is licensed under the terms of the MIT lincense.
