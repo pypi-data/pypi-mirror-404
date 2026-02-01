@@ -1,0 +1,64 @@
+name: tests
+
+on:
+  push:
+    branches: [ main, stage ]
+  pull_request:
+    branches: [ main, stage ]
+
+jobs:
+  test:
+    name: pytest on Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: [ "3.10", "3.11", "3.12" ]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Install project with dev extras
+        run: uv pip install -e ".[dev]" --system
+
+      - name: Verify package installation
+        run: |
+          python -c "import mi_crow; print('✓ mi_crow package found')"
+          python -c "import sys; import os; import mi_crow; print('mi_crow location:', mi_crow.__file__); print('mi_crow.__path__:', getattr(mi_crow, '__path__', 'NOT SET')); store_dir = os.path.join(os.path.dirname(mi_crow.__file__), 'store'); print('store dir exists:', os.path.exists(store_dir)); print('store/__init__.py exists:', os.path.exists(os.path.join(store_dir, '__init__.py')))"
+          python -c "import mi_crow.store; print('✓ mi_crow.store package found')"
+          python -c "from mi_crow.store.store import Store; print('✓ Store import successful')"
+
+      - name: Run tests with coverage threshold
+        run: |
+          pytest \
+            --maxfail=1 -q \
+            --cov=mi_crow \
+            --cov-report=term \
+            --cov-report=xml:coverage.xml \
+            --cov-report=html \
+            --cov-fail-under=85
+
+      - name: Upload coverage.xml
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.python-version }}
+          path: coverage.xml
+
+      - name: Upload HTML coverage (htmlcov/)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: htmlcov-${{ matrix.python-version }}
+          path: htmlcov
