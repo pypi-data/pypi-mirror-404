@@ -1,0 +1,195 @@
+name: Publish to PyPI
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'  # Triggers on tags like v0.1.0, v1.2.3, etc.
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-publish:
+    name: Build and publish Python distribution to PyPI
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ['3.8', '3.9', '3.10', '3.11', '3.12']
+        exclude:
+          # Reduce build matrix - only build all Python versions on Linux
+          - os: macos-latest
+            python-version: '3.8'
+          - os: macos-latest
+            python-version: '3.9'
+          - os: windows-latest
+            python-version: '3.8'
+          - os: windows-latest
+            python-version: '3.9'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Set up Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: stable
+        override: true
+
+    - name: Install maturin
+      run: pip install maturin
+
+    - name: Extract version from tag
+      id: get_version
+      shell: bash
+      run: |
+        # Remove 'v' prefix from tag (v0.1.0 -> 0.1.0)
+        VERSION=${GITHUB_REF#refs/tags/v}
+        echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+        echo "Building version: $VERSION"
+
+    - name: Update version in Cargo.toml
+      shell: bash
+      run: |
+        VERSION=${{ steps.get_version.outputs.VERSION }}
+        # Update version in Cargo.toml
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+          sed -i '' "s/^version = .*/version = \"$VERSION\"/" Cargo.toml
+        else
+          sed -i "s/^version = .*/version = \"$VERSION\"/" Cargo.toml
+        fi
+
+    - name: Update version in pyproject.toml
+      shell: bash
+      run: |
+        VERSION=${{ steps.get_version.outputs.VERSION }}
+        # Update version in pyproject.toml
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+          sed -i '' "s/^version = .*/version = \"$VERSION\"/" pyproject.toml
+        else
+          sed -i "s/^version = .*/version = \"$VERSION\"/" pyproject.toml
+        fi
+
+    - name: Build wheels
+      run: |
+        maturin build --release --strip --out dist
+
+    - name: Upload wheels as artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: wheels-${{ matrix.os }}-py${{ matrix.python-version }}
+        path: dist/
+
+  build-sdist:
+    name: Build source distribution
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Set up Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: stable
+        override: true
+
+    - name: Install maturin
+      run: pip install maturin
+
+    - name: Extract version from tag
+      id: get_version
+      shell: bash
+      run: |
+        VERSION=${GITHUB_REF#refs/tags/v}
+        echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+        echo "Building version: $VERSION"
+
+    - name: Update version in Cargo.toml
+      shell: bash
+      run: |
+        VERSION=${{ steps.get_version.outputs.VERSION }}
+        sed -i "s/^version = .*/version = \"$VERSION\"/" Cargo.toml
+
+    - name: Update version in pyproject.toml
+      shell: bash
+      run: |
+        VERSION=${{ steps.get_version.outputs.VERSION }}
+        sed -i "s/^version = .*/version = \"$VERSION\"/" pyproject.toml
+
+    - name: Build source distribution
+      run: |
+        maturin build --release --sdist --out dist
+
+    - name: Upload sdist as artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: sdist
+        path: dist/*.tar.gz
+
+  publish:
+    name: Publish to PyPI
+    needs: [build-and-publish, build-sdist]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write  # Required for trusted publishing
+
+    steps:
+    - name: Download wheel artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: dist/
+        pattern: wheels-*
+        merge-multiple: true
+
+    - name: Download sdist artifact
+      uses: actions/download-artifact@v4
+      with:
+        path: dist/
+        pattern: sdist
+        merge-multiple: true
+
+    - name: List distributions
+      run: ls -lh dist/
+
+    - name: Publish to PyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        password: ${{ secrets.PYPI_API_TOKEN }}
+        skip-existing: true
+        verbose: true
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: dist/*
+        generate_release_notes: true
+        body: |
+          ## CaDaR ${{ github.ref_name }}
+
+          Bidirectional transliteration for Darija (Moroccan Arabic)
+
+          ### Installation
+          ```bash
+          pip install cadar==${{ github.ref_name }}
+          ```
+
+          ### What's Changed
+          See the [CHANGELOG](https://github.com/Oit-Technologies/CaDaR/blob/main/CHANGELOG.md) for details.
+
+          ---
+          🤖 Published automatically by GitHub Actions
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
