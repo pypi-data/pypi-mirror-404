@@ -1,0 +1,145 @@
+# This file is part of the faebryk project
+# SPDX-License-Identifier: MIT
+
+import faebryk.core.node as fabll
+import faebryk.library._F as F
+
+
+class OpAmp(fabll.Node):
+    # ----------------------------------------
+    #     modules, interfaces, parameters
+    # ----------------------------------------
+    power = F.ElectricPower.MakeChild()
+    input = F.DifferentialPair.MakeChild()
+    output = (
+        F.Electrical.MakeChild()
+    )  # TODO this should be an ElectricSignal with reference set to power
+
+    bandwidth = F.Parameters.NumericParameter.MakeChild(unit=F.Units.Hertz)
+    input_bias_current = F.Parameters.NumericParameter.MakeChild(unit=F.Units.Ampere)
+    input_offset_voltage = F.Parameters.NumericParameter.MakeChild(unit=F.Units.Volt)
+    gain_bandwidth_product = F.Parameters.NumericParameter.MakeChild(unit=F.Units.Hertz)
+    output_current = F.Parameters.NumericParameter.MakeChild(unit=F.Units.Ampere)
+    slew_rate = F.Parameters.NumericParameter.MakeChild(unit=F.Units.VoltsPerSecond)
+
+    # ----------------------------------------
+    #                 traits
+    # ----------------------------------------
+
+    _is_module = fabll.Traits.MakeEdge(fabll.is_module.MakeChild())
+
+    _can_attatch_to_footprint = fabll.Traits.MakeEdge(
+        F.Footprints.can_attach_to_footprint.MakeChild()
+    )
+
+    # Create named lead fields so we can attach can_attach_to_pad_by_name to them
+    power_hv_lead = F.Lead.is_lead.MakeChild()
+    power_lv_lead = F.Lead.is_lead.MakeChild()
+    output_lead = F.Lead.is_lead.MakeChild()
+    non_inverting_input_lead = F.Lead.is_lead.MakeChild()
+    inverting_input_lead = F.Lead.is_lead.MakeChild()
+
+    # Attach leads to their respective nodes
+    power.add_dependant(
+        fabll.Traits.MakeEdge(power_hv_lead, [power, F.ElectricPower.hv])
+    )
+    power.add_dependant(
+        fabll.Traits.MakeEdge(power_lv_lead, [power, F.ElectricPower.lv])
+    )
+    output.add_dependant(fabll.Traits.MakeEdge(output_lead, [output]))
+    input.add_dependant(
+        fabll.Traits.MakeEdge(
+            non_inverting_input_lead,
+            [input, F.DifferentialPair.p, F.ElectricSignal.line],
+        )
+    )
+    input.add_dependant(
+        fabll.Traits.MakeEdge(
+            inverting_input_lead,
+            [input, F.DifferentialPair.n, F.ElectricSignal.line],
+        )
+    )
+
+    # Attach pad name matchers to the lead fields (not to unrelated nodes)
+    non_inverting_input_lead.add_dependant(
+        fabll.Traits.MakeEdge(
+            F.Lead.can_attach_to_pad_by_name.MakeChild(regex=r"\+|IN\+"),
+            [non_inverting_input_lead],
+        )
+    )
+    inverting_input_lead.add_dependant(
+        fabll.Traits.MakeEdge(
+            F.Lead.can_attach_to_pad_by_name.MakeChild(regex=r"\-|IN\-"),
+            [inverting_input_lead],
+        )
+    )
+    output_lead.add_dependant(
+        fabll.Traits.MakeEdge(
+            F.Lead.can_attach_to_pad_by_name.MakeChild(regex=r"OUT"),
+            [output_lead],
+        )
+    )
+    power_hv_lead.add_dependant(
+        fabll.Traits.MakeEdge(
+            F.Lead.can_attach_to_pad_by_name.MakeChild(regex=r"V\+|Vcc|Vdd|Vcc\+"),
+            [power_hv_lead],
+        )
+    )
+    power_lv_lead.add_dependant(
+        fabll.Traits.MakeEdge(
+            F.Lead.can_attach_to_pad_by_name.MakeChild(regex=r"V\-|Vee|Vss|GND|Vcc\-"),
+            [power_lv_lead],
+        )
+    )
+
+    S = F.has_simple_value_representation.Spec
+    _simple_repr = fabll.Traits.MakeEdge(
+        F.has_simple_value_representation.MakeChild(
+            S(param=bandwidth, prefix="BW"),
+            S(input_bias_current, prefix="Ib"),
+            S(input_offset_voltage, prefix="Vos"),
+            S(gain_bandwidth_product, prefix="GBW"),
+            S(output_current, prefix="Iout"),
+            S(slew_rate, prefix="SR"),
+        )
+    )
+
+    designator_prefix = fabll.Traits.MakeEdge(
+        F.has_designator_prefix.MakeChild(F.has_designator_prefix.Prefix.U)
+    )
+
+    usage_example = fabll.Traits.MakeEdge(
+        F.has_usage_example.MakeChild(
+            example="""
+        import OpAmp, Resistor, ElectricPower, Electrical
+
+        opamp = new OpAmp
+        opamp.bandwidth = 1MHz +/- 10%
+        opamp.gain_bandwidth_product = 10MHz +/- 20%
+        opamp.input_offset_voltage = 1mV +/- 50%
+        opamp.slew_rate = 1V/us +/- 20%
+        opamp.package = "SOIC-8"
+
+        # Power supply connections (dual supply)
+        power_pos = new ElectricPower
+        power_neg = new ElectricPower
+        assert power_pos.voltage within 5V +/- 5%
+        assert power_neg.voltage within -5V +/- 5%
+        opamp.power.hv ~ power_pos.hv
+        opamp.power.lv ~ power_neg.lv
+
+        # Non-inverting amplifier configuration
+        feedback_resistor = new Resistor
+        gain_resistor = new Resistor
+        feedback_resistor.resistance = 10kohm +/- 1%
+        gain_resistor.resistance = 1kohm +/- 1%
+
+        # Connections for gain = 1 + (Rf/Rg) = 11
+        input_signal ~ opamp.non_inverting_input
+        opamp.inverting_input ~> gain_resistor ~> power_neg.lv
+        opamp.output ~> feedback_resistor ~> opamp.inverting_input
+        output_signal ~ opamp.output
+        """,
+            language=F.has_usage_example.Language.ato,
+        ).put_on_type()
+    )
