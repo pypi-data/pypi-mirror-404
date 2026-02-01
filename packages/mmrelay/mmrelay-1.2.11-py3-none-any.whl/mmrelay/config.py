@@ -1,0 +1,1477 @@
+import json
+import ntpath
+import os
+import re
+import sys
+from typing import TYPE_CHECKING, Any, Iterable, cast
+
+import platformdirs
+import yaml  # type: ignore[import-untyped]
+from yaml.loader import SafeLoader  # type: ignore[import-untyped]
+
+# Import application constants
+from mmrelay.constants.app import APP_AUTHOR, APP_NAME
+from mmrelay.constants.config import (
+    CONFIG_KEY_ACCESS_TOKEN,
+    CONFIG_KEY_BOT_USER_ID,
+    CONFIG_KEY_HOMESERVER,
+    CONFIG_SECTION_MATRIX,
+)
+
+# Global variables to store directory overrides
+custom_base_dir: str | None = None
+custom_data_dir: str | None = None
+
+if TYPE_CHECKING:
+    import logging
+
+
+class CredentialsPathError(OSError):
+    def __init__(self) -> None:
+        super().__init__("No candidate credentials paths available")
+
+
+def _expand_path(path: str) -> str:
+    """
+    Resolve and normalize a filesystem path by expanding user home references and converting to an absolute path.
+
+    Parameters:
+        path (str): A filesystem path, which may include a user home shorthand (`~`) or be relative.
+
+    Returns:
+        str: The absolute path with any leading `~` expanded to the user's home directory.
+    """
+    return os.path.abspath(os.path.expanduser(path))
+
+
+def _get_env_base_dir() -> str | None:
+    """
+    Read the MMRELAY_BASE_DIR environment variable and return its expanded absolute path.
+
+    Returns:
+        Expanded absolute path (`str`) if MMRELAY_BASE_DIR is set, `None` otherwise.
+    """
+    env_base_dir = os.getenv("MMRELAY_BASE_DIR")
+    if env_base_dir:
+        return _expand_path(env_base_dir)
+    return None
+
+
+def _get_env_data_dir() -> str | None:
+    """
+    Return the expanded absolute path specified by the MMRELAY_DATA_DIR environment variable, if present.
+
+    Returns:
+        str | None: Expanded absolute path from MMRELAY_DATA_DIR if the variable is set, `None` otherwise.
+    """
+    env_data_dir = os.getenv("MMRELAY_DATA_DIR")
+    if env_data_dir:
+        return _expand_path(env_data_dir)
+    return None
+
+
+def _has_any_dir_override() -> bool:
+    """
+    Check whether any override for the application's base or data directory is set.
+
+    Returns:
+        `true` if a custom_base_dir, custom_data_dir, `MMRELAY_BASE_DIR`, or `MMRELAY_DATA_DIR` is present, `false` otherwise.
+    """
+    return bool(
+        custom_base_dir
+        or custom_data_dir
+        or os.getenv("MMRELAY_BASE_DIR")
+        or os.getenv("MMRELAY_DATA_DIR")
+    )
+
+
+def is_new_layout_enabled() -> bool:
+    """
+    Report whether the new directory layout is enabled.
+
+    Checks for a programmatic override via `custom_base_dir` or the presence of the
+    `MMRELAY_BASE_DIR` environment variable.
+
+    Returns:
+        `true` if a custom base directory is configured via `custom_base_dir` or
+        `MMRELAY_BASE_DIR`, `false` otherwise.
+    """
+    return bool(custom_base_dir) or bool(os.getenv("MMRELAY_BASE_DIR"))
+
+
+def is_legacy_layout_enabled() -> bool:
+    """
+    Determine whether the legacy (data-dir-based) directory layout is active.
+
+    The legacy layout is considered active when a data-directory override is present via the
+    custom_data_dir module override or the MMRELAY_DATA_DIR environment variable, and the
+    new-layout mode is not enabled.
+
+    Returns:
+        `true` if the legacy layout is enabled, `false` otherwise.
+    """
+    return not is_new_layout_enabled() and bool(
+        custom_data_dir or os.getenv("MMRELAY_DATA_DIR")
+    )
+
+
+def set_secure_file_permissions(file_path: str, mode: int = 0o600) -> None:
+    """
+    Set restrictive Unix permission bits on a file to limit access.
+
+    On Linux/macOS attempts to set the file's mode (default 0o600). No action is performed on other platforms; failures are logged and not raised.
+
+    Parameters:
+        file_path (str): Path to the file to modify.
+        mode (int): Unix permission bits to apply (default 0o600).
+    """
+    if sys.platform in ["linux", "darwin"]:
+        try:
+            os.chmod(file_path, mode)
+            logger.debug(f"Set secure permissions ({oct(mode)}) on {file_path}")
+        except (OSError, PermissionError) as e:
+            logger.warning(f"Could not set secure permissions on {file_path}: {e}")
+
+
+def get_base_dir() -> str:
+    """
+    Return the filesystem base directory used to store the application's files.
+
+    Determines the directory using the following precedence: module-level `custom_base_dir`, legacy `custom_data_dir`, environment variable `MMRELAY_BASE_DIR`, legacy environment variable `MMRELAY_DATA_DIR`, then a platform default (`~/.<APP_NAME>` on Linux/macOS, platform-specific user data dir on Windows).
+
+    Returns:
+        The filesystem path to the application's base data directory.
+    """
+    if custom_base_dir:
+        return custom_base_dir
+    if custom_data_dir:
+        return custom_data_dir
+
+    env_base_dir = _get_env_base_dir()
+    if env_base_dir:
+        return env_base_dir
+    env_data_dir = _get_env_data_dir()
+    if env_data_dir:
+        return env_data_dir
+
+    if sys.platform in ["linux", "darwin"]:
+        # Use ~/.mmrelay for Linux and Mac
+        return os.path.expanduser(os.path.join("~", "." + APP_NAME))
+    else:
+        # Use platformdirs default for Windows
+        return platformdirs.user_data_dir(APP_NAME, APP_AUTHOR)
+
+
+def get_app_path() -> str:
+    """
+    Get the application's base directory, accounting for frozen (bundled) executables.
+
+    Returns:
+        The path to the application's base directory: the directory containing the frozen executable when running from a bundle, or the directory containing this source file otherwise.
+    """
+    if getattr(sys, "frozen", False):
+        # Running in a bundle (PyInstaller)
+        return os.path.dirname(sys.executable)
+    else:
+        # Running in a normal Python environment
+        return os.path.dirname(os.path.abspath(__file__))
+
+
+def get_config_paths(args: Any = None) -> list[str]:
+    """
+    Produce a prioritized list of candidate configuration file paths for the application.
+
+    Order of priority: a path provided via command-line args (args.config), the user config directory (created when possible), the current working directory, and the application directory. The user config directory entry is omitted if the directory cannot be created.
+
+    Parameters:
+        args (Any): Parsed command-line arguments, expected to have an optional `config` attribute specifying a config file path.
+
+    Returns:
+        list[str]: Absolute paths to candidate configuration files, ordered by priority.
+    """
+    paths = []
+
+    # Check command line arguments for config path
+    if args and args.config:
+        paths.append(os.path.abspath(args.config))
+
+    # Check user config directory (preferred location)
+    if sys.platform in ["linux", "darwin"]:
+        # Use ~/.mmrelay/ for Linux and Mac
+        user_config_dir = get_base_dir()
+    else:
+        # Use platformdirs default for Windows
+        user_config_dir = platformdirs.user_config_dir(APP_NAME, APP_AUTHOR)
+
+    try:
+        os.makedirs(user_config_dir, exist_ok=True)
+        user_config_path = os.path.join(user_config_dir, "config.yaml")
+        paths.append(user_config_path)
+    except (OSError, PermissionError):
+        # If we can't create the user config directory, skip it
+        pass
+
+    # Check current directory (for backward compatibility)
+    current_dir_config = os.path.join(os.getcwd(), "config.yaml")
+    paths.append(current_dir_config)
+
+    # Check application directory (for backward compatibility)
+    app_dir_config = os.path.join(get_app_path(), "config.yaml")
+    paths.append(app_dir_config)
+
+    return paths
+
+
+def get_credentials_search_paths(
+    *,
+    explicit_path: str | None = None,
+    config_paths: Iterable[str] | None = None,
+    include_base_data: bool = True,
+) -> list[str]:
+    """
+    Build an ordered, de-duplicated list of candidate credentials.json paths.
+
+    Parameters:
+        explicit_path (str | None): Optional explicit file or directory path.
+        config_paths (Iterable[str] | None): Optional iterable of config file paths.
+        include_base_data (bool): When True, include base/data directory fallbacks.
+
+    Returns:
+        list[str]: Ordered candidate credential file paths.
+    """
+    candidate_paths: list[str] = []
+    seen: set[str] = set()
+
+    def _add(path: str | None) -> None:
+        """
+        Add a path to the candidate_paths list if it is non-empty and not already present.
+
+        Parameters:
+            path (str | None): Path to add; ignored if None or already seen. Side effect: appends to `candidate_paths` and records the path in `seen`.
+        """
+        if not path or path in seen:
+            return
+        candidate_paths.append(path)
+        seen.add(path)
+
+    if explicit_path:
+        expanded_path = _expand_path(explicit_path)
+        path_is_dir = os.path.isdir(expanded_path)
+        if not path_is_dir:
+            path_is_dir = bool(
+                expanded_path.endswith(os.path.sep)
+                or (os.path.altsep and expanded_path.endswith(os.path.altsep))
+            )
+        if path_is_dir:
+            normalized_dir = os.path.normpath(expanded_path)
+            _add(os.path.join(normalized_dir, "credentials.json"))
+        else:
+            _add(expanded_path)
+
+    if config_paths:
+        for config_path in config_paths:
+            if not config_path:
+                continue
+            config_dir = os.path.dirname(os.path.abspath(config_path))
+            _add(os.path.join(config_dir, "credentials.json"))
+
+    if include_base_data:
+        _add(os.path.join(get_base_dir(), "credentials.json"))
+        _add(os.path.join(get_data_dir(create=False), "credentials.json"))
+
+    return candidate_paths
+
+
+def get_explicit_credentials_path(config: dict[str, Any] | None) -> str | None:
+    """
+    Determine an explicit credentials path from the environment or a provided configuration mapping.
+
+    Parameters:
+        config (dict[str, Any] | None): Optional loaded config mapping; checks top-level "credentials_path" and "matrix.credentials_path" for an explicit path.
+
+    Returns:
+        str | None: The explicit credentials path if configured, otherwise `None`.
+    """
+    env_path = os.getenv("MMRELAY_CREDENTIALS_PATH")
+    if env_path:
+        return env_path
+    if not isinstance(config, dict):
+        return None
+    explicit_path = config.get("credentials_path")
+    if explicit_path:
+        return explicit_path
+    matrix_section = config.get("matrix")
+    if isinstance(matrix_section, dict):
+        return matrix_section.get("credentials_path")
+    return None
+
+
+def get_data_dir(*, create: bool = True) -> str:
+    """
+    Determine the application's data directory according to overrides and platform conventions.
+
+    If a legacy data-dir override is set, the function will prefer the legacy layout when that override contains existing legacy data; otherwise it will use the override directly. On Windows, the platform user data directory is used unless the "new layout" is enabled, in which case the layout under the resolved base directory is used. On Unix-like systems the directory under the resolved base directory is used.
+
+    Parameters:
+        create (bool): If True, ensure the returned directory exists (attempt to create it).
+
+    Returns:
+        str: Absolute path to the data directory.
+    """
+    data_override = custom_data_dir or _get_env_data_dir()
+    if data_override:
+        legacy_data_dir = os.path.join(data_override, "data")
+        legacy_db = os.path.join(legacy_data_dir, "meshtastic.sqlite")
+        legacy_plugins = os.path.join(legacy_data_dir, "plugins")
+        legacy_store = os.path.join(legacy_data_dir, "store")
+        if (
+            os.path.exists(legacy_db)
+            or os.path.isdir(legacy_plugins)
+            or os.path.isdir(legacy_store)
+        ):
+            data_dir = legacy_data_dir
+        else:
+            data_dir = data_override
+    else:
+        if sys.platform == "win32" and not is_new_layout_enabled():
+            data_dir = platformdirs.user_data_dir(APP_NAME, APP_AUTHOR)
+        else:
+            base_dir = get_base_dir()
+            data_dir = os.path.join(base_dir, "data")
+
+    if create:
+        try:
+            os.makedirs(data_dir, exist_ok=True)
+        except (OSError, PermissionError) as e:
+            logger.warning("Could not create data directory %s: %s", data_dir, e)
+    return data_dir
+
+
+def get_plugin_data_dir(plugin_name: str | None = None) -> str:
+    """
+    Resolve and ensure the application's plugins data directory, optionally for a specific plugin.
+
+    Creates the top-level plugins directory if missing; if `plugin_name` is provided, creates and returns a subdirectory for that plugin.
+
+    Parameters:
+        plugin_name (str | None): Optional plugin identifier to return a plugin-specific subdirectory.
+
+    Returns:
+        str: Absolute path to the plugins directory, or to the plugin-specific subdirectory when `plugin_name` is provided.
+    """
+    # Get the base data directory
+    base_data_dir = get_data_dir()
+
+    # Create the plugins directory
+    plugins_data_dir = os.path.join(base_data_dir, "plugins")
+    os.makedirs(plugins_data_dir, exist_ok=True)
+
+    # If a plugin name is provided, create and return a plugin-specific directory
+    if plugin_name:
+        plugin_data_dir = os.path.join(plugins_data_dir, plugin_name)
+        os.makedirs(plugin_data_dir, exist_ok=True)
+        return plugin_data_dir
+
+    return plugins_data_dir
+
+
+def get_log_dir() -> str:
+    """
+    Get the application's log directory, creating it if missing.
+
+    On Linux/macOS this is "<base_dir>/logs". On Windows this is "<base_dir>/logs"
+    when a base/data override is set; otherwise the platform-specific user log
+    directory is used.
+
+    Returns:
+        str: Absolute path to the log directory; the directory is guaranteed to exist.
+    """
+    if sys.platform in ["linux", "darwin"]:
+        log_dir = os.path.join(get_base_dir(), "logs")
+    else:
+        if _has_any_dir_override():
+            log_dir = ntpath.join(get_base_dir(), "logs")
+        else:
+            log_dir = platformdirs.user_log_dir(APP_NAME, APP_AUTHOR)
+
+    os.makedirs(log_dir, exist_ok=True)
+    return log_dir
+
+
+def get_e2ee_store_dir() -> str:
+    """
+    Get the absolute path to the application's end-to-end encryption (E2EE) data store directory, creating it if necessary.
+
+    On Linux and macOS the directory is located under the application base directory.
+    On Windows it uses the configured base/data override when set, otherwise the
+    platform-specific user data directory. The directory will be created if it
+    does not exist.
+
+    Returns:
+        store_dir (str): Absolute path to the ensured E2EE store directory.
+    """
+    if sys.platform in ["linux", "darwin"]:
+        store_dir = os.path.join(get_base_dir(), "store")
+    else:
+        if _has_any_dir_override():
+            store_dir = ntpath.join(get_base_dir(), "store")
+        else:
+            store_dir = ntpath.join(
+                platformdirs.user_data_dir(APP_NAME, APP_AUTHOR), "store"
+            )
+
+    os.makedirs(store_dir, exist_ok=True)
+    return store_dir
+
+
+def _convert_env_bool(value: str, var_name: str) -> bool:
+    """
+    Convert a string from an environment variable into a boolean.
+
+    Accepts (case-insensitive) true values: "true", "1", "yes", "on"; false values: "false", "0", "no", "off".
+    If the value is not recognized, raises ValueError including var_name to indicate which environment variable was invalid.
+
+    Parameters:
+        value (str): The environment variable value to convert.
+        var_name (str): Name of the environment variable (used in the error message).
+
+    Returns:
+        bool: The parsed boolean.
+
+    Raises:
+        ValueError: If the input is not a recognized boolean representation.
+    """
+    if value.lower() in ("true", "1", "yes", "on"):
+        return True
+    elif value.lower() in ("false", "0", "no", "off"):
+        return False
+    else:
+        raise ValueError(
+            f"Invalid boolean value for {var_name}: '{value}'. Use true/false, 1/0, yes/no, or on/off"
+        )
+
+
+def _convert_env_int(
+    value: str,
+    var_name: str,
+    min_value: int | None = None,
+    max_value: int | None = None,
+) -> int:
+    """
+    Convert environment variable string to integer with optional range validation.
+
+    Args:
+        value (str): Environment variable value
+        var_name (str): Variable name for error messages
+        min_value (int, optional): Minimum allowed value
+        max_value (int, optional): Maximum allowed value
+
+    Returns:
+        int: Converted integer value
+
+    Raises:
+        ValueError: If value cannot be converted or is out of range
+    """
+    try:
+        int_value = int(value)
+    except ValueError:
+        raise ValueError(f"Invalid integer value for {var_name}: '{value}'") from None
+
+    if min_value is not None and int_value < min_value:
+        raise ValueError(f"{var_name} must be >= {min_value}, got {int_value}")
+    if max_value is not None and int_value > max_value:
+        raise ValueError(f"{var_name} must be <= {max_value}, got {int_value}")
+    return int_value
+
+
+def _convert_env_float(
+    value: str,
+    var_name: str,
+    min_value: float | None = None,
+    max_value: float | None = None,
+) -> float:
+    """
+    Convert an environment variable string to a float and optionally validate its range.
+
+    Parameters:
+        value (str): The raw environment variable value to convert.
+        var_name (str): Name of the variable (used in error messages).
+        min_value (float, optional): Inclusive minimum allowed value.
+        max_value (float, optional): Inclusive maximum allowed value.
+
+    Returns:
+        float: The parsed float value.
+
+    Raises:
+        ValueError: If the value cannot be parsed as a float or falls outside the specified range.
+    """
+    try:
+        float_value = float(value)
+    except ValueError:
+        raise ValueError(f"Invalid float value for {var_name}: '{value}'") from None
+
+    if min_value is not None and float_value < min_value:
+        raise ValueError(f"{var_name} must be >= {min_value}, got {float_value}")
+    if max_value is not None and float_value > max_value:
+        raise ValueError(f"{var_name} must be <= {max_value}, got {float_value}")
+    return float_value
+
+
+def load_meshtastic_config_from_env() -> dict[str, Any] | None:
+    """
+    Load Meshtastic-related configuration from environment variables.
+
+    Reads known Meshtastic environment variables (as defined by the module's
+    _MESHTASTIC_ENV_VAR_MAPPINGS), converts and validates their types, and
+    returns a configuration dict containing any successfully parsed values.
+    Returns None if no relevant environment variables are present or valid.
+    """
+    config = _load_config_from_env_mapping(_MESHTASTIC_ENV_VAR_MAPPINGS)
+    if config:
+        logger.debug(
+            f"Loaded Meshtastic configuration from environment variables: {list(config.keys())}"
+        )
+    return config
+
+
+def load_logging_config_from_env() -> dict[str, Any] | None:
+    """
+    Load logging configuration from environment variables.
+
+    Builds a logging configuration dictionary from the module's predefined environment-variable mappings. If the resulting mapping contains a "filename" key, adds "log_to_file": True.
+
+    Returns:
+        dict[str, Any] | None: Parsed logging configuration when any relevant environment variables are set; otherwise `None`.
+    """
+    config = _load_config_from_env_mapping(_LOGGING_ENV_VAR_MAPPINGS)
+    if config:
+        if config.get("filename"):
+            config["log_to_file"] = True
+        logger.debug(
+            f"Loaded logging configuration from environment variables: {list(config.keys())}"
+        )
+    return config
+
+
+def load_database_config_from_env() -> dict[str, Any] | None:
+    """
+    Build a database configuration fragment from environment variables.
+
+    Reads the environment variables specified by the module-level mapping and converts present values into a dictionary keyed by configuration keys. Useful for merging database-related overrides into the main application config.
+
+    Returns:
+        dict[str, Any] | None: A dictionary of database configuration values if any mapped environment variables were found, `None` otherwise.
+    """
+    config = _load_config_from_env_mapping(_DATABASE_ENV_VAR_MAPPINGS)
+    if config:
+        logger.debug(
+            f"Loaded database configuration from environment variables: {list(config.keys())}"
+        )
+    return config
+
+
+def load_matrix_config_from_env() -> dict[str, Any] | None:
+    """
+    Build a Matrix configuration fragment from environment variables.
+
+    Reads the Matrix-related environment variables defined in the module mapping and returns a configuration fragment suitable for merging into the top-level config.
+
+    Returns:
+        dict[str, Any]: Dictionary of parsed Matrix configuration values if any mapped environment variables were present.
+        None: If no relevant environment variables were set.
+    """
+    config = _load_config_from_env_mapping(_MATRIX_ENV_VAR_MAPPINGS)
+    if config:
+        logger.debug(
+            f"Loaded Matrix configuration from environment variables: {list(config.keys())}"
+        )
+    return config
+
+
+def is_e2ee_enabled(config: dict[str, Any] | None) -> bool:
+    """
+    Determine whether End-to-End Encryption (E2EE) is enabled in the given configuration.
+
+    If the platform does not support E2EE (Windows), this function always reports that E2EE is disabled. The function inspects the top-level `matrix` section and treats E2EE as enabled when either `matrix.encryption.enabled` or `matrix.e2ee.enabled` is true.
+
+    Parameters:
+        config (dict[str, Any] | None): Top-level configuration mapping which may be empty or None.
+
+    Returns:
+        bool: `True` if E2EE is enabled in the configuration and the platform supports E2EE, `False` otherwise.
+    """
+    # E2EE is not supported on Windows
+    if sys.platform == "win32":
+        return False
+
+    if not config:
+        return False
+
+    matrix_cfg = config.get("matrix", {}) or {}
+    if not isinstance(matrix_cfg, dict) or not matrix_cfg:
+        return False
+
+    encryption_cfg = matrix_cfg.get("encryption")
+    if not isinstance(encryption_cfg, dict):
+        encryption_cfg = {}
+    e2ee_cfg = matrix_cfg.get("e2ee")
+    if not isinstance(e2ee_cfg, dict):
+        e2ee_cfg = {}
+    encryption_value = encryption_cfg.get("enabled", False)
+    encryption_enabled = (
+        encryption_value if isinstance(encryption_value, bool) else False
+    )
+    e2ee_value = e2ee_cfg.get("enabled", False)
+    e2ee_enabled = e2ee_value if isinstance(e2ee_value, bool) else False
+
+    return encryption_enabled or e2ee_enabled
+
+
+def check_e2ee_enabled_silently(args: Any = None) -> bool:
+    """
+    Check whether End-to-End Encryption (E2EE) is enabled by inspecting the first readable configuration file.
+
+    This function examines candidate configuration files in priority order, ignoring unreadable files and YAML parsing errors, and returns as soon as a readable configuration enabling E2EE is found. On Windows this function always returns False.
+
+    Parameters:
+        args: Optional parsed command-line arguments that can influence config search order.
+
+    Returns:
+        True if E2EE is enabled in the first readable configuration file, False otherwise.
+    """
+    # E2EE is not supported on Windows
+    if sys.platform == "win32":
+        return False
+
+    # Get config paths without logging
+    config_paths = get_config_paths(args)
+
+    # Try each config path silently
+    for path in config_paths:
+        if os.path.isfile(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    config = yaml.load(f, Loader=SafeLoader)
+                if config and is_e2ee_enabled(config):
+                    return True
+            except (yaml.YAMLError, PermissionError, OSError):
+                continue  # Silently try the next path
+    # No valid config found or E2EE not enabled in any config
+    return False
+
+
+def _normalize_optional_dict_sections(
+    config: dict[str, Any],
+    section_names: tuple[str, ...],
+) -> None:
+    """
+    Normalize optional mapping sections that are present but null.
+
+    YAML allows keys with no value to parse as None; convert those to empty dicts
+    for known mapping sections so downstream code can safely use .get/.update.
+    """
+    for section_name in section_names:
+        if section_name in config and config[section_name] is None:
+            config[section_name] = {}
+
+
+def _get_mapping_section(
+    config: dict[str, Any], section_name: str
+) -> dict[str, Any] | None:
+    """
+    Return a mutable mapping for a config section, creating it when missing.
+
+    Returns None if the section exists but is not a mapping.
+    """
+    section = config.get(section_name)
+    if section is None:
+        section = {}
+        config[section_name] = section
+        return section
+    if not isinstance(section, dict):
+        logger.warning(
+            "Config section '%s' is not a mapping; skipping environment overrides",
+            section_name,
+        )
+        return None
+    return section
+
+
+def apply_env_config_overrides(config: dict[str, Any] | None) -> dict[str, Any]:
+    """
+    Merge configuration values derived from environment variables into a configuration dictionary.
+
+    If `config` is falsy, a new dict is created. Environment-derived fragments are merged into the top-level
+    keys "meshtastic", "logging", "database", and "matrix" when present; existing keys in those sections are preserved.
+    The input dictionary may be mutated in place.
+
+    Parameters:
+        config (dict[str, Any] | None): Base configuration to update (or None to start from an empty dict).
+
+    Returns:
+        dict[str, Any]: The configuration dictionary with environment overrides applied.
+    """
+    if not config:
+        config = {}
+    else:
+        _normalize_optional_dict_sections(
+            config,
+            (
+                "matrix",
+                "meshtastic",
+                "logging",
+                "database",
+                "db",
+                "plugins",
+                "custom-plugins",
+                "community-plugins",
+            ),
+        )
+
+    # Apply Meshtastic configuration overrides
+    meshtastic_env_config = load_meshtastic_config_from_env()
+    if meshtastic_env_config:
+        meshtastic_section = _get_mapping_section(config, "meshtastic")
+        if meshtastic_section is not None:
+            meshtastic_section.update(meshtastic_env_config)
+            logger.debug("Applied Meshtastic environment variable overrides")
+
+    # Apply logging configuration overrides
+    logging_env_config = load_logging_config_from_env()
+    if logging_env_config:
+        logging_section = _get_mapping_section(config, "logging")
+        if logging_section is not None:
+            logging_section.update(logging_env_config)
+            logger.debug("Applied logging environment variable overrides")
+
+    # Apply database configuration overrides
+    database_env_config = load_database_config_from_env()
+    if database_env_config:
+        database_section = _get_mapping_section(config, "database")
+        if database_section is not None:
+            database_section.update(database_env_config)
+            logger.debug("Applied database environment variable overrides")
+
+    # Apply Matrix configuration overrides
+    matrix_env_config = load_matrix_config_from_env()
+    if matrix_env_config:
+        matrix_section = _get_mapping_section(config, "matrix")
+        if matrix_section is not None:
+            matrix_section.update(matrix_env_config)
+            logger.debug("Applied Matrix environment variable overrides")
+
+    return config
+
+
+def load_credentials() -> dict[str, Any] | None:
+    """
+    Finds and loads Matrix credentials from candidate credentials.json locations.
+
+    Searches an explicit credentials path (from environment or configuration) and other candidate locations in order, parses the first existing credentials file as JSON, and returns its contents.
+
+    Returns:
+        dict[str, Any]: Parsed credentials if a valid credentials file is found.
+        None: If no credentials file is found, is unreadable, or contains invalid JSON.
+    """
+    try:
+        explicit_path = get_explicit_credentials_path(relay_config)
+        config_paths = [config_path] if config_path else None
+        candidate_paths = get_credentials_search_paths(
+            explicit_path=explicit_path,
+            config_paths=config_paths,
+        )
+        logger.debug("Looking for credentials at: %s", candidate_paths)
+        for credentials_path in candidate_paths:
+            if not os.path.exists(credentials_path):
+                continue
+            with open(credentials_path, "r", encoding="utf-8") as f:
+                credentials = cast(dict[str, Any], json.load(f))
+            logger.debug("Successfully loaded credentials from %s", credentials_path)
+            return credentials
+    except (OSError, PermissionError, json.JSONDecodeError):
+        logger.exception("Error loading credentials.json")
+        return None
+    else:
+        # On Windows, also log the directory contents for debugging
+        if sys.platform == "win32":
+            debug_candidates: list[str] = []
+            if config_path:
+                debug_candidates.append(os.path.dirname(config_path))
+            debug_candidates.append(get_base_dir())
+            seen: set[str] = set()
+            for debug_dir in debug_candidates:
+                if not debug_dir or debug_dir in seen:
+                    continue
+                seen.add(debug_dir)
+                try:
+                    files = os.listdir(debug_dir)
+                    logger.debug("Directory contents of %s: %s", debug_dir, files)
+                except OSError:
+                    pass
+        return None
+
+
+def save_credentials(
+    credentials: dict[str, Any], credentials_path: str | None = None
+) -> None:
+    """
+    Persist the given credentials mapping to a credentials.json file using an explicit path or well-defined fallbacks.
+
+    If `credentials_path` is a directory (or ends with a path separator) the filename "credentials.json" is appended. If `credentials_path` is omitted the function uses an explicit path from the environment or configuration if available (for example, MMRELAY_CREDENTIALS_PATH, relay_config["credentials_path"], or relay_config["matrix"]["credentials_path"]); if none is found it attempts to write under the config directory (when known) and then the application's base/data locations. The function will create the target directory when missing and, on Unix-like systems, attempt to set file permissions to 0o600. I/O and permission errors are logged and the function will try fallback locations; it does not raise on write failures (errors are logged).
+    Parameters:
+        credentials (dict): JSON-serializable mapping of credentials to persist.
+        credentials_path (str | None): Optional target file path or directory. When omitted, the function resolves a path using environment/configuration fallbacks and base/data defaults.
+    """
+    try:
+
+        def _normalize_explicit_path(path: str) -> str:
+            """
+            Normalize an explicit credentials path, expanding user home and ensuring it points to a credentials.json file.
+
+            Parameters:
+                path (str): A user-supplied file or directory path. If the path is a directory (existing or ending with a path separator), "credentials.json" is appended; if the path lacks a directory component, the application's base data directory is prepended.
+
+            Returns:
+                normalized_path (str): The expanded and normalized path pointing to a credentials.json file.
+            """
+            expanded = os.path.expanduser(path)
+            path_is_dir = os.path.isdir(expanded)
+            if not path_is_dir:
+                path_is_dir = bool(
+                    expanded.endswith(os.path.sep)
+                    or (os.path.altsep and expanded.endswith(os.path.altsep))
+                )
+            if path_is_dir:
+                normalized_dir = os.path.normpath(expanded)
+                expanded = os.path.join(normalized_dir, "credentials.json")
+            if not os.path.dirname(expanded):
+                base_dir = get_base_dir()
+                expanded = os.path.join(base_dir, os.path.basename(expanded))
+            return expanded
+
+        explicit_path = credentials_path or get_explicit_credentials_path(relay_config)
+        if explicit_path:
+            candidate_paths = [_normalize_explicit_path(explicit_path)]
+            allow_fallback = False
+        else:
+            candidate_paths = []
+            allow_fallback = True
+            if config_path:
+                config_dir_candidate = os.path.dirname(os.path.abspath(config_path))
+                candidate_paths.append(
+                    os.path.join(config_dir_candidate, "credentials.json")
+                )
+            candidate_paths.append(os.path.join(get_base_dir(), "credentials.json"))
+
+        last_error: OSError | PermissionError | None = None
+        config_dir = ""
+        data_dir_candidate: str | None = None
+        base_dir_candidate: str | None = None
+
+        def _handle_candidate_error(
+            message: str, error: OSError | PermissionError
+        ) -> bool:
+            """
+            Handle an I/O or permission error for a candidate credentials path and optionally prepare fallback candidates.
+
+            Records the provided error to the enclosing scope, logs a warning using the provided message and error, and—if falling back is allowed—ensures that base- and data-directory fallback credential paths are appended to the shared candidate_paths list (avoiding duplicates) and sets base_dir_candidate and data_dir_candidate in the enclosing scope.
+
+            Parameters:
+                message (str): Human-readable message to include in the warning log.
+                error (OSError | PermissionError): The error that occurred while handling a candidate path.
+
+            Returns:
+                bool: `False` if fallback is not allowed (no changes to candidate lists), `True` if fallback candidates were ensured/added.
+            """
+            nonlocal last_error, data_dir_candidate, base_dir_candidate
+            last_error = error
+            logger.warning(message, error)
+            if not allow_fallback:
+                return False
+            if base_dir_candidate is None:
+                base_dir_candidate = os.path.join(get_base_dir(), "credentials.json")
+                if base_dir_candidate not in candidate_paths:
+                    candidate_paths.append(base_dir_candidate)
+            if data_dir_candidate is None:
+                data_dir_candidate = os.path.join(
+                    get_data_dir(create=False), "credentials.json"
+                )
+                if data_dir_candidate not in candidate_paths:
+                    candidate_paths.append(data_dir_candidate)
+            return True
+
+        idx = 0
+        while idx < len(candidate_paths):
+            candidate = candidate_paths[idx]
+            config_dir = os.path.dirname(candidate)
+            if not config_dir:
+                config_dir = get_base_dir()
+                candidate = os.path.join(config_dir, os.path.basename(candidate))
+            try:
+                os.makedirs(config_dir, exist_ok=True)
+            except (OSError, PermissionError) as e:
+                should_continue = _handle_candidate_error(
+                    f"Could not create credentials directory {config_dir}: %s", e
+                )
+                if not should_continue:
+                    break
+                idx += 1
+                continue
+
+            try:
+                # Log the path for debugging, especially on Windows
+                logger.info("Saving credentials to: %s", candidate)
+                with open(candidate, "w", encoding="utf-8") as f:
+                    json.dump(credentials, f, indent=2)
+            except (OSError, PermissionError) as e:
+                should_continue = _handle_candidate_error(
+                    f"Error writing credentials.json to {candidate}: %s", e
+                )
+                if not should_continue:
+                    break
+                idx += 1
+                continue
+
+            # Set secure permissions on Unix systems (600 - owner read/write only)
+            set_secure_file_permissions(candidate)
+
+            logger.info("Successfully saved credentials to %s", candidate)
+
+            # Verify the file was actually created
+            if os.path.exists(candidate):
+                logger.debug("Verified credentials.json exists at %s", candidate)
+            else:
+                logger.error("Failed to create credentials.json at %s", candidate)
+            return None
+
+        if last_error:
+            raise last_error
+        raise CredentialsPathError()
+    except (OSError, PermissionError):
+        if sys.platform == "win32":
+            logger.exception(
+                "Error saving credentials.json to %s. On Windows, ensure the application "
+                "has write permissions to the user data directory.",
+                config_dir,
+            )
+        else:
+            logger.exception("Error saving credentials.json to %s", config_dir)
+
+
+# Use structured logging to align with the rest of the codebase.
+def _get_config_logger() -> "logging.Logger":
+    # Late import avoids circular dependency (log_utils -> config).
+    """
+    Obtain a logger for configuration-related messages.
+
+    Selects a logger named "Config". When running under a unittest.mock patched environment, returns the standard library logger to avoid import cycles during tests.
+
+    Returns:
+        logging.Logger: Logger instance named "Config".
+    """
+    if os.path.join.__module__ == "unittest.mock":
+        import logging as _logging
+
+        return _logging.getLogger("Config")
+    from mmrelay.log_utils import get_logger
+
+    return get_logger("Config")
+
+
+logger = _get_config_logger()
+
+# Initialize empty config
+relay_config: dict[str, Any] = {}
+config_path: str | None = None
+
+# Environment variable mappings for configuration sections
+_MESHTASTIC_ENV_VAR_MAPPINGS: list[dict[str, Any]] = [
+    {
+        "env_var": "MMRELAY_MESHTASTIC_CONNECTION_TYPE",
+        "config_key": "connection_type",
+        "type": "enum",
+        "valid_values": ("tcp", "serial", "ble"),
+        "transform": lambda x: x.lower(),
+    },
+    {"env_var": "MMRELAY_MESHTASTIC_HOST", "config_key": "host", "type": "string"},
+    {
+        "env_var": "MMRELAY_MESHTASTIC_PORT",
+        "config_key": "port",
+        "type": "int",
+        "min_value": 1,
+        "max_value": 65535,
+    },
+    {
+        "env_var": "MMRELAY_MESHTASTIC_SERIAL_PORT",
+        "config_key": "serial_port",
+        "type": "string",
+    },
+    {
+        "env_var": "MMRELAY_MESHTASTIC_BLE_ADDRESS",
+        "config_key": "ble_address",
+        "type": "string",
+    },
+    {
+        "env_var": "MMRELAY_MESHTASTIC_BROADCAST_ENABLED",
+        "config_key": "broadcast_enabled",
+        "type": "bool",
+    },
+    {
+        "env_var": "MMRELAY_MESHTASTIC_MESHNET_NAME",
+        "config_key": "meshnet_name",
+        "type": "string",
+    },
+    {
+        "env_var": "MMRELAY_MESHTASTIC_MESSAGE_DELAY",
+        "config_key": "message_delay",
+        "type": "float",
+        "min_value": 2.0,
+    },
+]
+
+_LOGGING_ENV_VAR_MAPPINGS: list[dict[str, Any]] = [
+    {
+        "env_var": "MMRELAY_LOGGING_LEVEL",
+        "config_key": "level",
+        "type": "enum",
+        "valid_values": ("debug", "info", "warning", "error", "critical"),
+        "transform": lambda x: x.lower(),
+    },
+    {"env_var": "MMRELAY_LOG_FILE", "config_key": "filename", "type": "string"},
+]
+
+_DATABASE_ENV_VAR_MAPPINGS: list[dict[str, Any]] = [
+    {"env_var": "MMRELAY_DATABASE_PATH", "config_key": "path", "type": "string"},
+]
+
+_MATRIX_ENV_VAR_MAPPINGS: list[dict[str, Any]] = [
+    {
+        "env_var": "MMRELAY_MATRIX_HOMESERVER",
+        "config_key": "homeserver",
+        "type": "string",
+    },
+    {
+        "env_var": "MMRELAY_MATRIX_BOT_USER_ID",
+        "config_key": "bot_user_id",
+        "type": "string",
+    },
+    {"env_var": "MMRELAY_MATRIX_PASSWORD", "config_key": "password", "type": "string"},
+    {
+        "env_var": "MMRELAY_MATRIX_ACCESS_TOKEN",
+        "config_key": "access_token",
+        "type": "string",
+    },
+]
+
+
+def _load_config_from_env_mapping(
+    mappings: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    """
+    Build a configuration dictionary from environment variables based on a mapping specification.
+
+    Each mapping entry should be a dict with:
+    - "env_var" (str): environment variable name to read.
+    - "config_key" (str): destination key in the resulting config dict.
+    - "type" (str): one of "string", "int", "float", "bool", or "enum".
+
+    Optional keys (depending on "type"):
+    - "min_value", "max_value" (int/float): numeric bounds for "int" or "float" conversions.
+    - "valid_values" (iterable): allowed values for "enum".
+    - "transform" (callable): function applied to the raw env value before enum validation.
+
+    Behavior:
+    - Values are converted/validated according to their type; invalid conversions or values are skipped and an error is logged.
+    - Unknown mapping types are skipped and an error is logged.
+
+    Parameters:
+        mappings (iterable): Iterable of mapping dicts as described above.
+
+    Returns:
+        dict | None: A dict of converted configuration values, or None if no mapped environment variables were present.
+    """
+    config = {}
+
+    for mapping in mappings:
+        env_value = os.getenv(mapping["env_var"])
+        if env_value is None:
+            continue
+
+        try:
+            value: Any
+            if mapping["type"] == "string":
+                value = env_value
+            elif mapping["type"] == "int":
+                value = _convert_env_int(
+                    env_value,
+                    mapping["env_var"],
+                    min_value=mapping.get("min_value"),
+                    max_value=mapping.get("max_value"),
+                )
+            elif mapping["type"] == "float":
+                value = _convert_env_float(
+                    env_value,
+                    mapping["env_var"],
+                    min_value=mapping.get("min_value"),
+                    max_value=mapping.get("max_value"),
+                )
+            elif mapping["type"] == "bool":
+                value = _convert_env_bool(env_value, mapping["env_var"])
+            elif mapping["type"] == "enum":
+                transformed_value = mapping.get("transform", lambda x: x)(env_value)
+                if transformed_value not in mapping["valid_values"]:
+                    valid_values_str = "', '".join(mapping["valid_values"])
+                    logger.error(
+                        f"Invalid {mapping['env_var']}: '{env_value}'. Must be one of: '{valid_values_str}'. Skipping this setting."
+                    )
+                    continue
+                value = transformed_value
+            else:
+                logger.error(
+                    f"Unknown type '{mapping['type']}' for {mapping['env_var']}. Skipping this setting."
+                )
+                continue
+
+            config[mapping["config_key"]] = value
+
+        except ValueError as e:
+            logger.error(
+                f"Error parsing {mapping['env_var']}: {e}. Skipping this setting."
+            )
+            continue
+
+    return config if config else None
+
+
+def set_config(module: Any, passed_config: dict[str, Any]) -> dict[str, Any]:
+    """
+    Assign the provided configuration mapping to a module and apply known module-specific settings.
+
+    When the module appears to be the Matrix helper, propagate `matrix_rooms` and, when a `matrix` section contains `homeserver`, `access_token`, and `bot_user_id`, assign those values to the module's corresponding attributes. When the module appears to be the Meshtastic helper, propagate `matrix_rooms`. If the module exposes a callable `setup_config()`, it will be invoked after assignments.
+
+    Parameters:
+        module (Any): Module object to receive configuration attributes.
+        passed_config (dict[str, Any]): Configuration mapping to assign to the module.
+
+    Returns:
+        dict[str, Any]: The same `passed_config` object that was attached to the module.
+    """
+    # Set the module's config variable
+    module.config = passed_config
+
+    # Handle module-specific setup based on module name
+    module_name = module.__name__.split(".")[-1]
+
+    if module_name == "matrix_utils":
+        # Set Matrix-specific configuration
+        if hasattr(module, "matrix_rooms") and "matrix_rooms" in passed_config:
+            module.matrix_rooms = passed_config["matrix_rooms"]
+
+        # Only set matrix config variables if matrix section exists and has required fields
+        # When using credentials.json (from mmrelay auth login), these will be loaded by connect_matrix() instead
+        matrix_section = passed_config.get(CONFIG_SECTION_MATRIX)
+        if (
+            hasattr(module, "matrix_homeserver")
+            and isinstance(matrix_section, dict)
+            and CONFIG_KEY_HOMESERVER in matrix_section
+            and CONFIG_KEY_ACCESS_TOKEN in matrix_section
+            and CONFIG_KEY_BOT_USER_ID in matrix_section
+        ):
+            module.matrix_homeserver = matrix_section[CONFIG_KEY_HOMESERVER]
+            module.matrix_access_token = matrix_section[CONFIG_KEY_ACCESS_TOKEN]
+            module.bot_user_id = matrix_section[CONFIG_KEY_BOT_USER_ID]
+
+    elif module_name == "meshtastic_utils":
+        # Set Meshtastic-specific configuration
+        if hasattr(module, "matrix_rooms") and "matrix_rooms" in passed_config:
+            module.matrix_rooms = passed_config["matrix_rooms"]
+
+    # If the module still has a setup_config function, call it for backward compatibility
+    if hasattr(module, "setup_config") and callable(module.setup_config):
+        module.setup_config()
+
+    return passed_config
+
+
+def load_config(
+    config_file: str | None = None,
+    args: Any = None,
+    config_paths: list[str] | None = None,
+) -> dict[str, Any]:
+    """
+    Load the application configuration from a YAML file or from environment variables.
+
+    If `config_file` is provided and readable, that file is used; otherwise candidate locations from `config_paths` or `get_config_paths(args)` are searched in order and the first readable YAML file is loaded. Empty or null YAML content is treated as an empty dictionary. Environment-derived overrides are merged into the loaded configuration. The function updates the module-level `relay_config` and `config_path` to reflect the resulting configuration source.
+
+    Parameters:
+        config_file (str | None): Path to a specific YAML configuration file to load. If `None`, candidate paths from `config_paths` or `get_config_paths(args)` are used.
+        args: Parsed command-line arguments forwarded to `get_config_paths()` to influence search order when `config_paths` is not provided.
+        config_paths: Optional list of config paths to search instead of calling `get_config_paths(args)`.
+
+    Returns:
+        dict: The resulting configuration dictionary. Returns an empty dict if no configuration is found or a file read/parse error occurs.
+    """
+    global relay_config, config_path
+
+    # If a specific config file was provided, use it
+    if config_file and os.path.isfile(config_file):
+        # Store the config path but don't log it yet - will be logged by main.py
+        try:
+            with open(config_file, "r", encoding="utf-8") as f:
+                relay_config = yaml.load(f, Loader=SafeLoader)
+            config_path = config_file
+            # Treat empty/null YAML files as an empty config dictionary
+            if relay_config is None:
+                relay_config = {}
+            # Apply environment variable overrides
+            relay_config = apply_env_config_overrides(relay_config)
+            return relay_config
+        except (yaml.YAMLError, PermissionError, OSError):
+            logger.exception(f"Error loading config file {config_file}")
+            return {}
+
+    # Otherwise, search for a config file
+    if config_paths is None:
+        config_paths = get_config_paths(args)
+
+    # Try each config path in order until we find one that exists
+    for path in config_paths:
+        if os.path.isfile(path):
+            config_path = path
+            # Store the config path but don't log it yet - will be logged by main.py
+            try:
+                with open(config_path, "r", encoding="utf-8") as f:
+                    relay_config = yaml.load(f, Loader=SafeLoader)
+                # Treat empty/null YAML files as an empty config dictionary
+                if relay_config is None:
+                    relay_config = {}
+                # Apply environment variable overrides
+                relay_config = apply_env_config_overrides(relay_config)
+                return relay_config
+            except (yaml.YAMLError, PermissionError, OSError):
+                logger.exception(f"Error loading config file {path}")
+                continue  # Try the next config path
+
+    # No config file found - try to use environment variables only
+    logger.warning("Configuration file not found in any of the following locations:")
+    for path in config_paths:
+        logger.warning(f"  - {path}")
+
+    # Apply environment variable overrides to empty config
+    relay_config = apply_env_config_overrides({})
+
+    if relay_config:
+        logger.info("Using configuration from environment variables only")
+        return relay_config
+    else:
+        logger.error("No configuration found in files or environment variables.")
+        try:
+            from mmrelay.cli_utils import msg_suggest_generate_config
+        except ImportError:
+            logger.debug("Could not import CLI suggestion helpers", exc_info=True)
+        else:
+            logger.error(msg_suggest_generate_config())
+    return {}
+
+
+def _resolve_credentials_path(
+    path_override: str | None, *, allow_relay_config_sources: bool
+) -> tuple[str, str]:
+    """
+    Resolve the credentials.json path and its directory.
+
+    Parameters:
+        path_override: Explicit path or directory provided by the caller.
+        allow_relay_config_sources: When True, consider environment variables and
+            relay_config overrides (`credentials_path` and `matrix.credentials_path`).
+
+    Returns:
+        Tuple of (credentials_path, directory containing credentials).
+    """
+    candidate = path_override
+
+    if not candidate and allow_relay_config_sources:
+        candidate = os.getenv("MMRELAY_CREDENTIALS_PATH")
+        if not candidate:
+            candidate = relay_config.get("credentials_path")
+        if not candidate:
+            matrix_config = relay_config.get("matrix", {})
+            if isinstance(matrix_config, dict):
+                candidate = matrix_config.get("credentials_path")
+
+    if candidate:
+        candidate = os.path.expanduser(candidate)
+        path_is_dir = os.path.isdir(candidate)
+        if not path_is_dir:
+            path_is_dir = bool(
+                candidate.endswith(os.path.sep)
+                or (os.path.altsep and candidate.endswith(os.path.altsep))
+            )
+        if path_is_dir:
+            candidate = os.path.join(candidate, "credentials.json")
+        config_dir = os.path.dirname(candidate)
+        if not config_dir:
+            config_dir = get_base_dir()
+            candidate = os.path.join(config_dir, os.path.basename(candidate))
+        return candidate, config_dir
+
+    base_dir = get_base_dir()
+    return os.path.join(base_dir, "credentials.json"), base_dir
+
+
+def validate_yaml_syntax(
+    config_content: str, config_path: str
+) -> tuple[bool, str | None, Any]:
+    """
+    Validate YAML text for syntax and common style issues, parse it with PyYAML, and return results.
+
+    Performs lightweight line-based checks for frequent mistakes (using '=' instead of ':'
+    for mappings and non-standard boolean words like 'yes'/'no' or 'on'/'off') and then
+    attempts to parse the content with yaml.safe_load. If only style warnings are found,
+    parsing is considered successful and warnings are returned; if parsing fails or true
+    syntax errors are detected, a detailed error message is returned that references
+    config_path to identify the source.
+
+    Parameters:
+        config_content (str): Raw YAML text to validate.
+        config_path (str): Path or label used in error messages to identify the source of the content.
+
+    Returns:
+        tuple:
+            is_valid (bool): True if YAML parsed successfully (style warnings allowed), False on syntax/parsing error.
+            message (str|None): Human-readable warnings (when parsing succeeded with style issues) or a detailed error description (when parsing failed). None when parsing succeeded without issues.
+            parsed_config (object|None): The Python object produced by yaml.safe_load on success; None when parsing failed.
+    """
+    lines = config_content.split("\n")
+
+    # Check for common YAML syntax issues
+    syntax_issues = []
+
+    for line_num, line in enumerate(lines, 1):
+        # Skip empty lines and comments
+        if not line.strip() or line.strip().startswith("#"):
+            continue
+
+        # Check for missing colons in key-value pairs
+        if ":" not in line and "=" in line:
+            syntax_issues.append(
+                f"Line {line_num}: Use ':' instead of '=' for YAML - {line.strip()}"
+            )
+
+        # Check for non-standard boolean values (style warning)
+        bool_pattern = r":\s*(yes|no|on|off|Yes|No|YES|NO)\s*$"
+        match = re.search(bool_pattern, line)
+        if match:
+            non_standard_bool = match.group(1)
+            syntax_issues.append(
+                f"Line {line_num}: Style warning - Consider using 'true' or 'false' instead of '{non_standard_bool}' for clarity - {line.strip()}"
+            )
+
+    # Try to parse YAML and catch specific errors
+    try:
+        parsed_config = yaml.safe_load(config_content)
+        if syntax_issues:
+            # Separate warnings from errors
+            warnings = [issue for issue in syntax_issues if "Style warning" in issue]
+            errors = [issue for issue in syntax_issues if "Style warning" not in issue]
+
+            if errors:
+                return False, "\n".join(errors), None
+            elif warnings:
+                # Return success but with warnings
+                return True, "\n".join(warnings), parsed_config
+        return True, None, parsed_config
+    except yaml.YAMLError as e:
+        error_msg = f"YAML parsing error in {config_path}:\n"
+
+        # Extract line and column information if available
+        mark = getattr(e, "problem_mark", None)
+        if mark is not None:
+            mark_any = cast(Any, mark)
+            error_line = mark_any.line + 1
+            error_column = mark_any.column + 1
+            error_msg += f"  Line {error_line}, Column {error_column}: "
+
+            # Show the problematic line
+            if error_line <= len(lines):
+                problematic_line = lines[error_line - 1]
+                error_msg += f"\n  Problematic line: {problematic_line}\n"
+                error_msg += f"  Error position: {' ' * (error_column - 1)}^\n"
+
+        # Add the original error message
+        error_msg += f"  {str(e)}\n"
+
+        # Provide helpful suggestions based on error type
+        error_str = str(e).lower()
+        if "mapping values are not allowed" in error_str:
+            error_msg += "\n  Suggestion: Check for missing quotes around values containing special characters"
+        elif "could not find expected" in error_str:
+            error_msg += "\n  Suggestion: Check for unclosed quotes or brackets"
+        elif "found character that cannot start any token" in error_str:
+            error_msg += (
+                "\n  Suggestion: Check for invalid characters or incorrect indentation"
+            )
+        elif "expected <block end>" in error_str:
+            error_msg += (
+                "\n  Suggestion: Check indentation - YAML uses spaces, not tabs"
+            )
+
+        # Add syntax issues if found
+        if syntax_issues:
+            error_msg += "\n\nAdditional syntax issues found:\n" + "\n".join(
+                syntax_issues
+            )
+
+        return False, error_msg, None
+
+
+def get_meshtastic_config_value(
+    config: dict[str, Any], key: str, default: Any = None, required: bool = False
+) -> Any:
+    """
+    Retrieve a value from the `meshtastic` section of a configuration mapping.
+
+    If the `meshtastic` section or the requested key is missing, returns `default` unless `required` is True, in which case an error is logged and a KeyError is raised.
+
+    Parameters:
+        config (dict): Configuration mapping that may contain a `meshtastic` section.
+        key (str): Key to look up within the `meshtastic` section.
+        default: Value to return when the key is absent and `required` is False.
+        required (bool): If True, a missing key causes a KeyError to be raised and an error to be logged.
+
+    Returns:
+        The value of `meshtastic.<key>`, or `default` if the key is missing and `required` is False.
+
+    Raises:
+        KeyError: If `required` is True and the requested key is missing.
+    """
+    section = config.get("meshtastic", {}) if isinstance(config, dict) else {}
+    if not isinstance(section, dict):
+        section = {}
+    try:
+        return section[key]
+    except KeyError:
+        if required:
+            try:
+                from mmrelay.cli_utils import msg_suggest_check_config
+            except ImportError:
+
+                def msg_suggest_check_config() -> str:
+                    """
+                    Provide a fallback suggestion string for checking configuration when the real helper is unavailable.
+
+                    Returns:
+                        suggestion (str): An empty string indicating no suggestion is available.
+                    """
+                    return ""
+
+            logger.error(
+                f"Missing required configuration: meshtastic.{key}\n"
+                f"Please add '{key}: {default if default is not None else 'VALUE'}' to your meshtastic section in config.yaml\n"
+                f"{msg_suggest_check_config()}"
+            )
+            raise KeyError(
+                f"Required configuration 'meshtastic.{key}' is missing. "
+                f"Add '{key}: {default if default is not None else 'VALUE'}' to your meshtastic section."
+            ) from None
+        return default
