@@ -1,0 +1,120 @@
+Metadata-Version: 2.3
+Name: cyclarity-in-vehicle-sdk
+Version: 1.1.7
+Summary: 
+Author: Cymotive
+Author-email: clarity@cymotive.com
+Requires-Python: >=3.10,<4.0
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Requires-Dist: adb-shell (>=0.4.4,<0.5.0)
+Requires-Dist: can-isotp (>=2.0.6,<3.0.0)
+Requires-Dist: cmake (>=3.30.2,<4.0.0)
+Requires-Dist: construct (>=2.10.70,<3.0.0)
+Requires-Dist: cryptography (>=44.0.2,<45.0.0)
+Requires-Dist: cyclarity-sdk (>=1.0.91,<2.0.0)
+Requires-Dist: doipclient (>=1.1.1,<2.0.0)
+Requires-Dist: gpiod (>=2.2.3,<3.0.0)
+Requires-Dist: jsonargparse (>=4.34.0,<4.35.0)
+Requires-Dist: nmcli (==1.5.0)
+Requires-Dist: paramiko (>=3.4.1,<4.0.0)
+Requires-Dist: py-pcapplusplus (>=1.0.10,<2.0.0)
+Requires-Dist: pycryptodome (>=3.21.0,<4.0.0)
+Requires-Dist: pyroute2 (==0.8.1)
+Requires-Dist: pyserial (>=3.5,<4.0)
+Requires-Dist: python-can
+Requires-Dist: rpyc (>=6.0.2,<7.0.0)
+Requires-Dist: udsoncan (>=1.23.1,<2.0.0)
+Description-Content-Type: text/markdown
+
+# In-Vehicle SDK Package  
+
+[![pypi](https://img.shields.io/pypi/v/cyclarity-in-vehicle-sdk)](https://pypi.org/project/cyclarity-in-vehicle-sdk/)
+[![downloads](https://static.pepy.tech/badge/cyclarity-in-vehicle-sdk)](https://pepy.tech/projects/cyclarity-in-vehicle-sdk)
+[![downloads_monthly](https://static.pepy.tech/badge/cyclarity-in-vehicle-sdk/month)](https://pepy.tech/projects/cyclarity-in-vehicle-sdk)
+[![Tests](https://github.com/CYMOTIVE/cyclarity-in-vehicle-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/CYMOTIVE/cyclarity-in-vehicle-sdk/actions/workflows/ci.yml)
+
+This package provides the In-Vehicle SDK, offering a range of functionalities to support communication and operations with in-vehicle systems.  
+  
+## Features  
+  
+The In-Vehicle SDK package includes the following interfaces and implementations:  
+
+1. **Communication**
+    1. **CommunicatorBase**: Provides the capability to send and receive byte data over various protocols. The following implementations are available:  
+        * `TcpCommunicator`  
+        * `UdpCommunicator`
+        * `MulticastCommunicator`  
+        * `IsoTpCommunicator`  
+        * `DoipCommunicator`  
+    
+    2. **RawSocketCommunicatorBase**: Offers send, receive, and srp (send and receive answer) operations for `py_pcapplusplus.Packet` types. The following implementations are available:  
+        * `Layer2RawSocket`  
+        * `Layer3RawSocket`  
+        * `WiFiRawSocket`
+    
+    3. **CanCommunicatorBase**: Exposes the python-can functionality, offering operations like send, receive, sniff, and more. The following implementation is available:  
+        * `CanCommunicatorSocketCan` - A specific implementation for the socketcan driver  
+  
+2. **DoipUtils**: A utility library for performing Diagnostic over IP (DoIP) operations, such as vehicle identity requests, routing activation, and more.  
+  
+3. **UdsUtilsBase**: Used for performing Unified Diagnostic Services (UDS) operations, such as ECU reset, read DIDs, session change, and more. The following implementation is available:  
+    * `UdsUtils` - Can be initialized to work over DoIP/ISO-TP  
+  
+4. **IDeviceShell**: Allows for the execution of shell commands. The following implementations are available:  
+    * `AdbDeviceShell`  
+    * `SerialDeviceShell`  
+    * `SshDeviceShell`  
+
+5. **SomeipUtils**: A utility library for SOME/IP operations, allowing the receive and parse services, and in these services invoke methods and subscribe to eventgroups
+
+6. **Plugins**:
+    * `SessionChangeCrashDetector`: a plugin that detects ECU crash based on UDS session change
+    * `UnrespondedTesterPresentCrashDetector`: a plugin that detects ECU crash based on UDS TP that is not being responded
+    * `UdsEcuRecoverPlugin`: a plugin responsible of recovering the ECU back to predefined UDS state - session and elevation
+    * `RelayResetPlugin`: a plugin that resets a device via relay
+    * `UdsBasedEcuResetPlugin`: a plugin that resets a device via UDS ECU Reset
+
+7. **ConfigurationManager**: An API allowing to perform configuration of the IOT Device.
+    * configure_actions(action/s) - can perform the following configuration actions on the device:
+        1. `IpAddAction` - add an IP to an Ethernet interface, and optionally configure a route for this IP.
+        2. `IpRemoveAction` - remove an existing IP from an Ethernet interface.
+        3. `CanConfigurationAction` - configure CAN interface parameters. e.g. bitrate, sample-point, cc-len8-dlc flag and state.
+        4. `EthInterfaceConfigurationAction` - configure the Ethernet interface: mtu, state and flags.
+        5. `WifiConnectAction` - connect to a WiFi access point
+        6. `CreateVlanAction` - creating a VLAN interface
+    * get_device_configuration() - retrieves the current device configurations:
+        1. Ethernet interface configuration: state, IPs, flags and MTU.
+        2. CAN interface configurations: state, bitrate, sample-point and cc-len8-dlc flag.
+        3. The available WiFi access points. 
+
+The complete user manual can be found in [here](docs/cyclarity-in-vehicle-sdk.pdf)
+
+## Installation  
+  
+You can install the In-Vehicle SDK package using pip:  
+`pip install cyclarity-in-vehicle-sdk`
+
+## Usage
+
+Example for importing and using `CanCommunicatorSocketCan` for sending a Message
+```
+from cyclarity_in_vehicle_sdk.communication.can.base.can_communicator_base import CanMessage
+from cyclarity_in_vehicle_sdk.communication.can.impl.can_communicator_socketcan import CanCommunicatorSocketCan
+
+canmsg = CanMessage(
+            arbitration_id=0x123,
+            is_extended_id = False,
+            is_rx=False,
+            data=b"\x00" * 8,
+            is_fd=False,
+            bitrate_switch=False,
+        )
+
+socket = CanCommunicatorSocketCan(channel="vcan0", support_fd=True)
+with socket:
+    socket.send(can_msg=canmsg)
+```
