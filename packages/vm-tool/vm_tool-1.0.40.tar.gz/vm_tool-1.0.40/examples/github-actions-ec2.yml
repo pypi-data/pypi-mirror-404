@@ -1,0 +1,245 @@
+name: Deploy to EC2 with vm_tool
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  EC2_HOST: ${{ secrets.EC2_HOST }}
+  EC2_USER: ${{ secrets.EC2_USER }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate Required Secrets
+        run: |
+          echo "🔐 Validating GitHub Secrets..."
+          MISSING_SECRETS=()
+          
+          # Check EC2_HOST
+          if [ -z "${{ secrets.EC2_HOST }}" ]; then
+            MISSING_SECRETS+=("EC2_HOST")
+          fi
+          
+          # Check EC2_USER
+          if [ -z "${{ secrets.EC2_USER }}" ]; then
+            MISSING_SECRETS+=("EC2_USER")
+          fi
+          
+          # Check EC2_SSH_KEY
+          if [ -z "${{ secrets.EC2_SSH_KEY }}" ]; then
+            MISSING_SECRETS+=("EC2_SSH_KEY")
+          fi
+          
+          # If any secrets are missing, show detailed instructions
+          if [ ${#MISSING_SECRETS[@]} -ne 0 ]; then
+            echo ""
+            echo "❌ ERROR: Missing required GitHub Secrets!"
+            echo ""
+            echo "Missing secrets: ${MISSING_SECRETS[*]}"
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "📝 How to add GitHub Secrets:"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            echo "1. Go to your GitHub repository"
+            echo "2. Click: Settings → Secrets and variables → Actions"
+            echo "3. Click: New repository secret"
+            echo "4. Add each secret:"
+            echo ""
+            
+            if [[ " ${MISSING_SECRETS[*]} " =~ " EC2_HOST " ]]; then
+              echo "   📍 EC2_HOST"
+              echo "      Value: Your EC2 instance IP address"
+              echo "      Example: 54.123.45.67"
+              echo ""
+            fi
+            
+            if [[ " ${MISSING_SECRETS[*]} " =~ " EC2_USER " ]]; then
+              echo "   👤 EC2_USER"
+              echo "      Value: SSH username for your EC2 instance"
+              echo "      Example: ubuntu (for Ubuntu) or ec2-user (for Amazon Linux)"
+              echo ""
+            fi
+            
+            if [[ " ${MISSING_SECRETS[*]} " =~ " EC2_SSH_KEY " ]]; then
+              echo "   🔑 EC2_SSH_KEY"
+              echo "      Value: Your SSH private key"
+              echo ""
+              echo "      To get your SSH private key, run on your LOCAL machine:"
+              echo "      $ cat ~/.ssh/id_rsa"
+              echo ""
+              echo "      OR if you use ed25519:"
+              echo "      $ cat ~/.ssh/id_ed25519"
+              echo ""
+              echo "      Copy the ENTIRE output (including BEGIN and END lines)"
+              echo ""
+              echo "      Don't have an SSH key? Generate one:"
+              echo "      $ ssh-keygen -t ed25519 -C 'github-actions'"
+              echo "      $ cat ~/.ssh/id_ed25519.pub  # Add to EC2 ~/.ssh/authorized_keys"
+              echo "      $ cat ~/.ssh/id_ed25519      # Add to GitHub Secrets"
+              echo ""
+            fi
+            
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "📚 For detailed instructions, see:"
+            echo "   - docs/ec2-github-actions-guide.md"
+            echo "   - docs/ssh-key-setup.md"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            exit 1
+          fi
+          
+          echo "✅ All required secrets are configured"
+          echo "   - EC2_HOST: ${{ secrets.EC2_HOST }}"
+          echo "   - EC2_USER: ${{ secrets.EC2_USER }}"
+          echo "   - EC2_SSH_KEY: ✓ (configured)"
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install vm_tool
+        run: pip install vm-tool
+
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Validate SSH Connection
+        run: |
+          if [ ! -s ~/.ssh/deploy_key ]; then
+            echo "❌ ERROR: EC2_SSH_KEY is empty!"
+            echo ""
+            echo "📝 To get your SSH key, run on your local machine:"
+            echo "   cat ~/.ssh/id_rsa"
+            echo ""
+            echo "Then add it to GitHub Secrets as EC2_SSH_KEY"
+            echo "See: docs/ssh-key-setup.md for detailed instructions"
+            exit 1
+          fi
+          
+          echo "✅ Testing SSH connection..."
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "echo 'Connection successful'" || {
+            echo "❌ SSH connection failed!"
+            echo "Check: docs/ssh-key-setup.md for troubleshooting"
+            exit 1
+          }
+
+      - name: Copy project files to EC2
+        run: |
+          # Create app directory if it doesn't exist
+          ssh -i ~/.ssh/deploy_key ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} \
+            'mkdir -p ~/app'
+          
+          # Copy docker-compose and related files
+          scp -i ~/.ssh/deploy_key docker-compose.yml \
+            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:~/app/
+          
+          # Copy application code
+          rsync -avz -e "ssh -i ~/.ssh/deploy_key" \
+            --exclude '.git' \
+            --exclude 'node_modules' \
+            --exclude '.env' \
+            ./ ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:~/app/
+
+      - name: Create backup before deployment
+        run: |
+          ssh -i ~/.ssh/deploy_key ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
+            mkdir -p ~/backups
+            BACKUP_FILE=~/backups/backup-$(date +%Y%m%d-%H%M%S).tar.gz
+            if [ -d ~/app ]; then
+              cd ~/app && tar -czf $BACKUP_FILE . || true
+              echo "Backup created: $BACKUP_FILE"
+            fi
+          EOF
+
+      - name: Deploy with Docker Compose
+        run: |
+          ssh -i ~/.ssh/deploy_key ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
+            cd ~/app
+            
+            # Pull latest images
+            docker-compose pull
+            
+            # Stop old containers
+            docker-compose down
+            
+            # Start new containers
+            docker-compose up -d --build
+            
+            # Wait for services to start
+            sleep 10
+          EOF
+
+      - name: Health check
+        run: |
+          # Wait for application to be ready
+          for i in {1..30}; do
+            if curl -f http://${{ secrets.EC2_HOST }}:8000/health 2>/dev/null; then
+              echo "✅ Health check passed"
+              exit 0
+            fi
+            echo "Waiting for application... ($i/30)"
+            sleep 2
+          done
+          echo "❌ Health check failed"
+          exit 1
+
+      - name: Verify deployment
+        run: |
+          ssh -i ~/.ssh/deploy_key ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
+            cd ~/app
+            echo "📊 Container status:"
+            docker-compose ps
+            echo ""
+            echo "📝 Recent logs:"
+            docker-compose logs --tail=50
+          EOF
+
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          echo "⚠️  Deployment failed, attempting rollback..."
+          ssh -i ~/.ssh/deploy_key ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
+            cd ~/app
+            LATEST_BACKUP=$(ls -t ~/backups/*.tar.gz 2>/dev/null | head -1)
+            if [ -n "$LATEST_BACKUP" ]; then
+              echo "Rolling back to: $LATEST_BACKUP"
+              tar -xzf $LATEST_BACKUP
+              docker-compose up -d
+              echo "✅ Rollback complete"
+            else
+              echo "❌ No backup found for rollback"
+            fi
+          EOF
+
+      - name: Cleanup old backups
+        if: success()
+        run: |
+          ssh -i ~/.ssh/deploy_key ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
+            # Keep only last 5 backups
+            cd ~/backups
+            ls -t *.tar.gz 2>/dev/null | tail -n +6 | xargs rm -f || true
+            echo "✅ Cleanup complete"
+          EOF
+
+      - name: Send notification
+        if: always()
+        run: |
+          if [ "${{ job.status }}" == "success" ]; then
+            echo "✅ Deployment successful to ${{ secrets.EC2_HOST }}"
+          else
+            echo "❌ Deployment failed to ${{ secrets.EC2_HOST }}"
+          fi
