@@ -1,0 +1,338 @@
+use std::path::Path;
+use std::rc::Rc;
+
+use camino::Utf8Path;
+use karva_python_semantic::{ModulePath, is_fixture_function};
+use pyo3::prelude::*;
+use pyo3::types::PyModule;
+use ruff_python_ast::visitor::source_order::{self, SourceOrderVisitor};
+use ruff_python_ast::{Expr, PythonVersion, Stmt, StmtFunctionDef};
+use ruff_python_parser::{Mode, ParseOptions, parse_unchecked};
+use ruff_source_file::SourceFileBuilder;
+
+use crate::Context;
+use crate::diagnostic::{report_failed_to_import_module, report_invalid_fixture};
+use crate::discovery::{DiscoveredModule, TestFunction};
+use crate::extensions::fixtures::Fixture;
+
+/// Visitor for discovering test functions and fixture definitions in a given module.
+struct FunctionDefinitionVisitor<'ctx, 'py, 'a, 'b> {
+    /// Context for the current session.
+    context: &'ctx Context<'a>,
+
+    /// The current module.
+    module: &'b mut DiscoveredModule,
+
+    /// We only import the module once we actually need it, this ensures we don't import random files.
+    /// Which has a side effect of running them.
+    py_module: Option<Bound<'py, PyModule>>,
+
+    py: Python<'py>,
+
+    /// Used to track whether we have tried to import the current module yet.
+    tried_to_import_module: bool,
+}
+
+impl<'ctx, 'py, 'a, 'b> FunctionDefinitionVisitor<'ctx, 'py, 'a, 'b> {
+    const fn new(
+        py: Python<'py>,
+        context: &'ctx Context<'a>,
+        module: &'b mut DiscoveredModule,
+    ) -> Self {
+        Self {
+            context,
+            module,
+            py_module: None,
+            py,
+            tried_to_import_module: false,
+        }
+    }
+
+    /// Try to import the current python module.
+    ///
+    /// If we have already tried to import the module, we don't try again.
+    /// This ensures that we only first import the module when we need to.
+    fn try_import_module(&mut self) {
+        if self.tried_to_import_module {
+            return;
+        }
+
+        self.tried_to_import_module = true;
+
+        match self.py.import(self.module.name()) {
+            Ok(py_module) => {
+                self.py_module = Some(py_module);
+            }
+            Err(error) => {
+                report_failed_to_import_module(
+                    self.context,
+                    self.module.name(),
+                    &error.value(self.py).to_string(),
+                );
+            }
+        }
+    }
+}
+
+impl FunctionDefinitionVisitor<'_, '_, '_, '_> {
+    fn process_fixture_function(&mut self, stmt_function_def: StmtFunctionDef) {
+        self.try_import_module();
+
+        let Some(py_module) = self.py_module.as_ref() else {
+            return;
+        };
+
+        let mut generator_function_visitor = GeneratorFunctionVisitor::default();
+
+        source_order::walk_body(&mut generator_function_visitor, &stmt_function_def.body);
+
+        let is_generator_function = generator_function_visitor.is_generator;
+
+        let stmt_function_def = Rc::new(stmt_function_def);
+
+        match Fixture::try_from_function(
+            self.py,
+            stmt_function_def.clone(),
+            py_module,
+            self.module.module_path(),
+            is_generator_function,
+        ) {
+            Ok(fixture_def) => self.module.add_fixture(fixture_def),
+            Err(e) => {
+                report_invalid_fixture(
+                    self.context,
+                    self.py,
+                    self.module.source_file(),
+                    &stmt_function_def,
+                    &e,
+                );
+            }
+        }
+    }
+
+    fn process_test_function(&mut self, stmt_function_def: StmtFunctionDef) {
+        self.try_import_module();
+
+        let Some(py_module) = self.py_module.as_ref() else {
+            return;
+        };
+
+        if let Ok(py_function) = py_module.getattr(stmt_function_def.name.to_string()) {
+            self.module.add_test_function(TestFunction::new(
+                self.py,
+                self.module,
+                Rc::new(stmt_function_def),
+                py_function.unbind(),
+            ));
+        }
+    }
+
+    fn find_extra_fixtures(&mut self) {
+        self.try_import_module();
+
+        let Some(py_module) = self.py_module.as_ref() else {
+            return;
+        };
+
+        let symbols =
+            find_imported_symbols(self.module.source_text(), self.context.python_version());
+
+        'outer: for ImportedSymbol { name } in symbols {
+            let Ok(value) = py_module.getattr(&name) else {
+                continue;
+            };
+
+            if !value.is_callable() {
+                continue;
+            }
+
+            for fixture in self.module.fixtures() {
+                if fixture.name().function_name() == name {
+                    continue 'outer;
+                }
+            }
+
+            for function in self.module.test_functions() {
+                if function.name.function_name() == name {
+                    continue 'outer;
+                }
+            }
+
+            let Ok(module_name) = value.getattr("__module__") else {
+                continue;
+            };
+
+            let Ok(mut module_name) = module_name.extract::<String>() else {
+                continue;
+            };
+
+            if module_name == "builtins" {
+                let Ok(function) = value.getattr("function") else {
+                    continue;
+                };
+
+                let Ok(function_module_name) = function.getattr("__module__") else {
+                    continue;
+                };
+
+                if let Ok(actual_module_name) = function_module_name.extract::<String>() {
+                    module_name = actual_module_name;
+                } else {
+                    continue;
+                }
+            }
+
+            let Ok(py_module) = self.py.import(&module_name) else {
+                continue;
+            };
+
+            let Ok(file_name) = py_module.getattr("__file__") else {
+                continue;
+            };
+
+            let Ok(file_name) = file_name.extract::<String>() else {
+                continue;
+            };
+
+            let std_path = Path::new(&file_name);
+
+            let Some(utf8_file_name) = Utf8Path::from_path(std_path) else {
+                continue;
+            };
+
+            let Some(module_path) = ModulePath::new(
+                utf8_file_name,
+                &self.context.system().current_directory().to_path_buf(),
+            ) else {
+                continue;
+            };
+
+            let Ok(source_text) = std::fs::read_to_string(utf8_file_name) else {
+                continue;
+            };
+
+            let Some(stmt_function_def) =
+                find_function_statement(&name, &source_text, self.context.python_version())
+            else {
+                continue;
+            };
+
+            if !is_fixture_function(&stmt_function_def) {
+                continue;
+            }
+
+            let mut generator_function_visitor = GeneratorFunctionVisitor::default();
+
+            source_order::walk_body(&mut generator_function_visitor, &stmt_function_def.body);
+
+            let is_generator_function = generator_function_visitor.is_generator;
+
+            match Fixture::try_from_function(
+                self.py,
+                stmt_function_def.clone(),
+                &py_module,
+                &module_path,
+                is_generator_function,
+            ) {
+                Ok(fixture_def) => self.module.add_fixture(fixture_def),
+                Err(e) => {
+                    report_invalid_fixture(
+                        self.context,
+                        self.py,
+                        SourceFileBuilder::new(utf8_file_name.as_str(), source_text).finish(),
+                        stmt_function_def.as_ref(),
+                        &e,
+                    );
+                }
+            }
+        }
+    }
+}
+
+pub fn discover(
+    context: &Context,
+    py: Python,
+    module: &mut DiscoveredModule,
+    test_function_defs: Vec<StmtFunctionDef>,
+    fixture_function_defs: Vec<StmtFunctionDef>,
+) {
+    let mut visitor = FunctionDefinitionVisitor::new(py, context, module);
+
+    for test_function_def in test_function_defs {
+        visitor.process_test_function(test_function_def);
+    }
+
+    for fixture_function_def in fixture_function_defs {
+        visitor.process_fixture_function(fixture_function_def);
+    }
+
+    if context.settings().test().try_import_fixtures {
+        visitor.find_extra_fixtures();
+    }
+}
+
+#[derive(Default)]
+struct GeneratorFunctionVisitor {
+    is_generator: bool,
+}
+
+impl SourceOrderVisitor<'_> for GeneratorFunctionVisitor {
+    fn visit_expr(&mut self, expr: &'_ Expr) {
+        if let Expr::Yield(_) | Expr::YieldFrom(_) = *expr {
+            self.is_generator = true;
+        }
+    }
+}
+
+fn find_function_statement(
+    name: &str,
+    source_text: &str,
+    python_version: PythonVersion,
+) -> Option<Rc<StmtFunctionDef>> {
+    let mut parse_options = ParseOptions::from(Mode::Module);
+
+    parse_options = parse_options.with_target_version(python_version);
+
+    let parsed = parse_unchecked(source_text, parse_options).try_into_module()?;
+
+    for stmt in parsed.into_syntax().body {
+        if let Stmt::FunctionDef(function_def) = stmt {
+            if function_def.name.as_str() == name {
+                return Some(Rc::new(function_def));
+            }
+        }
+    }
+
+    None
+}
+
+struct ImportedSymbol {
+    name: String,
+}
+
+fn find_imported_symbols(source_text: &str, python_version: PythonVersion) -> Vec<ImportedSymbol> {
+    let mut parse_options = ParseOptions::from(Mode::Module);
+
+    parse_options = parse_options.with_target_version(python_version);
+
+    let mut symbols = Vec::new();
+
+    let Some(parsed) = parse_unchecked(source_text, parse_options).try_into_module() else {
+        return symbols;
+    };
+
+    for stmt in parsed.into_syntax().body {
+        if let Stmt::ImportFrom(stmt_import_from) = stmt {
+            for name in stmt_import_from.names {
+                if name.asname.is_some() {
+                    continue;
+                }
+                symbols.push(ImportedSymbol {
+                    name: name.name.to_string(),
+                });
+            }
+        }
+    }
+
+    symbols
+}
