@@ -1,0 +1,60 @@
+name: release-publish
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: release
+      url: https://pypi.org/project/c4-diagrams
+
+    steps:
+      - name: Checkout tag
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Install uv & Python
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.13"
+
+      - name: Extract release notes from CHANGELOG.md
+        id: notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ github.event.release.tag_name }}"
+          OUT="release_notes.md"
+
+          awk -v ver="$TAG" '
+            $0 ~ "^## "ver" \\(" {found=1; print; next}
+            found && $0 ~ "^## " {exit}
+            found {print}
+          ' CHANGELOG.md > "$OUT"
+
+          if [[ ! -s "$OUT" ]]; then
+            echo "No changelog entry found for $TAG" >&2
+            exit 1
+          fi
+
+          echo "path=$OUT" >> "$GITHUB_OUTPUT"
+
+      - name: Build package
+        run: uv build --package=c4-diagrams
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@v1.13.0
+
+      - name: Update GitHub Release body from CHANGELOG
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: ${{ steps.notes.outputs.path }}
