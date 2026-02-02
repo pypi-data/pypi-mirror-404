@@ -1,0 +1,301 @@
+import collections
+import dataclasses
+from functools import cached_property, partial
+from typing import TypeVar, Callable, Tuple, List, Set, Iterable, Optional, get_origin, get_args, Dict, Sequence
+
+from ._dep import get_unchanged_cache
+from ..math import rename_dims, DimFilter, shape, Shape
+from ..math._shape import SHAPE_TYPES, INSTANCE_DIM, CHANNEL_DIM, SPATIAL_DIM
+from ..math._tensors import equality_by_shape_and_value, equality_by_ref
+from ..math._tree import slice_
+from ..math.magic import slicing_dict, BoundDim
+
+PhiMLDataclass = TypeVar("PhiMLDataclass")
+
+
+def sliceable(cls=None, /, *, dim_attrs=True, t_props=True, keepdims=None, dim_repr=True, lazy_dims=True):
+    """
+    Decorator for frozen dataclasses, adding slicing functionality by defining `__getitem__` and enabling the `instance.dim` syntax.
+    This enables slicing similar to tensors, gathering and boolean masking.
+
+    Args:
+        dim_attrs: Whether to generate `__getattr__` that allows slicing via the syntax `instance.dim[...]` where `dim` is the name of any dim present on `instance`.
+        t_props: Whether to generate the properties `Tc`, `Ts` and `Ti` for transposing channel/spatial/instance dims.
+        keepdims: Which dimensions should be kept with size 1 taking a single slice along them. This will preserve labels.
+        dim_repr: Whether to replace the default `repr` of a dataclass by a simplified one based on the object's shape.
+        lazy_dims: If `False`, instantiates all dims of `shape(self)` as member variables during construction. Dataclass must have `slots=False`.
+            If `True`, implements `__getattr__` to instantiate accessed dims on demand. This will be skipped if a user-defined `__getattr__` is found.
+    """
+    def wrap(cls):
+        assert dataclasses.is_dataclass(cls), f"@sliceable must be used on a @dataclass, i.e. declared above it."
+        assert cls.__dataclass_params__.frozen, f"@sliceable dataclasses must be frozen. Declare as @dataclass(frozen=True)"
+        assert data_fields(cls), f"PhiML dataclasses must have at least one field storing a Shaped object, such as a Tensor, tree of Tensors or compatible dataclass."
+        if not implements(cls, '__getitem__', exclude_metaclass=True):
+            def __dataclass_getitem__(obj, item):
+                return getitem(obj, item, keepdims=keepdims)
+            cls.__getitem__ = __dataclass_getitem__
+        if t_props:
+            def transpose(obj, dim_type):
+                old_shape = shape(obj)
+                new_shape = old_shape.transpose(dim_type)
+                return rename_dims(obj, old_shape, new_shape)
+            cls.Tc = property(partial(transpose, dim_type=CHANNEL_DIM))
+            cls.Ts = property(partial(transpose, dim_type=SPATIAL_DIM))
+            cls.Ti = property(partial(transpose, dim_type=INSTANCE_DIM))
+        if not lazy_dims:  # instantiate BoundDims in constructor
+            assert not hasattr(cls, '__slots__'), f"front-loading dims is not supported for dataclasses using slots."
+            dc_init = cls.__init__
+            def __dataclass_init__(self, *args, **kwargs):
+                dc_init(self, *args, **kwargs)
+                for dim in shape(self):
+                    object.__setattr__(self, dim.name, BoundDim(self, dim.name))  # object.__setattr__ also works for frozen dataclasses
+            cls.__init__ = __dataclass_init__
+        else:  # instantiate BoundDims lazily via __getattr__
+            if dim_attrs and not implements(cls, '__getattr__'):
+                def __dataclass_getattr__(obj, name: str):
+                    if name == 'shape' or (name.startswith('__') and name.endswith('__')):  # __setstate__, __deepcopy__ can cause infinite recursion
+                        raise AttributeError(f"'{type(obj)}' instance has no attribute '{name}'")
+                    if name in shape(obj):
+                        return BoundDim(obj, name)
+                    elif hasattr(type(obj), name):
+                        raise RuntimeError(f"Evaluation of property '{type(obj).__name__}.{name}' failed.")
+                    else:
+                        raise AttributeError(f"'{type(obj)}' instance has no attribute '{name}'")
+                cls.__getattr__ = __dataclass_getattr__
+        if dim_repr:
+            def __dataclass_repr__(obj):
+                try:
+                    content = shape(obj)
+                    if not content:
+                        content = f"{', '.join([f'{f.name}={getattr(obj, f.name)}' for f in dataclasses.fields(cls)])}"
+                except BaseException as err:
+                    content = f"Unknown shape: {type(err).__name__}"
+                return f"{type(obj).__name__}[{content}]"
+            cls.__repr__ = __dataclass_repr__
+        return cls
+    return wrap(cls) if cls is not None else wrap  # See if we're being called as @dataclass or @dataclass().
+
+
+def implements(cls, method: str, exclude_metaclass=True):
+    if not hasattr(cls, method):
+        return False
+    if not exclude_metaclass:
+        return True
+    # --- Traverse MRO excluding metaclasses ---
+    for base in cls.__mro__:
+        if '__getitem__' in base.__dict__:
+            return True
+    return False
+
+
+def data_eq(cls=None, /, *, rel_tolerance=0., abs_tolerance=0., equal_nan=True, compare_tensors_by_ref=False):
+    """
+    Decorator for dataclasses that overrides the default `__eq__` method to compare data fields by shape and value instead of equality.
+    Non-data fields are compared by equality (`==`).
+
+    See Also:
+        `equal()`, `data_fields()`, `non_data_fields()`.
+
+    Args:
+        rel_tolerance: Relative tolerance for comparing floating point tensors.
+        abs_tolerance: Absolute tolerance for comparing floating point tensors.
+        equal_nan: Whether to consider NaN values as equal.
+        compare_tensors_by_ref: If True, compares all tensors by reference (location in memory) instead of value.
+            This avoids costly element-wise comparisons, but may count objects as unequal even if they hold the same data.
+    """
+    def wrap(cls):
+        assert cls.__dataclass_params__.eq, f"@data_eq can only be used with dataclasses with eq=True."
+        cls.__default_dataclass_eq__ = cls.__eq__
+        def __tensor_eq__(obj, other):
+            if compare_tensors_by_ref:
+                with equality_by_ref():
+                    return cls.__default_dataclass_eq__(obj, other)
+            with equality_by_shape_and_value(rel_tolerance, abs_tolerance, equal_nan):
+                return cls.__default_dataclass_eq__(obj, other)
+        cls.__eq__ = __tensor_eq__
+        # __ne__ calls `not __eq__()` by default
+        return cls
+    return wrap(cls) if cls is not None else wrap  # See if we're being called as @dataclass or @dataclass().
+
+
+NON_ATTR_TYPES = str, int, float, complex, bool, Shape, slice, Callable
+
+
+def data_fields(obj) -> Sequence[dataclasses.Field]:
+    """
+    List all dataclass Fields of `obj` that are considered data, i.e. can hold (directly or indirectly) one or multiple `Tensor` instances.
+    This includes fields referencing other dataclasses.
+
+    Args:
+        obj: Dataclass type or instance.
+
+    Returns:
+        Sequence of `dataclasses.Field`.
+    """
+    return [f for f in dataclasses.fields(obj) if is_data_field(f)]
+
+
+def non_data_fields(obj) -> Sequence[dataclasses.Field]:
+    """
+    List all dataclass Fields of `obj` that cannot hold tensors (directly or indirectly).
+
+    Args:
+        obj: Dataclass type or instance.
+
+    Returns:
+        Sequence of `dataclasses.Field`.
+    """
+    return [f for f in dataclasses.fields(obj) if not is_data_field(f)]
+
+
+def config_fields(obj) -> Sequence[dataclasses.Field]:
+    """
+    List all dataclass Fields of `obj` that are not considered data_fields or special.
+    These cannot hold any Tensors or shaped objects.
+
+    Args:
+        obj: Dataclass type or instance.
+
+    Returns:
+        Sequence of `dataclasses.Field`.
+    """
+    return [f for f in dataclasses.fields(obj) if not is_data_field(f) and f.name not in ('variable_attrs', 'value_attrs')]
+
+
+def special_fields(obj) -> Sequence[dataclasses.Field]:
+    """
+    List all special dataclass Fields of `obj`, i.e. fields that don't store data related to the object but rather meta-information relevant to PhiML.
+
+    These include `variable_attrs` and `value_attrs`.
+
+    Args:
+        obj: Dataclass type or instance.
+
+    Returns:
+        Sequence of `dataclasses.Field`.
+    """
+    return [f for f in dataclasses.fields(obj) if f.name in ('variable_attrs', 'value_attrs')]
+
+
+def is_data_field(field: dataclasses.Field):
+    if field.name in ('variable_attrs', 'value_attrs'):  # this check is not strictly necessary since the types of special fields cannot hold tensors
+        return False
+    primitives = _get_primitive_types(field.type)
+    return any(p not in NON_ATTR_TYPES for p in primitives)
+
+
+def _get_primitive_types(field_type) -> list:
+    """Returns None for unknown types."""
+    if field_type is Ellipsis:
+        return []
+    origin_type = get_origin(field_type)
+    if origin_type in {list, List, tuple, Tuple, set, Set, Iterable, Optional, collections.abc.Sequence}:
+        args = get_args(field_type)  # The arguments passed to the generic (e.g., List[int] -> (int,))
+        return sum([_get_primitive_types(a) for a in args], []) if args else [None]
+    elif origin_type in {Dict, dict}:
+        k_type, v_type = get_args(field_type)
+        return _get_primitive_types(v_type)
+    else:
+        return [field_type]
+
+
+def replace(obj: PhiMLDataclass, /, call_metaclass=False, **changes) -> PhiMLDataclass:
+    """
+    Create a copy of `obj` with some fields replaced.
+    Unlike `dataclasses.replace()`, this function also transfers `@cached_property` members if their dependencies are not affected.
+
+    Args:
+        obj: Dataclass instance.
+        call_metaclass: Whether to copy `obj` by invoking `type(obj).__call__`.
+            If `obj` defines a metaclass, this will allow users to define custom constructors for dataclasses.
+        **changes: New field values to replace old ones.
+
+    Returns:
+        Copy of `obj` with replaced values.
+    """
+    cls = obj.__class__
+    kwargs = {f.name: getattr(obj, f.name) for f in dataclasses.fields(obj)}
+    kwargs.update(**changes)
+    if call_metaclass:
+        new_obj = cls(**kwargs)
+    else:  # This allows us override the dataclass constructor with a metaclass for user convenience, but not call it internally.
+        new_obj = cls.__new__(cls)
+        new_obj.__init__(**kwargs)
+    cache = get_unchanged_cache(obj, set(changes.keys()))
+    new_obj.__dict__.update(cache)
+    return new_obj
+
+
+def copy(obj: PhiMLDataclass, /, call_metaclass=False) -> PhiMLDataclass:
+    """
+    Create a copy of `obj`, including cached properties.
+
+    Args:
+        obj: Dataclass instance.
+        call_metaclass: Whether to copy `obj` by invoking `type(obj).__call__`.
+            If `obj` defines a metaclass, this will allow users to define custom constructors for dataclasses.
+    """
+    return replace(obj, call_metaclass=call_metaclass)
+
+
+def getitem(obj: PhiMLDataclass, item, keepdims: DimFilter = None) -> PhiMLDataclass:
+    """
+    Slice / gather a dataclass by broadcasting the operation to its data_fields.
+
+    You may call this from `__getitem__` to allow the syntax `my_class[component_str]`, `my_class[slicing_dict]`, `my_class[boolean_tensor]` and `my_class[index_tensor]`.
+
+    ```python
+    def __getitem__(self, item):
+        return getitem(self, item)
+    ```
+
+    Args:
+        obj: Dataclass instance to slice / gather.
+        item: One of the supported tensor slicing / gathering values.
+        keepdims: Dimensions that will not be removed during slicing.
+            When selecting a single slice, these dims will remain with size 1.
+
+    Returns:
+        Slice of `obj` of same type.
+    """
+    assert dataclasses.is_dataclass(obj), f"obj must be a dataclass but got {type(obj)}"
+    item = slicing_dict(obj, item)
+    if keepdims:
+        keep = shape(obj).only(keepdims)
+        for dim, sel in item.items():
+            if dim in keep:
+                if isinstance(sel, int):
+                    item[dim] = slice(sel, sel+1)
+                elif isinstance(sel, str) and ',' not in sel:
+                    item[dim] = [sel]
+    if not item:
+        return obj
+    attrs = data_fields(obj)
+    kwargs = {f.name: slice_(getattr(obj, f.name), item) if f in attrs else getattr(obj, f.name) for f in dataclasses.fields(obj)}
+    cls = type(obj)
+    new_obj = cls.__new__(cls, **kwargs)
+    new_obj.__init__(**kwargs)
+    cache = {k: slice_(v, item) for k, v in obj.__dict__.items() if isinstance(getattr(type(obj), k, None), cached_property) and not isinstance(v, SHAPE_TYPES)}
+    new_obj.__dict__.update(cache)
+    return new_obj
+
+
+def equal(obj1, obj2, rel_tolerance=0., abs_tolerance=0., equal_nan=True):
+    """
+    Checks if two dataclass instances are equal by comparing their data fields by value and shape.
+    Non-data fields are compared by equality (`==`).
+
+    Args:
+        obj1: First dataclass instance.
+        obj2: Second dataclass instance.
+        rel_tolerance: Relative tolerance for comparing floating point tensors.
+        abs_tolerance: Absolute tolerance for comparing floating point tensors.
+        equal_nan: Whether to consider NaN values as equal.
+
+    Returns:
+        `bool`
+    """
+    cls = type(obj1)
+    eq_fn = cls.__default_dataclass_eq__ if hasattr(cls, '__default_dataclass_eq__') else cls.__eq__
+    with equality_by_shape_and_value(rel_tolerance, abs_tolerance, equal_nan):
+        return eq_fn(obj1, obj2)
