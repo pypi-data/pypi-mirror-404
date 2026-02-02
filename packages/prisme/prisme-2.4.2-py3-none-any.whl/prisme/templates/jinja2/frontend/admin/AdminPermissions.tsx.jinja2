@@ -1,0 +1,82 @@
+/**
+ * Admin permissions management page.
+ *
+ * ✅ YOUR CODE - Safe to modify, will not be overwritten.
+ * This file was generated once by Prism and is yours to customize.
+ */
+
+import React, { useState, useEffect } from 'react';
+import type { JSX } from 'react';
+import { adminApi } from '../../lib/adminApi';
+
+interface Permission {
+  key: string;
+  description?: string;
+  roles: string[];
+}
+
+export default function AdminPermissions(): JSX.Element {
+  const [permissions, setPermissions] = useState<Permission[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    adminApi.listPermissions()
+      .then(setPermissions)
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="p-8 text-center">
+        <p className="text-muted">Loading permissions...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-xl font-semibold text-foreground">Permissions</h1>
+        <p className="text-sm text-muted">View all permissions and their role assignments</p>
+      </div>
+
+      <div className="card overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-surface-sunken">
+            <tr>
+              <th className="px-4 py-3 text-left text-xs font-medium text-muted">Permission</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-muted">Description</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-muted">Assigned Roles</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {permissions.map((perm) => (
+              <tr key={perm.key} className="hover:bg-surface-sunken transition-colors">
+                <td className="px-4 py-3 font-mono text-xs text-foreground">{perm.key}</td>
+                <td className="px-4 py-3 text-muted">{perm.description || '—'}</td>
+                <td className="px-4 py-3">
+                  <div className="flex flex-wrap gap-1">
+                    {perm.roles.map((role) => (
+                      <span
+                        key={role}
+                        className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-surface-sunken text-foreground"
+                      >
+                        {role}
+                      </span>
+                    ))}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {permissions.length === 0 && (
+          <div className="p-8 text-center">
+            <p className="text-muted">No permissions defined</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

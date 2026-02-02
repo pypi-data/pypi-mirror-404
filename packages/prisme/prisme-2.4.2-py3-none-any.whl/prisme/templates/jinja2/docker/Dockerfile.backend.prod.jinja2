@@ -1,0 +1,56 @@
+# Stage 1: Build stage
+FROM python:3.13-slim AS builder
+
+WORKDIR /app
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+COPY {{ backend_path }}/pyproject.toml {{ backend_path }}/uv.lock* ./{{ backend_path }}/
+RUN cd {{ backend_path }} && \
+    pip install --no-cache-dir uv && \
+    uv sync --frozen --no-dev
+
+# Stage 2: Runtime stage
+FROM python:3.13-slim
+
+# Create non-root user
+RUN groupadd -r appuser && useradd -r -g appuser appuser
+
+WORKDIR /app
+
+# Install only runtime dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy Python environment from builder
+COPY --from=builder /app/{{ backend_path }}/.venv /app/{{ backend_path }}/.venv
+
+# Copy application code
+COPY --chown=appuser:appuser {{ backend_path }} ./{{ backend_path }}
+COPY --chown=appuser:appuser specs ./specs
+
+ENV PATH="/app/{{ backend_path }}/.venv/bin:$PATH"
+
+# Switch to non-root user
+USER appuser
+
+ENV PYTHONPATH=/app/{{ backend_path }}/src
+ENV PYTHONUNBUFFERED=1
+
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Graceful shutdown with proper signal handling
+STOPSIGNAL SIGTERM
+
+CMD ["uvicorn", "{{ backend_module }}.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
