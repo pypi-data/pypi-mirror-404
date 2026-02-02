@@ -1,0 +1,117 @@
+import math
+from typing import Dict, Any, Optional
+
+
+class ParameterContext:
+    """
+    Manages named parameters and evaluates string expressions
+    (e.g. 'width / 2').
+    """
+
+    def __init__(self) -> None:
+        self._expressions: Dict[str, str] = {}
+        self._cache: Dict[str, float] = {}
+        self._dirty: bool = False
+
+        # Safe math context
+        self._math_context = {
+            k: v for k, v in vars(math).items() if not k.startswith("_")
+        }
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Serializes the parameter context to a dictionary."""
+        return {"expressions": self._expressions.copy()}
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ParameterContext":
+        """Deserializes a dictionary into a ParameterContext instance."""
+        new_context = cls()
+        new_context._expressions = data.get("expressions", {})
+        new_context._dirty = True  # Force re-evaluation on next get
+        return new_context
+
+    def set(self, name: str, value: float | str) -> None:
+        """Sets a parameter. Can be a float or a math string."""
+        self._expressions[name] = str(value)
+        self._dirty = True
+
+    def get(self, name: str, default: float = 0.0) -> float:
+        """Gets the evaluated value of a parameter."""
+        if self._dirty:
+            self.evaluate_all()
+        return self._cache.get(name, default)
+
+    def get_all_values(self) -> Dict[str, float]:
+        """Evaluates all expressions and returns a dictionary of all values."""
+        if self._dirty:
+            self.evaluate_all()
+        return self._cache.copy()
+
+    def evaluate(self, expression: str | float) -> float:
+        """Evaluates an arbitrary expression string using current context."""
+        if isinstance(expression, (int, float)):
+            return float(expression)
+
+        if self._dirty:
+            self.evaluate_all()
+
+        # Check if it's just a variable name
+        if expression in self._cache:
+            return self._cache[expression]
+
+        # Merge math context with current variable values
+        ctx = self._math_context.copy()
+        if self._cache:
+            ctx.update(self._cache)
+
+        try:
+            return float(eval(str(expression), {"__builtins__": None}, ctx))
+        except Exception:
+            return 0.0
+
+    def evaluate_all(
+        self, initial_values: Optional[Dict[str, float]] = None
+    ) -> None:
+        """
+        Iteratively resolves dependencies.
+        Simple multi-pass solver to handle out-of-order definitions.
+
+        Args:
+            initial_values: An optional dictionary of pre-set values to seed
+                            the evaluation cache with. These have the highest
+                            precedence.
+        """
+        self._cache.clear()
+        if initial_values:
+            self._cache.update(initial_values)
+
+        # Max iterations equal to number of params to prevent infinite loops
+        max_passes = len(self._expressions) + 1
+
+        for _ in range(max_passes):
+            progress = False
+            # Always start with a fresh context for each pass
+            ctx = self._math_context.copy()
+            # The cache may already contain initial_values
+            if self._cache:
+                ctx.update(self._cache)
+
+            for name, expr in self._expressions.items():
+                if name in self._cache:
+                    continue
+
+                try:
+                    # The context for eval needs math and solved variables
+                    eval_ctx = self._math_context.copy()
+                    eval_ctx.update(self._cache)
+                    val = float(eval(expr, {"__builtins__": None}, eval_ctx))
+                    self._cache[name] = val
+                    progress = True
+                except (NameError, TypeError, SyntaxError):
+                    # Dependency missing, try next pass
+                    pass
+
+            if not progress:
+                break
+
+        self._dirty = False

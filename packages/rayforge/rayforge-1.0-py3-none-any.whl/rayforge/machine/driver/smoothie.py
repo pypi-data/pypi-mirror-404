@@ -1,0 +1,459 @@
+import asyncio
+import inspect
+import logging
+from typing import (
+    List,
+    Optional,
+    cast,
+    Any,
+    TYPE_CHECKING,
+    Callable,
+    Union,
+    Awaitable,
+    Dict,
+)
+from ...context import RayforgeContext
+from ...core.varset import VarSet, HostnameVar, PortVar
+from ...pipeline.encoder.base import OpsEncoder, MachineCodeOpMap
+from ...pipeline.encoder.gcode import GcodeEncoder
+from ..transport import TelnetTransport, TransportStatus
+from ..transport.validators import is_valid_hostname_or_ip
+from .driver import (
+    Driver,
+    DeviceStatus,
+    DriverSetupError,
+    DriverPrecheckError,
+    Axis,
+    Pos,
+)
+from .grbl_util import parse_state
+
+if TYPE_CHECKING:
+    from ...core.doc import Doc
+    from ..models.machine import Machine
+    from ..models.laser import Laser
+
+
+logger = logging.getLogger(__name__)
+
+
+# Smoothie uses P1 for G54, P2 for G55, etc.
+_wcs_to_p_map = {
+    "G54": 1,
+    "G55": 2,
+    "G56": 3,
+    "G57": 4,
+    "G58": 5,
+    "G59": 6,
+}
+
+
+class SmoothieDriver(Driver):
+    """
+    Handles Smoothie-based devices via Telnet
+    """
+
+    label = _("Smoothie")
+    subtitle = _("Smoothieware via a Telnet connection")
+    supports_settings = False
+    reports_granular_progress = True
+
+    def __init__(self, context: RayforgeContext, machine: "Machine"):
+        super().__init__(context, machine)
+        self.telnet: Optional[TelnetTransport] = None
+        self.host: Optional[str] = None
+        self.port: Optional[int] = None
+        self.keep_running = False
+        self._connection_task: Optional[asyncio.Task] = None
+        self._ok_event = asyncio.Event()
+
+    @property
+    def machine_space_wcs(self) -> str:
+        return "G53"
+
+    @property
+    def machine_space_wcs_display_name(self) -> str:
+        return _("Machine Coordinates (G53)")
+
+    @property
+    def resource_uri(self) -> Optional[str]:
+        if self.host:
+            return f"tcp://{self.host}:{self.port}"
+        return None
+
+    @classmethod
+    def precheck(cls, **kwargs: Any) -> None:
+        """Checks if the hostname is a valid format."""
+        host = cast(str, kwargs.get("host", ""))
+        if not is_valid_hostname_or_ip(host):
+            raise DriverPrecheckError(
+                _("Invalid hostname or IP address: '{host}'").format(host=host)
+            )
+
+    @classmethod
+    def get_setup_vars(cls) -> "VarSet":
+        return VarSet(
+            vars=[
+                HostnameVar(
+                    key="host",
+                    label=_("Hostname"),
+                    description=_("The IP address or hostname of the device"),
+                ),
+                PortVar(
+                    key="port",
+                    label=_("Port"),
+                    description=_("The Telnet port number"),
+                    default=23,
+                ),
+            ]
+        )
+
+    @classmethod
+    def create_encoder(cls, machine: "Machine") -> "OpsEncoder":
+        """Returns a GcodeEncoder configured for the machine's dialect."""
+        return GcodeEncoder(machine.dialect)
+
+    def get_setting_vars(self) -> List["VarSet"]:
+        return [VarSet()]
+
+    def _setup_implementation(self, **kwargs: Any) -> None:
+        host = cast(str, kwargs.get("host", ""))
+        port = kwargs.get("port", 23)
+
+        if not host:
+            raise DriverSetupError(_("Hostname must be configured."))
+
+        self.host = host
+        self.port = port
+
+        # Initialize transports
+        self.telnet = TelnetTransport(host, port)
+        self.telnet.received.connect(self.on_telnet_data_received)
+        self.telnet.status_changed.connect(self.on_telnet_status_changed)
+
+    async def cleanup(self):
+        self.keep_running = False
+        if self._connection_task:
+            self._connection_task.cancel()
+        if self.telnet:
+            await self.telnet.disconnect()
+            self.telnet.received.disconnect(self.on_telnet_data_received)
+            self.telnet.status_changed.disconnect(
+                self.on_telnet_status_changed
+            )
+            self.telnet = None
+        await super().cleanup()
+
+    async def _connect_implementation(self):
+        self.keep_running = True
+        self._connection_task = asyncio.create_task(self._connection_loop())
+
+    async def _connection_loop(self) -> None:
+        while self.keep_running:
+            if not self.telnet:
+                self.on_telnet_status_changed(
+                    self, TransportStatus.ERROR, "Driver not configured"
+                )
+                await asyncio.sleep(5)
+                continue
+
+            self.on_telnet_status_changed(self, TransportStatus.CONNECTING)
+            try:
+                await self.telnet.connect()
+                # The transport handles the connection loop.
+                # We just need to wait here until cleanup.
+                while self.keep_running:
+                    await self._send_and_wait(b"?", wait_for_ok=False)
+                    await asyncio.sleep(1)
+
+            except asyncio.CancelledError:
+                break  # cleanup is called
+            except Exception as e:
+                self.on_telnet_status_changed(
+                    self, TransportStatus.ERROR, str(e)
+                )
+            finally:
+                if self.telnet:
+                    await self.telnet.disconnect()
+
+            if not self.keep_running:
+                break
+
+            self.on_telnet_status_changed(self, TransportStatus.SLEEPING)
+            await asyncio.sleep(5)
+
+    async def _send_and_wait(self, cmd: bytes, wait_for_ok: bool = True):
+        if not self.telnet:
+            return
+        if wait_for_ok:
+            self._ok_event.clear()
+
+        logger.debug(
+            f"TX: {cmd!r}",
+            extra={"log_category": "RAW_IO", "direction": "TX", "data": cmd},
+        )
+        await self.telnet.send(cmd)
+
+        if wait_for_ok:
+            try:
+                # Set a 10s timeout to avoid deadlocks
+                await asyncio.wait_for(self._ok_event.wait(), 10.0)
+            except asyncio.TimeoutError as e:
+                raise ConnectionError(
+                    f"Command '{cmd.decode()}' not confirmed"
+                ) from e
+
+    async def run(
+        self,
+        machine_code: Any,
+        op_map: "MachineCodeOpMap",
+        doc: "Doc",
+        on_command_done: Optional[
+            Callable[[int], Union[None, Awaitable[None]]]
+        ] = None,
+    ) -> None:
+        gcode = cast(str, machine_code)
+        gcode_lines = gcode.splitlines()
+
+        # We assume ops are indexed 0..N-1.
+        num_ops = 0
+        if op_map and op_map.op_to_machine_code:
+            num_ops = max(op_map.op_to_machine_code.keys()) + 1
+
+        try:
+            for op_index in range(num_ops):
+                # Find all g-code lines for this specific op_index
+                line_indices = []
+                if op_map:
+                    line_indices = op_map.op_to_machine_code.get(op_index, [])
+
+                if not line_indices:
+                    # If an op generates no g-code, still report it as done.
+                    if on_command_done:
+                        result = on_command_done(op_index)
+                        if inspect.isawaitable(result):
+                            await result
+                    continue
+
+                for line_idx in sorted(line_indices):
+                    line = gcode_lines[line_idx].strip()
+                    if line:
+                        await self._send_and_wait(line.encode())
+
+                # After all lines for this op are sent and confirmed,
+                # fire the callback.
+                if on_command_done:
+                    result = on_command_done(op_index)
+                    if inspect.isawaitable(result):
+                        await result
+
+        except Exception as e:
+            self.on_telnet_status_changed(self, TransportStatus.ERROR, str(e))
+            raise
+        finally:
+            self.job_finished.send(self)
+
+    async def run_raw(self, gcode: str) -> None:
+        """
+        Executes a raw G-code string by sending it line-by-line to the
+        device and waiting for an 'ok' after each line.
+        """
+        gcode_lines = gcode.splitlines()
+        try:
+            for line in gcode_lines:
+                line = line.strip()
+                if line:
+                    await self._send_and_wait(line.encode())
+        except Exception as e:
+            self.on_telnet_status_changed(self, TransportStatus.ERROR, str(e))
+            raise
+        finally:
+            self.job_finished.send(self)
+
+    async def set_hold(self, hold: bool = True) -> None:
+        if hold:
+            await self._send_and_wait(b"!")
+        else:
+            await self._send_and_wait(b"~")
+
+    async def cancel(self) -> None:
+        # Send Ctrl+C
+        await self._send_and_wait(b"\x03")
+
+    def can_home(self, axis: Optional[Axis] = None) -> bool:
+        """Smoothie supports homing for all axes."""
+        return True
+
+    async def home(self, axes: Optional[Axis] = None) -> None:
+        """
+        Homes the specified axes or all axes if none specified.
+
+        Args:
+            axes: Optional axis or combination of axes to home. If None,
+                 homes all axes. Can be a single Axis or multiple axes
+                 using binary operators (e.g. Axis.X|Axis.Y)
+        """
+        dialect = self._machine.dialect
+        if axes is None:
+            await self._send_and_wait(dialect.home_all.encode())
+            return
+
+        # Handle multiple axes - home them one by one
+        for axis in Axis:
+            if axes & axis:
+                assert axis.name
+                axis_letter: str = axis.name.upper()
+                cmd = dialect.home_axis.format(axis_letter=axis_letter)
+                await self._send_and_wait(cmd.encode())
+
+    async def move_to(self, pos_x, pos_y) -> None:
+        dialect = self._machine.dialect
+        cmd = dialect.move_to.format(x=float(pos_x), y=float(pos_y))
+        await self._send_and_wait(cmd.encode())
+
+    def can_jog(self, axis: Optional[Axis] = None) -> bool:
+        """Smoothie supports jogging for all axes."""
+        return True
+
+    async def jog(self, speed: int, **deltas: float) -> None:
+        """
+        Jogs the machine using G91 incremental mode.
+
+        Args:
+            speed: The jog speed in mm/min
+            **deltas: Axis names and distances (e.g. x=10.0, y=5.0)
+        """
+        dialect = self._machine.dialect
+        parts = [dialect.jog.format(speed=speed)]
+
+        for axis_name, distance in deltas.items():
+            parts.append(f"{axis_name.upper()}{distance}")
+
+        if len(parts) == 1:
+            return
+
+        cmd = " ".join(parts)
+        await self._send_and_wait(cmd.encode())
+
+    async def select_tool(self, tool_number: int) -> None:
+        """Sends a tool change command for the given tool number."""
+        dialect = self._machine.dialect
+        cmd = dialect.tool_change.format(tool_number=tool_number)
+        await self._send_and_wait(cmd.encode())
+
+    async def clear_alarm(self) -> None:
+        dialect = self._machine.dialect
+        await self._send_and_wait(dialect.clear_alarm.encode())
+
+    async def set_power(self, head: "Laser", percent: float) -> None:
+        """
+        Sets the laser power to the specified percentage of max power.
+
+        Args:
+            head: The laser head to control.
+            percent: Power percentage (0.0-1.0). 0 disables power.
+        """
+        # Get the dialect for power control commands
+        dialect = self._machine.dialect
+
+        if percent <= 0:
+            # Disable power
+            cmd = dialect.laser_off
+        else:
+            # Enable power with specified percentage
+            power_abs = percent * head.max_power
+            cmd = dialect.laser_on.format(power=power_abs)
+
+        await self._send_and_wait(cmd.encode("utf-8"))
+
+    def on_telnet_data_received(self, sender, data: bytes):
+        logger.debug(
+            f"RX: {data!r}",
+            extra={"log_category": "RAW_IO", "direction": "RX", "data": data},
+        )
+        data_str = data.decode("utf-8")
+        for line in data_str.splitlines():
+            logger.info(line, extra={"log_category": "MACHINE_EVENT"})
+            if "ok" in line:
+                self._ok_event.set()
+                self.command_status_changed.send(
+                    self, status=TransportStatus.IDLE
+                )
+
+            if not line.startswith("<") or not line.endswith(">"):
+                continue
+            state = parse_state(
+                line, self.state, lambda message: logger.info(message)
+            )
+            if state != self.state:
+                self.state = state
+                logger.info(
+                    f"Device state changed: {self.state.status.name}",
+                    extra={
+                        "log_category": "STATE_CHANGE",
+                        "state": self.state,
+                    },
+                )
+                self.state_changed.send(self, state=self.state)
+
+    def on_telnet_status_changed(
+        self, sender, status: TransportStatus, message: Optional[str] = None
+    ):
+        log_data = f"Connection status: {status.name}"
+        if message:
+            log_data += f" - {message}"
+        logger.info(log_data, extra={"log_category": "MACHINE_EVENT"})
+        self.connection_status_changed.send(
+            self, status=status, message=message
+        )
+        if status in [TransportStatus.DISCONNECTED, TransportStatus.ERROR]:
+            if self.state.status != DeviceStatus.UNKNOWN:
+                self.state.status = DeviceStatus.UNKNOWN
+                logger.info(
+                    f"Device state changed: {self.state.status.name}",
+                    extra={
+                        "log_category": "STATE_CHANGE",
+                        "state": self.state,
+                    },
+                )
+                self.state_changed.send(self, state=self.state)
+
+    async def read_settings(self) -> None:
+        raise NotImplementedError(
+            "Device settings not implemented for this driver"
+        )
+
+    async def write_setting(self, key: str, value: Any) -> None:
+        raise NotImplementedError(
+            "Device settings not implemented for this driver"
+        )
+
+    async def set_wcs_offset(
+        self, wcs_slot: str, x: float, y: float, z: float
+    ) -> None:
+        """Sets a WCS offset using Smoothie's G10 L20 command."""
+        if wcs_slot not in _wcs_to_p_map:
+            raise ValueError(f"Invalid WCS slot: {wcs_slot}")
+
+        p_num = _wcs_to_p_map[wcs_slot]
+        dialect = self._machine.dialect
+        cmd = dialect.set_wcs_offset.format(p_num=p_num, x=x, y=y, z=z)
+        await self._send_and_wait(cmd.encode("utf-8"))
+
+    async def read_wcs_offsets(self) -> Dict[str, Pos]:
+        """Reading all WCS offsets is not supported by Smoothie."""
+        raise NotImplementedError(
+            "Reading all WCS offsets is not reliably supported "
+            "by Smoothieware."
+        )
+
+    async def run_probe_cycle(
+        self, axis: Axis, max_travel: float, feed_rate: int
+    ) -> Optional[Pos]:
+        """
+        Probing is not implemented due to difficulty in reliably capturing
+        real-time probe position feedback over the standard Telnet protocol.
+        """
+        raise NotImplementedError(
+            "Probing is not implemented for the Smoothie driver via Telnet."
+        )
