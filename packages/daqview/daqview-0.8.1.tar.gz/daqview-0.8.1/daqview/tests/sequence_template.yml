@@ -1,0 +1,105 @@
+templates:
+  - name: Test Template
+    description: Test template for automated tests
+    tzero_offset: -10.0
+    variables:
+      - id: duration
+        name: Duration
+        description: "Test duration"
+        units: s
+        default: 10
+        step: 0.1
+        decimals: 1
+      - id: mdot
+        name: Massflow
+        description: "Target massflow"
+        units: kg/s
+        default: 1.2
+        step: 0.05
+        decimals: 2
+    analysis_metadata:
+      averaging_windows:
+        - [10, "{duration - 2}"]
+    valves:
+      - role: V1
+        run: [[-5, "{duration+5}"]]
+        stop: [[0, 3]]
+      - role: V2
+        stop: [[0]]
+      - role: V3
+        run: [["{duration}"]]
+    profiles:
+      - role: VA
+        type: profile_cl
+        scale_max: 2
+        units: kg/s
+        profile:
+          - { type: hold, until: 0 }
+          - { type: ramp, target: "{mdot}", duration: 1 }
+          - { type: hold, duration: 2 }
+          - { type: ramp, target: 0, duration: 1 }
+          - { type: hold, duration: 1 }
+      - role: VB
+        type: profile_aout
+        scale_max: 2
+        units: kg/s
+        profile:
+          - { type: hold, until: 0 }
+          - { type: ramp, target: "{mdot}", duration: 1 }
+          - { type: hold, duration: 2 }
+          - { type: ramp, target: 0, duration: 1 }
+          - { type: hold, duration: 1 }
+    daus:
+      - dau: Box1
+        type: profile_dist
+        scale_max: 30
+        units: mm
+        profile:
+          - { type: hold, until: 0 }
+          - { type: ramp, target: 20, duration: 1 }
+          - { type: hold, until: "{duration}" }
+          - { type: ramp, target: 0, duration: 1 }
+          - { type: hold, duration: 0 }
+  - name: Test Inheritance
+    description: Test template with inheritance
+    inherits: ["Test Template"]
+    valves:
+      - role: V4
+        run: [[0, 1]]
+
+dau_assig:
+  - name: AMV
+    addr: udp://192.168.19.1:1735
+    dau: Box1
+  - name: Valves
+    addr: udp://192.168.19.1:1735
+    dau: Box2
+  - name: AOUT
+    addr: udp://192.168.19.1:1735
+    dau: Box3
+
+assignments:
+  - role: V1
+    name: V1
+    dau: Box2
+    channel: 1
+  - role: V2
+    name: V2
+    dau: Box2
+    channel: 2
+  - role: V3
+    name: V3
+    dau: Box2
+    channel: 3
+  - role: V4
+    name: V4
+    dau: Box2
+    channel: 4
+  - role: VA
+    name: VA
+    dau: Box1
+    channel: 1
+  - role: VB
+    name: VB
+    dau: Box3
+    channel: 2
