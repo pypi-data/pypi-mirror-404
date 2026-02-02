@@ -1,0 +1,97 @@
+[tool.poetry]
+name = "yearn-treasury"
+version = "0.2.0"
+description = "This WIP library runs the eth-portfolio and dao-treasury exporters for the Yearn Finance treasury."
+authors = ["Bob The Buidler <you@example.com>"]
+packages = [{ include = "yearn_treasury/*" }]
+
+[build-system]
+requires = [
+    "setuptools",
+    "wheel",
+    "mypy[mypyc]==1.19.0",
+    "tomli>=2.0.0; python_version < '3.11'",
+    "types-requests",
+    "types-pony==0.7.0.20250822",
+    "dank-mids==4.20.192; platform_system == 'MacOS' or (platform_system == 'Linux' and platform_machine != 'i686')",
+    "dao-treasury==0.1.7; platform_system == 'Linux' and platform_machine != 'i686'",
+    "eth-brownie==1.22.0.dev0; platform_system == 'Linux'",
+    "eth-typing==5.2.1",
+    "typed-envs==0.2.4",
+]
+build-backend = "setuptools.build_meta"
+
+[tool.poetry.scripts]
+yearn-treasury = "yearn_treasury.main:main"
+
+[tool.poetry.dependencies]
+python = ">=3.10,<3.13"
+dao-treasury = "==1.0.0"
+
+[tool.poetry.group.dev.dependencies]
+mypy = "1.19.1"
+types-pony = "0.7.0.20250822"
+types-requests = "*"
+
+[tool.poetry.group.docs.dependencies]
+sphinx = ">=8,<9"
+sphinx-rtd-theme = "*"
+myst-parser = "*"
+
+[tool.mypy]
+files = ["."]
+plugins = ["typed_envs.mypy_plugin"]
+exclude = ["build/","cache/","env/", "tests/", "setup.py"]
+ignore_missing_imports = true
+check_untyped_defs = true
+pretty = true
+strict = true
+disable_error_code = [
+    "unused-ignore",
+    "type-arg",
+    "union-attr",
+    "no-any-return",
+    "untyped-decorator",
+    "misc",
+]
+
+[[tool.mypy.overrides]]
+module = "yearn_treasury.rules.cost_of_revenue.gas"
+disable_error_code = ["call-overload"]
+
+[[tool.mypy.overrides]]
+module = "yearn_treasury.rules.ignore.swaps.iearn"
+disable_error_code = ["dict-item"]
+
+[[tool.mypy.overrides]]
+module = "yearn_treasury.rules.constants"
+disable_error_code = ["index"]
+
+[[tool.mypy.overrides]]
+module = "yearn_treasury.rules.other_income.misc"
+disable_error_code = ["union-attr"]
+
+[[tool.mypy.overrides]]
+module = "yearn_treasury._logging"
+disable_error_code = ["list-item"]
+
+[[tool.mypy.overrides]]
+module = "yearn_treasury._db"
+disable_error_code = ["arg-type"]
+
+[tool.black]
+line-length = 100
+target-version = ['py310']
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+  | \.hypothesis
+  | \.mypy_cache
+  | \.pytest_cache
+  | \.venv
+  | cache
+  | dist
+  | env
+)/
+'''
