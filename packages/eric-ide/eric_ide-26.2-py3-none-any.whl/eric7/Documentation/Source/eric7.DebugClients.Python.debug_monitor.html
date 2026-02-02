@@ -1,0 +1,1117 @@
+<!DOCTYPE html>
+<html><head>
+<title>eric7.DebugClients.Python.debug_monitor</title>
+<meta charset="UTF-8">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<a NAME="top" ID="top"></a>
+<h1>eric7.DebugClients.Python.debug_monitor</h1>
+<p>
+Module implementing a debugger / call tracer based on sys.monitoring.
+</p>
+<p>
+Since Python 3.12 there is a new interface to implement debugger / call tracer
+with much better performance compared to sys.set_trace.
+</p>
+<p>
+If raising ImportError, the old debugger will be used.
+</p>
+
+<h3>Global Attributes</h3>
+<table>
+<tr><td>Code</td></tr>
+<tr><td>Frame</td></tr>
+<tr><td>_recursion_limit</td></tr>
+<tr><td>events</td></tr>
+<tr><td>monitoring</td></tr>
+</table>
+
+<h3>Classes</h3>
+<table>
+<tr>
+<td><a href="#DebugBase">DebugBase</a></td>
+<td>Class implementing base class of the debugger.</td>
+</tr>
+</table>
+
+<h3>Functions</h3>
+<table>
+<tr>
+<td><a href="#printerr">printerr</a></td>
+<td>Module function used for debugging the debug client.</td>
+</tr>
+<tr>
+<td><a href="#setRecursionLimit">setRecursionLimit</a></td>
+<td>Module function to set the recursion limit.</td>
+</tr>
+</table>
+
+<hr />
+<hr />
+<a NAME="DebugBase" ID="DebugBase"></a>
+<h2>DebugBase</h2>
+<p>
+    Class implementing base class of the debugger.
+</p>
+<p>
+    Provides methods for the 'owning' client to call to step etc.
+</p>
+
+<h3>Derived from</h3>
+None
+<h3>Class Attributes</h3>
+<table>
+<tr><td>code_has_breakpoints</td></tr>
+<tr><td>filename_cache</td></tr>
+<tr><td>files_to_skip</td></tr>
+<tr><td>lib</td></tr>
+<tr><td>paths_to_skip</td></tr>
+<tr><td>pollTimerEnabled</td></tr>
+<tr><td>profile_active</td></tr>
+<tr><td>step_over_frames</td></tr>
+<tr><td>step_single_threads</td></tr>
+<tr><td>timer_thread</td></tr>
+<tr><td>trace_active</td></tr>
+</table>
+
+<h3>Class Methods</h3>
+<table>
+<tr><td>None</td></tr>
+</table>
+
+<h3>Methods</h3>
+<table>
+<tr>
+<td><a href="#DebugBase.__init__">DebugBase</a></td>
+<td>Constructor of DebugBase.</td>
+</tr>
+<tr>
+<td><a href="#DebugBase.__disassemble">__disassemble</a></td>
+<td>Private method to generate a disassembly of the given code object.</td>
+</tr>
+<tr>
+<td><a href="#DebugBase.__event_poll_timer">__event_poll_timer</a></td>
+<td>Private method to check every second for new commands.</td>
+</tr>
+<tr>
+<td><a href="#DebugBase.__extractSystemExitMessage">__extractSystemExitMessage</a></td>
+<td>Private method to get the SystemExit code and message.</td>
+</tr>
+<tr>
+<td><a href="#DebugBase.__extract_stack">__extract_stack</a></td>
+<td>Private member to return a list of stack frames.</td>
+</tr>
+<tr>
+<td><a href="#DebugBase.__fix_frame_filename">__fix_frame_filename</a></td>
+<td>Private method used to fixup the filename for a given frame.</td>
+</tr>
+<tr>
+<td><a href="#DebugBase.__monitor_exception">__monitor_exception</a></td>
+<td>Private method to handle exception events.</td>
+</tr>
+<tr>
+<td><a href="#DebugBase.__monitor_line">__monitor_line</a></td>
+<td>Private method to handle line events.</td>
+</tr>
+<tr>
+<td><a href="#DebugBase.__monitor_py_return">__monitor_py_return</a></td>
+<td>Private method to handle return events.</td>
+</tr>
+<tr>
+<td><a href="#DebugBase.__monitor_py_start">__monitor_py_start</a></td>
+<td>Private method to handle event when entering the next Python frame.</td>
+</tr>
+<tr>
+<td><a href="#DebugBase.__profile_c_return">__profile_c_return</a></td>
+<td>Private method to profile the return from C-code frame.</td>
+</tr>
+<tr>
+<td><a href="#DebugBase.__profile_call">__profile_call</a></td>
+<td>Private method to profile the next function / method call.</td>
+</tr>
+<tr>
+<td><a href="#DebugBase.__profile_py_return">__profile_py_return</a></td>
+<td>Private method to profile the return from current Python frame.</td>
+</tr>
+<tr>
+<td><a href="#DebugBase.__sendCallTrace">__sendCallTrace</a></td>
+<td>Private method to send a call/return trace.</td>
+</tr>
+<tr>
+<td><a href="#DebugBase.__set_stepinstr">__set_stepinstr</a></td>
+<td>Private method to stop before the next instruction.</td>
+</tr>
+<tr>
+<td><a href="#DebugBase.__skip_file">__skip_file</a></td>
+<td>Private method to filter out debugger files.</td>
+</tr>
+<tr>
+<td><a href="#DebugBase._has_breakpoint">_has_breakpoint</a></td>
+<td>Protected method to check if there is a breakpoint inside the code object.</td>
+</tr>
+<tr>
+<td><a href="#DebugBase.bootstrap">bootstrap</a></td>
+<td>Public method to bootstrap a thread.</td>
+</tr>
+<tr>
+<td><a href="#DebugBase.getFrame">getFrame</a></td>
+<td>Public method to return the frame "frmnr" down the stack.</td>
+</tr>
+<tr>
+<td><a href="#DebugBase.getFrameLocals">getFrameLocals</a></td>
+<td>Public method to return the locals dictionary of the current frame or a frame below.</td>
+</tr>
+<tr>
+<td><a href="#DebugBase.getStack">getStack</a></td>
+<td>Public method to get the stack.</td>
+</tr>
+<tr>
+<td><a href="#DebugBase.go">go</a></td>
+<td>Public method to resume the thread.</td>
+</tr>
+<tr>
+<td><a href="#DebugBase.move_instruction_pointer">move_instruction_pointer</a></td>
+<td>Public method to move the instruction pointer to another line.</td>
+</tr>
+<tr>
+<td><a href="#DebugBase.reset_debug_information">reset_debug_information</a></td>
+<td>Public method to reset the cached debug information.</td>
+</tr>
+<tr>
+<td><a href="#DebugBase.reset_profile">reset_profile</a></td>
+<td>Public method to disable call trace profiling.</td>
+</tr>
+<tr>
+<td><a href="#DebugBase.reset_trace">reset_trace</a></td>
+<td>Public method to disable debugging.</td>
+</tr>
+<tr>
+<td><a href="#DebugBase.run">run</a></td>
+<td>Public method to start a given command under debugger control.</td>
+</tr>
+<tr>
+<td><a href="#DebugBase.setRecursionDepth">setRecursionDepth</a></td>
+<td>Public method to determine the current recursion depth.</td>
+</tr>
+<tr>
+<td><a href="#DebugBase.set_profile">set_profile</a></td>
+<td>Public method to enable call trace profiling.</td>
+</tr>
+<tr>
+<td><a href="#DebugBase.set_quit">set_quit</a></td>
+<td>Public method to quit debugging.</td>
+</tr>
+<tr>
+<td><a href="#DebugBase.set_trace">set_trace</a></td>
+<td>Public method to enable debugging.</td>
+</tr>
+<tr>
+<td><a href="#DebugBase.set_until">set_until</a></td>
+<td>Public method to stop when the line with the lineno greater than the current one is reached or when returning from current frame.</td>
+</tr>
+<tr>
+<td><a href="#DebugBase.step">step</a></td>
+<td>Public method to perform a step operation in this thread.</td>
+</tr>
+<tr>
+<td><a href="#DebugBase.stepOut">stepOut</a></td>
+<td>Public method to perform a step out of the current call.</td>
+</tr>
+<tr>
+<td><a href="#DebugBase.storeFrameLocals">storeFrameLocals</a></td>
+<td>Public method to store the locals into the frame, so an access to frame.f_locals returns the last data.</td>
+</tr>
+<tr>
+<td><a href="#DebugBase.tracePythonLibs">tracePythonLibs</a></td>
+<td>Public method to update the settings to trace into Python libraries.</td>
+</tr>
+<tr>
+<td><a href="#DebugBase.user_exception">user_exception</a></td>
+<td>Public method to report an exception to the debug server and wait for user.</td>
+</tr>
+<tr>
+<td><a href="#DebugBase.user_line">user_line</a></td>
+<td>Public method to handle the user interaction of a particular line.</td>
+</tr>
+</table>
+
+<h3>Static Methods</h3>
+<table>
+<tr><td>None</td></tr>
+</table>
+
+
+<a NAME="DebugBase.__init__" ID="DebugBase.__init__"></a>
+<h4>DebugBase (Constructor)</h4>
+<b>DebugBase</b>(<i>dbgClient=None</i>)
+<p>
+        Constructor of DebugBase.
+</p>
+
+<dl>
+
+<dt><i>dbgClient</i> (DebugClient)</dt>
+<dd>
+the owning client
+</dd>
+</dl>
+<a NAME="DebugBase.__disassemble" ID="DebugBase.__disassemble"></a>
+<h4>DebugBase.__disassemble</h4>
+<b>__disassemble</b>(<i>frame</i>)
+<p>
+        Private method to generate a disassembly of the given code object.
+</p>
+
+<dl>
+
+<dt><i>frame</i> (code)</dt>
+<dd>
+frame object to be disassembled
+</dd>
+</dl>
+<dl>
+<dt>Return:</dt>
+<dd>
+dictionary containing the disassembly information
+</dd>
+</dl>
+<dl>
+<dt>Return Type:</dt>
+<dd>
+dict
+</dd>
+</dl>
+<a NAME="DebugBase.__event_poll_timer" ID="DebugBase.__event_poll_timer"></a>
+<h4>DebugBase.__event_poll_timer</h4>
+<b>__event_poll_timer</b>(<i></i>)
+<p>
+        Private method to check every second for new commands.
+</p>
+
+<a NAME="DebugBase.__extractSystemExitMessage" ID="DebugBase.__extractSystemExitMessage"></a>
+<h4>DebugBase.__extractSystemExitMessage</h4>
+<b>__extractSystemExitMessage</b>(<i>excinfo</i>)
+<p>
+        Private method to get the SystemExit code and message.
+</p>
+
+<dl>
+
+<dt><i>excinfo</i> (tuple(Exception, excval object, traceback frame object))</dt>
+<dd>
+details about the SystemExit exception
+</dd>
+</dl>
+<dl>
+<dt>Return:</dt>
+<dd>
+SystemExit code and message
+</dd>
+</dl>
+<dl>
+<dt>Return Type:</dt>
+<dd>
+int, str
+</dd>
+</dl>
+<a NAME="DebugBase.__extract_stack" ID="DebugBase.__extract_stack"></a>
+<h4>DebugBase.__extract_stack</h4>
+<b>__extract_stack</b>(<i>exctb</i>)
+<p>
+        Private member to return a list of stack frames.
+</p>
+
+<dl>
+
+<dt><i>exctb</i> (traceback)</dt>
+<dd>
+exception traceback
+</dd>
+</dl>
+<dl>
+<dt>Return:</dt>
+<dd>
+list of stack frames
+</dd>
+</dl>
+<dl>
+<dt>Return Type:</dt>
+<dd>
+list of frame
+</dd>
+</dl>
+<a NAME="DebugBase.__fix_frame_filename" ID="DebugBase.__fix_frame_filename"></a>
+<h4>DebugBase.__fix_frame_filename</h4>
+<b>__fix_frame_filename</b>(<i>frame</i>)
+<p>
+        Private method used to fixup the filename for a given frame.
+</p>
+<p>
+        The logic employed here is that if a module was loaded
+        from a .pyc file, then the correct .py to operate with
+        should be in the same path as the .pyc. The reason this
+        logic is needed is that when a .pyc file is generated, the
+        filename embedded and thus what is readable in the code object
+        of the frame object is the fully qualified filepath when the
+        pyc is generated. If files are moved from machine to machine
+        this can break debugging as the .pyc will refer to the .py
+        on the original machine. Another case might be sharing
+        code over a network... This logic deals with that.
+</p>
+
+<dl>
+
+<dt><i>frame</i> (frame object)</dt>
+<dd>
+the frame object
+</dd>
+</dl>
+<dl>
+<dt>Return:</dt>
+<dd>
+fixed up file name
+</dd>
+</dl>
+<dl>
+<dt>Return Type:</dt>
+<dd>
+str
+</dd>
+</dl>
+<a NAME="DebugBase.__monitor_exception" ID="DebugBase.__monitor_exception"></a>
+<h4>DebugBase.__monitor_exception</h4>
+<b>__monitor_exception</b>(<i>code: CodeType, _instruction_offset: int, exception: BaseException</i>)
+<p>
+        Private method to handle exception events.
+</p>
+<p>
+        Every exception is handled here. It's not possible to disable it.
+</p>
+<p>
+        Because user_exception() requires a triple like returned by sys.exc_info() but
+        sys.exc_info() is returning None at this point, an artificial exc_info is
+        created here.
+</p>
+
+<dl>
+
+<dt><i>code</i> (CodeType)</dt>
+<dd>
+current code object
+</dd>
+<dt><i>_instruction_offset</i> (int)</dt>
+<dd>
+where the call is performed next
+</dd>
+<dt><i>exception</i> (subclass of BaseException)</dt>
+<dd>
+the exception itself
+</dd>
+</dl>
+<a NAME="DebugBase.__monitor_line" ID="DebugBase.__monitor_line"></a>
+<h4>DebugBase.__monitor_line</h4>
+<b>__monitor_line</b>(<i>code: CodeType, line_number: int</i>)
+<p>
+        Private method to handle line events.
+</p>
+<p>
+        When stepping through the code, for each line we have to wait for the user.
+        Otherwise we check, if current line has a breakpoint. If so, wait for user else
+        just continue because in one of those code lines should be a breakpoint.
+        Watchpoints are handled the same as breakpoints.
+</p>
+
+<dl>
+
+<dt><i>code</i> (CodeType)</dt>
+<dd>
+current code object
+</dd>
+<dt><i>line_number</i> (int)</dt>
+<dd>
+current line number
+</dd>
+</dl>
+<dl>
+<dt>Return:</dt>
+<dd>
+monitoring.DISABLE if further calls from this code object should be
+            suppressed
+</dd>
+</dl>
+<dl>
+<dt>Return Type:</dt>
+<dd>
+None | monitoring.DISABLE
+</dd>
+</dl>
+<a NAME="DebugBase.__monitor_py_return" ID="DebugBase.__monitor_py_return"></a>
+<h4>DebugBase.__monitor_py_return</h4>
+<b>__monitor_py_return</b>(<i>_code: CodeType, _instruction_offset: int, _retval: object</i>)
+<p>
+        Private method to handle return events.
+</p>
+<p>
+        When leaving a Python frame this event is triggered if PY_RETURN is enabled.
+        This is used to activate line events when leaving a frame with the command step
+        over, because the step over command want to stop at the current frame.
+</p>
+
+<dl>
+
+<dt><i>_code</i> (CodeType)</dt>
+<dd>
+current code object
+</dd>
+<dt><i>_instruction_offset</i> (int)</dt>
+<dd>
+where the call is performed next
+</dd>
+<dt><i>_retval</i> (object)</dt>
+<dd>
+first return value of the function / method or None
+</dd>
+</dl>
+<a NAME="DebugBase.__monitor_py_start" ID="DebugBase.__monitor_py_start"></a>
+<h4>DebugBase.__monitor_py_start</h4>
+<b>__monitor_py_start</b>(<i>code: CodeType, _instruction_offset: int</i>)
+<p>
+        Private method to handle event when entering the next Python frame.
+</p>
+<p>
+        Check if this code object could be of interest, e.g. is there a breakpoint or
+        are we stepped in. In those cases enable line events to get __monitor_line
+        called, otherwise just return monitoring.DISABLE and we don't visit this code
+        object till reenabled by calling monitoring.restart_events().
+</p>
+
+<dl>
+
+<dt><i>code</i> (CodeType)</dt>
+<dd>
+current code object
+</dd>
+<dt><i>_instruction_offset</i> (int)</dt>
+<dd>
+where the call is performed next
+</dd>
+</dl>
+<dl>
+<dt>Return:</dt>
+<dd>
+monitoring.DISABLE if further calls from this code object should be
+            suppressed
+</dd>
+</dl>
+<dl>
+<dt>Return Type:</dt>
+<dd>
+None | monitoring.DISABLE
+</dd>
+</dl>
+<a NAME="DebugBase.__profile_c_return" ID="DebugBase.__profile_c_return"></a>
+<h4>DebugBase.__profile_c_return</h4>
+<b>__profile_c_return</b>(<i>code: CodeType, _instruction_offset: int, callable_object: object, _arg0: object, </i>)
+<p>
+        Private method to profile the return from C-code frame. # NOTE: Maybe unused...
+</p>
+
+<dl>
+
+<dt><i>code</i> (CodeType)</dt>
+<dd>
+current code object
+</dd>
+<dt><i>_instruction_offset</i> (int)</dt>
+<dd>
+where the call is performed next
+</dd>
+<dt><i>callable_object</i> (object)</dt>
+<dd>
+function / method which will be called
+</dd>
+<dt><i>_arg0</i> (object)</dt>
+<dd>
+First argument of the call
+</dd>
+</dl>
+<dl>
+<dt>Return:</dt>
+<dd>
+monitoring.DISABLE if further calls from this code object should be
+            suppressed
+</dd>
+</dl>
+<dl>
+<dt>Return Type:</dt>
+<dd>
+None | monitoring.DISABLE
+</dd>
+</dl>
+<a NAME="DebugBase.__profile_call" ID="DebugBase.__profile_call"></a>
+<h4>DebugBase.__profile_call</h4>
+<b>__profile_call</b>(<i>code: CodeType, _instruction_offset: int, callable_object: object, _arg0: object, </i>)
+<p>
+        Private method to profile the next function / method call.
+</p>
+
+<dl>
+
+<dt><i>code</i> (CodeType)</dt>
+<dd>
+current code object
+</dd>
+<dt><i>_instruction_offset</i> (int)</dt>
+<dd>
+where the call is performed next
+</dd>
+<dt><i>callable_object</i> (object)</dt>
+<dd>
+function / method which will be called
+</dd>
+<dt><i>_arg0</i> (object)</dt>
+<dd>
+First argument of the call
+</dd>
+</dl>
+<dl>
+<dt>Return:</dt>
+<dd>
+monitoring.DISABLE if further calls from this code object should be
+            suppressed
+</dd>
+</dl>
+<dl>
+<dt>Return Type:</dt>
+<dd>
+None | monitoring.DISABLE
+</dd>
+</dl>
+<dl>
+
+<dt>Raises <b>RuntimeError</b>:</dt>
+<dd>
+when maximum recursion depth exceeded
+</dd>
+</dl>
+<a NAME="DebugBase.__profile_py_return" ID="DebugBase.__profile_py_return"></a>
+<h4>DebugBase.__profile_py_return</h4>
+<b>__profile_py_return</b>(<i>code: CodeType, _instruction_offset: int, _retval: object</i>)
+<p>
+        Private method to profile the return from current Python frame.
+</p>
+
+<dl>
+
+<dt><i>code</i> (CodeType)</dt>
+<dd>
+current code object
+</dd>
+<dt><i>_instruction_offset</i> (int)</dt>
+<dd>
+offset of the return statement
+</dd>
+<dt><i>_retval</i> (object)</dt>
+<dd>
+value of the return statement
+</dd>
+</dl>
+<dl>
+<dt>Return:</dt>
+<dd>
+monitoring.DISABLE if further calls from this code object should be
+            suppressed
+</dd>
+</dl>
+<dl>
+<dt>Return Type:</dt>
+<dd>
+None | monitoring.DISABLE
+</dd>
+</dl>
+<a NAME="DebugBase.__sendCallTrace" ID="DebugBase.__sendCallTrace"></a>
+<h4>DebugBase.__sendCallTrace</h4>
+<b>__sendCallTrace</b>(<i>event, from_frame, to_frame</i>)
+<p>
+        Private method to send a call/return trace.
+</p>
+
+<dl>
+
+<dt><i>event</i> (str)</dt>
+<dd>
+trace event
+</dd>
+<dt><i>from_frame</i> (frame object)</dt>
+<dd>
+originating frame
+</dd>
+<dt><i>to_frame</i> (frame object)</dt>
+<dd>
+destination frame
+</dd>
+</dl>
+<a NAME="DebugBase.__set_stepinstr" ID="DebugBase.__set_stepinstr"></a>
+<h4>DebugBase.__set_stepinstr</h4>
+<b>__set_stepinstr</b>(<i></i>)
+<p>
+        Private method to stop before the next instruction.
+</p>
+
+<a NAME="DebugBase.__skip_file" ID="DebugBase.__skip_file"></a>
+<h4>DebugBase.__skip_file</h4>
+<b>__skip_file</b>(<i>co_filename</i>)
+<p>
+        Private method to filter out debugger files.
+</p>
+<p>
+        Tracing is turned off for files that are part of the
+        debugger that are called from the application being debugged.
+</p>
+
+<dl>
+
+<dt><i>co_filename</i> (co_filename str)</dt>
+<dd>
+the frame's filename
+</dd>
+</dl>
+<dl>
+<dt>Return:</dt>
+<dd>
+flag indicating whether the debugger should skip this file
+</dd>
+</dl>
+<dl>
+<dt>Return Type:</dt>
+<dd>
+bool
+</dd>
+</dl>
+<a NAME="DebugBase._has_breakpoint" ID="DebugBase._has_breakpoint"></a>
+<h4>DebugBase._has_breakpoint</h4>
+<b>_has_breakpoint</b>(<i>code: CodeType</i>)
+<p>
+        Protected method to check if there is a breakpoint inside the code object.
+</p>
+
+<dl>
+
+<dt><i>code</i> (CodeType)</dt>
+<dd>
+current code object
+</dd>
+</dl>
+<dl>
+<dt>Return:</dt>
+<dd>
+Flag if breakpoint in code object found
+</dd>
+</dl>
+<dl>
+<dt>Return Type:</dt>
+<dd>
+bool
+</dd>
+</dl>
+<a NAME="DebugBase.bootstrap" ID="DebugBase.bootstrap"></a>
+<h4>DebugBase.bootstrap</h4>
+<b>bootstrap</b>(<i>target, args, kwargs</i>)
+<p>
+        Public method to bootstrap a thread.
+</p>
+<p>
+        It wraps the call to the user function to enable tracing
+        before hand.
+</p>
+
+<dl>
+
+<dt><i>target</i> (function pointer)</dt>
+<dd>
+function which is called in the new created thread
+</dd>
+<dt><i>args</i> (tuple)</dt>
+<dd>
+arguments to pass to target
+</dd>
+<dt><i>kwargs</i> (dict)</dt>
+<dd>
+keyword arguments to pass to target
+</dd>
+</dl>
+<a NAME="DebugBase.getFrame" ID="DebugBase.getFrame"></a>
+<h4>DebugBase.getFrame</h4>
+<b>getFrame</b>(<i>frmnr=0</i>)
+<p>
+        Public method to return the frame "frmnr" down the stack.
+</p>
+
+<dl>
+
+<dt><i>frmnr</i> (int)</dt>
+<dd>
+distance of frames down the stack. 0 is
+            the current frame
+</dd>
+</dl>
+<dl>
+<dt>Return:</dt>
+<dd>
+the current frame
+</dd>
+</dl>
+<dl>
+<dt>Return Type:</dt>
+<dd>
+frame object
+</dd>
+</dl>
+<a NAME="DebugBase.getFrameLocals" ID="DebugBase.getFrameLocals"></a>
+<h4>DebugBase.getFrameLocals</h4>
+<b>getFrameLocals</b>(<i>frmnr=0</i>)
+<p>
+        Public method to return the locals dictionary of the current frame
+        or a frame below.
+</p>
+
+<dl>
+
+<dt><i>frmnr</i> (int)</dt>
+<dd>
+distance of frame to get locals dictionary of. 0 is
+            the current frame
+</dd>
+</dl>
+<dl>
+<dt>Return:</dt>
+<dd>
+locals dictionary of the frame
+</dd>
+</dl>
+<dl>
+<dt>Return Type:</dt>
+<dd>
+dict
+</dd>
+</dl>
+<a NAME="DebugBase.getStack" ID="DebugBase.getStack"></a>
+<h4>DebugBase.getStack</h4>
+<b>getStack</b>(<i>frame=None, frame_list=None</i>)
+<p>
+        Public method to get the stack.
+</p>
+
+<dl>
+
+<dt><i>frame</i> (frame object or list)</dt>
+<dd>
+frame object to inspect
+</dd>
+<dt><i>frame_list</i> (list or None)</dt>
+<dd>
+where to store the frame information
+</dd>
+</dl>
+<dl>
+<dt>Return:</dt>
+<dd>
+list of lists with file name, line number, function name
+            and function arguments
+</dd>
+</dl>
+<dl>
+<dt>Return Type:</dt>
+<dd>
+list of list of [str, int, str, str]
+</dd>
+</dl>
+<a NAME="DebugBase.go" ID="DebugBase.go"></a>
+<h4>DebugBase.go</h4>
+<b>go</b>(<i>special=events.NO_EVENTS</i>)
+<p>
+        Public method to resume the thread.
+</p>
+<p>
+        It resumes the thread stopping only at breakpoints or exceptions.
+</p>
+
+<dl>
+
+<dt><i>special</i> (bool | events)</dt>
+<dd>
+flag indicating a special continue operation
+</dd>
+</dl>
+<a NAME="DebugBase.move_instruction_pointer" ID="DebugBase.move_instruction_pointer"></a>
+<h4>DebugBase.move_instruction_pointer</h4>
+<b>move_instruction_pointer</b>(<i>lineno</i>)
+<p>
+        Public method to move the instruction pointer to another line.
+</p>
+
+<dl>
+
+<dt><i>lineno</i> (int)</dt>
+<dd>
+new line number
+</dd>
+</dl>
+<a NAME="DebugBase.reset_debug_information" ID="DebugBase.reset_debug_information"></a>
+<h4>DebugBase.reset_debug_information</h4>
+<b>reset_debug_information</b>(<i></i>)
+<p>
+        Public method to reset the cached debug information.
+</p>
+<p>
+        This is needed to enable newly set breakpoints or watches, because the debugger
+        might stepped already through some of those code objects and disabled further
+        processing for speed optimization.
+</p>
+
+<a NAME="DebugBase.reset_profile" ID="DebugBase.reset_profile"></a>
+<h4>DebugBase.reset_profile</h4>
+<b>reset_profile</b>(<i></i>)
+<p>
+        Public method to disable call trace profiling.
+</p>
+
+<a NAME="DebugBase.reset_trace" ID="DebugBase.reset_trace"></a>
+<h4>DebugBase.reset_trace</h4>
+<b>reset_trace</b>(<i></i>)
+<p>
+        Public method to disable debugging.
+</p>
+
+<a NAME="DebugBase.run" ID="DebugBase.run"></a>
+<h4>DebugBase.run</h4>
+<b>run</b>(<i>cmd, globalsDict=None, localsDict=None, debug=True, closeSession=True</i>)
+<p>
+        Public method to start a given command under debugger control.
+</p>
+
+<dl>
+
+<dt><i>cmd</i> (str or CodeType)</dt>
+<dd>
+command / code to execute under debugger control
+</dd>
+<dt><i>globalsDict</i> (dict)</dt>
+<dd>
+dictionary of global variables for cmd
+</dd>
+<dt><i>localsDict</i> (dict)</dt>
+<dd>
+dictionary of local variables for cmd
+</dd>
+<dt><i>debug</i> (bool)</dt>
+<dd>
+flag if command should run under debugger control
+</dd>
+<dt><i>closeSession</i> (bool)</dt>
+<dd>
+flag indicating to close the debugger session
+            at exit
+</dd>
+</dl>
+<dl>
+<dt>Return:</dt>
+<dd>
+exit code of the program
+</dd>
+</dl>
+<dl>
+<dt>Return Type:</dt>
+<dd>
+int
+</dd>
+</dl>
+<a NAME="DebugBase.setRecursionDepth" ID="DebugBase.setRecursionDepth"></a>
+<h4>DebugBase.setRecursionDepth</h4>
+<b>setRecursionDepth</b>(<i>frame</i>)
+<p>
+        Public method to determine the current recursion depth.
+</p>
+
+<dl>
+
+<dt><i>frame</i> (frame object)</dt>
+<dd>
+The current stack frame.
+</dd>
+</dl>
+<a NAME="DebugBase.set_profile" ID="DebugBase.set_profile"></a>
+<h4>DebugBase.set_profile</h4>
+<b>set_profile</b>(<i></i>)
+<p>
+        Public method to enable call trace profiling.
+</p>
+
+<a NAME="DebugBase.set_quit" ID="DebugBase.set_quit"></a>
+<h4>DebugBase.set_quit</h4>
+<b>set_quit</b>(<i></i>)
+<p>
+        Public method to quit debugging.
+</p>
+<p>
+        Disables the trace functions and resets all frame pointer.
+</p>
+
+<a NAME="DebugBase.set_trace" ID="DebugBase.set_trace"></a>
+<h4>DebugBase.set_trace</h4>
+<b>set_trace</b>(<i>start_line_trace=True</i>)
+<p>
+        Public method to enable debugging.
+</p>
+
+<dl>
+
+<dt><i>start_line_trace</i> (bool)</dt>
+<dd>
+start debugging with the next line
+</dd>
+</dl>
+<a NAME="DebugBase.set_until" ID="DebugBase.set_until"></a>
+<h4>DebugBase.set_until</h4>
+<b>set_until</b>(<i>lineno</i>)
+<p>
+        Public method to stop when the line with the lineno greater than the
+        current one is reached or when returning from current frame.
+</p>
+<p>
+        The name "until" is borrowed from gdb.
+</p>
+
+<dl>
+
+<dt><i>lineno</i> (int)</dt>
+<dd>
+line number to continue to
+</dd>
+</dl>
+<a NAME="DebugBase.step" ID="DebugBase.step"></a>
+<h4>DebugBase.step</h4>
+<b>step</b>(<i>step_into</i>)
+<p>
+        Public method to perform a step operation in this thread.
+</p>
+
+<dl>
+
+<dt><i>step_into</i> (bool)</dt>
+<dd>
+If it is True, then the step is a step into,
+            otherwise it is a step over.
+</dd>
+</dl>
+<a NAME="DebugBase.stepOut" ID="DebugBase.stepOut"></a>
+<h4>DebugBase.stepOut</h4>
+<b>stepOut</b>(<i></i>)
+<p>
+        Public method to perform a step out of the current call.
+</p>
+
+<a NAME="DebugBase.storeFrameLocals" ID="DebugBase.storeFrameLocals"></a>
+<h4>DebugBase.storeFrameLocals</h4>
+<b>storeFrameLocals</b>(<i>frmnr=0</i>)
+<p>
+        Public method to store the locals into the frame, so an access to
+        frame.f_locals returns the last data.
+</p>
+
+<dl>
+
+<dt><i>frmnr</i> (int)</dt>
+<dd>
+distance of frame to store locals dictionary to. 0 is
+            the current frame
+</dd>
+</dl>
+<a NAME="DebugBase.tracePythonLibs" ID="DebugBase.tracePythonLibs"></a>
+<h4>DebugBase.tracePythonLibs</h4>
+<b>tracePythonLibs</b>(<i>enable</i>)
+<p>
+        Public method to update the settings to trace into Python libraries.
+</p>
+
+<dl>
+
+<dt><i>enable</i> (bool)</dt>
+<dd>
+flag to debug into Python libraries
+</dd>
+</dl>
+<a NAME="DebugBase.user_exception" ID="DebugBase.user_exception"></a>
+<h4>DebugBase.user_exception</h4>
+<b>user_exception</b>(<i>excinfo, unhandled=False</i>)
+<p>
+        Public method to report an exception to the debug server and wait for user.
+</p>
+
+<dl>
+
+<dt><i>excinfo</i> (tuple(Exception, excval object, traceback frame object))</dt>
+<dd>
+details about the exception
+</dd>
+<dt><i>unhandled</i> (bool)</dt>
+<dd>
+flag indicating an uncaught exception
+</dd>
+</dl>
+<a NAME="DebugBase.user_line" ID="DebugBase.user_line"></a>
+<h4>DebugBase.user_line</h4>
+<b>user_line</b>(<i>thread_id, frame</i>)
+<p>
+        Public method to handle the user interaction of a particular line.
+</p>
+
+<dl>
+
+<dt><i>thread_id</i> (int)</dt>
+<dd>
+the current tread id
+</dd>
+<dt><i>frame</i> (frame object)</dt>
+<dd>
+reference to the frame object
+</dd>
+</dl>
+<div align="right"><a href="#top">Up</a></div>
+<hr />
+<hr />
+<a NAME="printerr" ID="printerr"></a>
+<h2>printerr</h2>
+<b>printerr</b>(<i>s</i>)
+<p>
+    Module function used for debugging the debug client.
+</p>
+
+<dl>
+
+<dt><i>s</i> (str)</dt>
+<dd>
+data to be printed
+</dd>
+</dl>
+<div align="right"><a href="#top">Up</a></div>
+<hr />
+<hr />
+<a NAME="setRecursionLimit" ID="setRecursionLimit"></a>
+<h2>setRecursionLimit</h2>
+<b>setRecursionLimit</b>(<i>limit</i>)
+<p>
+    Module function to set the recursion limit.
+</p>
+
+<dl>
+
+<dt><i>limit</i> (int)</dt>
+<dd>
+recursion limit
+</dd>
+</dl>
+<div align="right"><a href="#top">Up</a></div>
+<hr />
+</body></html>

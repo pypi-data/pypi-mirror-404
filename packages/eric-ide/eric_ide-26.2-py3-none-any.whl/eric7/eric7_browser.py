@@ -1,0 +1,134 @@
+#!/usr/bin/env python3
+
+#
+# Copyright (c) 2002 - 2026 Detlev Offenbach <detlev@die-offenbachs.de>
+#
+
+"""
+eric Web Browser.
+
+This is the main Python script that performs the necessary initialization
+of the web browser and starts the Qt event loop. This is a standalone version
+of the integrated web browser. It is based on QtWebEngine.
+"""
+
+import importlib
+import os
+import sys
+
+from PyQt6.QtGui import QGuiApplication
+
+from eric7 import EricUtilities
+from eric7.EricWidgets.EricApplication import EricApplication
+from eric7.Toolbox import Startup
+from eric7.WebBrowser.WebBrowserArgumentsCreator import createArgparseNamespace
+from eric7.WebBrowser.WebBrowserSingleApplication import (
+    WebBrowserSingleApplicationClient,
+)
+
+args = createArgparseNamespace()
+if args.config:
+    EricUtilities.setConfigDir(args.config)
+if args.settings:
+    from PyQt6.QtCore import QSettings
+
+    SettingsDir = os.path.expanduser(args.settings)
+    if not os.path.isdir(SettingsDir):
+        os.makedirs(SettingsDir)
+    QSettings.setPath(
+        QSettings.Format.IniFormat, QSettings.Scope.UserScope, SettingsDir
+    )
+else:
+    SettingsDir = None
+
+app = None
+
+if importlib.util.find_spec("PyQt6.QtWebEngineWidgets") is not None:
+    from PyQt6.QtWebEngineCore import QWebEngineUrlScheme
+else:
+    if "--quiet" not in sys.argv:
+        from PyQt6.QtCore import QTimer
+        from PyQt6.QtWidgets import QApplication
+
+        from eric7.EricWidgets import EricMessageBox
+
+        app = QApplication([])
+        QTimer.singleShot(
+            0,
+            lambda: EricMessageBox.critical(
+                None,
+                "eric Web Browser",
+                "QtWebEngineWidgets is not installed but needed to execute the"
+                " web browser.",
+            ),
+        )
+        app.exec()
+    sys.exit(100)
+
+
+def createMainWidget(args):
+    """
+    Function to create the main widget.
+
+    @param args namespace object containing the parsed command line parameters
+    @type argparse.Namespace
+    @return reference to the main widget
+    @rtype QWidget
+    """
+    from eric7.WebBrowser.WebBrowserWindow import WebBrowserWindow
+
+    return WebBrowserWindow(
+        args.home,
+        None,
+        "web_browser",
+        searchWord=args.search,
+        private=args.private,
+        settingsDir=SettingsDir,
+        qthelp=args.qthelp,
+        single=args.single,
+        saname=args.name,
+    )
+
+
+def main():
+    """
+    Main entry point into the application.
+    """
+    global app
+
+    QGuiApplication.setDesktopFileName("eric7_browser")
+
+    # set the library paths for plugins
+    Startup.setLibraryPaths()
+
+    scheme = QWebEngineUrlScheme(b"eric")
+    scheme.setSyntax(QWebEngineUrlScheme.Syntax.Path)
+    scheme.setFlags(
+        QWebEngineUrlScheme.Flag.SecureScheme
+        | QWebEngineUrlScheme.Flag.ContentSecurityPolicyIgnored
+    )
+    QWebEngineUrlScheme.registerScheme(scheme)
+    if args.qthelp:
+        scheme = QWebEngineUrlScheme(b"qthelp")
+        scheme.setSyntax(QWebEngineUrlScheme.Syntax.Path)
+        scheme.setFlags(QWebEngineUrlScheme.Flag.SecureScheme)
+        QWebEngineUrlScheme.registerScheme(scheme)
+
+    app = EricApplication(args)
+    if not args.private:
+        client = WebBrowserSingleApplicationClient()
+        res = client.connect()
+        if res > 0:
+            client.processArgs(args)
+            sys.exit(0)
+        elif res < 0:
+            print("eric7_browser: {0}".format(client.errstr()))  # noqa: T201,M-801
+            # __IGNORE_WARNING_M-801__
+            sys.exit(res)
+
+    res = Startup.appStartup(args, createMainWidget, installErrorHandler=True, app=app)
+    sys.exit(res)
+
+
+if __name__ == "__main__":
+    main()

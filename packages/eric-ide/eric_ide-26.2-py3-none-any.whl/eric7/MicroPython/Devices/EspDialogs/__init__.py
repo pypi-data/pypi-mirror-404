@@ -1,0 +1,7 @@
+#
+# Copyright (c) 2023 - 2026 Detlev Offenbach <detlev@die-offenbachs.de>
+#
+
+"""
+Package implementing dialogs used by the EspDevices module.
+"""
