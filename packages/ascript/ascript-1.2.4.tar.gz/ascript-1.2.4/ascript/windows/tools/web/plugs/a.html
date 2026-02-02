@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>RapidOCR Visual Tool</title>
+    <link href="../libs/bootstrap/css/bootstrap.min.css" rel="stylesheet">
+    <link href="../libs/bootstrap-icons/font/bootstrap-icons.css" rel="stylesheet">
+
+    <style>
+        :root {
+            --editor-bg: #1e1e1e;
+            --panel-bg: #252526;
+            --border-color: #333333;
+            --accent-color: #007acc;
+        }
+
+        html,
+        body {
+            height: 100%;
+            margin: 0;
+            background: var(--editor-bg);
+            color: #ccc;
+            font-size: 13px;
+            overflow: hidden;
+        }
+
+        .main-layout {
+            display: flex;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        /* ---------- 左侧面板 ---------- */
+        .settings-panel {
+            width: 320px;
+            background: var(--panel-bg);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            padding: 12px;
+            overflow: hidden;
+        }
+
+        .section-title {
+            color: var(--accent-color);
+            font-size: 10px;
+            font-weight: bold;
+            margin: 14px 0 8px;
+            border-bottom: 1px solid #333;
+            text-transform: uppercase;
+        }
+
+        .form-label {
+            font-size: 11px;
+            color: #888;
+        }
+
+        .form-select {
+            background: #3c3c3c;
+            border: 1px solid #3c3c3c;
+            color: #eee;
+            font-size: 11px;
+            height: 26px;
+        }
+
+        /* ---------- 结果列表 ---------- */
+        .results-wrapper {
+            margin-top: 10px;
+            border: 1px solid #333;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            overflow: hidden;
+        }
+
+        .results-header {
+            padding: 6px 8px;
+            font-size: 11px;
+            background: #1b1b1b;
+            border-bottom: 1px solid #333;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .results-list {
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        .ocr-item {
+            padding: 6px;
+            font-size: 11px;
+            display: flex;
+            gap: 6px;
+            border-bottom: 1px solid #333;
+            cursor: pointer;
+        }
+
+        .ocr-item:hover {
+            background: #2a2a2a;
+        }
+
+        /* ---------- 工作区 ---------- */
+        .workspace {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .canvas-area {
+            flex: 1;
+            background: #111;
+            overflow: auto;
+            /* 允许滚动 */
+            display: flex;
+            justify-content: flex-start;
+            /* 左上角对齐 */
+            align-items: flex-start;
+        }
+
+        .img-viewport {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: #111;
+    overflow: hidden; /* 不显示滚动条 */
+}
+
+.img-viewport img {
+    max-width: 100%;
+    max-height: 100%;
+    display: block;
+    cursor: pointer; /* 鼠标悬浮显示可点击 */
+}
+
+
+
+        .code-console {
+            height: 35%;
+            background: #000;
+            border-top: 1px solid #333;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .code-display {
+            flex: 1;
+            padding: 10px;
+            font-family: Consolas, monospace;
+            font-size: 11px;
+            color: #9cdcfe;
+            overflow: auto;
+            white-space: pre;
+        }
+
+        /* ---------- 初始化遮罩 ---------- */
+        #init-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(30, 30, 30, 0.98);
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #log-container {
+            width: 420px;
+            height: 160px;
+            background: #000;
+            color: #0f0;
+            font-family: monospace;
+            font-size: 11px;
+            padding: 8px;
+            border: 1px solid #444;
+            overflow-y: auto;
+        }
+
+        /* results-list 和 log-container 滚动条 */
+        .results-list::-webkit-scrollbar,
+        #log-container::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        .results-list::-webkit-scrollbar-track,
+        #log-container::-webkit-scrollbar-track {
+            background: #1b1b1b;
+        }
+
+        .results-list::-webkit-scrollbar-thumb,
+        #log-container::-webkit-scrollbar-thumb {
+            background-color: rgba(100, 100, 100, 0.6);
+            border-radius: 4px;
+        }
+
+        .results-list::-webkit-scrollbar-thumb:hover,
+        #log-container::-webkit-scrollbar-thumb:hover {
+            background-color: rgba(150, 150, 150, 0.8);
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="init-overlay">
+        <div class="spinner-border text-primary mb-2"></div>
+        <h6 id="init-text">RapidOCR 运行环境检查...</h6>
+        <div id="log-container">
+            <div>> 等待 Python 响应...</div>
+        </div>
+    </div>
+
+    <div class="main-layout">
+
+        <!-- 左侧 -->
+        <div class="settings-panel">
+
+            <!-- 引擎 / Det / Rec 面板保持原样 -->
+            <div class="section-title" style="margin-top:0">引擎配置</div>
+
+            <label class="form-label">推理引擎</label>
+            <select class="form-select mb-2" id="global-engine">
+                <option value="ONNXRUNTIME" selected>ONNXRuntime</option>
+                <option value="OPENVINO">OpenVINO</option>
+                <option value="PADDLE">Paddle</option>
+            </select>
+
+            <div class="section-title">Det / Cls</div>
+            <div class="row g-2 mb-2">
+                <div class="col-6">
+                    <label class="form-label">版本</label>
+                    <select class="form-select" id="det-cls-ver">
+                        <option value="PPOCRV4" selected>PP-OCRv4</option>
+                        <option value="PPOCRV5">PP-OCRv5</option>
+                    </select>
+                </div>
+                <div class="col-6">
+                    <label class="form-label">方向分类</label>
+                    <select class="form-select" id="cls-enabled">
+                        <option value="True" selected>开启</option>
+                        <option value="False">关闭</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="section-title">Rec</div>
+            <div class="row g-2 mb-2">
+                <div class="col-6">
+                    <label class="form-label">版本</label>
+                    <select class="form-select" id="rec-ver">
+                        <option value="PPOCRV5" selected>PP-OCRv5</option>
+                        <option value="PPOCRV4">PP-OCRv4</option>
+                    </select>
+                </div>
+                <div class="col-6">
+                    <label class="form-label">语言</label>
+                    <select class="form-select" id="rec-lang">
+                        <option value="CH" selected>中英日</option>
+                        <option value="EN">英文</option>
+                    </select>
+                </div>
+            </div>
+
+            <button class="btn btn-primary btn-sm mt-2" id="btn-run-ocr">
+                <i class="bi bi-cpu-fill"></i> 运行识别
+            </button>
+
+            <div class="results-wrapper mt-3">
+                <div class="results-header">
+                    <span id="results-title">结果列表（0）</span>
+                    <button class="btn btn-sm btn-link text-danger p-0" id="btn-clear-results" title="清空结果">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </div>
+                <div class="results-list" id="results-list"></div>
+            </div>
+        </div>
+
+        <!-- 工作区 -->
+        <div class="workspace">
+            <div class="canvas-area">
+                <div class="img-viewport">
+                    <img id="preview-img" title="点击放大" src="../img/svg/img_default.svg" />
+                </div>
+            </div>
+
+
+            <div class="code-console">
+                <div class="p-2 border-bottom border-secondary d-flex justify-content-between">
+                    <span style="font-size:10px;color:#888">PYTHON SCRIPT</span>
+                    <button class="btn btn-sm btn-link text-white py-0" id="btn-copy-code">Copy</button>
+                </div>
+                <div class="code-display" id="python-code"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="../libs/jquery/jquery.min.js"></script>
+
+    <script>
+        function addLog(msg) {
+            $('#log-container').append(`<div>> ${msg}</div>`).scrollTop(999999);
+        }
+
+        $(function () {
+            // 保留原来的功能
+            checkEnvironment();
+            $('select').on('change', genCode);
+            genCode();
+
+            $('#btn-copy-code').click(() => {
+                navigator.clipboard.writeText($('#python-code').text());
+            });
+
+            // 清空结果按钮
+            $('#btn-clear-results').click(() => {
+                $('#results-list').empty();
+                $('#results-title').text('结果列表（0）');
+                $('#preview-img').attr('src', '../img/svg/img_default.svg');
+                window.parent.gp.marks?.clear?.();
+            });
+
+            // 注意：保留原 genTestCode 绑定
+            $("#btn-run-ocr").on('click', function () {
+
+                $("#btn-clear-results").click();
+
+                const btn = $(this);
+                btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> 识别中...');
+                const origText = '<i class="bi bi-cpu-fill"></i> 运行识别';
+
+                // 调用原来的 genTestCode
+                const promise = genTestCode();
+
+                promise.finally(() => {
+                    btn.prop('disabled', false).html(origText);
+                });
+            });
+        });
+
+        // 重写 renderOCRResults 只用于 UI/框/hover
+        function renderOCRResults(ocrData) {
+            const $list = $('#results-list').empty();
+            window.parent.marks?.clear?.();
+
+            const txts = ocrData.txts || [];
+            const boxes = ocrData.boxes || [];
+            const scores = ocrData.scores || [];
+
+            $('#results-title').text(`结果列表（${txts.length}）`);
+
+            txts.forEach((text, i) => {
+                const label = i + 1;
+                const poly = boxes[i] || [];
+
+                // 计算矩形边界：左上角 (l,t), 右下角 (r,b)
+                let l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
+                poly.forEach(pt => {
+                    const [x, y] = pt;
+                    l = Math.min(l, Math.floor(x));
+                    t = Math.min(t, Math.floor(y));
+                    r = Math.max(r, Math.floor(x));
+                    b = Math.max(b, Math.floor(y));
+                });
+
+                const score = scores[i] !== undefined ? (scores[i] * 100).toFixed(2) + '%' : '--';
+
+                // 绘制矩形
+                window.parent.gp.marks.add_rect(String(label), l, t, r, b);
+
+                const $item = $(`
+            <div class="ocr-item">
+                <span style="width:28px;text-align:right;color:#666;">${label}</span>
+                <span style="flex:1;color:#eee;word-break:break-all;">${text}</span>
+                <span style="width:50px;color:#6fbfff;text-align:right;">${score}</span>
+            </div>
+        `);
+
+                $item.on('mouseenter', () => window.parent.gp.marks?.high_light(String(label)));
+                $item.on('mouseleave', () => window.parent.gp.marks?.high_light_clear());
+
+                $list.append($item);
+            });
+        }
+
+
+
+        async function checkEnvironment() {
+            addLog("开始检查本地 Python 环境...");
+
+            // 使用清华源加速，避免用户“慌”
+            const checkCode = `
+from ascript.windows.system import Pip
+import eel
+try:
+    print("Checking rapidocr...")
+    Pip.ensure('rapidocr')
+    print("Checking onnxruntime...")
+    Pip.ensure('onnxruntime')
+    _result = True
+except Exception as e:
+    _result = str(e)
+`;
+
+            try {
+                // 假设 window.parent.gp.call_python 是你的 Eel 接口
+                const res = await window.parent.gp.call_python(checkCode);
+
+                if (res === true) {
+                    addLog("环境就绪，正在进入程序...");
+                    setTimeout(() => $('#init-overlay').fadeOut(), 800);
+                } else {
+                    addLog("<span style='color:red'>错误: " + res + "</span>");
+                    $('#init-text').text("环境初始化失败").addClass("text-danger");
+                }
+            } catch (e) {
+                addLog("<span style='color:red'>通信异常: 无法调用 call_python</span>");
+            }
+        }
+
+        async function genTestCode() {
+            const engine = $('#global-engine').val();
+            const detClsVer = $('#det-cls-ver').val();
+            const recVer = $('#rec-ver').val();
+            const recLang = $('#rec-lang').val();
+            const clsEnabled = $('#cls-enabled').val() === "True";
+
+            // RapidOCR 官方默认值
+            const defaults = {
+                engine: "ONNXRUNTIME",
+                detVer: "PPOCRV4",
+                recVer: "PPOCRV5",
+                recLang: "CH",
+                clsEnabled: true
+            };
+
+            let params = [];
+
+            // angle cls
+            if (clsEnabled !== defaults.clsEnabled) {
+                params.push(`"Global.use_angle_cls": ${clsEnabled?"True":"False"}`);
+            }
+
+            // engine（Det / Rec / Cls 同步）
+            if (engine !== defaults.engine) {
+                params.push(`"Det.engine_type": EngineType.${engine}`);
+                params.push(`"Rec.engine_type": EngineType.${engine}`);
+                params.push(`"Cls.engine_type": EngineType.${engine}`);
+            }
+
+            // Det / Cls OCR 版本
+            if (detClsVer !== defaults.detVer) {
+                params.push(`"Det.ocr_version": OCRVersion.${detClsVer}`);
+                params.push(`"Cls.ocr_version": OCRVersion.${detClsVer}`);
+            }
+
+            // Rec OCR 版本
+            if (recVer !== defaults.recVer) {
+                params.push(`"Rec.ocr_version": OCRVersion.${recVer}`);
+            }
+
+            // Rec 语言
+            if (recLang !== defaults.recLang) {
+                params.push(`"Rec.lang_type": LangRec.${recLang}`);
+            }
+
+            // 生成 Python 代码
+            let pythonCode = `from rapidocr import RapidOCR`;
+
+            if (params.length > 0) {
+                pythonCode += `, EngineType, LangRec, OCRVersion\n\n`;
+                pythonCode += `engine = RapidOCR(\n    params={\n`;
+                pythonCode += params.map(p => `        ${p},`).join('\n');
+                pythonCode += `\n    }\n)\n`;
+            } else {
+                pythonCode += `\n\nengine = RapidOCR()\n`;
+            }
+
+            pythonCode += `
+import cv2,base64
+img_path = r"${window.parent.gp.image.path}"
+result = engine(img_path)
+
+success, buffer = cv2.imencode('.jpg', result.vis())
+img_base64 = base64.b64encode(buffer).decode('utf-8')
+_result =(result,f"data:image/jpeg;base64,{img_base64}")
+`;
+            ocr_result = await window.parent.gp.call_python(pythonCode);
+
+            const ocrData = ocr_result[0];
+            const imgBase64 = ocr_result[1];
+
+            // 显示图片
+            $('#preview-img').attr('src', imgBase64);
+
+            // 渲染识别结果列表
+            renderOCRResults(ocrData);
+
+
+        }
+
+        function genCode() {
+            const engine = $('#global-engine').val();
+            const detClsVer = $('#det-cls-ver').val();
+            const recVer = $('#rec-ver').val();
+            const recLang = $('#rec-lang').val();
+            const clsEnabled = $('#cls-enabled').val() === "True";
+
+            const winTitle = window.parent?.gp?.window?.title;
+            const hasWindowTitle = !!(winTitle && winTitle.trim());
+
+            // RapidOCR 默认值
+            const defaults = {
+                engine: "ONNXRUNTIME",
+                detVer: "PPOCRV4",
+                recVer: "PPOCRV5",
+                recLang: "CH",
+                clsEnabled: true
+            };
+
+            let params = [];
+            let rapidImports = new Set(["RapidOCR"]);
+            let ascriptImport = "";
+
+            // ---------- 参数判断 ----------
+            if (clsEnabled !== defaults.clsEnabled) {
+                params.push(`"Global.use_angle_cls": ${clsEnabled?"True":"False"}`);
+            }
+
+            if (engine !== defaults.engine) {
+                rapidImports.add("EngineType");
+                params.push(`"Det.engine_type": EngineType.${engine}`);
+                params.push(`"Rec.engine_type": EngineType.${engine}`);
+                params.push(`"Cls.engine_type": EngineType.${engine}`);
+            }
+
+            if (detClsVer !== defaults.detVer) {
+                rapidImports.add("OCRVersion");
+                params.push(`"Det.ocr_version": OCRVersion.${detClsVer}`);
+                params.push(`"Cls.ocr_version": OCRVersion.${detClsVer}`);
+            }
+
+            if (recVer !== defaults.recVer) {
+                rapidImports.add("OCRVersion");
+                params.push(`"Rec.ocr_version": OCRVersion.${recVer}`);
+            }
+
+            if (recLang !== defaults.recLang) {
+                rapidImports.add("LangRec");
+                params.push(`"Rec.lang_type": LangRec.${recLang}`);
+            }
+
+            // ---------- ascript import ----------
+            if (hasWindowTitle) {
+                ascriptImport = `from ascript.windows.window import Window`;
+            } else {
+                ascriptImport = `from ascript.windows.screen import Screen`;
+            }
+
+            // ---------- 生成 import 区 ----------
+            let pythonCode = `from rapidocr import ${Array.from(rapidImports).join(", ")}\n`;
+            pythonCode += `${ascriptImport}\n\n`;
+
+            // ---------- engine ----------
+            if (params.length > 0) {
+                pythonCode += `engine = RapidOCR(\n    params={\n`;
+                pythonCode += params.map(p => `        ${p},`).join('\n');
+                pythonCode += `\n    }\n)\n\n`;
+            } else {
+                pythonCode += `engine = RapidOCR()\n\n`;
+            }
+
+            // ---------- 图像获取 ----------
+            if (hasWindowTitle) {
+                pythonCode += `img = Window.find("${winTitle.replace(/"/g, '\\"')}").capture()\n`;
+            } else {
+                pythonCode += `img = Screen.capture()\n`;
+            }
+
+            pythonCode += `
+result = engine(img)
+print(result)
+`;
+
+            $('#python-code').text(pythonCode.trim());
+        }
+
+
+
+
+
+
+    </script>
+
+    <script>
+        // 点击右侧图片打开新窗口预览
+        $('#preview-img').on('click', function () {
+            const src = $(this).attr('src');
+            if (!src) return;
+
+            // 打开新窗口
+            const win = window.open('', '_blank');
+
+            // 写入 HTML，只显示一张图片，最大边撑满窗口
+            const doc = win.document;
+            doc.open();
+            doc.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>图片预览</title>
+            <style>
+                html, body {
+                    margin: 0;
+                    padding: 0;
+                    width: 100%;
+                    height: 100%;
+                    background: #111;
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    overflow: auto;
+                }
+                img {
+                    max-width: 100%;
+                    max-height: 100%;
+                }
+            </style>
+        </head>
+        <body>
+            <img src="${src}" alt="Preview">
+        </body>
+        </html>
+    `);
+            doc.close();
+        });
+
+
+
+
+
+    </script>
+
+</body>
+
+</html>

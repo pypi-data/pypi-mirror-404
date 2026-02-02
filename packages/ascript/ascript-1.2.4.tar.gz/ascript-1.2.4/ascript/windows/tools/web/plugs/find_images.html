@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Visual Finder - Compact</title>
+    <script>
+        (function () {
+            const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            document.documentElement.setAttribute('data-bs-theme', isDark ? 'dark' : 'light');
+        })();
+    </script>
+    <link href="../libs/bootstrap/css/bootstrap.min.css" rel="stylesheet">
+    <link href="../libs/bootstrap-icons/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        :root {
+            --editor-bg: #1e1e1e;
+            --panel-bg: #252526;
+            --border-color: #333333;
+            --accent-color: #007acc;
+        }
+
+        body,
+        html {
+            height: 100vh;
+            margin: 0;
+            font-size: 13px;
+            overflow: hidden;
+            background: var(--editor-bg);
+            color: #cccccc;
+        }
+
+        .main-layout {
+            display: flex;
+            height: 100vh;
+        }
+
+        .settings-panel {
+            width: 280px;
+            background: var(--panel-bg);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            padding: 16px;
+        }
+
+        .form-label {
+            color: #858585;
+            font-weight: 600;
+            font-size: 11px;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+
+        .form-select,
+        .form-control {
+            background-color: #3c3c3c;
+            border: 1px solid #3c3c3c;
+            color: #eee;
+            border-radius: 2px;
+            height: 28px;
+            font-size: 12px;
+            padding: 0 8px;
+        }
+
+        .btn-vscode {
+            background: var(--accent-color);
+            color: white;
+            border-radius: 2px;
+            border: none;
+            font-size: 12px;
+            height: 32px;
+            transition: 0.2s;
+        }
+
+        .btn-vscode:hover {
+            background: #118ad4;
+        }
+
+        .btn-outline-vscode {
+            border: 1px solid #454545;
+            color: #cccccc;
+            border-radius: 2px;
+            font-size: 12px;
+            height: 32px;
+        }
+
+        /* 结果容器布局 */
+        .results-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+            margin-top: 15px;
+        }
+
+        .results-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .results-list {
+            flex: 1;
+            overflow-y: auto;
+            background: #1e1e1e;
+            border: 1px solid var(--border-color);
+            border-radius: 2px;
+        }
+
+        .result-item {
+            padding: 10px;
+            border-bottom: 1px solid #333;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .result-item:hover,
+        .result-item.active {
+            background: #2a2d2e;
+            border-left: 3px solid var(--accent-color);
+        }
+
+        .result-item .conf-text {
+            color: #4ec9b0;
+            font-weight: bold;
+        }
+
+        .result-item .coord-text {
+            color: #858585;
+            font-size: 11px;
+            margin-top: 4px;
+        }
+
+        /* 清空按钮小图标样式 */
+        .btn-clear-results {
+            padding: 2px 6px;
+            font-size: 14px;
+            color: #858585;
+            cursor: pointer;
+            transition: color 0.2s;
+        }
+
+        .btn-clear-results:hover {
+            color: #f44336;
+        }
+
+        .workspace {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .canvas-area {
+            flex: 1;
+            background-color: #1e1e1e;
+            background-image:
+                linear-gradient(45deg, #252525 25%, transparent 25%), linear-gradient(-45deg, #252525 25%, transparent 25%),
+                linear-gradient(45deg, transparent 75%, #252525 75%), linear-gradient(-45deg, transparent 75%, #252525 75%);
+            background-size: 16px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: auto;
+        }
+
+        .img-viewport {
+            border: 1px solid var(--border-color);
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.4);
+            background: #000;
+        }
+
+        #preview-img {
+            max-width: 100%;
+            display: block;
+        }
+
+        .code-console {
+            height: 35%;
+            background: var(--editor-bg);
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .console-header {
+            padding: 4px 16px;
+            background: var(--panel-bg);
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .code-display {
+            flex: 1;
+            padding: 12px;
+            font-family: 'Consolas', monospace;
+            font-size: 12px;
+            color: #d4d4d4;
+            overflow: auto;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="main-layout">
+        <div class="settings-panel">
+            <div class="mb-3">
+                <label class="form-label">匹配算法</label>
+                <select class="form-select" id="select-algo">
+                    <option value="template">Template Match</option>
+                    <option value="akaze">AKAZE Feature</option>
+                </select>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">相似度阈值(<span id="threshold-val">0.80</span>)</label>
+                <input type="range" class="form-range" id="threshold" min="0" max="100" value="80">
+            </div>
+
+            <div class="mb-3 d-flex align-items-center justify-content-between" id="row-rgb">
+                <label class="form-label mb-0">RGB 匹配</label>
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" role="switch" id="check-rgb">
+                </div>
+            </div>
+
+            <div class="mb-3 d-flex align-items-center justify-content-between" id="row-resnum">
+                <label class="form-label mb-0">多个匹配结果</label>
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" role="switch" id="check-resnum" checked>
+                </div>
+            </div>
+
+            <div class="mb-3 d-none align-items-center justify-content-between" id="row-min-match">
+                <label class="form-label mb-0">最小匹配点数</label>
+                <input type="number" class="form-control form-control-sm" id="input-min-match" value="10" min="1"
+                    style="width: 80px; background: #3c3c3c; color: white; border: 1px solid #666; text-align: center;">
+            </div>
+
+            <div class="d-grid gap-2 mb-2">
+                <button class="btn btn-vscode" id="btn-test">
+                    <i class="bi bi-play-fill me-1"></i>测试找图
+                </button>
+                <button class="btn btn-outline-vscode" id="btn-save">
+                    <i class="bi bi-hdd me-1"></i>模板图另存为
+                </button>
+            </div>
+
+            <div class="results-container">
+                <div class="results-header">
+                    <div class="d-flex align-items-center">
+                        <span class="form-label m-0 me-2">识别结果</span>
+                        <span class="badge bg-secondary" id="results-count" style="font-size: 10px;">0</span>
+                    </div>
+                    <i class="bi bi-trash btn-clear-results" id="btn-clear" title="清空结果"></i>
+                </div>
+                <div class="results-list" id="results-list">
+                    <div class="text-center text-muted py-4 opacity-50">暂无测试结果</div>
+                </div>
+            </div>
+
+            <div class="mt-auto border-top pt-2 border-secondary opacity-50">
+                <div class="small text-muted" style="font-size: 10px;">Visual Finder v2.0</div>
+            </div>
+        </div>
+
+        <div class="workspace">
+            <div class="canvas-area">
+                <div class="img-viewport">
+                    <img id="preview-img" src="https://via.placeholder.com/300x150?text=Wait+for+Selection" />
+                </div>
+            </div>
+
+            <div class="code-console">
+                <div class="console-header">
+                    <span class="small fw-bold opacity-50 text-uppercase" style="font-size: 10px;">Python Script</span>
+                    <button class="btn btn-link btn-sm text-decoration-none text-secondary p-0" id="btn-copy">
+                        <i class="bi bi-files me-1"></i>Copy
+                    </button>
+                </div>
+                <div class="code-display" id="python-code"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="../libs/jquery/jquery.min.js"></script>
+    <script src="../libs/bootstrap/js/bootstrap.bundle.min.js"></script>
+
+    <script>
+        // 1. 定义你的处理方法
+        function onConfigChange() {
+            const config = {
+                algo: document.getElementById('select-algo').value,
+                threshold: document.getElementById('threshold').value / 100,
+                useRGB: document.getElementById('check-rgb').checked,
+                multiMatch: document.getElementById('check-resnum').checked,
+                minMatch: document.getElementById('input-min-match').value
+            };
+
+            genCode();
+            // 在这里执行你后续的业务逻辑
+        }
+
+        window.on_image_loaded = (d) => {genCode(); };
+
+        // 2. 编写监听方法
+        function initListeners() {
+            // 列出所有需要监听的 ID
+            const controlIds = [
+                'select-algo',
+                'threshold',
+                'check-rgb',
+                'check-resnum',
+                'input-min-match'
+            ];
+
+            controlIds.forEach(id => {
+                const el = document.getElementById(id);
+                if (!el) return;
+
+                // 'input' 事件：范围滑块拉动时、文字输入时会即时触发
+                // 'change' 事件：下拉框选择后、勾选框切换后触发
+                const eventType = el.type === 'range' || el.type === 'number' ? 'input' : 'change';
+
+                el.addEventListener(eventType, () => {
+                    // 特殊逻辑：更新滑块旁边的文字显示 (0.80)
+                    if (id === 'threshold') {
+                        const val = (el.value / 100).toFixed(2);
+                        document.getElementById('threshold-val').textContent = val;
+                    }
+
+                    // 调用统一的处理方法
+                    onConfigChange();
+                });
+            });
+        }
+    </script>
+
+    <script>
+        let temp_name = "template_findimage_temp.jpeg";
+        let cache_rect = null;
+        let cache_save_img_path = null;
+
+        $(document).ready(function () {
+            initListeners();
+            window.parent.gp.iframe.on_area_selected();
+            genCode();
+
+            const selectAlgo = document.getElementById('select-algo');
+            const rowRgb = document.getElementById('row-rgb');
+            const rowRes = document.getElementById('row-resnum');
+            const rowMinMatch = document.getElementById('row-min-match');
+
+            selectAlgo.addEventListener('change', function () {
+                if (this.value === 'template') {
+                    // 显示 RGB，隐藏 Min Match
+                    rowRgb.classList.remove('d-none');
+                    rowRgb.classList.add('d-flex'); // 确保 flex 布局生效
+
+                    rowRes.classList.remove('d-none');
+                    rowRes.classList.add('d-flex'); // 确保 flex 布局生效
+
+                    rowMinMatch.classList.add('d-none');
+                    rowMinMatch.classList.remove('d-flex');
+                } else {
+                    // 隐藏 RGB，显示 Min Match
+                    rowRgb.classList.add('d-none');
+                    rowRgb.classList.remove('d-flex');
+                    rowRes.classList.add('d-none');
+                    rowRes.classList.remove('d-flex');
+
+                    rowMinMatch.classList.remove('d-none');
+                    rowMinMatch.classList.add('d-flex');
+                }
+            });
+
+            // 滑块数值实时显示
+            $('#threshold').on('input', function () {
+                $('#threshold-val').text(($(this).val() / 100).toFixed(2));
+            });
+
+            // 拷贝代码
+            $('#btn-copy').click(function () {
+                const text = $('#python-code').text();
+                navigator.clipboard.writeText(text);
+                const $btn = $(this);
+                $btn.html('<i class="bi bi-check text-success"></i> Copied');
+                setTimeout(() => $btn.html('<i class="bi bi-files me-1"></i>Copy'), 1500);
+            });
+
+            // 清空结果按钮
+            $('#btn-clear').click(function () {
+                // 1. 清理主图上的标记
+                if (window.parent.gp && window.parent.gp.marks.clear) {
+                    window.parent.gp.marks.clear();
+                }
+                // 2. 重置列表 UI
+                $('#results-list').html('<div class="text-center text-muted py-4 opacity-50">已清空结果</div>');
+                $('#results-count').text('0');
+            });
+
+            // 拷贝代码
+            $('#btn-save').click(function () {
+                if(cache_rect==null || cache_rect.l===0 && cache_rect.t===0 && cache_rect.r===0 && cache_rect.b===0){
+                    window.parent.gp.info.error("保存错误","请先通过拖拽选择一个模板图区域后再保存！");
+                    return;
+                }
+                savePicture();
+            });
+
+            // 测试找图动作
+            $('#btn-test').click(async function () {
+
+                if(cache_rect==null || cache_rect.l===0 && cache_rect.t===0 && cache_rect.r===0 && cache_rect.b===0){
+                    window.parent.gp.info.error("运行错误","请先通过拖拽选择一个模板图区域后再测试！");
+                    return;
+                }
+
+                const $btn = $(this);
+                const $list = $('#results-list');
+
+                $btn.addClass('opacity-50').prop('disabled', true)
+                    .html('<span class="spinner-border spinner-border-sm me-1"></span> Running...');
+
+                try {
+                    const results = await test();
+
+                    // 每次测试前自动清理旧标记
+                    if (window.parent.gp && window.parent.gp.marks.clear) {
+                        window.parent.gp.marks.clear();
+                    }
+
+                    $list.empty();
+                    const count = results ? results.length : 0;
+                    $('#results-count').text(count);
+
+                    if (results && results.length > 0) {
+                        results.forEach((item, index) => {
+                            const [l, t, r, b] = item.rect;
+                            const label = `#${index + 1}`;
+
+                            // 1. 在主图上添加矩形标记
+                            window.parent.gp.marks.add_rect(label, l, t, r, b);
+
+                            // 2. 在侧边栏添加列表项
+                            const $item = $(`
+                                <div class="result-item">
+                                    <div class="d-flex justify-content-between">
+                                        <strong>${label}</strong>
+                                        <span class="conf-text">${(item.confidence * 100).toFixed(1)}%</span>
+                                    </div>
+                                    <div class="coord-text">L:${l}, T:${t}, R:${r}, B:${b}</div>
+                                </div>
+                            `);
+
+                            // 3. 悬停交互
+                            $item.on('mouseenter', function () {
+                                $(this).addClass('active');
+                                if (window.parent.gp && window.parent.gp.marks.high_light) {
+                                    window.parent.gp.marks.high_light(label);
+                                }
+                            }).on('mouseleave', function () {
+                                $(this).removeClass('active');
+                                if (window.parent.gp && window.parent.gp.marks.high_light_clear) {
+                                    window.parent.gp.marks.high_light_clear();
+                                }
+                            });
+
+                            $list.append($item);
+                        });
+                    } else {
+                        $list.html('<div class="text-center text-muted py-4 opacity-50">未找到匹配目标</div>');
+                    }
+                } catch (error) {
+                    console.error("测试出错:", error);
+                    $list.html('<div class="text-center text-danger py-4 small">运行失败</div>');
+                } finally {
+                    $btn.removeClass('opacity-50').prop('disabled', false)
+                        .html('<i class="bi bi-play-fill me-1"></i>测试找图');
+                }
+            });
+        });
+
+        function on_color_picked(data){
+            console.log("收到颜色数据:", data);
+        }
+
+        // 裁剪并预览模板图
+        function on_area_selected(data) {
+            if (!data || (data.l === 0 && data.t === 0 && data.r === 0 && data.b === 0)) {
+                return;
+            }
+            cache_rect = data;
+            const pythonCode = `import base64, io, os
+from PIL import Image
+from ascript.windows.tools import config
+
+img = Image.open(r"${window.parent.gp.image.path}")
+region = (${data.l}, ${data.t}, ${data.r}, ${data.b})
+crop_img = img.crop(region)
+save_path = os.path.join(config.file_data_temp, "${temp_name}")
+crop_img.save(save_path)
+
+buffered = io.BytesIO()
+crop_img.save(buffered, format="PNG")
+img_str = base64.b64encode(buffered.getvalue()).decode()
+_result = f"data:image/png;base64,{img_str}"`;
+
+            window.parent.gp.call_python(pythonCode).then(base64Result => {
+                if (base64Result) {
+                    document.getElementById('preview-img').src = base64Result;
+                }
+            });
+        }
+
+        // 执行找图测试
+        async function test() {
+            const threshold = parseFloat($('#threshold').val()) / 100;
+            const algo = $('#select-algo').val();
+            const pythonRgbValue = document.getElementById('check-rgb').checked ? "True" : "False";
+            const min_match = parseInt($('#input-min-match').val()) || 10;
+            const max_res = document.getElementById('check-resnum').checked;
+            let findMethod = "find_all_template";
+            if (algo === "akaze") findMethod = "find_akaze";
+
+            let find_line = `_result = FindImages.${findMethod}(im_search=im_search, im_source=im_source, threshold=threshold, max_res=max_res,rgb=rgb)`
+
+            if (algo === "akaze") {
+                find_line = `_result = FindImages.${findMethod}(im_search=im_search, im_source=im_source, threshold=threshold,min_match=min_match)`
+            }
+
+
+
+            const pythonCode = `from ascript.windows.screen import FindImages
+from ascript.windows.tools import config
+import os
+
+im_search = os.path.join(config.file_data_temp, "${temp_name}")
+im_source = r"${window.parent.gp.image.path}"
+threshold = ${threshold}
+max_res = ${max_res?0:1}
+rgb = ${pythonRgbValue}
+min_match = ${min_match}
+
+${find_line}`;
+
+
+            return await window.parent.gp.call_python(pythonCode);
+        }
+
+
+        async function genCode() {
+            const threshold = parseFloat($('#threshold').val()) / 100;
+            const im_search_name = cache_save_img_path?cache_save_img_path.split('/').pop():"小图名称"; // TODO: 获取模板图文件名
+            const algo = $('#select-algo').val();
+            const pythonRgbValue = document.getElementById('check-rgb').checked ? "True" : "False";
+            const max_res = document.getElementById('check-resnum').checked;
+            const min_match = parseInt($('#input-min-match').val()) || 10;
+            let findMethod = max_res?"find_all_template":"find_template";
+            if (algo === "akaze") findMethod = "find_akaze";
+
+            let threshold_param = threshold == 0.8 ? "" : `, threshold=${threshold}`;
+            let rgb_param = pythonRgbValue == "False" ? "" : `, rgb=${pythonRgbValue}`;
+            let min_match_param = algo === "akaze" && min_match != 10 ? `, min_match=${min_match}` : "";
+            let window_line = "";
+            let im_source_param = "";
+            let import_window_line = "";
+            if (window.parent.gp.window.title) {
+                import_window_line = "from ascript.windows.window import Window";
+                window_line = `window = Window.find("${window.parent.gp.window.title}")`;
+                im_source_param = ",im_source=window";
+            }
+
+            let find_line = `result = FindImages.${findMethod}(R.img("${im_search_name}")${im_source_param}${threshold_param}${rgb_param})`
+
+            if (algo === "akaze") {
+                find_line = `result = FindImages.${findMethod}(R.img("${im_search_name}")${im_source_param}${threshold_param}${rgb_param}${min_match_param})`
+            }
+
+            const pythonCode = `from ascript.windows.screen import FindImages
+from ascript.windows.system import R
+${import_window_line}
+${window_line}
+${find_line}`;
+            $("#python-code").text(pythonCode);
+        }
+
+
+
+        // ------------------ 模板图另存为 ------------------
+        async function savePicture() {
+            const pythonCode = `import os
+import json
+import tkinter as tk
+from tkinter import filedialog
+from PIL import Image
+from datetime import datetime
+from pathlib import Path
+
+# 缓存文件路径
+CACHE_FILE = "path_cache.json"
+
+def get_last_path():
+    """从缓存中读取上次保存的路径"""
+    if os.path.exists(CACHE_FILE):
+        try:
+            with open(CACHE_FILE, 'r') as f:
+                return json.load(f).get("last_path")
+        except:
+            return None
+    return None
+
+def save_last_path(path):
+    """将当前路径保存到缓存"""
+    with open(CACHE_FILE, 'w') as f:
+        json.dump({"last_path": path}, f)
+
+def crop_and_save_image(image_path, rect):
+    """
+    image_path: 图片完整路径
+    rect: [left, top, right, bottom] 列表
+    """
+    if not os.path.exists(image_path):
+        print("错误：找不到原始图片")
+        return None
+
+    # 1. 处理截图
+    try:
+        img = Image.open(image_path)
+        # rect 格式正好符合 Pillow 的 crop 参数 (left, top, right, bottom)
+        cropped_img = img.crop(rect)
+    except Exception as e:
+        print(f"裁剪失败: {e}")
+        return None
+
+    # 2. 智能生成默认文件名 (例如: crop_20231027_143005.png)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    default_filename = f"crop_{timestamp}.png"
+
+    # 3. 弹出文件浏览器
+    root = tk.Tk()
+    root.withdraw()  # 隐藏主窗口
+    root.attributes('-topmost', True) # 确保对话框在最前面
+
+    initial_dir = get_last_path() or os.path.expanduser("~/Pictures")
+
+    # 弹出另存为对话框
+    file_path = filedialog.asksaveasfilename(
+        title="选择保存位置",
+        initialdir=initial_dir,
+        initialfile=default_filename,
+        defaultextension=".png",
+        filetypes=[("PNG files", "*.png"), ("JPEG files", "*.jpg"), ("All files", "*.*")]
+    )
+    
+    root.destroy() # 关闭 tkinter 资源
+
+    # 4. 执行保存
+    if file_path:
+        try:
+            cropped_img.save(file_path)
+            # 更新缓存路径
+            save_last_path(os.path.dirname(file_path))
+            print(f"图片已保存至: {file_path}")
+            return file_path
+        except Exception as e:
+            print(f"保存失败: {e}")
+            return None
+    else:
+        print("用户取消了保存")
+        return None
+_result = crop_and_save_image(r"${window.parent.gp.image.path}", [${cache_rect.l}, ${cache_rect.t}, ${cache_rect.r}, ${cache_rect.b}])`;
+
+            // console.log(pythonCode);
+
+            cache_save_img_path = await window.parent.gp.call_python(pythonCode);
+            if (cache_save_img_path) {
+                // alert(`模板图已保存至:\n${cache_save_img_path}`);
+                genCode();
+            }
+        }
+
+
+
+
+
+    </script>
+
+
+</body>
+
+</html>

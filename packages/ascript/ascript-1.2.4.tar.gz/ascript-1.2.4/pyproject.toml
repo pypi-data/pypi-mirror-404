@@ -1,0 +1,81 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ascript"
+version = "1.2.4"
+description = "Ascript Developer Library"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+classifiers = [
+    # 1. 运行环境
+    "Operating System :: Microsoft :: Windows",
+
+    # 2. 编程语言版本 (告诉用户你已经测过这些版本)
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+
+    # 3. 许可证
+    "License :: OSI Approved :: MIT License",
+
+    # 4. 开发状态 (4 代表成熟稳定)
+    "Development Status :: 4 - Beta",
+
+    # 5. 目标受众
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+dependencies = [
+    "pkginfo>=1.10.0",
+    "eel>=0.17.0",
+    "pystray>=0.19.5",
+    "pywebview>=5.0",
+    "gevent>=23.9.1",
+    "bottle>=0.12.25",
+    "bottle-websocket>=0.2.9",
+    "uiautomation>=2.0.20",
+    "pywin32>=306",
+    "psutil>=5.9.0",
+    "pyautogui>=0.9.54",
+    "opencv-python>=4.9.0.0",
+    "pillow>=10.0.0",
+    "numpy>=1.26.0",
+    "mss>=9.0.1",
+    "pycryptodome>=3.20.0",
+    "requests>=2.28.0"
+]
+
+[project.optional-dependencies]
+dev = ["pyinstaller>=6.0.0"]
+
+# --- 核心修改部分 ---
+
+[tool.setuptools]
+# 1. 排除包定义。注意加上通配符确保子包也被排除
+packages = {find = {exclude = ["ascript.windows.license_source*", "license_source*"]}}
+# 关键：即便开启了包含数据，也要严格受控
+include-package-data = true
+
+[tool.setuptools.package-data]
+# 2. 精确包含。注意：为了安全，license 这里建议只包含编译后的 .pyd 和 __init__.py
+"*" = ["resources/**/*", "tools/**/*", "web/**/*", "license/*.pyd", "license/__init__.py"]
+
+# 3. 强力排除。路径要写全，确保任何层级的 license_source 及其内容都不被包含
+[tool.setuptools.exclude-package-data]
+# 强力保险：显式禁止打包任何 license_source 下的文件
+"*" = ["license_source/**/*"]
+
+[tool.pyinstaller]
+args = [
+    "--onefile",
+    "--noconsole",
+    "--clean",
+    "--exclude-module=ascript.windows.license_source" # 显式排除模块
+]
