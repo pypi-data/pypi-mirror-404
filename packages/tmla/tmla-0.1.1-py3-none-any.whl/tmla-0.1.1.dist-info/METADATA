@@ -1,0 +1,150 @@
+Metadata-Version: 2.4
+Name: tmla
+Version: 0.1.1
+Summary: T-MLA: Targeted Multiscale Log-Exponential Attack for Neural Image Compression
+Author-email: "N. I. Kalmykov" <nikolay.kalmykov@skoltech.ru>
+License-Expression: MIT
+Keywords: adversarial attacks,neural image compression,frequency-domain analysis,ai safety
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Science/Research
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Topic :: Scientific/Engineering
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: torch>=2.0
+Requires-Dist: torchvision
+Requires-Dist: compressai>=1.2
+Requires-Dist: kornia>=0.6
+Requires-Dist: piq>=0.7
+Requires-Dist: pytorch-wavelets>=1.3
+Requires-Dist: torchmetrics>=1.0
+Requires-Dist: numpy
+Requires-Dist: pillow
+Requires-Dist: scikit-image
+Requires-Dist: matplotlib
+Requires-Dist: pandas
+Requires-Dist: gdown
+Requires-Dist: kagglehub
+Provides-Extra: dev
+Requires-Dist: pytest; extra == "dev"
+Requires-Dist: black; extra == "dev"
+Requires-Dist: ruff; extra == "dev"
+Dynamic: license-file
+
+# T-MLA: A Targeted Multiscale Log-Exponential Attack Framework for Neural Image Compression
+
+[![PyPI version](https://badge.fury.io/py/tmla.svg)](https://pypi.org/project/tmla/)
+
+**Wavelet-aware adversarial perturbations.** (a) PGD-based attack with small-magnitude noise, visually clean yet disruptive after compression. (b) Proposed wavelet-aware attack is also imperceptible but more stealthy. (c) Wavelet coefficients of (a) reveal widespread noise in flat regions. (d) Coefficients of (b) closely resemble the clean input, indicating reduced detectability.
+
+![Wavelet-aware adversarial perturbations](images/wavelet_attack_motivation.png)
+
+Official implementation of **"T-MLA: A targeted multiscale log–exponential attack framework for neural image compression"** ([Information Sciences](https://www.sciencedirect.com/science/article/pii/S0020025526000745), Q1).
+
+## 📄 Abstract
+
+Neural image compression (NIC) has become the state-of-the-art for rate-distortion performance, yet its security vulnerabilities remain significantly less understood than those of classifiers. Existing adversarial attacks on NICs are often naive adaptations of pixel-space methods, overlooking the unique, structured nature of the compression pipeline. In this work, we propose a more advanced class of vulnerabilities by introducing T-MLA, the first targeted multiscale log–exponential attack framework. We introduce adversarial perturbations in the wavelet domain that concentrate on less perceptually salient coefficients, improving the stealth of the attack. Extensive evaluation across multiple state-of-the-art NIC architectures on standard image compression benchmarks reveals a large drop in reconstruction quality while the perturbations remain visually imperceptible. On standard NIC benchmarks, T-MLA achieves targeted degradation of reconstruction quality while improving perturbation imperceptibility (higher PSNR/VIF of the perturbed inputs) compared to PGD-style baselines at comparable attack success, as summarized in our main results. Our findings reveal a critical security flaw at the core of generative and content delivery pipelines. 
+![Pipeline Overview](images/pipeline_overview.png)
+
+## Installation
+
+### From PyPI
+
+```bash
+pip install tmla
+```
+
+To run scripts and the demo, clone the repo and fetch the LIC-TCM model and datasets:
+
+```bash
+git clone https://github.com/nkalmykovsk/tmla.git
+cd tmla
+python3 init.py   # LIC_TCM + data + weights
+```
+
+### From GitHub (development)
+
+```bash
+pip install git+https://github.com/nkalmykovsk/tmla.git
+```
+
+Then clone the repo and run `init.py` as above to get `scripts/`, `demo.ipynb`, and data.
+
+### From source (clone + editable install)
+
+```bash
+git clone https://github.com/nkalmykovsk/tmla.git
+cd tmla
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+pip install -e .
+python3 init.py
+```
+
+**Docker:**
+
+```bash
+docker build -t tmla-lic-tcm:latest .
+docker run -d --gpus all --name tmla-dev -v "$(pwd)":/app -w /app tmla-lic-tcm:latest tail -f /dev/null
+# then: docker exec -it tmla-dev python3 init.py
+```
+
+## Project structure
+
+- **`tmla/`** — Python package: `config`, `attacks` (multiscale attack, decomposition, reconstruction, metrics), `tcm` (LIC_TCM loader), `utils`.
+- **`scripts/`** — CLI: `run_attack.py`, `run_batch_parallel.py`, `compute_entropy.py`, `collect_metrics.py`, `build_chart.py`.
+- **`init.py`** — setup script (clones LIC_TCM, downloads data and weights).
+- **`LIC_TCM/`** — created by `init.py`; TCM model is loaded from here at runtime.
+
+## Usage
+
+### Attacks
+
+Single image:
+
+```bash
+python3 scripts/run_attack.py --image path/to/image.png --model model_name
+```
+
+Batch (dataset × model list):
+
+```bash
+python3 scripts/run_batch_parallel.py
+```
+
+### Image complexity (entropy)
+
+Computes the normalized local Shannon entropy map and global complexity score (as in the paper):
+
+```bash
+python3 scripts/compute_entropy.py path/to/image.png --save entropy_map.png --show
+```
+
+## Releasing a new version
+
+Bump version in `pyproject.toml` and `tmla/__init__.py`, then:
+
+```bash
+python -m build
+twine upload dist/*
+```
+
+## Citation
+
+If you use this code or the ([paper](https://www.sciencedirect.com/science/article/pii/S0020025526000745)), please cite:
+
+```bibtex
+@article{kalmykov2026tmla,
+  title   = {T-MLA: A Targeted Multiscale Log--Exponential Attack Framework for Neural Image Compression},
+  author  = {Kalmykov, N. I. and Dibo, R. and Shen, K. and Zhonghan, X. and Phan, A. H. and Liu, Y. and Oseledets, I.},
+  journal = {Information Sciences},
+  volume  = {702},
+  pages   = {123143},
+  year    = {2026},
+  publisher = {Elsevier},
+  doi     = {10.1016/j.ins.2025.123143}
+}
+```
