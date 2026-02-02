@@ -1,0 +1,702 @@
+"""Centralized status definitions for nspec tooling.
+
+This is the SINGLE SOURCE OF TRUTH for all status emojis, codes, and text.
+All other modules should import from here - DO NOT duplicate these definitions.
+
+Emojis are configurable via [emojis] section in config.toml.
+Use configure() to apply overrides and reset() to restore defaults.
+For dynamic access (immune to import-time caching), use accessor functions:
+  get_all_status_emojis(), get_status_emoji_pattern()
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from enum import IntEnum
+
+# =============================================================================
+# FR (Feature Request) Statuses
+# =============================================================================
+
+
+class FRStatusCode(IntEnum):
+    """FR status codes for programmatic use."""
+
+    PROPOSED = 0
+    IN_DESIGN = 1
+    ACTIVE = 2
+    COMPLETED = 3
+    REJECTED = 4
+    SUPERSEDED = 5
+    DEFERRED = 6
+
+
+@dataclass(frozen=True)
+class FRStatus:
+    """FR status definition."""
+
+    code: int
+    emoji: str
+    text: str
+
+    @property
+    def full(self) -> str:
+        """Full status string (emoji + text)."""
+        return f"{self.emoji} {self.text}"
+
+
+# =============================================================================
+# IMPL (Implementation) Statuses
+# =============================================================================
+
+
+class IMPLStatusCode(IntEnum):
+    """IMPL status codes for programmatic use."""
+
+    PLANNING = 0
+    ACTIVE = 1
+    TESTING = 2
+    READY = 3  # Ready for archival (distinct from FR Completed)
+    PAUSED = 4
+    HOLD = 5
+
+
+@dataclass(frozen=True)
+class IMPLStatus:
+    """IMPL status definition."""
+
+    code: int
+    emoji: str
+    text: str
+
+    @property
+    def full(self) -> str:
+        """Full status string (emoji + text)."""
+        return f"{self.emoji} {self.text}"
+
+
+# =============================================================================
+# Priority Definitions
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class Priority:
+    """Priority definition."""
+
+    code: str  # P0, P1, P2, P3
+    emoji: str
+    rank: int  # Lower = higher priority
+
+    @property
+    def full(self) -> str:
+        """Full priority string (emoji + code)."""
+        return f"{self.emoji} {self.code}"
+
+
+# =============================================================================
+# Default Emoji Values
+# =============================================================================
+
+_DEFAULT_FR_EMOJIS: dict[int, str] = {
+    0: "🟡",  # Proposed
+    1: "🔵",  # In Design
+    2: "🔵",  # Active
+    3: "✅",  # Completed
+    4: "❌",  # Rejected
+    5: "🔄",  # Superseded
+    6: "⏳",  # Deferred
+}
+
+_DEFAULT_FR_TEXTS: dict[int, str] = {
+    0: "Proposed",
+    1: "In Design",
+    2: "Active",
+    3: "Completed",
+    4: "Rejected",
+    5: "Superseded",
+    6: "Deferred",
+}
+
+_DEFAULT_IMPL_EMOJIS: dict[int, str] = {
+    0: "🟡",  # Planning
+    1: "🔵",  # Active
+    2: "🧪",  # Testing
+    3: "🟠",  # Ready
+    4: "⏳",  # Paused
+    5: "⚪",  # Hold
+}
+
+_DEFAULT_IMPL_TEXTS: dict[int, str] = {
+    0: "Planning",
+    1: "Active",
+    2: "Testing",
+    3: "Ready",
+    4: "Paused",
+    5: "Hold",
+}
+
+_DEFAULT_PRIORITY_EMOJIS: dict[str, str] = {
+    "P0": "🔥",
+    "P1": "🟠",
+    "P2": "🟡",
+    "P3": "🔵",
+}
+
+_DEFAULT_DEP_EMOJIS: dict[str, str] = {
+    "COMPLETED": "✅",
+    "ACTIVE": "🔵",
+    "PROPOSED": "🟡",
+    "REJECTED": "❌",
+    "SUPERSEDED": "🔄",
+    "TESTING": "🧪",
+    "PAUSED": "⏳",
+    "UNKNOWN": "❓",
+}
+
+_DEFAULT_EPIC_EMOJIS: dict[str, str] = {
+    "PROPOSED": "📋",
+    "ACTIVE": "🚀",
+    "COMPLETED": "🏆",
+}
+
+# =============================================================================
+# Mutable Module-Level State (rebuilt by configure/reset)
+# =============================================================================
+
+# FR status definitions - keyed by code
+FR_STATUSES: dict[int, FRStatus] = {}
+
+# Reverse lookup: full status string -> FRStatus
+FR_STATUS_BY_TEXT: dict[str, FRStatus] = {}
+
+# Terminal FR statuses (cannot transition out of these)
+FR_TERMINAL_CODES = {FRStatusCode.COMPLETED, FRStatusCode.REJECTED, FRStatusCode.SUPERSEDED}
+
+# IMPL status definitions - keyed by code
+IMPL_STATUSES: dict[int, IMPLStatus] = {}
+
+# Reverse lookup: full status string -> IMPLStatus
+IMPL_STATUS_BY_TEXT: dict[str, IMPLStatus] = {}
+
+# Terminal IMPL statuses
+IMPL_TERMINAL_CODES = {IMPLStatusCode.READY}
+
+# Priorities (unified for all types)
+SPEC_PRIORITIES: dict[str, Priority] = {}
+ALL_PRIORITIES: dict[str, Priority] = {}
+
+# Priority rank for sorting (lower = higher priority)
+PRIORITY_RANK: dict[str, int] = {}
+
+# Priority display names
+PRIORITY_NAMES: dict[str, str] = {
+    "P0": "CRITICAL",
+    "P1": "HIGH",
+    "P2": "MEDIUM",
+    "P3": "LOW",
+}
+
+
+class DepDisplayEmoji:
+    """Emojis used for displaying dependency status in nspec table."""
+
+    COMPLETED = "✅"
+    ACTIVE = "🔵"
+    PROPOSED = "🟡"
+    REJECTED = "❌"
+    SUPERSEDED = "🔄"
+    TESTING = "🧪"
+    PAUSED = "⏳"
+    UNKNOWN = "❓"
+
+
+class EpicDisplayEmoji:
+    """Emojis used for displaying epic status (derived from dependencies).
+
+    Epic status is calculated, not stored:
+    - PROPOSED: No deps have started (all proposed/planning)
+    - ACTIVE: At least one dep is active/testing
+    - COMPLETED: All deps are completed
+    """
+
+    PROPOSED = "📋"  # Clipboard - planning phase
+    ACTIVE = "🚀"  # Rocket - work in progress
+    COMPLETED = "🏆"  # Trophy - delivered
+
+
+# All possible status emojis (for regex pattern matching)
+ALL_STATUS_EMOJIS = ""
+
+# Regex pattern to match status emoji at start of string
+# \uFE0F is the variation selector that some emojis (e.g. ⏸️) include
+STATUS_EMOJI_PATTERN = ""
+
+
+# =============================================================================
+# Build / Configure / Reset
+# =============================================================================
+
+
+def _build(
+    fr_emojis: dict[int, str] | None = None,
+    impl_emojis: dict[int, str] | None = None,
+    priority_emojis: dict[str, str] | None = None,
+    dep_emojis: dict[str, str] | None = None,
+    epic_emojis: dict[str, str] | None = None,
+) -> None:
+    """Rebuild all module-level status dicts from emoji mappings."""
+    global FR_STATUSES, FR_STATUS_BY_TEXT
+    global IMPL_STATUSES, IMPL_STATUS_BY_TEXT
+    global SPEC_PRIORITIES, ALL_PRIORITIES, PRIORITY_RANK
+    global ALL_STATUS_EMOJIS, STATUS_EMOJI_PATTERN
+
+    fe = fr_emojis or _DEFAULT_FR_EMOJIS
+    ie = impl_emojis or _DEFAULT_IMPL_EMOJIS
+    pe = priority_emojis or _DEFAULT_PRIORITY_EMOJIS
+    de = dep_emojis or _DEFAULT_DEP_EMOJIS
+    ee = epic_emojis or _DEFAULT_EPIC_EMOJIS
+
+    # FR statuses
+    FR_STATUSES.clear()
+    for code in _DEFAULT_FR_TEXTS:
+        FR_STATUSES[code] = FRStatus(
+            code, fe.get(code, _DEFAULT_FR_EMOJIS[code]), _DEFAULT_FR_TEXTS[code]
+        )
+    FR_STATUS_BY_TEXT.clear()
+    FR_STATUS_BY_TEXT.update({s.full: s for s in FR_STATUSES.values()})
+
+    # IMPL statuses
+    IMPL_STATUSES.clear()
+    for code in _DEFAULT_IMPL_TEXTS:
+        IMPL_STATUSES[code] = IMPLStatus(
+            code, ie.get(code, _DEFAULT_IMPL_EMOJIS[code]), _DEFAULT_IMPL_TEXTS[code]
+        )
+    IMPL_STATUS_BY_TEXT.clear()
+    IMPL_STATUS_BY_TEXT.update({s.full: s for s in IMPL_STATUSES.values()})
+
+    # Priorities
+    SPEC_PRIORITIES.clear()
+    for pcode, rank in [("P0", 0), ("P1", 1), ("P2", 2), ("P3", 3)]:
+        SPEC_PRIORITIES[pcode] = Priority(
+            pcode, pe.get(pcode, _DEFAULT_PRIORITY_EMOJIS[pcode]), rank
+        )
+    ALL_PRIORITIES.clear()
+    ALL_PRIORITIES.update(SPEC_PRIORITIES)
+    PRIORITY_RANK.clear()
+    PRIORITY_RANK.update({p.code: p.rank for p in ALL_PRIORITIES.values()})
+
+    # Dependency display emojis
+    for attr in (
+        "COMPLETED",
+        "ACTIVE",
+        "PROPOSED",
+        "REJECTED",
+        "SUPERSEDED",
+        "TESTING",
+        "PAUSED",
+        "UNKNOWN",
+    ):
+        setattr(DepDisplayEmoji, attr, de.get(attr, _DEFAULT_DEP_EMOJIS[attr]))
+
+    # Epic display emojis
+    for attr in ("PROPOSED", "ACTIVE", "COMPLETED"):
+        setattr(EpicDisplayEmoji, attr, ee.get(attr, _DEFAULT_EPIC_EMOJIS[attr]))
+
+    # Collect all unique emoji base characters for pattern matching
+    all_emojis_set: set[str] = set()
+    for s in FR_STATUSES.values():
+        all_emojis_set.add(s.emoji.rstrip("\ufe0f"))
+    for s in IMPL_STATUSES.values():
+        all_emojis_set.add(s.emoji.rstrip("\ufe0f"))
+    for p in SPEC_PRIORITIES.values():
+        all_emojis_set.add(p.emoji.rstrip("\ufe0f"))
+    for attr in (
+        "COMPLETED",
+        "ACTIVE",
+        "PROPOSED",
+        "REJECTED",
+        "SUPERSEDED",
+        "TESTING",
+        "PAUSED",
+        "UNKNOWN",
+    ):
+        all_emojis_set.add(getattr(DepDisplayEmoji, attr).rstrip("\ufe0f"))
+    for attr in ("PROPOSED", "ACTIVE", "COMPLETED"):
+        all_emojis_set.add(getattr(EpicDisplayEmoji, attr).rstrip("\ufe0f"))
+    # Add legacy emojis that might appear in existing files
+    all_emojis_set.update({"🟢", "🔴", "📋", "🚧", "⏸"})
+
+    ALL_STATUS_EMOJIS = "".join(sorted(all_emojis_set))  # pyright: ignore[reportConstantRedefinition]
+    STATUS_EMOJI_PATTERN = rf"^([{ALL_STATUS_EMOJIS}]\uFE0F?)\s+"  # pyright: ignore[reportConstantRedefinition]
+
+
+def configure(emojis_config: object | None = None) -> None:
+    """Apply emoji overrides from config and rebuild all status dicts.
+
+    Args:
+        emojis_config: An EmojisConfig instance (or any object with matching attrs).
+                       Pass None to use defaults.
+    """
+    if emojis_config is None:
+        _build()
+        return
+
+    # Build override dicts from config attributes
+    fr_emojis = dict(_DEFAULT_FR_EMOJIS)
+    _CONFIG_FR_MAP = {
+        "fr_proposed": 0,
+        "fr_in_design": 1,
+        "fr_active": 2,
+        "fr_completed": 3,
+        "fr_rejected": 4,
+        "fr_superseded": 5,
+        "fr_deferred": 6,
+    }
+    for attr, code in _CONFIG_FR_MAP.items():
+        val = getattr(emojis_config, attr, None)
+        if val is not None:
+            fr_emojis[code] = val
+
+    impl_emojis = dict(_DEFAULT_IMPL_EMOJIS)
+    _CONFIG_IMPL_MAP = {
+        "impl_planning": 0,
+        "impl_active": 1,
+        "impl_testing": 2,
+        "impl_ready": 3,
+        "impl_paused": 4,
+        "impl_hold": 5,
+    }
+    for attr, code in _CONFIG_IMPL_MAP.items():
+        val = getattr(emojis_config, attr, None)
+        if val is not None:
+            impl_emojis[code] = val
+
+    priority_emojis = dict(_DEFAULT_PRIORITY_EMOJIS)
+    for pcode in ("P0", "P1", "P2", "P3"):
+        val = getattr(emojis_config, f"priority_{pcode.lower()}", None)
+        if val is not None:
+            priority_emojis[pcode] = val
+
+    dep_emojis = dict(_DEFAULT_DEP_EMOJIS)
+    _CONFIG_DEP_MAP = {
+        "dep_completed": "COMPLETED",
+        "dep_active": "ACTIVE",
+        "dep_proposed": "PROPOSED",
+        "dep_rejected": "REJECTED",
+        "dep_superseded": "SUPERSEDED",
+        "dep_testing": "TESTING",
+        "dep_paused": "PAUSED",
+        "dep_unknown": "UNKNOWN",
+    }
+    for attr, key in _CONFIG_DEP_MAP.items():
+        val = getattr(emojis_config, attr, None)
+        if val is not None:
+            dep_emojis[key] = val
+
+    epic_emojis = dict(_DEFAULT_EPIC_EMOJIS)
+    _CONFIG_EPIC_MAP = {
+        "epic_proposed": "PROPOSED",
+        "epic_active": "ACTIVE",
+        "epic_completed": "COMPLETED",
+    }
+    for attr, key in _CONFIG_EPIC_MAP.items():
+        val = getattr(emojis_config, attr, None)
+        if val is not None:
+            epic_emojis[key] = val
+
+    _build(fr_emojis, impl_emojis, priority_emojis, dep_emojis, epic_emojis)
+
+
+def reset() -> None:
+    """Restore all emojis to defaults. Useful for test isolation."""
+    _build()
+
+
+# =============================================================================
+# Accessor Functions (immune to import-time caching)
+# =============================================================================
+
+
+def get_all_status_emojis() -> str:
+    """Return current ALL_STATUS_EMOJIS string."""
+    return ALL_STATUS_EMOJIS
+
+
+def get_status_emoji_pattern() -> str:
+    """Return current STATUS_EMOJI_PATTERN regex string."""
+    return STATUS_EMOJI_PATTERN
+
+
+# =============================================================================
+# Helper Functions
+# =============================================================================
+
+
+def get_fr_status(code: int) -> FRStatus | None:
+    """Get FR status by code."""
+    return FR_STATUSES.get(code)
+
+
+def get_impl_status(code: int) -> IMPLStatus | None:
+    """Get IMPL status by code."""
+    return IMPL_STATUSES.get(code)
+
+
+def get_priority(code: str) -> Priority | None:
+    """Get priority by code (P0-P3)."""
+    return ALL_PRIORITIES.get(code.upper())
+
+
+def parse_status_text(status_str: str) -> str:
+    """Extract status text from full status string (e.g., '🔵 Active' -> 'active')."""
+    if not status_str:
+        return ""
+    parts = status_str.split(maxsplit=1)
+    return parts[-1].lower().strip() if parts else ""
+
+
+def is_active_status(status_str: str) -> bool:
+    """Check if status represents active work."""
+    text = parse_status_text(status_str)
+    return text in ("active", "testing", "in design")
+
+
+def is_completed_status(status_str: str) -> bool:
+    """Check if status represents completed work."""
+    text = parse_status_text(status_str)
+    return text == "completed"
+
+
+def is_superseded_status(status_str: str) -> bool:
+    """Check if status is superseded."""
+    text = parse_status_text(status_str)
+    return text == "superseded"
+
+
+def get_dep_display_emoji(status_str: str) -> str:
+    """Get the emoji to display for a dependency based on its status.
+
+    Args:
+        status_str: Full status string like '🔵 Active' or 'active'
+
+    Returns:
+        Display emoji for dependency list
+    """
+    text = parse_status_text(status_str)
+
+    status_emoji_map = {
+        "completed": DepDisplayEmoji.COMPLETED,
+        "active": DepDisplayEmoji.ACTIVE,
+        "testing": DepDisplayEmoji.TESTING,
+        "rejected": DepDisplayEmoji.REJECTED,
+        "superseded": DepDisplayEmoji.SUPERSEDED,
+        "paused": DepDisplayEmoji.PAUSED,
+    }
+
+    return status_emoji_map.get(text, DepDisplayEmoji.PROPOSED)
+
+
+# =============================================================================
+# Legend and Display Helpers
+# =============================================================================
+
+
+def get_status_legend() -> str:
+    """Generate the status legend string for display.
+
+    Shows key statuses for the nspec table legend.
+    """
+    return (
+        f"Specs: {FR_STATUSES[0].emoji} Proposed  "
+        f"{FR_STATUSES[2].emoji} Active  "
+        f"{IMPL_STATUSES[2].emoji} Testing  "
+        f"{FR_STATUSES[3].emoji} Completed  "
+        f"{IMPL_STATUSES[4].emoji} Paused\n"
+        f"Epics:   {EpicDisplayEmoji.PROPOSED} Planning  "
+        f"{EpicDisplayEmoji.ACTIVE} In Progress  "
+        f"{EpicDisplayEmoji.COMPLETED} Done"
+    )
+
+
+# =============================================================================
+# Emoji Constants for Pattern Matching
+# =============================================================================
+# ALL_STATUS_EMOJIS and STATUS_EMOJI_PATTERN are set by _build() above.
+# Use get_all_status_emojis() / get_status_emoji_pattern() for dynamic access.
+
+
+def get_status_emoji_fallback() -> dict[str, str]:
+    """Generate fallback mapping from status text to emoji.
+
+    This consolidates all status->emoji mappings in one place.
+    Used when parsing status strings that don't have emoji prefix.
+    """
+    return {
+        # FR statuses
+        "proposed": FR_STATUSES[0].emoji,
+        "in-design": FR_STATUSES[1].emoji,
+        "in design": FR_STATUSES[1].emoji,
+        "active": FR_STATUSES[2].emoji,
+        "completed": FR_STATUSES[3].emoji,
+        "complete": FR_STATUSES[3].emoji,
+        "rejected": FR_STATUSES[4].emoji,
+        "superseded": FR_STATUSES[5].emoji,
+        "deferred": FR_STATUSES[6].emoji,
+        # IMPL statuses
+        "planning": IMPL_STATUSES[0].emoji,
+        "testing": IMPL_STATUSES[2].emoji,
+        "paused": IMPL_STATUSES[4].emoji,
+        "hold": IMPL_STATUSES[5].emoji,
+        # Legacy aliases
+        "in-progress": FR_STATUSES[2].emoji,  # maps to active
+        "blocked": "🔴",  # legacy, not in standard statuses
+    }
+
+
+def print_status_codes() -> None:
+    """Print all status codes reference.
+
+    Usage: Run `make nspec.status-codes` to see this output.
+    """
+    print("\n" + "=" * 60)
+    print("NSPEC STATUS CODES REFERENCE")
+    print("=" * 60)
+
+    print("\n📋 FR (Feature Request) Status Codes:")
+    print("-" * 40)
+    print("  Code  Emoji  Status")
+    print("-" * 40)
+    for code, status in FR_STATUSES.items():
+        print(f"    {code}     {status.emoji}    {status.text}")
+
+    print("\n📋 IMPL (Implementation) Status Codes:")
+    print("-" * 40)
+    print("  Code  Emoji  Status")
+    print("-" * 40)
+    for code, status in IMPL_STATUSES.items():
+        print(f"    {code}     {status.emoji}    {status.text}")
+
+    print("\n📋 Priority Codes:")
+    print("-" * 40)
+    print("  Priorities (P0-P3):")
+    for code, priority in SPEC_PRIORITIES.items():
+        name = PRIORITY_NAMES.get(code, "")
+        print(f"    {code}  {priority.emoji}  {name}")
+
+    print("\n" + "=" * 60)
+    print("USAGE:")
+    print("=" * 60)
+    print("\n  Start work:  make nspec.activate <SPEC_ID>")
+    print("  Advance:     make nspec.next-status <SPEC_ID>")
+    print("  Reset:       make nspec.reset <SPEC_ID>")
+    print("\n  Workflow:    activate → next-status (repeat) → complete")
+    print()
+
+
+def get_status_codes_help() -> str:
+    """Return a concise string of status codes for --help epilog."""
+    fr_codes = ", ".join(f"{s.code}={s.text}" for s in FR_STATUSES.values())
+    impl_codes = ", ".join(f"{s.code}={s.text}" for s in IMPL_STATUSES.values())
+    return f"FR codes: {fr_codes}\nIMPL codes: {impl_codes}"
+
+
+# =============================================================================
+# Valid State Pairs Matrix (FR-286)
+# =============================================================================
+# Defines which (FR_status, IMPL_status) combinations are valid.
+# Reference: DEV-PROCESS.md lines 956-960 (Linear Flow diagram)
+#
+# FR:   Proposed → In Design → Active → Completed
+#                                 ↓
+# IMPL:                      Planning → Active → Testing → Ready → [archived]
+#
+# Key rule: IMPL cannot advance past Planning(0) until FR reaches Active(2)
+
+
+@dataclass(frozen=True)
+class StateValidation:
+    """Validation result for a state pair."""
+
+    valid: bool
+    reason: str
+
+
+# Matrix of valid (FR, IMPL) state pairs
+# Key: (fr_status_code, impl_status_code)
+# Value: StateValidation(valid, reason)
+VALID_STATE_PAIRS: dict[tuple[int, int], StateValidation] = {
+    # FR=Proposed(0): Only IMPL=Planning allowed
+    (0, 0): StateValidation(True, "Both not started"),
+    (0, 1): StateValidation(False, "Cannot start IMPL until FR is Active"),
+    (0, 2): StateValidation(False, "Cannot start IMPL until FR is Active"),
+    (0, 3): StateValidation(False, "Cannot complete IMPL without finalized spec"),
+    (0, 4): StateValidation(True, "FR proposed, IMPL paused"),
+    (0, 5): StateValidation(True, "FR proposed, IMPL on hold"),
+    # FR=In Design(1): Only IMPL=Planning allowed
+    (1, 0): StateValidation(True, "Spec being designed, impl planning"),
+    (1, 1): StateValidation(False, "Cannot start IMPL while spec in design"),
+    (1, 2): StateValidation(False, "Cannot test IMPL while spec in design"),
+    (1, 3): StateValidation(False, "Cannot complete IMPL without finalized spec"),
+    (1, 4): StateValidation(True, "FR in design, IMPL paused"),
+    (1, 5): StateValidation(True, "FR in design, IMPL on hold"),
+    # FR=Active(2): IMPL can proceed through all states except Completed
+    (2, 0): StateValidation(True, "Spec done, impl not started"),
+    (2, 1): StateValidation(True, "Spec locked, actively implementing"),
+    (2, 2): StateValidation(True, "Spec locked, testing implementation"),
+    (2, 3): StateValidation(False, "Cannot complete IMPL until FR is Completed"),
+    (2, 4): StateValidation(True, "FR active, IMPL paused"),
+    (2, 5): StateValidation(True, "FR active, IMPL on hold"),
+    # FR=Completed(3): Only IMPL=Completed valid (atomic completion)
+    (3, 0): StateValidation(False, "FR completed but IMPL not started - inconsistent"),
+    (3, 1): StateValidation(False, "FR completed but IMPL still active - inconsistent"),
+    (3, 2): StateValidation(False, "FR completed but IMPL still testing - inconsistent"),
+    (3, 3): StateValidation(True, "Both completed"),
+    (3, 4): StateValidation(False, "FR completed but IMPL paused - inconsistent"),
+    (3, 5): StateValidation(False, "FR completed but IMPL on hold - inconsistent"),
+    # FR=Rejected(4): Any IMPL state valid (spec cancelled)
+    (4, 0): StateValidation(True, "FR rejected, IMPL not started"),
+    (4, 1): StateValidation(True, "FR rejected mid-implementation"),
+    (4, 2): StateValidation(True, "FR rejected during testing"),
+    (4, 3): StateValidation(True, "FR rejected after IMPL complete"),
+    (4, 4): StateValidation(True, "FR rejected, IMPL paused"),
+    (4, 5): StateValidation(True, "FR rejected, IMPL on hold"),
+    # FR=Superseded(5): Any IMPL state valid (spec replaced)
+    (5, 0): StateValidation(True, "FR superseded, IMPL not started"),
+    (5, 1): StateValidation(True, "FR superseded mid-implementation"),
+    (5, 2): StateValidation(True, "FR superseded during testing"),
+    (5, 3): StateValidation(True, "FR superseded after IMPL complete"),
+    (5, 4): StateValidation(True, "FR superseded, IMPL paused"),
+    (5, 5): StateValidation(True, "FR superseded, IMPL on hold"),
+    # FR=Deferred(6): IMPL should be Paused or Hold
+    (6, 0): StateValidation(True, "FR deferred, IMPL planning"),
+    (6, 1): StateValidation(False, "Cannot have active IMPL with deferred FR"),
+    (6, 2): StateValidation(False, "Cannot have testing IMPL with deferred FR"),
+    (6, 3): StateValidation(False, "Cannot complete IMPL with deferred FR"),
+    (6, 4): StateValidation(True, "Both deferred/paused"),
+    (6, 5): StateValidation(True, "FR deferred, IMPL on hold"),
+}
+
+
+def is_valid_state_pair(fr_status: int, impl_status: int) -> tuple[bool, str]:
+    """Check if a (FR, IMPL) state combination is valid.
+
+    Args:
+        fr_status: FR status code (0-6)
+        impl_status: IMPL status code (0-5)
+
+    Returns:
+        Tuple of (is_valid, reason_message)
+    """
+    key = (fr_status, impl_status)
+    if key not in VALID_STATE_PAIRS:
+        return (False, f"Unknown state combination: FR={fr_status}, IMPL={impl_status}")
+
+    validation = VALID_STATE_PAIRS[key]
+    return (validation.valid, validation.reason)
+
+
+# =============================================================================
+# Initialize on import
+# =============================================================================
+_build()
