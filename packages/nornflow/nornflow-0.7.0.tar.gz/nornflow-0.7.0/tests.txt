@@ -1,0 +1,250 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.12.8, pytest-9.0.2, pluggy-1.6.0
+rootdir: /Users/andrelima/Personal/portfolio_projects/nornflow
+configfile: pyproject.toml
+plugins: anyio-4.12.0, cov-7.0.0
+collected 6 items
+
+tests/unit/core/test_processors.py .....F                                [100%]
+
+=================================== FAILURES ===================================
+_______ TestProcessorPrecedence.test_kwargs_override_workflow_processors _______
+
+self = <nornflow.nornflow.NornFlow object at 0x10abc5c40>
+nornflow_settings = <MagicMock id='4475003648'>
+workflow = <MagicMock name='create()' spec='WorkflowModel' id='4475060448'>
+processors = [{'args': {'name': 'KwargsProc'}, 'class': 'tests.unit.core.test_processors_utils.TestProcessor2'}]
+vars = None, filters = None, failure_strategy = None, dry_run = None
+kwargs = {}
+
+    def __init__(
+        self,
+        nornflow_settings: NornFlowSettings | None = None,
+        workflow: WorkflowModel | str | None = None,
+        processors: list[dict[str, Any]] | None = None,
+        vars: dict[str, Any] | None = None,
+        filters: dict[str, Any] | None = None,
+        failure_strategy: FailureStrategy | None = None,
+        dry_run: bool | None = None,
+        **kwargs: Any,
+    ):
+        """
+        Initialize a NornFlow instance.
+    
+        Args:
+            nornflow_settings: NornFlow configuration settings object
+            workflow: Pre-configured WorkflowModel instance or workflow name string (optional)
+            processors: List of processor configurations to override default processors
+            vars: Variables with highest precedence in the variable resolution chain.
+                While named "vars" due to their primary use case (command-line arguments), these
+                serve as a universal override mechanism that can be:
+                - Parsed from actual CLI arguments (--vars)
+                - Set programmatically for workflow customization
+                - Updated at runtime for dynamic behavior
+                These variables always override any other variable source.
+            filters: Inventory filters with highest precedence. These completely override
+                any inventory filters defined in the workflow YAML.
+            failure_strategy: Failure strategy with highest precedence. This overrides any failure
+                strategy defined in the workflow YAML.
+            dry_run: Dry run mode with highest precedence. This overrides any dry_run
+                setting defined in the workflow YAML or settings.
+            **kwargs: Additional keyword arguments passed to NornFlowSettings
+    
+        Raises:
+            InitializationError: If initialization fails due to invalid configuration
+        """
+        try:
+            logger.info("Initializing NornFlow instance")
+            self._validate_init_kwargs(kwargs)
+            self._initialize_settings(nornflow_settings, kwargs)
+    
+            logger.set_execution_context(
+                execution_name="loading",
+                execution_type="workflow",
+                log_dir=self.settings.logger.get("directory"),
+                log_level=self.settings.logger.get("level", "INFO"),
+            )
+    
+            self._initialize_instance_vars(vars, filters, failure_strategy, dry_run, processors)
+            self._initialize_hooks()
+            self._initialize_catalogs()
+            self._initialize_processors()
+            self._initialize_j2_service()
+            if workflow:
+>               self.workflow = workflow
+                ^^^^^^^^^^^^^
+
+nornflow/nornflow.py:136: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+nornflow/nornflow.py:615: in workflow
+    log_name = self._workflow.name.replace(" ", "_")
+               ^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <MagicMock name='create()' spec='WorkflowModel' id='4475060448'>
+name = 'name'
+
+    def __getattr__(self, name):
+        if name in {'_mock_methods', '_mock_unsafe'}:
+            raise AttributeError(name)
+        elif self._mock_methods is not None:
+            if name not in self._mock_methods or name in _all_magics:
+>               raise AttributeError("Mock object has no attribute %r" % name)
+E               AttributeError: Mock object has no attribute 'name'
+
+../../../.local/share/uv/python/cpython-3.12.8-macos-aarch64-none/lib/python3.12/unittest/mock.py:660: AttributeError
+
+The above exception was the direct cause of the following exception:
+
+self = <tests.unit.core.test_processors.TestProcessorPrecedence object at 0x10ab3eb70>
+mock_init_nornir = <MagicMock name='InitNornir' id='4474915536'>
+
+    @patch("nornflow.nornir_manager.InitNornir")
+    def test_kwargs_override_workflow_processors(self, mock_init_nornir):
+        """Test that kwargs processors override workflow model processors."""
+        # Setup
+        mock_nornir = MagicMock()
+        mock_init_nornir.return_value = mock_nornir
+    
+        # Create settings
+        settings = MagicMock()
+        settings.processors = None
+        settings.nornir_config_file = None  # Avoid file not found errors
+        settings.dry_run = False
+    
+        # Configure logger settings to return proper strings
+        settings.logger = {"directory": "/tmp/logs", "level": "INFO"}
+    
+        # Create workflow with processors - must include at least one task
+        workflow_dict = {
+            "workflow": {
+                "name": "Test",
+                "tasks": [{"name": "dummy_task", "args": {"arg1": "value1"}}],
+                "processors": [
+                    {
+                        "class": "tests.unit.core.test_processors_utils.TestProcessor",
+                        "args": {"name": "WorkflowProc"},
+                    }
+                ],
+            }
+        }
+    
+        # Create the workflow model
+        with patch("nornflow.models.WorkflowModel.create") as mock_create:
+            # Configure the mock workflow
+            workflow_model = MagicMock(spec=WorkflowModel)
+            workflow_model.processors = [
+                {"class": "tests.unit.core.test_processors_utils.TestProcessor", "args": {"name": "WorkflowProc"}}
+            ]
+            workflow_model.dry_run = False
+            mock_create.return_value = workflow_model
+    
+            # Create kwargs processors
+            kwargs_processors = [
+                {"class": "tests.unit.core.test_processors_utils.TestProcessor2", "args": {"name": "KwargsProc"}}
+            ]
+    
+            # Create NornFlow with both workflow and processors
+            with patch("nornflow.nornflow.NornFlow._load_tasks_catalog"), \
+                 patch("nornflow.nornflow.NornFlow._load_workflows_catalog"), \
+                 patch("nornflow.nornflow.NornFlow._load_filters_catalog"), \
+                 patch("nornflow.nornflow.NornFlow._initialize_nornir"):
+    
+>               nornflow = NornFlow(
+                    nornflow_settings=settings,
+                    workflow=workflow_model,
+                    processors=kwargs_processors
+                )
+
+tests/unit/core/test_processors.py:140: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <nornflow.nornflow.NornFlow object at 0x10abc5c40>
+nornflow_settings = <MagicMock id='4475003648'>
+workflow = <MagicMock name='create()' spec='WorkflowModel' id='4475060448'>
+processors = [{'args': {'name': 'KwargsProc'}, 'class': 'tests.unit.core.test_processors_utils.TestProcessor2'}]
+vars = None, filters = None, failure_strategy = None, dry_run = None
+kwargs = {}
+
+    def __init__(
+        self,
+        nornflow_settings: NornFlowSettings | None = None,
+        workflow: WorkflowModel | str | None = None,
+        processors: list[dict[str, Any]] | None = None,
+        vars: dict[str, Any] | None = None,
+        filters: dict[str, Any] | None = None,
+        failure_strategy: FailureStrategy | None = None,
+        dry_run: bool | None = None,
+        **kwargs: Any,
+    ):
+        """
+        Initialize a NornFlow instance.
+    
+        Args:
+            nornflow_settings: NornFlow configuration settings object
+            workflow: Pre-configured WorkflowModel instance or workflow name string (optional)
+            processors: List of processor configurations to override default processors
+            vars: Variables with highest precedence in the variable resolution chain.
+                While named "vars" due to their primary use case (command-line arguments), these
+                serve as a universal override mechanism that can be:
+                - Parsed from actual CLI arguments (--vars)
+                - Set programmatically for workflow customization
+                - Updated at runtime for dynamic behavior
+                These variables always override any other variable source.
+            filters: Inventory filters with highest precedence. These completely override
+                any inventory filters defined in the workflow YAML.
+            failure_strategy: Failure strategy with highest precedence. This overrides any failure
+                strategy defined in the workflow YAML.
+            dry_run: Dry run mode with highest precedence. This overrides any dry_run
+                setting defined in the workflow YAML or settings.
+            **kwargs: Additional keyword arguments passed to NornFlowSettings
+    
+        Raises:
+            InitializationError: If initialization fails due to invalid configuration
+        """
+        try:
+            logger.info("Initializing NornFlow instance")
+            self._validate_init_kwargs(kwargs)
+            self._initialize_settings(nornflow_settings, kwargs)
+    
+            logger.set_execution_context(
+                execution_name="loading",
+                execution_type="workflow",
+                log_dir=self.settings.logger.get("directory"),
+                log_level=self.settings.logger.get("level", "INFO"),
+            )
+    
+            self._initialize_instance_vars(vars, filters, failure_strategy, dry_run, processors)
+            self._initialize_hooks()
+            self._initialize_catalogs()
+            self._initialize_processors()
+            self._initialize_j2_service()
+            if workflow:
+                self.workflow = workflow
+            logger.info("NornFlow instance initialized successfully")
+        except CoreError:
+            raise
+        except Exception as e:
+>           raise InitializationError(f"Failed to initialize NornFlow: {e!s}", component="NornFlow") from e
+E           nornflow.exceptions.InitializationError: NornFlow: Failed to initialize NornFlow: Mock object has no attribute 'name'
+
+nornflow/nornflow.py:141: InitializationError
+----------------------------- Captured stderr call -----------------------------
+2026-01-21 20:35:29 [ERROR] [nornflow] - NornFlow: Failed to initialize NornFlow: Mock object has no attribute 'name'
+------------------------------ Captured log call -------------------------------
+INFO     nornflow:logger.py:255 Initializing NornFlow instance
+INFO     nornflow:logger.py:255 Started workflow execution: loading
+ERROR    nornflow:logger.py:263 NornFlow: Failed to initialize NornFlow: Mock object has no attribute 'name'
+=============================== warnings summary ===============================
+tests/unit/core/test_processors_utils.py:4
+  /Users/andrelima/Personal/portfolio_projects/nornflow/tests/unit/core/test_processors_utils.py:4: PytestCollectionWarning: cannot collect test class 'TestProcessor' because it has a __init__ constructor (from: tests/unit/core/test_processors.py)
+    class TestProcessor(Processor):
+
+tests/unit/core/test_processors_utils.py:41
+  /Users/andrelima/Personal/portfolio_projects/nornflow/tests/unit/core/test_processors_utils.py:41: PytestCollectionWarning: cannot collect test class 'TestProcessor2' because it has a __init__ constructor (from: tests/unit/core/test_processors.py)
+    class TestProcessor2(TestProcessor):
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/unit/core/test_processors.py::TestProcessorPrecedence::test_kwargs_override_workflow_processors
+=================== 1 failed, 5 passed, 2 warnings in 0.07s ====================
