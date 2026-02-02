@@ -1,0 +1,916 @@
+# Adversarial Workflow
+
+[![PyPI version](https://badge.fury.io/py/adversarial-workflow.svg)](https://pypi.org/project/adversarial-workflow/)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+**A multi-stage AI code review system that makes your code better**
+
+Evaluate proposals, sort out ideas, and prevent "phantom work" (AI claiming to implement but not delivering) through adversarial verification using independent review stages. A battle-tested workflow from the [thematic-cuts](https://github.com/movito/thematic-cuts) project that achieved 96.9% test pass rate improvement.
+
+**🎯 100% Standalone** - No special IDE or agent system required. Works with any development workflow.
+
+## Features
+
+- 🔍 **Multi-stage verification**: Plan → Implement → Review → Test → Approve
+- 🤖 **Adversarial review**: Independent AI reviews your implementation
+- 💰 **Token-efficient**: 10-20x reduction vs. standard Aider usage
+- 🔌 **Non-destructive**: Integrates into existing projects without changes
+- ⚙️ **Configurable**: Works with any test framework, task system, language
+- 🎯 **Tool-agnostic**: Use with Claude Code, Cursor, Aider, manual coding, or any workflow
+- ✨ **Interactive onboarding**: Guided setup wizard gets you started in <5 minutes
+
+## What's New in v0.6.3
+
+### Upgrade
+
+```bash
+pip install --upgrade adversarial-workflow
+```
+
+### v0.6.3 - Configurable Timeouts
+
+- **Per-evaluator timeout**: Add `timeout: 300` to evaluator YAML for slow models like Mistral Large
+- **CLI override**: Use `--timeout 400` to override YAML config on-the-fly
+- **Timeout logging**: See which timeout source is used (CLI/YAML/default)
+- **Safety limits**: Maximum 600 seconds to prevent runaway processes
+
+### v0.6.2 - .env Loading & Stability
+
+- **Automatic .env loading**: API keys in `.env` files are now loaded at CLI startup
+- **Custom evaluator support**: Evaluators using `api_key_env: GEMINI_API_KEY` (or other keys) now work with `.env` files
+- **Better diagnostics**: `adversarial check` correctly reports the number of variables loaded from `.env`
+
+### v0.6.0 - Plugin Architecture
+
+🔌 **Custom Evaluators** - Define your own evaluators without modifying the package:
+
+```bash
+# Create a custom evaluator
+mkdir -p .adversarial/evaluators
+cat > .adversarial/evaluators/athena.yml << 'EOF'
+name: athena
+description: Knowledge evaluation using Gemini 2.5 Pro
+model: gemini-2.5-pro
+api_key_env: GEMINI_API_KEY
+prompt: |
+  You are Athena, a knowledge evaluation specialist...
+EOF
+
+# Use it immediately
+adversarial athena docs/research-plan.md
+
+# List all available evaluators
+adversarial list-evaluators
+```
+
+See [Custom Evaluators](#custom-evaluators) for full documentation, or check the [CHANGELOG](CHANGELOG.md) for complete release history.
+
+## Prerequisites
+
+Before installing, ensure you have:
+
+### Required
+- **Python 3.10+** (Python 3.12 recommended)
+- **Git repository** (workflow analyzes git diff)
+- **API Keys** - At least one of:
+  - **Anthropic Claude** (recommended): Get at https://console.anthropic.com/settings/keys
+  - **OpenAI GPT-4o**: Get at https://platform.openai.com/api-keys
+  - **Best results**: Both APIs (~$0.02-0.10 per workflow)
+  - **Works with one**: Either API (~$0.05-0.15 per workflow)
+
+### Platform Requirements
+- **✅ macOS / Linux**: Fully supported
+- **✅ Windows WSL**: Fully supported (recommended for Windows users)
+- **❌ Native Windows**: Not supported (requires Bash scripts)
+
+[See detailed platform support](#platform-support)
+
+## Installation
+
+> **📚 For detailed integration instructions**: See [docs/INTEGRATION-GUIDE.md](docs/INTEGRATION-GUIDE.md)
+
+### From PyPI
+
+```bash
+pip install adversarial-workflow
+```
+
+This installs everything you need, including aider-chat.
+
+### From GitHub (Development)
+
+```bash
+git clone https://github.com/movito/adversarial-workflow.git
+pip install -e adversarial-workflow/
+```
+
+See [docs/INTEGRATION-GUIDE.md](docs/INTEGRATION-GUIDE.md) for detailed integration strategies.
+
+## Quick Start
+
+> **⚠️ New Users**: Run the [Prerequisites](#prerequisites) checklist above first!
+
+### Interactive Setup (Recommended)
+
+```bash
+# Install
+pip install adversarial-workflow
+
+# Quick start with guided setup
+cd my-project/
+adversarial quickstart
+
+# Follow the interactive wizard:
+# - Choose your API setup (Anthropic + OpenAI recommended)
+# - Paste your API keys (validated automatically)
+# - Run your first evaluation in <5 minutes!
+```
+
+### Manual Setup
+
+```bash
+# Install
+pip install adversarial-workflow
+
+# Initialize in your project
+cd my-project/
+adversarial init --interactive  # Interactive wizard
+# OR
+adversarial init                # Standard init
+
+# Verify setup
+adversarial check
+
+# Use the workflow
+adversarial evaluate tasks/feature.md  # Phase 1: Plan evaluation
+# ... implement your feature (any method) ...
+adversarial review                     # Phase 3: Code review
+adversarial validate "npm test"        # Phase 4: Test validation
+```
+
+## Quick Setup for AI Agents
+
+If you're using AI agents for multi-agent development workflows, adversarial-workflow includes an optional **agent coordination system**:
+
+```bash
+# After running adversarial init, optionally set up agent coordination
+adversarial agent onboard
+
+# Choose your agent template:
+# 1. Standard (8 roles) - Recommended for complex projects [DEFAULT - press Enter]
+# 2. Minimal (3 roles) - Simple projects or getting started
+# 3. Custom URL - Load from your own template repository
+# 4. Skip - Set up manually later
+
+# This creates:
+# - .agent-context/        # Agent coordination files
+# - delegation/tasks/      # Structured task management
+# - agents/                # Agent tools and scripts
+```
+
+**What you get**:
+- 📋 **Structured task management** with `delegation/tasks/active/` and `completed/`
+- 🤝 **Agent handoff tracking** in `agent-handoffs.json`
+  - **Standard template**: 8 specialized agents (coordinator, feature-developer, api-developer, format-developer, test-runner, document-reviewer, security-reviewer, media-processor)
+  - **Minimal template**: 3 essential agents (coordinator, developer, reviewer)
+  - **Custom template**: Load from your own GitHub repository or URL
+- 📊 **Project state tracking** in `current-state.json`
+- 📖 **Comprehensive guide** at `.agent-context/AGENT-SYSTEM-GUIDE.md`
+- 🔧 **Health monitoring** with `adversarial health` command
+
+**When to use it**:
+- ✅ Working with multiple AI agents (Claude Code, Cursor, Aider, etc.)
+- ✅ Need structured task assignment and tracking
+- ✅ Want coordination between different development roles
+- ❌ Solo development without agents (not needed)
+
+**Template Selection Guide**:
+- **Standard (8 roles)**: Best for complex projects with multiple specialized tasks (API development, media processing, testing, documentation, security)
+- **Minimal (3 roles)**: Perfect for simple projects, getting started, or when you want maximum flexibility
+- **Custom URL**: Use your own template from `github.com/your-org/your-template` or any URL serving a JSON template
+
+**Customizing Agents After Onboarding**:
+
+The templates provide a solid starting point, but you can easily add more specialized agents:
+
+```bash
+# After running adversarial agent onboard, edit the agent-handoffs.json
+vim .agent-context/agent-handoffs.json
+
+# Add project-specific agents:
+# - code-reviewer: General code review specialist
+# - performance-optimizer: Performance tuning and profiling
+# - database-architect: Database design and optimization
+# - devops-engineer: CI/CD, deployment, infrastructure
+# - ux-designer: User experience and interface design
+# ... or any role your project needs
+```
+
+**Available agent launcher scripts** (reference for creating custom agents):
+- See `agents/*.sh` for examples (security-reviewer, code-reviewer, etc.)
+- Copy and adapt existing launchers for your project-specific needs
+- Each agent definition includes: focus, status, deliverables, technical notes
+
+The agent coordination system **extends** adversarial-workflow - both work together:
+- **Adversarial workflow** = Code quality gates (review, validation)
+- **Agent coordination** = Task management for multi-agent teams
+
+See [Example 11: Multi-Agent Workflows](#example-11-multi-agent-workflows) for usage patterns.
+
+## File Size Guidelines
+
+### Evaluation File Size Limits
+
+When using `adversarial evaluate` to review task specifications, be aware of OpenAI API rate limits:
+
+- **✅ Recommended**: Keep task files under **500 lines** (~20,000 tokens)
+- **⚠️ Caution**: Files 500-700 lines may work but risk rate limit errors
+- **❌ Avoid**: Files over 1,000 lines will likely fail on Tier 1 OpenAI accounts
+
+**Why?** The evaluation process sends your task file to GPT-4o via Aider. OpenAI enforces Tokens Per Minute (TPM) limits based on your organization tier. Most users have Tier 1 (30,000 TPM), which supports files up to ~600 lines including system overhead.
+
+**What happens if your file is too large?**
+- You'll see a `RateLimitError` indicating tokens exceeded
+- The evaluation will fail before GPT-4o can review your plan
+- You'll need to split your task into smaller documents
+
+**Solutions for large specifications**:
+1. Use `adversarial split` to automatically split files (recommended):
+   ```bash
+   adversarial split large-task.md              # Split by sections
+   adversarial split large-task.md --dry-run    # Preview first
+   adversarial split large-task.md --strategy phases  # Split by phases
+   ```
+2. Manually split into multiple task files
+3. Upgrade your OpenAI organization tier (Tier 2: 50k TPM = ~1,000 lines)
+
+**Bypassing interactive prompts** (automation/CI):
+```bash
+# For files >700 lines, you'll be prompted to confirm
+# In non-interactive environments (CI/CD, scripts), bypass the prompt:
+echo "y" | adversarial evaluate delegation/tasks/large-task.md
+
+# Or redirect from /dev/null to auto-cancel:
+adversarial evaluate large-task.md < /dev/null
+```
+
+For more details, see [OpenAI Rate Limits](https://platform.openai.com/docs/guides/rate-limits).
+
+## The Adversarial Pattern
+
+Traditional AI coding suffers from "phantom work" - where AI claims implementation is complete but only adds comments or TODOs. This workflow prevents that through **multiple independent verification gates**:
+
+### Phase 1: Plan Evaluation
+**Evaluator** (aider + GPT-4o or Claude) evaluates your implementation plan before coding begins.
+- Catches design flaws early
+- Validates completeness
+- Identifies missing edge cases
+- Reduces wasted implementation effort
+
+### Phase 2: Implementation
+**Author** (you, or your AI assistant) implements according to approved plan.
+- Use any method: Claude Code, Cursor, Aider, manual coding, etc.
+- Clear roadmap reduces confusion
+- Plan adherence is verifiable
+- Deviations are intentional and documented
+
+### Phase 3: Code Review
+**Evaluator** (aider) analyzes actual git diff against plan.
+- **Phantom work detection**: Checks for real code vs. TODOs
+- Verifies plan adherence
+- Catches implementation bugs early
+- Provides specific, actionable feedback
+
+### Phase 4: Test Validation
+**Evaluator** (aider) analyzes test results objectively.
+- Proves functionality works (not just looks right)
+- Catches regressions immediately
+- Validates all requirements met
+- Provides detailed failure analysis
+
+### Phase 5: Final Approval
+**Author** (you) reviews all artifacts and commits with audit trail.
+
+## Package Independence
+
+This package is **completely standalone** and works with any development workflow:
+
+✅ **No Claude Code required** - Works with any editor/IDE
+✅ **No special agent system required** - Just aider + API keys
+✅ **Integrates into existing projects** - Doesn't change your workflow
+✅ **Tool-agnostic** - Use with your preferred development tools
+
+**You can implement using:**
+- **Claude Code** (what thematic-cuts project uses)
+- **Cursor** / **GitHub Copilot** / any AI coding assistant
+- **Aider directly** (`aider --architect-mode`)
+- **Manual coding** with AI review
+- **Any combination** of the above
+
+**The adversarial workflow reviews your implementation**, regardless of how you create it.
+
+### What "Author" and "Evaluator" Actually Mean
+
+**THESE ARE METAPHORS, NOT TECHNICAL COMPONENTS.**
+
+- **"Author"**: Whoever creates the work (plan or code)
+  - METAPHOR for: The person or tool that writes implementation plans and code
+  - In practice: You, Claude Code, Cursor, Copilot, aider, manual coding
+  - Technical reality: Just whoever writes the files
+
+- **"Evaluator"**: Independent analysis stage that evaluates the Author's work for quality and correctness
+  - METAPHOR for: Independent evaluation perspective
+  - Technical reality: `aider --model gpt-4o --message "review prompt"`
+  - NOT a persistent agent or special software
+  - Different prompt for each phase (plan evaluation, code review, test validation)
+
+**No agents, no infrastructure, no special setup** - just aider with different review prompts at each verification stage!
+
+**Historical note**: Earlier versions used "Coordinator"/"Evaluator" (v0.1), then "Author"/"Reviewer" (v0.2-v0.3.1). We've updated to "Author"/"Evaluator" to eliminate ambiguity with agent roles like "document-reviewer".
+
+## Token Optimization
+
+Key to avoiding excessive costs:
+
+```bash
+# ❌ Standard Aider (expensive)
+aider --files src/**/*.py    # Adds all files to context
+
+# ✅ Adversarial pattern (efficient)
+aider --read task.md --read diff.txt --message "review this"
+# Only reads specific files, doesn't add to context
+```
+
+**Result**: 20-40k tokens per task vs. 100-500k with full context = **10-20x savings**
+
+## Integration with Existing Projects
+
+Works with your existing task management, test framework, and workflow:
+
+### Before
+```
+my-project/
+├── tasks/current/
+├── src/
+├── tests/
+└── README.md
+```
+
+### After `adversarial init`
+```
+my-project/
+├── tasks/current/          # ← UNCHANGED
+├── .adversarial/           # ← NEW (workflow files)
+│   ├── scripts/
+│   ├── config.yml
+│   └── logs/
+├── src/                    # ← UNCHANGED
+├── tests/                  # ← UNCHANGED
+└── README.md               # ← UNCHANGED
+```
+
+**Configuration** (`.adversarial/config.yml`):
+```yaml
+evaluator_model: gpt-4o            # AI model for Reviewer (aider)
+task_directory: tasks/current/    # Your existing tasks
+test_command: npm test             # Your test command
+log_directory: .adversarial/logs/
+```
+
+## Commands
+
+```bash
+# Setup
+adversarial init                        # Initialize in current project
+adversarial init --interactive          # Interactive setup wizard
+adversarial quickstart                  # Quick start with example
+adversarial check                       # Validate setup (aider, API keys, config)
+adversarial health                      # Comprehensive system health check
+
+# Agent Coordination (optional)
+adversarial agent onboard               # Set up agent coordination system
+
+# Workflow
+adversarial evaluate task.md            # Phase 1: Evaluate plan
+adversarial split task.md               # Split large files into smaller parts
+adversarial split task.md --dry-run     # Preview split without creating files
+adversarial review                      # Phase 3: Review implementation
+adversarial validate "pytest"           # Phase 4: Validate with tests
+adversarial list-evaluators             # List all available evaluators
+```
+
+## Custom Evaluators
+
+Starting with v0.6.0, you can define project-specific evaluators without modifying the package.
+
+### Creating a Custom Evaluator
+
+1. Create the evaluators directory:
+   ```bash
+   mkdir -p .adversarial/evaluators
+   ```
+
+2. Create a YAML definition:
+   ```yaml
+   # .adversarial/evaluators/athena.yml
+   name: athena
+   description: Knowledge evaluation using Gemini 2.5 Pro
+   model: gemini-2.5-pro
+   api_key_env: GEMINI_API_KEY
+   output_suffix: KNOWLEDGE-EVALUATION
+   prompt: |
+     You are Athena, a knowledge evaluation specialist...
+
+   # Optional
+   aliases:
+     - knowledge
+   ```
+
+3. Use it like any built-in evaluator:
+   ```bash
+   adversarial athena docs/research-plan.md
+   ```
+
+### Evaluator YAML Schema
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | Yes | Command name |
+| `description` | Yes | Help text shown in CLI |
+| `model` | Yes | Model to use (e.g., `gpt-4o`, `gemini-2.5-pro`) |
+| `api_key_env` | Yes | Environment variable for API key |
+| `output_suffix` | Yes | Log file suffix (e.g., `KNOWLEDGE-EVAL`) |
+| `prompt` | Yes | The evaluation prompt |
+| `aliases` | No | Alternative command names |
+| `log_prefix` | No | CLI output prefix |
+| `fallback_model` | No | Fallback model if primary fails |
+| `timeout` | No | Timeout in seconds (default: 180, max: 600) |
+| `version` | No | Evaluator version (default: 1.0.0) |
+
+### Listing Available Evaluators
+
+```bash
+adversarial list-evaluators
+```
+
+### Example: Athena Knowledge Evaluator
+
+See [docs/examples/athena.yml](docs/examples/athena.yml) for a complete example of a knowledge-focused evaluator using Gemini 2.5 Pro.
+
+For full documentation on custom evaluators, see [docs/CUSTOM_EVALUATORS.md](docs/CUSTOM_EVALUATORS.md).
+
+## Configuration
+
+### Option 1: YAML Config (persistent)
+`.adversarial/config.yml`:
+```yaml
+evaluator_model: gpt-4o
+task_directory: tasks/
+test_command: pytest tests/
+log_directory: .adversarial/logs/
+```
+
+### Option 2: Environment Variables (temporary overrides)
+```bash
+export ADVERSARIAL_EVALUATOR_MODEL=gpt-4-turbo
+export ADVERSARIAL_TEST_COMMAND="npm run test:integration"
+```
+
+**Precedence**: Environment variables > YAML config > defaults
+
+## Requirements
+
+### Platform Support
+
+**✅ Supported Platforms**:
+- **macOS**: Fully supported (tested on macOS 10.15+)
+- **Linux**: Fully supported (tested on Ubuntu 22.04, Debian 11+, CentOS 8+)
+  - Works on any Unix-like system with bash 3.2+
+
+**⚠️ Windows**:
+- **Native Windows**: Not supported (Bash scripts are Unix-specific)
+- **WSL (Windows Subsystem for Linux)**: ✅ Fully supported (recommended)
+- **Git Bash**: ⚠️ May work but not officially tested
+
+**Why Unix-only?** This package uses Bash scripts for workflow automation. While Python is cross-platform, the workflow scripts (`.adversarial/scripts/*.sh`) are designed for Unix-like shells.
+
+#### Windows Users: WSL Setup (5 minutes)
+
+If you're on Windows, install WSL for the best experience:
+
+```powershell
+# Run in PowerShell (Administrator)
+wsl --install
+
+# After restart, set up Ubuntu (default)
+# Then install Python and pip in WSL:
+sudo apt update
+sudo apt install python3 python3-pip
+
+# Install the package in WSL
+pip install adversarial-workflow
+```
+
+**Official WSL guide**: https://learn.microsoft.com/windows/wsl/install
+
+#### Git Bash Limitations
+
+While Git Bash *may* work, be aware of:
+- Script compatibility issues with Windows paths
+- Potential ANSI color rendering problems
+- Some commands may behave differently
+- **Not officially supported** - use at your own risk
+
+#### Platform Detection
+
+The CLI automatically detects Windows and shows an interactive warning:
+- `adversarial init --interactive` checks platform before setup
+- `adversarial quickstart` checks platform before onboarding
+- You can choose to continue anyway (for WSL/Git Bash users)
+
+#### Troubleshooting
+
+**"Command not found: adversarial"** (WSL)
+- Make sure you installed in WSL, not Windows: `which adversarial`
+- Add to PATH: `export PATH="$HOME/.local/bin:$PATH"`
+
+**Scripts fail with "bad interpreter"** (Git Bash)
+- Line ending issue - convert to Unix: `dos2unix .adversarial/scripts/*.sh`
+- Or switch to WSL (recommended)
+
+**Permission denied on scripts** (macOS/Linux)
+- Make scripts executable: `chmod +x .adversarial/scripts/*.sh`
+- Or run: `adversarial init` again to reset permissions
+
+### Software Requirements
+
+- **Python**: 3.10 or later (Python 3.12 recommended)
+- **Bash**: 3.2 or later (included with macOS/Linux)
+- **Git**: Repository required (workflow uses git diff)
+- **API Keys**: OpenAI and/or Anthropic (see interactive setup)
+
+> **Note**: Aider is now bundled with adversarial-workflow (v0.4.0+). No separate installation needed.
+
+## Usage Examples
+
+### Example 1: Manual Coding with AI Review
+
+Perfect for developers who prefer manual coding but want AI quality checks:
+
+```bash
+# 1. Create your task plan
+cat > tasks/add-user-auth.md << 'EOF'
+# Task: Add User Authentication
+
+## Requirements
+- JWT-based authentication
+- Login/logout endpoints
+- Password hashing with bcrypt
+
+## Acceptance Criteria
+- All tests pass
+- No security vulnerabilities
+EOF
+
+# 2. Get plan reviewed
+adversarial evaluate tasks/add-user-auth.md
+# AI reviews plan, suggests improvements
+
+# 3. Implement manually (your preferred editor)
+vim src/auth.py
+vim src/routes.py
+vim tests/test_auth.py
+
+# 4. Get implementation reviewed
+git add -A
+adversarial review
+# AI reviews your git diff for issues
+
+# 5. Validate with tests
+adversarial validate "pytest tests/test_auth.py"
+# AI analyzes test results
+```
+
+### Example 2: With Aider for Implementation
+
+Use aider for coding, adversarial workflow for quality gates:
+
+```bash
+# 1. Create and evaluate plan
+echo "# Task: Refactor database layer" > tasks/refactor-db.md
+adversarial evaluate tasks/refactor-db.md
+
+# 2. Implement with aider
+aider --architect-mode src/database.py
+# ... make changes with aider ...
+
+# 3. Review implementation
+adversarial review
+# Independent AI reviews what aider did
+
+# 4. Validate
+adversarial validate "npm test"
+```
+
+### Example 3: With Cursor/Copilot
+
+Works great with any AI coding assistant:
+
+```bash
+# 1. Get plan approved
+adversarial evaluate tasks/new-feature.md
+
+# 2. Code in Cursor/VS Code with Copilot
+# ... use your AI assistant as normal ...
+
+# 3. Get adversarial review
+adversarial review
+# Catches issues your coding assistant might miss
+
+# 4. Validate
+adversarial validate "cargo test"
+```
+
+### Example 4: JavaScript/TypeScript Project
+
+```bash
+# Setup
+cd my-react-app
+adversarial init --interactive
+
+# Configure for Node.js
+cat > .adversarial/config.yml << 'EOF'
+evaluator_model: gpt-4o
+task_directory: tasks/
+test_command: npm test
+log_directory: .adversarial/logs/
+EOF
+
+# Use workflow
+adversarial evaluate tasks/add-dark-mode.md
+# ... implement feature ...
+adversarial review
+adversarial validate "npm test"
+```
+
+### Example 5: Python Project with pytest
+
+```bash
+# Setup
+cd my-python-app
+adversarial quickstart  # Interactive setup
+
+# Use workflow
+adversarial evaluate tasks/optimize-queries.md
+# ... implement with any method ...
+adversarial review
+adversarial validate "pytest tests/ -v"
+```
+
+### Example 6: Go Project
+
+```bash
+# Setup
+cd my-go-service
+adversarial init --interactive
+
+# Configure
+cat > .adversarial/config.yml << 'EOF'
+evaluator_model: gpt-4o
+task_directory: docs/tasks/
+test_command: go test ./...
+log_directory: .adversarial/logs/
+EOF
+
+# Use workflow
+adversarial evaluate docs/tasks/add-grpc-endpoint.md
+# ... implement ...
+adversarial review
+adversarial validate "go test ./..."
+```
+
+### Example 7: Handling Review Feedback (Iteration)
+
+What to do when the reviewer requests changes:
+
+```bash
+# 1. Create and evaluate plan
+adversarial evaluate tasks/add-caching.md
+# Reviewer: "APPROVED - plan looks good"
+
+# 2. Implement feature
+# ... write code ...
+git add -A
+
+# 3. Review implementation
+adversarial review
+# Reviewer: "NEEDS_REVISION - Missing error handling in cache.get()"
+
+# 4. Address feedback (iterate)
+# ... fix the issues mentioned ...
+git add -A
+
+# 5. Review again
+adversarial review
+# Reviewer: "APPROVED - error handling looks good now"
+
+# 6. Validate with tests
+adversarial validate "pytest tests/"
+# All checks passed - ready to commit!
+```
+
+**Key Points**:
+- Review failures are normal and helpful
+- Each iteration makes code better
+- Git diff shows only your changes (not whole codebase)
+- Reviewer feedback is specific and actionable
+
+### Example 8: Project Without Tests (Legacy Code)
+
+Working with projects that don't have tests yet:
+
+```bash
+# Setup
+cd legacy-project
+adversarial init --interactive
+
+# Configure without tests
+cat > .adversarial/config.yml << 'EOF'
+evaluator_model: gpt-4o
+task_directory: tasks/
+test_command: echo "No tests yet - manual verification required"
+log_directory: .adversarial/logs/
+EOF
+
+# Use workflow (skip validation phase)
+adversarial evaluate tasks/fix-bug-123.md
+# ... implement fix ...
+adversarial review  # Still get code review!
+
+# Skip test validation (no tests)
+# Manually verify the fix works
+
+# Optional: Ask reviewer to suggest tests
+cat > tasks/add-tests-for-bug-123.md << 'EOF'
+# Task: Add Tests for Bug Fix #123
+
+## Goal
+Add regression tests for the bug fix in src/payment.py
+
+## Acceptance Criteria
+- Test the failing case (bug reproduction)
+- Test the fixed case (verify fix works)
+EOF
+
+adversarial evaluate tasks/add-tests-for-bug-123.md
+```
+
+**Benefits Even Without Tests**:
+- Code review still catches issues
+- Reviewer suggests test cases
+- Helps you add tests incrementally
+- Better than no review at all
+
+### Example 9: Monorepo / Multi-Package Project
+
+Working with monorepos or projects with multiple services:
+
+```bash
+# Setup in monorepo root
+cd my-monorepo
+adversarial init --interactive
+
+# Configure for specific package
+cat > .adversarial/config.yml << 'EOF'
+evaluator_model: gpt-4o
+task_directory: tasks/
+test_command: npm run test:all  # Runs tests for all packages
+log_directory: .adversarial/logs/
+EOF
+
+# Workflow for specific package
+adversarial evaluate tasks/api-add-endpoint.md
+
+# Implement in specific package
+cd packages/api
+# ... make changes ...
+cd ../..
+
+git add packages/api/
+
+# Review only API package changes
+adversarial review
+# Reviewer sees only packages/api/ in git diff
+
+# Run all tests (monorepo-wide)
+adversarial validate "npm run test:all"
+
+# Alternative: Test only affected package
+adversarial validate "npm run test --workspace=@myapp/api"
+```
+
+**Monorepo Tips**:
+- Review works on git diff (any subset of files)
+- Use workspace-specific test commands
+- Task files can specify which package
+- One .adversarial/ setup for whole monorepo
+
+### Example 10: Cost Optimization (Large Projects)
+
+For large projects where full runs are expensive:
+
+```bash
+# Configure with cheaper model for reviews
+cat > .adversarial/config.yml << 'EOF'
+evaluator_model: gpt-4o-mini  # Cheaper alternative
+task_directory: tasks/
+test_command: pytest tests/
+log_directory: .adversarial/logs/
+EOF
+
+# Strategy 1: Review only changed files
+git add src/module.py tests/test_module.py  # Not "git add -A"
+adversarial review
+# Reviewer sees minimal diff - cheaper
+
+# Strategy 2: Split large tasks into smaller ones
+# Instead of:
+#   tasks/refactor-entire-app.md (huge)
+# Use:
+#   tasks/refactor-auth-module.md (small)
+#   tasks/refactor-api-module.md (small)
+#   tasks/refactor-db-module.md (small)
+
+# Strategy 3: Use test subsets
+adversarial validate "pytest tests/test_module.py -v"  # Not all tests
+
+# Strategy 4: Only validate on final review
+adversarial evaluate tasks/feature.md  # Phase 1
+# ... implement ...
+adversarial review  # Phase 3
+# Skip validation during iteration
+# Run full validation only when review passes
+adversarial validate "pytest tests/"  # Phase 4 (final)
+```
+
+**Cost Breakdown**:
+- GPT-4o: ~$0.005-0.02 per review (input + output)
+- GPT-4o-mini: ~$0.001-0.005 per review (70% cheaper)
+- Smaller diffs = fewer tokens = lower cost
+- Strategic validation = fewer test runs
+
+## Real-World Results
+
+From the [thematic-cuts](https://github.com/movito/thematic-cuts) project:
+
+- **Before**: 85.1% test pass rate (298/350 tests)
+- **After**: 96.9% test pass rate (339/350 tests)
+- **Improvement**: +41 tests fixed, +11.8% pass rate
+- **Phantom work incidents**: 0 (after implementing this workflow)
+- **Tasks completed**: 5 major refactors using this system
+
+## Documentation
+
+- **[Custom Evaluators Guide](docs/CUSTOM_EVALUATORS.md)**: Create project-specific evaluators
+- **[Integration Guide](docs/INTEGRATION-GUIDE.md)**: Detailed integration strategies
+- **[CHANGELOG](CHANGELOG.md)**: Release history and version notes
+- **Interaction Patterns**: How Author-Evaluator collaboration works
+- **Token Optimization**: Detailed Aider configuration guide
+- **Workflow Phases**: Step-by-step guide for each phase
+- **Troubleshooting**: Common issues and solutions
+
+See `docs/` directory for comprehensive guides.
+
+## CI/CD Integration
+
+Example GitHub Actions:
+```yaml
+name: Adversarial Code Review
+on: pull_request
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - run: pip install adversarial-workflow
+      - run: adversarial review
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+```
+
+## Contributing
+
+Contributions welcome! This package is extracted from real-world usage in [thematic-cuts](https://github.com/movito/thematic-cuts).
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+## License
+
+MIT License - see [LICENSE](LICENSE)
+
+## Credits
+
+Developed by [broadcaster_one](https://github.com/movito) and refined through months of production use on the thematic-cuts project.
+
+**Inspired by**: The realization that AI needs AI to keep it honest.
