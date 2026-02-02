@@ -1,0 +1,70 @@
+# Pre-commit and pre-push hooks for {{ project_name }}
+# Install: pip install pre-commit && pre-commit install --hook-type pre-commit --hook-type pre-push
+
+repos:
+{% if enable_ruff %}
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.9.1
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+{% endif %}
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        exclude: mkdocs.yml  # Uses custom Python constructors
+      - id: check-added-large-files
+
+{% if include_frontend %}
+  # Frontend linting (requires npm install)
+  - repo: local
+    hooks:
+      - id: eslint
+        name: eslint
+        entry: npm run lint --prefix packages/frontend --
+        language: system
+        files: \.(ts|tsx|js|jsx)$
+        pass_filenames: false
+{% endif %}
+
+  # Pre-push hooks - mirror CI checks
+  - repo: local
+    hooks:
+{% if enable_ruff %}
+      - id: ruff-check
+        name: ruff check (pre-push)
+        entry: {{ python_manager }} run ruff check .
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+
+      - id: ruff-format-check
+        name: ruff format check (pre-push)
+        entry: {{ python_manager }} run ruff format --check .
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+{% endif %}
+
+{% if enable_mypy %}
+      - id: mypy
+        name: mypy type check (pre-push)
+        entry: {{ python_manager }} run mypy src
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+{% endif %}
+
+{% if enable_pytest %}
+      - id: pytest
+        name: pytest (pre-push)
+        entry: {{ python_manager }} run pytest -x --timeout=60
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+{% endif %}

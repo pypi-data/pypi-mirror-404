@@ -1,0 +1,34 @@
+# Traefik dynamic configuration for Prism development
+# This file provides error handling middleware and catchall routes
+
+http:
+  middlewares:
+    # Error pages middleware for service errors (502, 503, 504)
+    service-error:
+      errors:
+        status:
+          - "502-504"
+        service: error-pages@file
+        query: "/503.html"
+
+    # Middleware that adds a header for 404 errors
+    not-found:
+      headers:
+        customResponseHeaders:
+          X-Prism-Error: "route-not-found"
+
+  routers:
+    # Catchall router for unknown hosts - returns 404 page
+    catchall:
+      rule: "HostRegexp(`.+`)"
+      priority: 1
+      entryPoints:
+        - web
+      service: error-pages@file
+
+  services:
+    # Error pages service serving static HTML files
+    error-pages:
+      loadBalancer:
+        servers:
+          - url: "http://prism-error-pages:80"
