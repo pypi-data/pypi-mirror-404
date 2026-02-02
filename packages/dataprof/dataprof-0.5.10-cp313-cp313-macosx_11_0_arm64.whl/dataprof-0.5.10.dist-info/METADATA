@@ -1,0 +1,262 @@
+Metadata-Version: 2.4
+Name: dataprof
+Version: 0.5.10
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: Intended Audience :: Science/Research
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: POSIX
+Classifier: Operating System :: Microsoft :: Windows
+Classifier: Operating System :: MacOS :: MacOS X
+Classifier: Programming Language :: Rust
+Classifier: Programming Language :: Python :: Implementation :: CPython
+Classifier: Programming Language :: Python :: Implementation :: PyPy
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Scientific/Engineering
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Requires-Dist: pandas>=1.3.0 ; extra == 'all'
+Requires-Dist: ipython>=7.0.0 ; extra == 'all'
+Requires-Dist: numpy>=1.20.0 ; extra == 'all'
+Requires-Dist: pandas>=1.3.0 ; extra == 'jupyter'
+Requires-Dist: ipython>=7.0.0 ; extra == 'jupyter'
+Requires-Dist: pandas>=1.3.0 ; extra == 'pandas'
+Provides-Extra: all
+Provides-Extra: jupyter
+Provides-Extra: pandas
+License-File: LICENSE
+License-File: LICENSE-APACHE
+Summary: Fast, lightweight data profiling and quality assessment library
+Keywords: data,profiling,quality,csv,json,analysis,performance
+Home-Page: https://github.com/AndreaBozzo/dataprof
+Author-email: Andrea Bozzo <andreabozzo92@gmail.com>
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown; charset=UTF-8; variant=GFM
+Project-URL: Homepage, https://github.com/AndreaBozzo/dataprof
+Project-URL: Issues, https://github.com/AndreaBozzo/dataprof/issues
+Project-URL: Repository, https://github.com/AndreaBozzo/dataprof
+
+<div align="center">
+  <img src="assets/images/logo.png" alt="dataprof logo" width="800" height="auto" />
+  <h1>dataprof</h1>
+  <p>
+    <strong>The High-Performance Profiler for Large Datasets</strong>
+  </p>
+
+  [![CI](https://github.com/AndreaBozzo/dataprof/workflows/CI/badge.svg)](https://github.com/AndreaBozzo/dataprof/actions)
+  [![codecov](https://codecov.io/gh/AndreaBozzo/dataprof/branch/master/graph/badge.svg)](https://codecov.io/gh/AndreaBozzo/dataprof)
+  [![Crates.io](https://img.shields.io/crates/v/dataprof.svg)](https://crates.io/crates/dataprof)
+   [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE)
+  [![PyPI Downloads](https://static.pepy.tech/personalized-badge/dataprof?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=GREEN&left_text=downloads)](https://pepy.tech/projects/dataprof)
+</div>
+
+<br />
+
+> **Profile 50GB datasets in seconds on your laptop.**
+
+DataProf is built for Data Scientists and Engineers who need to understand their data *fast*. No more `MemoryError` when trying to profile a CSV larger than your RAM.
+
+**Pandas-Profiling vs DataProf on a 10GB CSV:**
+| Feature | Pandas-Profiling / YData | DataProf |
+|---------|--------------------------|----------|
+| **Memory Usage** | 12GB+ (Crashes) | **< 100MB (Streaming)** |
+| **Speed** | 15+ minutes | **45 seconds** |
+| **Implementation** | Python (Slow) | **Rust (Fast)** |
+
+## Quick Start
+
+### Installation
+
+The easiest way to get started is via pip:
+
+```bash
+pip install dataprof
+```
+
+### Python Usage
+
+Forget complex configurations. Just point to your file:
+
+```python
+import dataprof
+
+# Analyze a huge file without crashing memory
+# Generates a report.html with quality metrics and distributions
+dataprof.profile("huge_dataset.csv").save("report.html")
+```
+
+### CLI & Rust Usage (Advanced)
+
+If you prefer the command line or are a Rust developer:
+
+```bash
+# Install via cargo
+cargo install dataprof
+
+# Generate report from CLI
+dataprof-cli report huge_data.csv -o report.html
+```
+
+**More options:** `dataprof-cli --help` | [Full CLI Guide](docs/guides/CLI_USAGE_GUIDE.md)
+
+## 💡 Key Features
+
+- **No Size Limits**: Profiles files larger than RAM using streaming and memory mapping.
+- **Blazing Fast**: Written in Rust with SIMD acceleration.
+- **Privacy Guaranteed**: Data never leaves your machine.
+- **Format Support**: CSV, Parquet, JSON/L, and Databases (Postgres, MySQL, etc.).
+- **Smart Detection**: Automatically identifies Emails, IPs, IBANs, Credit Cards, and more.
+
+## 📊 Beautiful Reports
+
+<div align="center">
+  <p><strong>Interactive Demo</strong><br/>
+  <em>Animated walkthrough of dataprof features and dashboards</em></p>
+  <img src="assets/animations/dataprof_demo_minimal.gif" alt="DataProf Demo" width="100%" />
+  
+  <br/><br/>
+  
+  <p><strong>Single File Analysis</strong><br/>
+  <em>Interactive dashboards with quality scoring and distributions</em></p>
+  <img src="assets/images/dataprofhtml2026.png" alt="Single Report Dashboard" width="100%" />
+  
+  <br/><br/>
+  
+  <p><strong>Batch Processing Dashboard</strong><br/>
+  <em>Aggregate metrics from hundreds of files in one view</em></p>
+  <img src="assets/images/dataprofbatch2026.png" alt="Batch Dashboard" width="100%" />
+</div>
+
+## Documentation
+
+- **[Python API Reference](docs/python/README.md)**
+- **[CLI Guide](docs/guides/CLI_USAGE_GUIDE.md)**
+
+### Advanced Examples
+
+**Batch Processing (Python)**
+```python
+# Process a whole directory of files in parallel
+result = dataprof.batch_analyze_directory("/data_folder", recursive=True)
+print(f"Processed {result.processed_files} files at {result.files_per_second:.1f} files/sec")
+```
+
+**Database Integration (Python)**
+```python
+# Profile a SQL query directly
+await dataprof.analyze_database_async(
+    "postgresql://user:pass@localhost/db",
+    "SELECT * FROM sales_data_2024"
+)
+```
+
+**Rust Library Usage**
+```rust
+use dataprof::*;
+
+let profiler = DataProfiler::auto();
+let report = profiler.analyze_file("dataset.csv")?;
+println!("Quality Score: {}", report.quality_score());
+```
+
+## Development
+
+```bash
+# Setup
+git clone https://github.com/AndreaBozzo/dataprof.git
+cd dataprof
+cargo build --release
+
+# Test databases (optional)
+docker-compose -f .devcontainer/compose.yml up -d
+
+# Common tasks
+cargo test          # Run tests
+cargo bench         # Benchmarks
+cargo clippy        # Linting
+```
+
+### Feature Flags
+
+```bash
+# Minimal (CSV/JSON only)
+cargo build --release
+
+# With Apache Arrow (large files >100MB)
+cargo build --release --features arrow
+
+# With Parquet support
+cargo build --release --features parquet
+
+# With databases
+cargo build --release --features postgres,mysql,sqlite
+
+# Python async support
+maturin develop --features python-async,database,postgres
+
+# All features
+cargo build --release --all-features
+```
+
+**When to use Arrow:** Large files (>100MB), many columns (>20), uniform types
+**When to use Parquet:** Analytics, data lakes, Spark/Pandas integration
+
+
+## Documentation
+
+**User Guides:**
+[CLI Reference](docs/guides/CLI_USAGE_GUIDE.md)
+[Database Connectors](docs/guides/database-connectors.md) 
+
+## 🤝 Contributing
+
+We welcome contributions from everyone! Whether you want to:
+- **Fix a bug** 🐛
+- **Add a feature** ✨
+- **Improve documentation** 📚
+- **Report an issue** 📝
+
+### Quick Start for Contributors
+
+1. **Fork & clone:**
+   ```bash
+   git clone https://github.com/YOUR-USERNAME/dataprof.git
+   cd dataprof
+   ```
+
+2. **Build & test:**
+   ```bash
+   cargo build
+   cargo test
+   ```
+
+3. **Create a feature branch:**
+   ```bash
+   git checkout -b feature/your-feature-name
+   ```
+
+4. **Before submitting PR:**
+   ```bash
+   cargo fmt --all
+   cargo clippy --all --all-targets
+   cargo test --all
+   ```
+
+5. **Submit a Pull Request** with clear description
+
+
+All contributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines and our [Code of Conduct](CODE_OF_CONDUCT.md).
+
+## License
+
+Dual-licensed under either:
+- [MIT License](LICENSE)
+- [Apache License, Version 2.0](LICENSE-APACHE)
+
+You may use this project under the terms of either license.
+
+
