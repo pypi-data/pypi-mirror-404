@@ -1,0 +1,163 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: {{ project_name }}_backend
+    volumes:
+      - ./{{ backend_path }}:/app/{{ backend_path }}:cached
+      - ./specs:/app/specs:ro
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:{{ db_port }}/{{ project_name }}?ssl=disable
+{% if use_redis %}
+      - REDIS_URL=redis://redis:{{ redis_port }}/0
+{% endif %}
+      - ENVIRONMENT=development
+      - PYTHONPATH=/app/{{ backend_path }}/src
+    depends_on:
+      db:
+        condition: service_healthy
+{% if use_redis %}
+      redis:
+        condition: service_healthy
+{% endif %}
+    command: uvicorn {{ backend_module }}.main:app --host 0.0.0.0 --port {{ backend_port }} --reload
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:{{ backend_port }}{{ health_check_path }}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "{{ backend_port }}:{{ backend_port }}"
+    networks:
+      - default
+      - prism_proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.{{ project_name }}-backend.rule=Host(`{{ hostname }}.localhost`) && (PathPrefix(`/api`) || PathPrefix(`/graphql`) || PathPrefix(`/health`))"
+      - "traefik.http.routers.{{ project_name }}-backend.middlewares=service-error@file"
+      - "traefik.http.services.{{ project_name }}-backend.loadbalancer.server.port={{ backend_port }}"
+      - "traefik.docker.network=prism_proxy_network"
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: {{ project_name }}_frontend
+    volumes:
+      - ./{{ frontend_path }}:/app:cached
+      - /app/node_modules
+    environment:
+      - VITE_API_URL=http://{{ hostname }}.localhost/api
+      - VITE_GRAPHQL_URL=http://{{ hostname }}.localhost/graphql
+      - VITE_GRAPHQL_WS_URL=ws://{{ hostname }}.localhost/graphql/ws
+    depends_on:
+      - backend
+    command: npm run dev -- --host 0.0.0.0 --port {{ frontend_port }}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:{{ frontend_port }}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "{{ frontend_port }}:{{ frontend_port }}"
+    networks:
+      - default
+      - prism_proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.{{ project_name }}-frontend.rule=Host(`{{ hostname }}.localhost`) && PathPrefix(`/`)"
+      - "traefik.http.routers.{{ project_name }}-frontend.priority=1"
+      - "traefik.http.routers.{{ project_name }}-frontend.middlewares=service-error@file"
+      - "traefik.http.services.{{ project_name }}-frontend.loadbalancer.server.port={{ frontend_port }}"
+      - "traefik.docker.network=prism_proxy_network"
+
+  db:
+    image: postgres:16-alpine
+    container_name: {{ project_name }}_db
+    environment:
+      - POSTGRES_DB={{ project_name }}
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    volumes:
+      - {{ project_name }}_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    # Uncomment to expose database port to host (for debugging with external tools)
+    # ports:
+    #   - "${DB_PORT:-{{ db_port }}}:5432"
+
+{% if use_redis %}
+  redis:
+    image: redis:7-alpine
+    container_name: {{ project_name }}_redis
+    volumes:
+      - {{ project_name }}_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    ports:
+      - "{{ redis_port }}:{{ redis_port }}"
+{% endif %}
+
+{% if use_mcp %}
+  mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: {{ project_name }}_mcp
+    volumes:
+      - ./{{ backend_path }}:/app/{{ backend_path }}:cached
+      - ./specs:/app/specs:ro
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:{{ db_port }}/{{ project_name }}?ssl=disable
+{% if use_redis %}
+      - REDIS_URL=redis://redis:{{ redis_port }}/0
+{% endif %}
+      - ENVIRONMENT=development
+      - PYTHONPATH=/app/{{ backend_path }}/src
+    depends_on:
+      db:
+        condition: service_healthy
+{% if use_redis %}
+      redis:
+        condition: service_healthy
+{% endif %}
+    command: python -c "from {{ backend_module }}.{{ mcp_path }}.server import run_server; run_server(transport='sse', host='0.0.0.0', port={{ mcp_port }})"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s --max-time 2 http://localhost:{{ mcp_port }}/sse | head -1 | grep -q 'event'"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    ports:
+      - "{{ mcp_port }}:{{ mcp_port }}"
+    networks:
+      - default
+      - prism_proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.{{ project_name }}-mcp.rule=Host(`{{ hostname }}.localhost`) && PathPrefix(`/mcp`)"
+      - "traefik.http.routers.{{ project_name }}-mcp.middlewares={{ project_name }}-mcp-strip,service-error@file"
+      - "traefik.http.middlewares.{{ project_name }}-mcp-strip.stripprefix.prefixes=/mcp"
+      - "traefik.http.services.{{ project_name }}-mcp.loadbalancer.server.port={{ mcp_port }}"
+      - "traefik.docker.network=prism_proxy_network"
+{% endif %}
+
+volumes:
+  {{ project_name }}_postgres_data:
+{% if use_redis %}
+  {{ project_name }}_redis_data:
+{% endif %}
+
+networks:
+  default:
+    name: {{ project_name }}_network
+  prism_proxy:
+    external: true
+    name: prism_proxy_network

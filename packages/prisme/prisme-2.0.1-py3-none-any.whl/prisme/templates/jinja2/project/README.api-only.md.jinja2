@@ -1,0 +1,70 @@
+# {{ project_name }}
+
+{{ description }}
+
+## Quick Start
+
+```bash
+# Install dependencies
+uv sync
+
+# Start database
+docker-compose -f docker/docker-compose.yml up -d db
+
+# Generate code from spec
+prisme generate
+
+# Run the API
+uvicorn {{ project_name_snake }}.main:app --reload
+```
+
+## API Documentation
+
+- OpenAPI docs: http://localhost:8000/docs
+- GraphQL: http://localhost:8000/graphql
+
+## MCP (Model Context Protocol) Integration
+
+This project includes an MCP server that allows AI assistants to interact with your data.
+
+### Running the MCP Server
+
+```bash
+# SSE mode (HTTP server for development)
+python -c "from {{ project_name_snake }}.mcp_server.server import run_server; run_server(transport='sse')"
+
+# stdio mode (for Claude Desktop)
+python -c "from {{ project_name_snake }}.mcp_server.server import run_server; run_server()"
+```
+
+### Cursor IDE
+
+Add to your Cursor settings (`.cursor/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "{{ project_name_snake }}": {
+      "url": "http://localhost:8765/sse"
+    }
+  }
+}
+```
+
+### Claude Desktop
+
+Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
+
+```json
+{
+  "mcpServers": {
+    "{{ project_name_snake }}": {
+      "command": "uv",
+      "args": ["run", "python", "-c", "from {{ project_name_snake }}.mcp_server.server import run_server; run_server()"],
+      "cwd": "{{ '{{' }} absolute_path_to_project {{ '}}' }}"
+    }
+  }
+}
+```
+
+Replace `{{ '{{' }} absolute_path_to_project {{ '}}' }}` with the actual path to your project.
