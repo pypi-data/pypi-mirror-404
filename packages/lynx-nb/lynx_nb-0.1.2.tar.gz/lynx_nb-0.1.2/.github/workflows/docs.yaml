@@ -1,0 +1,109 @@
+name: Documentation
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow one concurrent deployment
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install UV
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: js/package-lock.json
+
+      - name: Build JavaScript assets
+        run: |
+          cd js
+          npm ci
+          npm run build
+
+      - name: Cache Sphinx doctrees
+        uses: actions/cache@v4
+        with:
+          path: docs/_build/.doctrees
+          key: doctrees-${{ runner.os }}-${{ hashFiles('docs/source/**') }}
+          restore-keys: |
+            doctrees-${{ runner.os }}-
+
+      - name: Cache Jupyter execution
+        uses: actions/cache@v4
+        with:
+          path: |
+            docs/_build/.jupyter_cache
+            docs/source/examples/_plots
+          key: jupyter-${{ runner.os }}-${{ hashFiles('docs/source/examples/*.md') }}
+          restore-keys: |
+            jupyter-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: |
+          uv sync --all-extras --dev
+          source .venv/bin/activate
+          python -m ipykernel install --user --name lynx
+
+      - name: Build HTML documentation
+        run: |
+          source .venv/bin/activate
+          cd docs
+          uv run make html
+
+      - name: Run linkcheck
+        run: |
+          source .venv/bin/activate
+          cd docs
+          uv run make linkcheck
+        continue-on-error: true
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/_build/html
+
+  deploy:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
