@@ -1,0 +1,13 @@
+
+#
+# Copyright (c) 2005 - 2026 Detlev Offenbach <detlev@die-offenbachs.de>
+#
+
+"""
+Module implementing the Windows entry point.
+"""
+
+if __name__ == "__main__":
+    from eric7_ide import main
+
+    main()
