@@ -1,0 +1,214 @@
+Metadata-Version: 2.4
+Name: samey
+Version: 0.1.0
+Summary: Dataset diversity scoring for synthetic instruction data
+Author-email: Vadim Borisov <vadim@tabularis.ai>
+License: MIT License
+        
+        Copyright (c) 2024 Vadim Borisov (tabularis.ai)
+        
+        Permission is hereby granted, free of charge, to any person obtaining a copy
+        of this software and associated documentation files (the "Software"), to deal
+        in the Software without restriction, including without limitation the rights
+        to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+        copies of the Software, and to permit persons to whom the Software is
+        furnished to do so, subject to the following conditions:
+        
+        The above copyright notice and this permission notice shall be included in all
+        copies or substantial portions of the Software.
+        
+        THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+        IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+        FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+        AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+        LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+        OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+        SOFTWARE.
+        
+Project-URL: Homepage, https://github.com/tabularis-ai/samey
+Keywords: diversity,nlp,dataset,sft,dpo,synthetic-data
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: numpy
+Requires-Dist: pandas
+Requires-Dist: scikit-learn
+Requires-Dist: sentence-transformers
+Dynamic: license-file
+
+<div align="center">
+  <h1>Samey</h1>
+  <p><strong>Dataset Diversity Scoring</strong></p>
+  <p>for synthetic instruction data (SFT/DPO)</p>
+</div>
+
+Samey measures diversity, repetition, templating, and topic coverage of text datasets. Fast and CPU-aimed.
+
+## Installation
+
+```bash
+pip install samey
+```
+
+## Quickstart
+
+```python
+from samey import Samey
+import pandas as pd
+
+data = pd.read_json("my_dataset.jsonl", lines=True)
+
+model = Samey()
+report = model.score(data, text="prompt", topic="category")
+print(report.summary)
+
+# OR as a single number: 
+print("Diversity:", report.diversity_score['score'])
+```
+
+### One-liner usage
+
+```python
+import samey as sl
+
+report = sl.score(df, text="prompt", topic="topic")
+print(report.summary)
+```
+
+### DPO datasets
+
+```python
+report = sl.score_dpo(df, prompt="prompt", chosen="chosen", rejected="rejected")
+print(report.to_markdown())
+```
+
+### Multiple text columns
+
+```python
+report = sl.score(df, text=["prompt", "response"])
+report.to_json("diversity_report.json")
+```
+
+## Metrics
+
+Samey computes 8 metrics:
+
+| Metric | What it measures | Healthy range |
+|--------|------------------|---------------|
+| **Compression Ratio** | Global repetition via gzip | 0.3-0.5 |
+| **Near-Duplicate Rate** | MinHash/LSH duplicates | < 0.1 |
+| **Template Dominance** | Skeleton detection | < 0.1 (top skeleton share) |
+| **N-gram Repetition** | Boilerplate via repeated 6-10 grams | < 0.2 |
+| **Topic Coverage** | Topic entropy | > 0.8 (1=uniform) |
+| **Style Diversity** | Char n-gram clustering | < 0.2 (largest cluster) |
+| **Semantic Diversity** | Embedding-based concept spread | > 0.5 (higher=more diverse) |
+| **Distinct-N** | Lexical diversity | > 0.5 for distinct-1/2/3 |
+
+## Configuration
+
+```python
+model = Samey(
+    length_mode="truncate",  # "truncate", "window", or "none"
+    max_chars=512,
+    shingle_size=5,
+    lsh_threshold=0.85,
+    max_sample=50_000,
+    ngram_min=6,
+    ngram_max=10,
+    style_n_clusters=20,
+    # Semantic diversity settings
+    semantic_method="tfidf",  # "tfidf" (fast) or "embedding" (better)
+    semantic_model="paraphrase-MiniLM-L3-v2",  # Only for method="embedding"
+    semantic_max_sample=1000,
+    enable_semantic=True,
+    seed=42,
+)
+```
+
+## Report Object
+
+```python
+report = model.score(df, text="prompt")
+
+report.summary          # Key metrics dict
+report.table            # pandas DataFrame
+report.diversity_score  # Aggregated 0-100 score
+report.print_score()    # Formatted score report
+report.to_json("report.json")
+report.to_markdown()
+```
+
+## Aggregated Diversity Score
+
+Get a single 0-100 score combining all metrics:
+
+```python
+report = model.score(df, text="prompt")
+report.print_score()
+```
+
+Output:
+```
+DIVERSITY SCORE: 97.8/100 (A)
+
+Metric Breakdown (1.0 = best):
+  compression_ratio              ██████████████████░░ 0.92 ✓
+  near_duplicate_rate            ████████████████████ 1.00 ✓
+  distinct_2                     ████████████████████ 1.00 ✓
+  ...
+
+✅ No significant issues detected!
+```
+
+Access programmatically:
+```python
+ds = report.diversity_score
+print(ds['score'])      # 97.8
+print(ds['issues'])     # List of detected problems
+print(ds['breakdown'])  # Per-metric normalized scores
+```
+
+## Saving and Loading
+
+```python
+model = Samey(max_chars=256, lsh_threshold=0.9)
+model.save("my_config")
+
+model = Samey.load("my_config")
+```
+
+## How It Works
+
+### Compression Ratio
+Concatenates all texts and computes `gzip_bytes / raw_bytes`. Repetitive content compresses better.
+
+### Near-Duplicate Rate
+Uses character 5-gram shingles, MinHash signatures (128 perms), and LSH to find texts with Jaccard similarity >= 0.85.
+
+### Template Dominance
+"Skeletonizes" texts by replacing URLs, numbers, emails, code blocks, quoted strings with tags. Then measures skeleton distribution.
+
+### N-gram Repetition
+Finds word 6-10 grams appearing in 2+ different rows.
+
+### Topic Coverage
+Normalized entropy of topic labels (0 = one topic, 1 = uniform).
+
+### Style Diversity
+Character 3-5 gram TF-IDF + MiniBatchKMeans clustering.
+
+### Distinct-N
+`unique_ngrams / total_ngrams` for unigrams, bigrams, trigrams.
+
+### Semantic Diversity
+Two methods available:
+- **TF-IDF** (default): Fast, uses word/bigram TF-IDF vectors. No extra dependencies.
+- **Embedding**: Uses `paraphrase-MiniLM-L3-v2` sentence transformer. Better at catching paraphrases/synonyms, but slower.
+
+```python
+# Fast TF-IDF (default)
+model = Samey(semantic_method="tfidf")
+
+# Embedding-based (needs sentence-transformers)
+model = Samey(semantic_method="embedding")
+```
