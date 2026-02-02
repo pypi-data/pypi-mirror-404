@@ -1,0 +1,219 @@
+import os
+import stat
+import shutil
+
+from '_pyscript>utils>path' import normpath
+
+class ExplorerResult {
+
+    __slots__ = ('success', 'exception')
+
+    func __init__(self) {
+        self._success()
+    }
+
+    func _success(self) {
+        self.success = True
+        self.exception = None
+        return self
+    }
+
+    func _failure(self, exception) {
+        self.success = False
+        self.exception = exception
+        return self
+    }
+
+    func _register(self, result) {
+        self.success = result.success
+        self.exception = result.exception
+    }
+
+    func __repr__(self) {
+        return 'ExplorerResult(success={!r}, exception={!r})'.format(self.success, self.exception)
+    }
+
+    func __enter__(self);
+
+    func __exit__(self, exc_type, exc_value, exc_tb) {
+        exc_type is None ? self._success() : self._failure(exc_value is None ? exc_type : exc_value)
+        return True
+    }
+
+}
+
+func newfile(path, exists_ok=True) {
+    result = ExplorerResult()
+    path = normpath(path, absolute=False)
+
+    if (os.path.exists(path)) {
+        if (!exists_ok) {
+            result._failure(FileExistsError("{!r} already exists".format(path)))
+        }
+    }
+    else {
+        with (result, open(path, 'a'));
+    }
+
+    return result
+}
+
+func newfolder(path, exists_ok=True) {
+    result = ExplorerResult()
+    path = normpath(path, absolute=False)
+
+    if (os.path.exists(path)) {
+        if (!exists_ok) {
+            result._failure(FileExistsError("{!r} already exists".format(path)))
+        }
+    }
+    else {
+        with (result) {
+            os.mkdir(path)
+        }
+    }
+
+    return result
+}
+
+func rename(path, name) {
+    result = ExplorerResult()
+    path = normpath(path, absolute=False)
+    newname = os.path.join(os.path.dirname(path), name)
+
+    with (result) {
+        os.rename(path, newname)
+    }
+
+    return result
+}
+
+func move(path, dist, replace=False) {
+    result = ExplorerResult()
+    path = normpath(path, absolute=False)
+    dist = normpath(dist, absolute=False)
+
+    if (!os.path.exists(path)) {
+        return result._failure(FileNotFoundError("{!r} not found".format(path)))
+    }
+
+    basename = os.path.basename(path)
+    distpath = os.path.join(dist, basename)
+
+    if (os.path.exists(distpath)) {
+        if (replace) {
+            result._register(remove(distpath))
+            if (!result.success) {
+                return result
+            }
+        }
+        else {
+            return result._failure(FileExistsError("{!r} already exists".format(distpath)))
+        }
+    }
+
+    with (result) {
+        shutil.move(path, distpath)
+    }
+
+    return result
+}
+
+func copy(path, dist, replace=False, metadata=True) {
+    result = ExplorerResult()
+    path = normpath(path, absolute=False)
+    dist = normpath(dist, absolute=False)
+
+    if (!os.path.exists(path)) {
+        return result._failure(FileNotFoundError("{!r} not found".format(path)))
+    }
+
+    basename = os.path.basename(path)
+    distpath = os.path.join(dist, basename)
+
+    if (os.path.exists(distpath)) {
+        if (replace) {
+            result._register(remove(distpath))
+            if (!result.success) {
+                return result
+            }
+        }
+        else {
+            return result._failure(FileExistsError("{!r} already exists".format(distpath)))
+        }
+    }
+
+    copyfunc = metadata ? shutil.copy2 : shutil.copy
+
+    with (result) {
+        if (os.path.isfile(path)) {
+            copyfunc(path, distpath)
+        }
+        elif (os.path.isdir(path)) {
+            shutil.copytree(path, distpath, copy_function=copyfunc)
+        }
+    }
+
+    return result
+}
+
+func clear(path) {
+    result = ExplorerResult()
+    path = normpath(path, absolute=False)
+
+    if (!os.path.exists(path)) {
+        return result._failure(FileNotFoundError("{!r} not found".format(path)))
+    }
+
+    with (result) {
+        if (os.path.isfile(path)) {
+            with (open(path, 'w') as file) {
+                file.write('')
+                file.flush()
+            }
+        }
+        elif (os.path.isdir(path)) {
+            for (child of os.listdir(path)) {
+                result._register(remove(os.path.join(path, child)))
+                if (!result.success) {
+                    break
+                }
+            }
+        }
+    }
+
+    return result
+}
+
+func remove(path) {
+    result = ExplorerResult()
+    path = normpath(path, absolute=False)
+
+    if (!os.path.exists(path)) {
+        return result._failure(FileNotFoundError("{!r} not found".format(path)))
+    }
+
+    with (result) {
+        if (os.path.isfile(path)) {
+            os.remove(path)
+        }
+        elif (os.path.isdir(path)) {
+            shutil.rmtree(path, onerror=func(fn, path, excinfo) {
+                os.chmod(path, stat.S_IWRITE)
+                fn(path)
+            })
+        }
+    }
+
+    return result
+}
+
+__all__ = (
+    'newfile',
+    'newfolder',
+    'rename',
+    'move',
+    'copy',
+    'clear',
+    'remove'
+)
