@@ -1,0 +1,274 @@
+# sagellm-core
+
+## Protocol Compliance (Mandatory)
+
+- MUST follow Protocol v0.1: https://github.com/intellistream/sagellm-docs/blob/main/docs/specs/protocol_v0.1.md
+- Any globally shared definitions (fields, error codes, metrics, IDs, schemas) MUST be added to Protocol first.
+
+[![CI](https://github.com/intellistream/sagellm-core/actions/workflows/ci.yml/badge.svg)](https://github.com/intellistream/sagellm-core/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/isagellm-core.svg)](https://pypi.org/project/isagellm-core/)
+[![Python](https://img.shields.io/pypi/pyversions/isagellm-core.svg)](https://pypi.org/project/isagellm-core/)
+[![License](https://img.shields.io/github/license/intellistream/sagellm-core.svg)](https://github.com/intellistream/sagellm-core/blob/main/LICENSE)
+[![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
+
+sageLLM Core - 引擎协调层与运行时系统
+
+## 架构定位
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  sagellm-core (引擎协调层) ← 本仓库                         │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │  LLMEngine (Hardware-Agnostic, vLLM v1 style)      │    │
+│  │  • 统一推理接口: generate, stream, execute         │    │
+│  │  • 自动后端选择 (auto-detect cuda/ascend/cpu)      │    │
+│  │  • 配置驱动 (LLMEngineConfig)                       │    │
+│  └─────────────────────────────────────────────────────┘    │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │  Configuration System (config.py)                  │    │
+│  │  • YAML/JSON 配置解析                               │    │
+│  │  • Pydantic v2 类型验证                            │    │
+│  └─────────────────────────────────────────────────────┘    │
+├─────────────────────────────────────────────────────────────┤
+│  sagellm-backend (硬件抽象层)                               │
+│  • BackendProvider (CPU/CUDA/Ascend)                       │
+│  • Stream/Event/KVBlock 管理                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**职责分离**：
+- ✅ **Core 负责**：LLMEngine (硬件无关)、配置、协调
+- ✅ **Backend 负责**：硬件抽象、设备管理、Provider 实现
+
+## Features
+
+- 🔧 引擎抽象层与自描述架构
+- 🏭 EngineFactory - 支持自动发现与优先级选择
+- 🎯 内置引擎实现（CPU/CUDA/Embedding）
+- 🔌 插件系统 - 扩展引擎与后端
+- ⚙️ 配置系统 - YAML/JSON + Pydantic v2
+- ✅ CPU-First - 无 GPU 测试支持
+
+## MoE（规划中）
+
+- MoE 路由/调度/执行图由 **sagellm-core** 主责
+- 依赖 **sagellm-comm**（all-to-all/拓扑通信）与 **sagellm-backend**（专家算子/内核）
+- 需先在 Protocol 中补充全局字段（如 router 元数据、专家负载指标）
+
+## 安装
+
+```bash
+# 从 PyPI 安装（自动安装 protocol + backend 依赖）
+pip install isagellm-core
+```
+
+## 🚀 开发者快速开始
+
+```bash
+git clone git@github.com:intellistream/sagellm-core.git
+cd sagellm-core
+./quickstart.sh   # 一键安装开发环境（含依赖）
+
+# 或手动安装
+pip install -e ".[dev]"
+```
+
+运行测试：
+```bash
+pytest tests/ -v
+```
+
+> 💡 **提示**：`isagellm-protocol` 和 `isagellm-backend` 会自动从 PyPI 安装。
+> 如需本地联调：
+> ```bash
+> pip install -e ../sagellm-protocol
+> pip install -e ../sagellm-backend
+> ```
+
+## Configuration System
+
+### 使用方法
+
+```python
+from sagellm_core import load_config, create_backend, create_engine
+
+# 从 YAML/JSON 加载配置
+config = load_config("config.yaml")
+
+# 创建 backend 和 engine（通过插件发现）
+backend = create_backend(config.backend)
+engine = create_engine(config.engine, backend)
+```
+
+### Configuration Structure
+
+Main configuration components:
+- `BackendConfig`: Device and backend settings
+- `EngineConfig`: Inference engine configuration
+- `WorkloadConfig`: Workload parameters
+- `OutputConfig`: Output paths and logging
+
+### 配置示例
+
+#### 示例配置文件
+
+- [config_cpu.yaml](examples/config_cpu.yaml) - CPU 模式（CI/开发）
+- [config_cuda.yaml](examples/config_cuda.yaml) - CUDA 生产模式
+- [config_ascend.yaml](examples/config_ascend.yaml) - 昇腾生产模式
+- [config_minimal.json](examples/config_minimal.json) - 最小 JSON 配置
+
+更多信息参见 [examples/README.md](examples/README.md)
+
+### 配置格式
+
+支持 YAML（推荐）和 JSON 格式：
+
+```yaml
+backend:
+  kind: cpu
+engine:
+  kind: cpu
+  model: sshleifer/tiny-gpt2
+workload:
+  segments: [short, long, stress]
+  concurrency: 4
+output:
+  metrics_path: ./metrics.json
+```
+
+### 插件解析
+
+当配置指定的 backend/engine kind 未安装时，会抛出 `PluginResolutionError`：
+
+```python
+from sagellm_core import create_backend, BackendConfig, PluginResolutionError
+
+try:
+    backend = create_backend(BackendConfig(kind="ascend_cann", device="npu:0"))
+except PluginResolutionError as e:
+    print(f"错误: {e}")
+    # 输出: No implementation found for sagellm.backends kind='ascend_cann'.
+    #       Install hint: pip install isagellm-backend-ascend_cann
+```
+
+## Development Guide
+
+### 快速开始
+
+```bash
+# 克隆仓库
+git clone https://github.com/intellistream/sagellm-core.git
+cd sagellm-core
+
+# 安装开发依赖
+pip install -e ".[dev]"
+
+# 安装 pre-commit hooks
+pre-commit install
+
+# 验证环境
+pytest tests/ -v
+```
+
+### Testing and Quality
+
+#### Pre-commit Hooks
+
+安装后，每次 `git commit` 会自动运行：
+- **Ruff**: 代码格式化 + Lint 检查
+- **Mypy**: 静态类型检查
+- **YAML/JSON**: 配置文件验证
+
+```bash
+# 手动运行所有 hooks
+pre-commit run --all-files
+
+# 绕过 hooks（紧急情况）
+git commit --no-verify
+```
+
+#### Running Tests
+
+```bash
+# Run all tests
+pytest tests/ -v
+
+# Run specific test module
+pytest tests/unit/test_demo.py -v
+
+# Generate coverage report
+pytest tests/ --cov=sagellm_core --cov-report=html
+```
+
+#### Continuous Integration
+
+GitHub Actions automatically runs on each PR:
+- Code linting and formatting checks
+- Tests across Python 3.10, 3.11, 3.12
+- Package build verification
+
+### Code Style
+
+This project uses:
+- **Ruff** for formatting and linting
+- **Mypy** for type checking
+- **Type hints** are required for all functions
+
+For detailed guidelines, see [CONTRIBUTING.md](CONTRIBUTING.md)
+
+### 代码检查
+
+```bash
+# 格式化代码
+ruff format .
+
+# Lint 检查
+ruff check .
+
+# 类型检查
+mypy src/sagellm_core
+
+# 一键检查所有
+pre-commit run --all-files
+```
+
+## 依赖
+
+- `pydantic>=2.0.0`: 配置校验
+- `pyyaml>=6.0.0`: YAML 配置支持
+- `isagellm-protocol>=0.1.0,<0.2.0`: 协议定义（Level 0）
+- `isagellm-backend>=0.1.0,<0.2.0`: 后端抽象（Level 1）
+
+## Related Packages
+
+- `isagellm-protocol` - Protocol definitions
+- `isagellm-backend` - Backend abstraction layer
+- `isagellm` - Main package with CLI
+
+For more packages, see the [sageLLM ecosystem](https://github.com/intellistream/sagellm)
+
+## 🔄 贡献指南
+
+请遵循以下工作流程：
+
+1. **创建 Issue** - 描述问题/需求
+   ```bash
+   gh issue create --title "[Bug] 描述" --label "bug,sagellm-core"
+   ```
+
+2. **开发修复** - 在本地 `fix/#123-xxx` 分支解决
+   ```bash
+   git checkout -b fix/#123-xxx origin/main-dev
+   # 开发、测试...
+   pytest -v
+   ruff format . && ruff check . --fix
+   ```
+
+3. **发起 PR** - 提交到 `main-dev` 分支
+   ```bash
+   gh pr create --base main-dev --title "Fix: 描述" --body "Closes #123"
+   ```
+
+4. **合并** - 审批后合并到 `main-dev`
+
+更多详情见 [.github/copilot-instructions.md](.github/copilot-instructions.md)
