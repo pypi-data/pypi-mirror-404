@@ -1,0 +1,103 @@
+---
+backend:
+  base_url: http://22.0.122.40:5000/api
+  cache_dir: .cache
+bootstrap_info:
+  blacklist_ports: []
+  cert_issuer: ZSCAMs
+  csr:
+    country: FR
+    default_common_name: zscams-agent.orangecyberdefense.com
+    locality: Paris
+    organization: zscams-agent.orangecyberdefense.com
+    state: Ile-de-France
+forwards:
+  - description: Forward to SSH backend
+    local_port: 4422
+    sni_hostname: ssh-tunnel
+  - description: Forward to Seculogs
+    local_port: 4423
+    sni_hostname: monitor-tunnel
+general:
+  health_check_interval: 30
+logging:
+  level: 10
+remote:
+  ca_cert: certificates/ca_chain.pem
+  ca_chain: certificates/ca_chain.pem
+  client_cert: certificates/client.crt
+  client_key: certificates/client.key
+  host: 81.255.240.214
+  port: 443
+  verify_cert: false
+services:
+  - args: []
+    health:
+      host: localhost
+      port: 22
+    name: Reverse SSH
+    custom_port_name: "reverse_port"
+    params:
+      local_port: 4422
+      private_key: keys/autoport.key
+      remote_host: localhost
+      reverse_port: "{reverse_port}"
+      server_ssh_user: ssh_user
+      ssh_options:
+        - -o LogLevel=error
+        - -o UserKnownHostsFile=/dev/null
+        - -o StrictHostKeyChecking=no
+        - -o ServerAliveInterval=30
+        - -o ServerAliveCountMax=2
+    port: 22
+    prerequisites:
+      files:
+        - keys/autoport.key
+      ports:
+        - 22
+      services: []
+    script: src/services/reverse_ssh.py
+  - args: []
+    health:
+      host: localhost
+      port: "{forwarder_port}"
+    name: Monitor Forwarder
+    custom_port_name: "forwarder_port"
+    params:
+      forwarder_port: "{forwarder_port}"
+      local_port: 4423
+      private_key: zscams/agent/keys/autoport.key
+      remote_host: 194.51.14.159
+      remote_port: 530
+      server_ssh_user: ssh_user
+      ssh_options:
+        - -o LogLevel=error
+        - -o UserKnownHostsFile=/dev/null
+        - -o StrictHostKeyChecking=no
+        - -o ServerAliveInterval=30
+        - -o ServerAliveCountMax=2
+    port: 530
+    prerequisites:
+      files:
+        - zscams/agent/keys/autoport.key
+      ports: []
+      services: []
+    script: src/services/ssh_forwarder.py
+  - args: []
+    health:
+      host: localhost
+      port: "{forwarder_port}"
+    name: Monitor Service
+    params:
+      equipment_name: "{equipment_name}"
+      equipment_type: "{equipment_type}"
+      remote_host: localhost
+      remote_port: "{forwarder_port}"
+      service_name: Zscaler-AppConnector
+    port: "{forwarder_port}"
+    prerequisites:
+      files: []
+      ports:
+        - "{forwarder_port}"
+      services: []
+    script: src/services/system_monitor.py
