@@ -1,0 +1,58 @@
+# Infrastructure routes for core services
+
+http:
+  routers:
+    # Main website - frontend
+    main-web:
+      rule: "Host(`{{ domain }}`) || Host(`www.{{ domain }}`)"
+      service: frontend
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt-dns
+      middlewares:
+        - security-headers
+        - gzip
+
+    # API routes
+    api:
+      rule: "Host(`{{ domain }}`) && PathPrefix(`/api`)"
+      service: backend
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt-dns
+      middlewares:
+        - security-headers
+        - api-rate-limit
+
+    # GraphQL endpoint
+    graphql:
+      rule: "Host(`{{ domain }}`) && PathPrefix(`/graphql`)"
+      service: backend
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt-dns
+      middlewares:
+        - security-headers
+        - api-rate-limit
+
+  services:
+    frontend:
+      loadBalancer:
+        servers:
+          - url: "http://frontend:3000"
+        healthCheck:
+          path: /healthz
+          interval: 30s
+          timeout: 5s
+
+    backend:
+      loadBalancer:
+        servers:
+          - url: "http://backend:8000"
+        healthCheck:
+          path: /health
+          interval: 30s
+          timeout: 5s

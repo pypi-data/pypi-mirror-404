@@ -1,0 +1,242 @@
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: ["Terraform"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+      server_ip:
+        description: 'Server IP address (required for manual dispatch)'
+        required: true
+        type: string
+
+env:
+  REGISTRY: {{ docker_registry }}
+  IMAGE_NAME: {% raw %}${{ github.repository }}{% endraw %}
+
+jobs:
+  setup:
+    name: Setup Deploy Config
+    runs-on: ubuntu-latest
+    if: {% raw %}${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}{% endraw %}
+
+    outputs:
+      server_ip: {% raw %}${{ steps.config.outputs.server_ip }}{% endraw %}
+      environment: {% raw %}${{ steps.config.outputs.environment }}{% endraw %}
+
+    steps:
+      - name: Download artifact from Terraform workflow
+        if: {% raw %}${{ github.event_name == 'workflow_run' }}{% endraw %}
+        uses: actions/download-artifact@v4
+        with:
+          name: deploy-config
+          path: deploy-config
+          run-id: {% raw %}${{ github.event.workflow_run.id }}{% endraw %}
+          github-token: {% raw %}${{ secrets.GITHUB_TOKEN }}{% endraw %}
+        continue-on-error: true
+
+      - name: Read config
+        id: config
+        run: |
+          if [ "{% raw %}${{ github.event_name }}{% endraw %}" = "workflow_dispatch" ]; then
+            echo "server_ip={% raw %}${{ github.event.inputs.server_ip }}{% endraw %}" >> $GITHUB_OUTPUT
+            echo "environment={% raw %}${{ github.event.inputs.environment }}{% endraw %}" >> $GITHUB_OUTPUT
+          elif [ -f deploy-config/config.json ]; then
+            SERVER_IP=$(jq -r '.server_ip' deploy-config/config.json)
+            ENVIRONMENT=$(jq -r '.environment' deploy-config/config.json)
+            echo "server_ip=${SERVER_IP}" >> $GITHUB_OUTPUT
+            echo "environment=${ENVIRONMENT}" >> $GITHUB_OUTPUT
+          else
+            echo "::error::No deploy config found. Run Terraform workflow first or provide server_ip via workflow_dispatch."
+            exit 1
+          fi
+
+      - name: Validate config
+        run: |
+          if [ -z "{% raw %}${{ steps.config.outputs.server_ip }}{% endraw %}" ]; then
+            echo "::error::server_ip is required"
+            exit 1
+          fi
+          echo "Deploying to {% raw %}${{ steps.config.outputs.environment }}{% endraw %} at {% raw %}${{ steps.config.outputs.server_ip }}{% endraw %}"
+
+  build:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    needs: setup
+    permissions:
+      contents: read
+      packages: write
+
+    outputs:
+      image_tag: {% raw %}${{ steps.meta.outputs.tags }}{% endraw %}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: {% raw %}${{ env.REGISTRY }}{% endraw %}
+          username: {% raw %}${{ github.actor }}{% endraw %}
+          password: {% raw %}${{ secrets.GITHUB_TOKEN }}{% endraw %}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: {% raw %}${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}{% endraw %}
+          tags: |
+            type=sha,prefix=
+            type=ref,event=branch
+
+      - name: Build and push backend
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.backend.prod
+          push: true
+          tags: {% raw %}${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}{% endraw %}-backend:{% raw %}${{ github.sha }}{% endraw %}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.frontend.prod
+          push: true
+          tags: {% raw %}${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}{% endraw %}-frontend:{% raw %}${{ github.sha }}{% endraw %}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [setup, build]
+    if: {% raw %}${{ needs.setup.outputs.environment == 'staging' }}{% endraw %}
+    environment: staging
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Copy Traefik config to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: {% raw %}${{ needs.setup.outputs.server_ip }}{% endraw %}
+          username: deploy
+          key: {% raw %}${{ secrets.SSH_PRIVATE_KEY }}{% endraw %}
+          source: "deploy/traefik/"
+          target: "/opt/{{ project_name }}/"
+
+      - name: Deploy to Staging Server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: {% raw %}${{ needs.setup.outputs.server_ip }}{% endraw %}
+          username: deploy
+          key: {% raw %}${{ secrets.SSH_PRIVATE_KEY }}{% endraw %}
+          script: |
+            cd /opt/{{ project_name }}
+
+            # Pull new images
+            docker compose -f docker-compose.prod.yml pull
+
+            # Update IMAGE_TAG in .env
+            sed -i 's/^IMAGE_TAG=.*/IMAGE_TAG={% raw %}${{ github.sha }}{% endraw %}/' .env
+
+            # Deploy with zero-downtime
+            docker compose -f docker-compose.prod.yml up -d --remove-orphans
+
+            # Run database migrations
+            docker compose -f docker-compose.prod.yml exec -T -w /app/packages/backend/src backend alembic upgrade head
+
+            # Wait for health check
+            sleep 10
+            curl -f http://localhost/health || exit 1
+
+            # Cleanup old images
+            docker image prune -f
+
+      - name: Verify deployment
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: {% raw %}${{ needs.setup.outputs.server_ip }}{% endraw %}
+          username: deploy
+          key: {% raw %}${{ secrets.SSH_PRIVATE_KEY }}{% endraw %}
+          script: |
+            curl -f http://localhost/health || exit 1
+            echo "Staging deployment verified successfully"
+
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [setup, build]
+    if: {% raw %}${{ needs.setup.outputs.environment == 'production' }}{% endraw %}
+    environment: production
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Copy Traefik config to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: {% raw %}${{ needs.setup.outputs.server_ip }}{% endraw %}
+          username: deploy
+          key: {% raw %}${{ secrets.SSH_PRIVATE_KEY }}{% endraw %}
+          source: "deploy/traefik/"
+          target: "/opt/{{ project_name }}/"
+
+      - name: Deploy to Production Server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: {% raw %}${{ needs.setup.outputs.server_ip }}{% endraw %}
+          username: deploy
+          key: {% raw %}${{ secrets.SSH_PRIVATE_KEY }}{% endraw %}
+          script: |
+            cd /opt/{{ project_name }}
+
+            # Backup current deployment info
+            cp .env .env.backup.$(date +%Y%m%d_%H%M%S)
+
+            # Pull new images
+            docker compose -f docker-compose.prod.yml pull
+
+            # Update IMAGE_TAG in .env
+            sed -i 's/^IMAGE_TAG=.*/IMAGE_TAG={% raw %}${{ github.sha }}{% endraw %}/' .env
+
+            # Deploy with zero-downtime
+            docker compose -f docker-compose.prod.yml up -d --remove-orphans
+
+            # Run database migrations
+            docker compose -f docker-compose.prod.yml exec -T -w /app/packages/backend/src backend alembic upgrade head
+
+            # Wait for health check
+            sleep 10
+            curl -f http://localhost/health || exit 1
+
+            # Cleanup old images
+            docker image prune -f
+
+      - name: Verify deployment
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: {% raw %}${{ needs.setup.outputs.server_ip }}{% endraw %}
+          username: deploy
+          key: {% raw %}${{ secrets.SSH_PRIVATE_KEY }}{% endraw %}
+          script: |
+            curl -f http://localhost/health || exit 1
+            echo "Production deployment verified successfully"
