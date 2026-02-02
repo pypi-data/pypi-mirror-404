@@ -1,0 +1,50 @@
+[build-system]
+requires = ["{% if pythonUseUvBuildBackend %}uv_build>=0.9.18,<0.10.0{% else %}setuptools{% endif %}"]
+build-backend = "{% if pythonUseUvBuildBackend %}uv_build{% else %}setuptools.build_meta{% endif %}"
+
+[project]
+name = "{{ pythonPackage }}"
+{% if pythonUseUvBuildBackend %}version = "0.0.0"{% else %}dynamic = ["version"]{% endif %}
+authors = [
+    {name="{{ projectAuthor }}"},
+]
+maintainers = [
+    {name="{{ projectAuthor }}"},
+]
+readme = {file = "README.md", content-type = "text/markdown"}
+requires-python = ">={{ pythonMinVersion }}"
+classifiers = [{% for ver in pythonSupportedVersions %}
+    "Programming Language :: Python :: {{ ver }}",{% endfor %}
+]
+dependencies = [{% for req in pythonPackageRequirements %}
+    "{{ req }}",{% endfor %}
+]
+
+[dependency-groups]
+dev = [{% for req in pythonDevRequirements %}
+    "{{ req }}",{% endfor %}{% for req in pythonArchiveRequirements %}
+    "{{ req }}@{{ pythonArchiveRequirements[req] }}",{% endfor %}
+]
+
+{% if pythonUseUvBuildBackend %}[tool.uv.build-backend]
+module-root = "{{pythonSrcFolders[0]}}"
+wheel-exclude = [{% for module in pythonBuildExcludedModules %}{% if loop.index > 1 %},{% endif %}"{{module}}"{% endfor %}]
+
+{% else %}[tool.setuptools.packages.find]
+where = [{% for path in pythonSrcFolders %}"{{path}}",{% endfor %}]
+exclude = [{% for module in pythonBuildExcludedModules %}{% if loop.index > 1 %},{% endif %}"{{module}}"{% endfor %}]
+namespaces = false
+
+[tool.setuptools.package-data]
+"*" = ["*"]
+
+[tool.setuptools.dynamic.version]
+file = "{{ pythonVersionStamp }}"
+
+{% endif %}[tool.distutils.bdist_wheel]
+plat-name = "{{ pythonPackagePlatform }}"
+
+[tool.pyright]
+include = {{ pythonSrcFolders }}
+typeCheckingMode = "{{ pythonTypeCheckingMode }}"
+reportMissingTypeStubs = false
