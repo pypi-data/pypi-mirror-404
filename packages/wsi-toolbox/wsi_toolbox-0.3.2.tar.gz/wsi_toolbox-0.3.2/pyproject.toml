@@ -1,0 +1,192 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "wsi-toolbox"
+version = "0.3.2"
+description = "A comprehensive toolkit for Whole Slide Image processing, feature extraction, and clustering analysis"
+readme = "README.md"
+requires-python = "==3.12.*"
+license = {file = "LICENSE"}
+authors = [
+    {name = "Ken Enda", email = "ken@endaaman.com"},
+]
+keywords = ["wsi", "pathology", "deep-learning", "clustering", "histopathology"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Medical Science Apps.",
+]
+dependencies = [
+    "h5py>=3.13.0",
+    "imagecodecs>=2024.12.30",
+    "joblib>=1.4.2",
+    "leidenalg>=0.10.2",
+    "matplotlib>=3.9.4",
+    "networkx>=3.3",
+    "numpy<2",
+    "opencv-python-headless>=4.11.0.86",
+    "openpyxl>=3.1.5",
+    "openslide-python>=1.4.1",
+    "pandas>=2.2.3",
+    "pillow>=11.0.0",
+    "pyqt6>=6.8.1",
+    "python-igraph>=0.11.8",
+    "rich>=14.0.0",
+    "scikit-learn>=1.6.1",
+    "seaborn>=0.13.2",
+    "streamlit>=1.43.2",
+    "streamlit-antd-components>=0.3.2",
+    "streamlit-aggrid>=0.3.4.post3",
+    "taskipy>=1.14.1",
+    "tifffile>=2025.2.18",
+    "timm>=0.9.16",
+    "torch>=2.5.1",
+    "torchvision>=0.20.1",
+    "umap-learn>=0.5.7",
+    "zarr>=3",
+    "pydantic-autocli>=0.2.0",
+]
+
+[project.scripts]
+wsi-toolbox = "wsi_toolbox.cli:main"
+wt = "wsi_toolbox.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/technoplasm/wsi-toolbox"
+Repository = "https://github.com/technoplasm/wsi-toolbox"
+Documentation = "https://github.com/technoplasm/wsi-toolbox/blob/master/README.md"
+
+# [[tool.uv.index]]
+# name = "pytorch"
+# url = "https://download.pytorch.org/whl/cu121"
+# explicit = true
+
+[project.optional-dependencies]
+build = ["torch", "packaging", "wheel", "setuptools"]
+compile = ["flash-attn"]
+
+[tool.uv]
+no-build-isolation-package = ["flash-attn"]
+preview = true
+
+# [tool.uv.sources]
+# # x86_64 Linux: use CUDA 12.1 wheels, otherwise: use default PyPI (CPU)
+# torch = [
+#     { index = "pytorch", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" },
+# ]
+# torchvision = [
+#     { index = "pytorch", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" },
+# ]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cu128", marker = "sys_platform == 'linux'" },
+]
+torchvision = [
+    { index = "pytorch-cu128", marker = "sys_platform == 'linux'" },
+]
+
+[tool.uv.extra-build-dependencies]
+flash-attn = ["setuptools", "wheel", "packaging", "ninja", "torch"]
+
+[[tool.uv.dependency-metadata]]
+name = "flash-attn"
+version = "2.7.4"
+requires-dist = ["torch", "einops"]
+
+
+[tool.taskipy.tasks]
+cli = "python -m wsi_toolbox.cli"
+app = "streamlit run wsi_toolbox/app/main.py --server.address 0.0.0.0 --server.port ${PORT:-8501}"
+watcher = "python -m wsi_toolbox.watcher"
+clean = "rm -rf build/ dist/ *.egg-info/ __pycache__/ && find . -name '*.pyc' -delete && find . -name '__pycache__' -delete"
+build = "python -m build"
+check = "python -m twine check dist/*"
+lint = "ruff check . --extend-ignore F401"
+lint-strict = "ruff check ."
+fix = "ruff check --fix . && ruff format ."
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.sdist]
+exclude = [
+    ",/",
+    "data/",
+    "out/",
+    "weights/",
+    "*.h5",
+    "*.ndpi",
+    "*.svs",
+    "*.tiff",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["wsi_toolbox"]
+
+[dependency-groups]
+dev = [
+    "fastapi>=0.115.0",
+    "ipython>=9.1.0",
+    "jupyterlab>=4.1.6",
+    "ruff>=0.8.0",
+    "taskipy>=1.14.1",
+    "uvicorn>=0.32.0",
+]
+build = [
+    "build>=1.0.0",
+    "twine>=5.0.0",
+]
+
+# Slide-level encoding (CLI only) - uv-only feature, not uploaded to PyPI
+# $ uv sync --group gigapath
+gigapath = [
+    "gigapath @ git+https://github.com/prov-gigapath/prov-gigapath.git@5d77be0",
+    "flash-attn>=2.7.4",
+    "einops>=0.8.1",
+    "fairscale>=0.4.13",
+]
+
+[tool.ruff]
+# Exclude common directories
+exclude = [
+    ".git",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+    "*.egg-info",
+]
+
+# Same as Black.
+line-length = 120
+
+[tool.ruff.lint]
+# Enable specific rule categories
+select = [
+    "F",        # Pyflakes (unused imports, undefined names, etc.)
+    "I",        # isort (import sorting)
+    "E402",     # Module level import not at top of file
+    "PLC0415",  # Import outside toplevel (import in function)
+]
+
+# Ignore specific rules
+ignore = []
+
+[tool.ruff.lint.per-file-ignores]
+# Optional/heavy imports that need lazy loading
+"wsi_toolbox/app/main.py" = ["E402", "PLC0415"]  # Streamlit app with special import patterns
+"wsi_toolbox/utils/progress.py" = ["PLC0415"]  # Optional dependency (streamlit) lazy loading
+"wsi_toolbox/commands/umap_embedding.py" = ["PLC0415"]  # Heavy import (umap) lazy loading
+
+[tool.ruff.lint.isort]
+known-first-party = ["wsi_toolbox"]
