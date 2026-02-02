@@ -1,0 +1,201 @@
+# Build Cub
+
+[![pypi version](https://img.shields.io/pypi/v/build-cub.svg)](https://pypi.org/project/build-cub/)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
+
+A Hatch build hook for compiling native Python extensions. Supports Cython, PyBind11, Raw C++ (CPython API), and Gperf preprocessing with configuration-driven builds.
+
+## Features
+
+- **Multiple Backends**: Cython, PyBind11, Raw C++, and Gperf support out of the box
+- **Configuration-Driven**: All build settings defined in `bear_build.toml`
+- **Cross-Platform**: Automatic compiler/linker arg selection for Unix and Windows
+- **Settings Inheritance**: Define defaults once, override per-backend as needed
+- **Flexible Templates**: Generate version files and headers with Jinja2 templates
+- **VCS Versioning**: Automatic version extraction from git tags
+
+## NOTE
+
+The project isn't fully ready yet so please do not use it quite yet.
+
+## Installation
+
+```bash
+pip install build-cub
+```
+
+With [uv](https://docs.astral.sh/uv/):
+
+```bash
+uv add build-cub
+```
+
+## Quick Start
+
+### 1. Add to your build system
+
+In your `pyproject.toml`:
+
+```toml
+[build-system]
+requires = ["hatchling", "build-cub"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.hooks.custom]
+path = "hatch_build.py"
+```
+
+### 2. Create the build hook
+
+Create `hatch_build.py` in your project root:
+
+```python
+from build_cub.plugins import BuildCubHook
+
+class CustomBuildHook(BuildCubHook):
+    PLUGIN_NAME = "custom"
+```
+
+### 3. Configure your build
+
+Create `bear_build.toml` in your project root:
+
+```toml
+[general]
+name = "my_package"
+enabled = true
+
+[defaults.settings]
+extra_compile_args = ["-O3", "-ffast-math"]
+extra_link_args = ["-O3"]
+
+[cython]
+enabled = true
+targets = ["src/my_package/fast.pyx"]
+
+[cython.compiler_directives]
+language_level = "3"
+boundscheck = false
+wraparound = false
+```
+
+### 4. Build your package
+
+```bash
+uv build
+# or
+pip wheel .
+```
+
+## Configuration Reference
+
+### General Settings
+
+```toml
+[general]
+name = "my_package"        # Package name
+enabled = true             # Master switch for all compilation
+debug_symbols = false      # Include debug symbols (-g flag)
+```
+
+### Compiler Defaults
+
+```toml
+[defaults.settings]
+extra_compile_args = ["-O3", "-std=c++20"]
+extra_link_args = ["-O3"]
+extra_compile_args_windows = ["/O2", "/std:c++20"]
+extra_link_args_windows = ["/IGNORE:4099"]
+include_dirs = []
+library_dirs = []
+libraries = []
+
+[defaults.output_files]
+lib_files = [".so", ".pyd"]
+```
+
+### Cython Backend
+
+```toml
+[cython]
+enabled = true
+annotate = false           # Generate HTML annotation files
+quiet = true               # Suppress compiler output
+cleanup = true             # Remove intermediate .c/.cpp files
+targets = ["src/pkg/module.pyx"]
+
+[cython.settings]
+# Override defaults for this backend only
+extra_compile_args = ["-O2"]
+
+[cython.compiler_directives]
+language_level = "3"
+embedsignature = true
+boundscheck = false
+wraparound = false
+cdivision = true
+```
+
+### PyBind11 Backend
+
+```toml
+[pybind11]
+enabled = true
+targets = [
+    { name = "bindings", sources = ["src/pkg/_cpp/bindings.cpp"] }
+]
+```
+
+### Raw C++ Backend
+
+```toml
+[raw_cpp]
+enabled = true
+targets = [
+    { name = "core", sources = ["src/pkg/_cpp/core.cpp", "src/pkg/_cpp/utils.cpp"] }
+]
+```
+
+### Gperf Preprocessing
+
+```toml
+[gperf]
+enabled = true
+binary = "/usr/bin/gperf"
+language = "C++"
+```
+
+### Version Templates
+
+Generate version files from Jinja2 templates:
+
+```toml
+[versioning.variables]
+database = { major = 2, minor = 0, patch = 0 }
+
+[[versioning.templates]]
+output = "src/my_package/_version.py"
+content = '''
+__version__ = "{{ version.major }}.{{ version.minor }}.{{ version.patch }}"
+__db_version__ = "{{ database.major }}.{{ database.minor }}.{{ database.patch }}"
+'''
+
+[[versioning.templates]]
+output = "src/my_package/_cpp/version.hpp"
+content = '''
+#pragma once
+constexpr int VERSION_MAJOR = {{ version.major }};
+constexpr int DB_VERSION_MAJOR = {{ database.major }};
+'''
+```
+
+The `version` variable is automatically injected from VCS (git tags).
+
+## Requirements
+
+- Python 3.12+
+- Hatchling build backend
+- Backend-specific requirements:
+  - Cython backend: `cython`
+  - PyBind11 backend: `pybind11`
+  - Gperf backend: `gperf` binary installed

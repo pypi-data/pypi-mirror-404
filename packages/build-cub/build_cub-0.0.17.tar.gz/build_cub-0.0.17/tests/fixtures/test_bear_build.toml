@@ -1,0 +1,83 @@
+### TEST FIXTURE FOR BUILD CUB ################################################
+# This is a stable test configuration - DO NOT MODIFY without updating tests.
+# Used to verify BuildData loading, settings inheritance, and template rendering.
+###############################################################################
+
+[general]
+name = "test_project"
+enabled = true
+debug_symbols = false
+
+[defaults]
+merge_mode = "merge"                    # Merge mode for backend settings (replace or merge)
+
+[defaults.settings]
+extra_compile_args = ["-O3", "-ffast-math", "-std=c++20"]
+extra_link_args = ["-O3"]
+extra_compile_args_windows = ["/O2", "/fp:fast", "/std:c++20"]
+extra_link_args_windows = ["/IGNORE:4099","/OPT:REF","/OPT:ICF"]
+include_dirs = []
+library_dirs = []
+libraries = []
+lib_files = [".so", ".pyd", ".dylib"]
+
+[gperf]
+enabled = false
+binary = "/usr/bin/gperf"
+language = "C++"
+options = []
+targets = []
+
+[cython]
+enabled = true
+annotate = false
+quiet = true
+targets = [{ name="fast", sources="src/test_project/fast.pyx"}, {name="utils", sources="src/test_project/utils.pyx"}]
+
+[cython.settings]
+extra_compile_args = ["-O3", "-ffast-math"]
+extra_link_args = ["-Wl,-w"]
+extra_compile_args_windows = ["/O2", "/fp:fast"]
+extra_link_args_windows = ["/IGNORE:4099"]
+
+[cython.compiler_directives]
+language_level = "3"
+embedsignature = true
+boundscheck = false
+wraparound = false
+
+[pybind11]
+enabled = false
+targets = []
+
+[raw_cpp]
+enabled = true
+targets = [
+    { name = "bindings", sources = ["src/test_project/_cpp/bindings.cpp"] }
+]
+
+# User-defined variables passed to all templates
+[versioning.variables]
+united_data = { major = 2, minor = 1, patch = 0 }
+schema = { major = 1, minor = 5, patch = 3 }
+
+# Python version template
+[[versioning.templates]]
+output = "src/test_project/_version.py"
+content = '''
+__version__ = "{{ version.major }}.{{ version.minor }}.{{ version.patch }}"
+__united_data_version__ = "{{ united_data.major }}.{{ united_data.minor }}.{{ united_data.patch }}"
+__schema_version__ = "{{ schema.major }}.{{ schema.minor }}.{{ schema.patch }}"
+'''
+
+# C++ version template
+[[versioning.templates]]
+output = "src/test_project/_cpp/_version.hpp"
+content = '''
+#pragma once
+namespace test_project {
+    constexpr int VERSION_MAJOR = {{ version.major }};
+    constexpr int UNITED_DATA_VERSION = {{ united_data.major }};
+    constexpr int SCHEMA_VERSION = {{ schema.major }};
+}
+'''

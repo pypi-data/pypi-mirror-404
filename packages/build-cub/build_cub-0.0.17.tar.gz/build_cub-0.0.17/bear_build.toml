@@ -1,0 +1,186 @@
+### BUILD SETTINGS FOR BUILD CUB ###############################################
+#
+# This file configures the build system for build_cub. It uses a defaults +
+# override pattern: [defaults] contains fully documented base settings, and each
+# backend section can override specific values (replace semantics - if a backend
+# specifies a setting, it completely replaces the default).
+#
+# NOTE: THIS FILE IS FOR THE PROJECT ITSELF AND NOT USER FACING __AT_ALL__
+#################################################################################
+
+[general]
+name = "build_cub"                 # Name of the package
+enabled = true                    # Master switch for all compilation
+print_time_to_build = true         # Whether to print time taken to build each backend
+
+[conditionals.platform.darwin]
+proc = [ {op ="append", target="defaults.settings.add_to_compile_args", value="-mmacos-version-min=14.0" } ]
+
+[conditionals.platform.windows]
+proc = [ {op ="replace", target="defaults.settings.replace_compile_args", value=["/O2", "/fp:fast", "/arch:AVX2"] },
+         {op ="replace", target="defaults.settings.replace_link_args", value=["/IGNORE:4099", "/OPT:REF", "/OPT:ICF"] } ]
+
+[conditionals.env_var]
+BUILD_CUB_DEBUG = { proc = [ {op ="append", target="defaults.settings.add_to_compile_args", value="-g" } ] }
+
+[[versioning.templates]]
+name = "python_version"
+output = "src/build_cub/_internal/_version.py"
+content = '''
+__version__ = "{{ version.version_str }}"
+__version_tuple__ = ({{ version.major }}, {{ version.minor }}, {{ version.patch }})
+
+'''
+validation = {type = "python", expression = "len(__version_tuple__) == 3"}
+
+### DEFAULTS ####################################################################
+# These are the base settings inherited by all backends unless overridden.
+# Fully documented here for reference. Please see  bottom of file for further reference.
+#################################################################################
+
+[defaults]
+merge_mode = "replace"            # Merge mode for backend settings (replace or merge)
+
+[defaults.settings]
+extra_compile_args = ["-O3", "-ffast-math", "-Wno-incompatible-pointer-types"]
+extra_compile_args_macos = ["-mmacos-version-min=14.0"]
+extra_link_args = ["-Wl,-w", "-O3"]
+extra_compile_args_windows = ["/O2", "/fp:fast", "/arch:AVX2"]
+extra_link_args_windows = ["/IGNORE:4099", "/OPT:REF", "/OPT:ICF"]
+include_dirs = []
+library_dirs = []
+libraries = []
+lib_files = [".so", ".pyd", ".dylib"]
+
+### GPERF BACKEND ###############################################################
+# GNU perfect hash function generator - preprocesses .gperf files into .h headers
+# Runs BEFORE other compilation backends since it generates headers they may need
+#################################################################################
+
+[gperf]
+enabled = false                      # Whether to run gperf preprocessing
+# binary = "/opt/homebrew/bin/gperf" # Path to the gperf binary
+# language = "C++"                   # Language for gperf output (ANSI-C or C++)
+# options = []                       # Additional command-line options for gperf
+# targets = []                       # Explicit list of .gperf files to process
+# target_ext = ".h"                  # Expected file extensions to generate
+
+### CYTHON BACKEND ##############################################################
+# Compiles .pyx files into Python extension modules via Cython
+#################################################################################
+
+[cython]
+enabled = false                      # Whether to enable Cython compilation
+# annotate = false                   # Generate HTML annotation files for optimization analysis
+# cleanup = true                     # Remove intermediate C/C++ files after successful compilation
+# quiet = true                       # Suppress Cython compiler output
+# targets = [                        # Explicit list of .pyx files to compile
+# { name="cython", sources="<path>"}
+# ]
+
+[cython.settings] # Override Default Settings
+# extra_compile_args = ["-O3", "-ffast-math", "-Wno-incompatible-pointer-types"]
+# extra_link_args = ["-Wl,-w", "-O3"]
+# extra_compile_args_windows = ["/O2", "/fp:fast"]
+# extra_link_args_windows = ["/IGNORE:4099", "/OPT:REF", "/OPT:ICF"]
+
+
+[cython.compiler_directives]       # Cython-specific compiler directives
+language_level = "3"               # Python language level (2 or 3)
+embedsignature = true              # Embed function signatures in docstrings
+boundscheck = false                # Disable bounds checking for indexing (faster)
+wraparound = false                 # Disable negative index wraparound (faster)
+nonecheck = false                  # Disable None checks (faster)
+cdivision = true                   # Use C division semantics (faster, no ZeroDivisionError)
+initializedcheck = false           # Disable uninitialized memory view checks (faster)
+
+### PYBIND11 BACKEND ############################################################
+# Compiles C++ files with pybind11 bindings into Python extension modules
+#################################################################################
+
+[pybind11]
+enabled = false                    # Whether to enable pybind11 compilation
+targets = []                       # Explicit list of .cpp files to compile
+
+### RAW C++ BACKEND #############################################################
+# Compiles C++ files using raw CPython API (PyObject*, PyTypeObject, etc.)
+# No external binding library required - direct Python C API usage
+#################################################################################
+
+[raw_cpp]
+enabled = false                    # Whether to enable raw C++ compilation
+targets = []                       # Explicit list of .cpp files to compile
+
+
+### PYO3/RUST BACKEND ###############################################################
+# Compiles Rust code with PyO3 bindings into Python extension modules
+# Requires Rust toolchain (rustup) and cargo to be installed
+#################################################################################
+
+[pyo3]
+# enabled = false                     # Whether to enable Rust/PyO3 compilation
+# release = true                     # Build in release mode (optimized)
+# quiet = true                       # Suppress cargo build output
+# features = []                      # Cargo features to enable
+# targets = [                        # List of Cargo.toml paths to compile
+#     { name ="bindings", sources = "Cargo.toml",  output_path = "src/build_cub/_rust/bindings" }
+# ]
+
+### VERSIONING ##################################################################
+# Flexible template-based file generation
+# - [versioning.variables]: User-defined dicts passed to all templates
+# - [[versioning.templates]]: Array of templates with output path and content
+# - "version" variable is auto-injected from VCS (always available)
+#################################################################################
+
+# User-defined variables (optional) - passed to all templates
+#[versioning.variables]
+# database = { major = 2, minor = 0, patch = 0 }
+# api = { major = 1, minor = 5, patch = 0 }
+
+# Template definitions - each [[versioning.templates]] entry is rendered
+# [[versioning.templates]]
+# output = "src/build_cub/_internal/_version.py"
+# content = '''
+# __version__ = "{{ version.major }}.{{ version.minor }}.{{ version.patch }}"
+# __version_tuple__ = ({{ version.major }}, {{ version.minor }}, {{ version.patch }})
+# '''
+
+### KEEP THIS HERE FOR REFERENCE ####################################################
+
+# [defaults.output_files]
+# lib_files = [                             # Output file extensions to look for after compilation
+#     ".so",                                #   Shared object files (Unix/Linux/macOS)
+#     ".pyd",                               #   Python dynamic module files (Windows)
+# ]
+
+# [defaults.settings]
+# extra_compile_args = [                    # Compiler arguments (Unix/Linux/macOS)
+#     "-O3",                                # Optimize for speed (highest optimization level)
+#     "-ffast-math",                        # Enable fast math optimizations (may violate IEEE/ISO rules)
+#     "-std=c++20",                         # Use C++20 standard for C++ code
+#     "-Wno-incompatible-pointer-types",    # Suppress incompatible pointer type warnings
+# ]
+
+# extra_link_args = [                       # Linker arguments (Unix/Linux/macOS)
+#     "-Wl,-w",                             # Suppress all linker warnings
+#     "-O3",                                # Optimize linked code for speed
+# ]
+
+# extra_compile_args_windows = [            # Compiler arguments (Windows)
+#     "/O2",                                # Optimize for speed
+#     "/fp:fast",                           # Enable fast floating-point model
+#     "/std:c++20",                         # Use C++20 standard
+# ]
+
+# extra_link_args_windows = [               # Linker arguments (Windows)
+#     "/IGNORE:4099",                       # Ignore specific linker warning (PDB not found)
+#     "/OPT:REF",                           # Eliminate unreferenced functions/data
+#     "/OPT:ICF",                           # Perform identical COMDAT folding
+# ]
+
+# include_dirs = []                          # Vendor headers (frozen_cub, etc.) # Project C++ headers
+# library_dirs = []                          # Project library directories
+# libraries = []                             # Libraries to link against
+
+################################################################################
