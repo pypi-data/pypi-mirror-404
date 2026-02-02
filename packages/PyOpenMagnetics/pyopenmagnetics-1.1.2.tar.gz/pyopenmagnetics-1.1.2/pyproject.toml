@@ -1,0 +1,66 @@
+[build-system]
+requires = ["scikit-build-core", "pybind11"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "PyOpenMagnetics"
+version = "1.1.2"
+requires-python = ">=3.8"
+authors = [
+  { name="Alfonso Martinez", email="Alfonso_VII@hotmail.com" },
+]
+description = "Python wrapper for OpenMagnetics"
+readme = "README.md"
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Programming Language :: Python :: 3",
+  "Operating System :: Microsoft :: Windows :: Windows 11",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: C++",
+  "License :: OSI Approved :: MIT License",
+]
+
+[project.urls]
+Homepage = "https://openmagnetics.com"
+Repository = "https://github.com/OpenMagnetics/PyOpenMagnetics"
+Contact = "https://www.linkedin.com/in/alfonso-martinez-de-la-torre/"
+
+[tool.scikit-build]
+build-dir = "build/{wheel_tag}"
+cmake.verbose = true
+sdist.exclude = [".venv*", ".venv*/**", "build", "build/**", "dist", "dist/**", "*.egg-info", "__pycache__", "*.pyc"]
+
+[[tool.scikit-build.overrides]]
+if.platform-system = "^linux"
+# build.tool-args = ["-j8"]
+[[tool.scikit-build.overrides]]
+if.platform-system = "^win32"
+# build.tool-args = ["-maxcpucount:8"]
+
+[tool.cibuildwheel]
+skip=["pp*", "*-win32", "*mul*"]
+manylinux-x86_64-image = "manylinux_2_28"
+manylinux-aarch64-image = "manylinux_2_28"
+manylinux-ppc64le-image = "manylinux_2_28"
+manylinux-s390x-image = "manylinux_2_28"
+manylinux-pypy_x86_64-image = "manylinux_2_28"
+manylinux-pypy_aarch64-image = "manylinux_2_28"
+environment = { GIT_LFS_SKIP_SMUDGE=1 }
+build-verbosity = 1
+
+[tool.cibuildwheel.linux]
+before-all = [
+  "dnf -y module reset nodejs",
+  "dnf -y module enable nodejs:20",
+  "dnf -y install nodejs npm",
+  "npm --version",
+  "npm install -g quicktype@23.0.170"
+]
+
+[tool.cibuildwheel.macos]
+before-all = "npm --version && npm install -g quicktype@23.0.170"
+environment = { MACOSX_DEPLOYMENT_TARGET="14.0", GIT_LFS_SKIP_SMUDGE=1 }
+
+[tool.cibuildwheel.windows]
+before-all = "rmdir /S /Q build && npm --version && npm install -g quicktype@23.0.170"
+archs = ["AMD64"]
