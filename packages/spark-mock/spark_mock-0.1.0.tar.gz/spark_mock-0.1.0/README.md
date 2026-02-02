@@ -1,0 +1,151 @@
+# Spark Mock 🚀
+
+A mock Apache Spark implementation using Polars as the backend engine. Practice PySpark-like syntax without needing a real Spark cluster!
+
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+## Features ✨
+
+- **PySpark-like API** - Familiar DataFrame, Column, and SQL syntax
+- **Lazy Evaluation** - Just like real Spark, operations are lazily evaluated
+- **Polars Backend** - Fast execution powered by Polars
+- **Spark UI Simulation** - HTML-based UI that mimics the real Spark UI
+- **SQL Support** - Execute SQL queries on DataFrames
+- **Window Functions** - Support for row_number, rank, lag, lead, etc.
+
+## Installation 📦
+
+### From PyPI (recommended)
+```bash
+pip install spark-mock
+```
+
+### From GitHub
+```bash
+pip install git+https://github.com/datalearn-dev/spark-mock.git
+```
+
+### From source
+```bash
+git clone https://github.com/datalearn-dev/spark-mock.git
+cd spark-mock
+pip install -e .
+```
+
+## Quick Start 🎯
+
+```python
+from spark_mock.sql import SparkSession
+from spark_mock.sql import functions as F
+
+# Create SparkSession
+spark = SparkSession.builder \
+    .appName("MyApp") \
+    .config("spark.mock.partitions", 4) \
+    .getOrCreate()
+
+# Create DataFrame
+df = spark.createDataFrame([
+    (1, "Alice", 30, 50000),
+    (2, "Bob", 25, 45000),
+    (3, "Charlie", 35, 60000),
+], ["id", "name", "age", "salary"])
+
+# Transformations
+result = df.filter(F.col("age") > 25) \
+           .select("name", "salary") \
+           .withColumn("bonus", F.col("salary") * 0.1)
+
+# Show results
+result.show()
+
+# SQL queries
+df.createTempView("employees")
+spark.sql("SELECT name, salary FROM employees WHERE age > 30").show()
+
+# Stop session
+spark.stop()
+```
+
+## HTML Spark UI 🖥️
+
+Enable the HTML Spark UI to visualize your jobs:
+
+```python
+spark = SparkSession.builder \
+    .appName("SparkUIDemo") \
+    .config("spark.mock.ui.html", "true") \
+    .getOrCreate()
+
+# Run some operations...
+df.show()
+
+# Open UI in browser
+spark.openUI()
+```
+
+## Supported Operations 📋
+
+### DataFrame Transformations
+- `select()`, `filter()`, `where()`
+- `withColumn()`, `withColumnRenamed()`, `drop()`
+- `groupBy()`, `agg()`
+- `join()`, `union()`, `unionAll()`
+- `orderBy()`, `sort()`, `limit()`
+- `distinct()`, `dropDuplicates()`
+
+### DataFrame Actions
+- `show()`, `collect()`, `count()`
+- `first()`, `head()`, `take()`
+- `toPandas()`
+
+### SQL Functions
+- **Aggregation**: `count`, `sum`, `avg`, `min`, `max`
+- **String**: `concat`, `upper`, `lower`, `trim`, `substring`
+- **Math**: `abs`, `sqrt`, `round`, `floor`, `ceil`
+- **Conditional**: `when`, `coalesce`, `isnull`
+- **Window**: `row_number`, `rank`, `lag`, `lead`
+
+### I/O Operations
+- Read/Write: CSV, JSON, Parquet
+
+## Configuration ⚙️
+
+| Config Key | Description | Default |
+|------------|-------------|---------|
+| `spark.mock.partitions` | Number of partitions | 4 |
+| `spark.mock.ui.console` | Enable console UI | true |
+| `spark.mock.ui.html` | Enable HTML UI | false |
+
+## Development 🛠️
+
+```bash
+# Clone repository
+git clone https://github.com/datalearn-dev/spark-mock.git
+cd spark-mock
+
+# Install dependencies
+pip install -r requirements.txt -r requirements-dev.txt
+pip install -e .
+
+# Run tests
+pytest tests/ -v
+
+# Run with coverage
+pytest tests/ --cov=spark_mock --cov-report=html
+```
+
+## License 📄
+
+MIT License - see [LICENSE](LICENSE) for details.
+
+## Contributing 🤝
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## Acknowledgments 🙏
+
+- [DataLearn.dev](https://datalearn.dev/) - Learning platform for Data Engineers
+- [Polars](https://pola.rs/) - Lightning-fast DataFrame library
+- [Apache Spark](https://spark.apache.org/) - For the API inspiration
