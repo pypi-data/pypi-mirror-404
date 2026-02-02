@@ -1,0 +1,119 @@
+# Knowledge Search Configuration
+#
+# Default configurations for all registered knowledge search backends.
+# Each backend has presets that can be referenced by benchmarks.
+
+# Default search backend when none specified
+default_search: "kg_llm_navigation"
+
+# Search backend configurations
+searches:
+  # =========================================================================
+  # KG LLM Navigation Search (Neo4j + LLM-guided navigation)
+  # =========================================================================
+  kg_llm_navigation:
+    description: "Neo4j Knowledge Graph with LLM-guided navigation"
+    
+    presets:
+      # Default preset - balanced exploration
+      DEFAULT:
+        params:
+          search_top_k: 1
+          navigation_steps: 3
+          expansion_limit: 3
+          search_node_type: "specialization"
+          navigations_model: "gpt-5-mini"
+      
+      # Deep search - more exploration for complex problems
+      DEEP_SEARCH:
+        params:
+          search_top_k: 3
+          navigation_steps: 5
+          expansion_limit: 5
+          search_node_type: "specialization"
+      
+      # Shallow search - quick retrieval for simpler problems
+      SHALLOW:
+        params:
+          search_top_k: 1
+          navigation_steps: 2
+          expansion_limit: 2
+          search_node_type: "specialization"
+      
+      # Minimal - for testing or low-resource scenarios
+      MINIMAL:
+        params:
+          search_top_k: 1
+          navigation_steps: 1
+          expansion_limit: 1
+          search_node_type: "specialization"
+    
+    default_preset: "DEFAULT"
+
+  # =========================================================================
+  # KG Graph Search (Weaviate embeddings + Neo4j graph structure)
+  # =========================================================================
+  kg_graph_search:
+    description: "Weaviate embeddings + Neo4j graph structure hybrid search with LLM reranking"
+    
+    # Default values used when params are not specified
+    defaults:
+      embedding_model: "text-embedding-3-large"
+      reranker_model: "gpt-4.1-mini"
+      weaviate_collection: "KGWikiPages"
+      include_connected_pages: true
+      use_llm_reranker: true
+      # IMPORTANT: never hardcode truncation/cutoffs in code.
+      # These limits exist only to satisfy upstream API constraints and to keep
+      # reranker prompts compact. Tune here, not in Python source.
+      embedding_max_input_chars: 8000
+      reranker_overview_max_chars: 300
+    
+    presets:
+      # Default preset - semantic search + LLM reranking + graph enrichment
+      DEFAULT:
+        params:
+          embedding_model: "text-embedding-3-large"
+          weaviate_collection: "KGWikiPages"
+          include_connected_pages: true
+          use_llm_reranker: true
+          reranker_model: "gpt-4.1-mini"
+          embedding_max_input_chars: 8000
+          reranker_overview_max_chars: 300
+      
+      # Fast preset - no reranking, no graph enrichment
+      FAST:
+        params:
+          embedding_model: "text-embedding-3-large"
+          weaviate_collection: "KGWikiPages"
+          include_connected_pages: false
+          use_llm_reranker: false
+          embedding_max_input_chars: 8000
+          reranker_overview_max_chars: 300
+      
+      # Rerank only - no graph enrichment
+      RERANK_ONLY:
+        params:
+          embedding_model: "text-embedding-3-large"
+          weaviate_collection: "KGWikiPages"
+          include_connected_pages: false
+          use_llm_reranker: true
+          reranker_model: "gpt-4.1-mini"
+          embedding_max_input_chars: 8000
+          reranker_overview_max_chars: 300
+    
+    default_preset: "DEFAULT"
+
+  # =========================================================================
+  # RAG Search (Future - Template)
+  # =========================================================================
+  # rag:
+  #   description: "Vector-based RAG search using embeddings"
+  #   presets:
+  #     DEFAULT:
+  #       params:
+  #         top_k: 5
+  #         similarity_threshold: 0.7
+  #         embedding_model: "text-embedding-3-small"
+  #   default_preset: "DEFAULT"
+
