@@ -1,0 +1,91 @@
+# Dev Container Compose Configuration
+# Workspace isolation via COMPOSE_PROJECT_NAME from .env
+# All resources prefixed with ${WORKSPACE_NAME}
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile.dev
+    container_name: ${WORKSPACE_NAME}-app
+    volumes:
+      - ..:/workspace:cached
+      - persist:/persist
+      - ${PRISM_SRC:-.}:/prism:cached
+    environment:
+      - WORKSPACE_NAME=${WORKSPACE_NAME}
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/${DATABASE_NAME}
+      - RESEND_API_KEY=${RESEND_API_KEY:-}
+      - EMAIL_FROM=${EMAIL_FROM:-noreply@madewithpris.me}
+      - FRONTEND_URL=http://${WORKSPACE_NAME}.localhost
+{% if include_redis %}
+      - REDIS_URL=redis://redis:6379/0
+{% endif %}
+    depends_on:
+      db:
+        condition: service_healthy
+{% if include_redis %}
+      redis:
+        condition: service_started
+{% endif %}
+    networks:
+      - default
+      - prism_proxy_network
+    labels:
+      # Prism identification
+      - "com.prism.workspace=true"
+      - "com.prism.workspace.name=${WORKSPACE_NAME}"
+      # Traefik routing - Frontend (port 5173)
+      - "traefik.enable=true"
+      - "traefik.http.routers.${WORKSPACE_NAME}-frontend.rule=Host(`${WORKSPACE_NAME}.localhost`)"
+      - "traefik.http.routers.${WORKSPACE_NAME}-frontend.priority=5"
+      - "traefik.http.routers.${WORKSPACE_NAME}-frontend.service=${WORKSPACE_NAME}-frontend"
+      - "traefik.http.services.${WORKSPACE_NAME}-frontend.loadbalancer.server.port=5173"
+      # Traefik routing - API (port 8000)
+      - "traefik.http.routers.${WORKSPACE_NAME}-api.rule=Host(`${WORKSPACE_NAME}.localhost`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.${WORKSPACE_NAME}-api.priority=10"
+      - "traefik.http.routers.${WORKSPACE_NAME}-api.service=${WORKSPACE_NAME}-api"
+      - "traefik.http.services.${WORKSPACE_NAME}-api.loadbalancer.server.port=8000"
+    # Keep running for shell access
+    command: sleep infinity
+
+  db:
+    image: postgres:16-alpine
+    container_name: ${WORKSPACE_NAME}-db
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: ${DATABASE_NAME}
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - default
+
+{% if include_redis %}
+  redis:
+    image: redis:7-alpine
+    container_name: ${WORKSPACE_NAME}-redis
+    volumes:
+      - redis-data:/data
+    networks:
+      - default
+
+{% endif %}
+volumes:
+  persist:
+    name: ${WORKSPACE_NAME}-persist
+  pgdata:
+    name: ${WORKSPACE_NAME}-pgdata
+{% if include_redis %}
+  redis-data:
+    name: ${WORKSPACE_NAME}-redis
+{% endif %}
+
+networks:
+  prism_proxy_network:
+    external: true
