@@ -1,0 +1,303 @@
+# Copyright (c) DataLab Platform Developers, BSD 3-Clause License
+# See LICENSE file for details
+
+"""
+Kernel installation and management
+==================================
+
+This module provides commands to install and uninstall the DataLab kernel.
+The kernel uses xeus-python as its backend with a custom startup script
+for injecting the DataLab namespace.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shutil
+import sys
+from pathlib import Path
+
+KERNEL_NAME = "datalab-kernel"
+KERNEL_DISPLAY_NAME = "DataLab"
+
+# Startup script content that will be executed when the kernel starts
+STARTUP_SCRIPT_CONTENT = """\
+# DataLab Kernel Startup Script
+# This file is auto-generated - do not edit manually
+
+# Import and run the DataLab startup
+from datalab_kernel.startup import run_startup
+run_startup()
+"""
+
+
+def get_xpython_executable() -> str:
+    """Find the xpython executable path.
+
+    Returns:
+        Path to xpython executable, or fallback to python -m approach.
+    """
+    # Try to find xpython in PATH
+    xpython_path = shutil.which("xpython")
+    if xpython_path:
+        return xpython_path
+
+    # Fallback: use Python module approach
+    # xeus-python can be run via its Python extension module
+    return sys.executable
+
+
+def get_kernel_spec() -> dict:
+    """Generate the kernel.json specification for xeus-python.
+
+    The kernel spec tells Jupyter how to launch the kernel. For xeus-python,
+    we use the xpython executable if available, otherwise fall back to
+    launching via Python.
+    """
+    xpython = get_xpython_executable()
+
+    if xpython == sys.executable:
+        # Use Python module approach for xeus-python
+        # This works when xeus-python is installed as a wheel
+        argv = [
+            sys.executable,
+            "-c",
+            "from datalab_kernel.startup import run_startup; run_startup(); "
+            "import xeus_python; xeus_python.main()",
+            "-f",
+            "{connection_file}",
+        ]
+    else:
+        # Use native xpython executable
+        argv = [
+            xpython,
+            "-f",
+            "{connection_file}",
+        ]
+
+    return {
+        "argv": argv,
+        "display_name": KERNEL_DISPLAY_NAME,
+        "language": "python",
+        "metadata": {
+            "debugger": True,
+        },
+        "env": {
+            # Ensure our startup runs
+            "DATALAB_KERNEL_STARTUP": "1",
+        },
+    }
+
+
+def get_kernel_dir(user: bool = True) -> Path:
+    """Get the directory where the kernel spec should be installed.
+
+    Args:
+        user: If True, install in user directory; otherwise system-wide
+
+    Returns:
+        Path to kernel directory
+    """
+    try:
+        # Delayed import to avoid dependency at module load time
+        # pylint: disable=import-outside-toplevel
+        from jupyter_client.kernelspec import KernelSpecManager
+
+        ksm = KernelSpecManager()
+
+        if user:
+            # User kernels directory
+            data_dir = Path(ksm.user_kernel_dir)
+        else:
+            # System kernels directory (first one in path)
+            data_dir = Path(ksm.kernel_dirs[0]) if ksm.kernel_dirs else None
+            if data_dir is None:
+                raise RuntimeError("Could not find system kernel directory")
+    except ImportError:
+        # Fallback when jupyter_client is not installed (e.g., JupyterLite)
+        # Use standard Jupyter data directories
+        if user:
+            # Standard user kernel location
+            if os.name == "nt":
+                data_dir = Path.home() / "AppData" / "Roaming" / "jupyter" / "kernels"
+            else:
+                data_dir = Path.home() / ".local" / "share" / "jupyter" / "kernels"
+        else:
+            # Standard system kernel location
+            if os.name == "nt":
+                data_dir = Path(os.environ.get("PROGRAMDATA", "C:/ProgramData"))
+                data_dir = data_dir / "jupyter" / "kernels"
+            else:
+                data_dir = Path("/usr/local/share/jupyter/kernels")
+
+    return data_dir / KERNEL_NAME
+
+
+def get_ipython_startup_dir() -> Path:
+    """Get the IPython startup directory.
+
+    Returns:
+        Path to IPython startup directory (creates if needed).
+    """
+    # Get IPython directory
+    ipython_dir = Path.home() / ".ipython" / "profile_default" / "startup"
+    ipython_dir.mkdir(parents=True, exist_ok=True)
+    return ipython_dir
+
+
+def install_startup_script() -> Path:
+    """Install the DataLab startup script for IPython.
+
+    This script will be executed automatically when xeus-python starts
+    with IPython mode enabled.
+
+    Returns:
+        Path to installed startup script.
+    """
+    startup_dir = get_ipython_startup_dir()
+    startup_file = startup_dir / "00-datalab-kernel.py"
+
+    # Only install if DATALAB_KERNEL_STARTUP env var is set
+    # This prevents the startup from running in regular IPython sessions
+    script_content = """\
+# DataLab Kernel Startup Script
+# Auto-generated by datalab-kernel - do not edit manually
+
+import os
+
+# Only run startup if we're in a DataLab kernel
+if os.environ.get("DATALAB_KERNEL_STARTUP") == "1":
+    try:
+        from datalab_kernel.startup import run_startup
+        run_startup()
+    except ImportError:
+        pass  # DataLab kernel not installed
+"""
+
+    with open(startup_file, "w", encoding="utf-8") as f:
+        f.write(script_content)
+
+    print(f"Installed DataLab startup script to: {startup_file}")
+    return startup_file
+
+
+def remove_startup_script() -> bool:
+    """Remove the DataLab startup script from IPython.
+
+    Returns:
+        True if script was found and removed.
+    """
+    startup_dir = get_ipython_startup_dir()
+    startup_file = startup_dir / "00-datalab-kernel.py"
+
+    if startup_file.exists():
+        startup_file.unlink()
+        print(f"Removed DataLab startup script from: {startup_file}")
+        return True
+    return False
+
+
+def install_kernel(user: bool = True, prefix: str | None = None) -> Path:
+    """Install the DataLab kernel.
+
+    Args:
+        user: If True, install for current user only
+        prefix: Install prefix (overrides user setting)
+
+    Returns:
+        Path to installed kernel directory
+    """
+    if prefix:
+        kernel_dir = Path(prefix) / "share" / "jupyter" / "kernels" / KERNEL_NAME
+    else:
+        kernel_dir = get_kernel_dir(user=user)
+
+    # Create directory
+    kernel_dir.mkdir(parents=True, exist_ok=True)
+
+    # Write kernel.json
+    kernel_json_path = kernel_dir / "kernel.json"
+    with open(kernel_json_path, "w", encoding="utf-8") as f:
+        json.dump(get_kernel_spec(), f, indent=2)
+
+    # Copy logo files if available
+    logo_dir = Path(__file__).parent / "resources"
+    if logo_dir.exists():
+        for logo_file in logo_dir.glob("logo-*.png"):
+            shutil.copy(logo_file, kernel_dir)
+
+    # Install IPython startup script for namespace injection
+    install_startup_script()
+
+    print(f"Installed DataLab kernel to: {kernel_dir}")
+    print("Note: Uses xeus-python backend for improved performance and debugging")
+    return kernel_dir
+
+
+def uninstall_kernel(user: bool = True, prefix: str | None = None) -> bool:
+    """Uninstall the DataLab kernel.
+
+    Args:
+        user: If True, uninstall from user directory
+        prefix: Install prefix (overrides user setting)
+
+    Returns:
+        True if kernel was found and removed
+    """
+    if prefix:
+        kernel_dir = Path(prefix) / "share" / "jupyter" / "kernels" / KERNEL_NAME
+    else:
+        kernel_dir = get_kernel_dir(user=user)
+
+    if kernel_dir.exists():
+        shutil.rmtree(kernel_dir)
+        print(f"Uninstalled DataLab kernel from: {kernel_dir}")
+        # Also remove startup script
+        remove_startup_script()
+        return True
+    print(f"DataLab kernel not found at: {kernel_dir}")
+    return False
+
+
+def main() -> None:
+    """Main entry point for kernel installation CLI."""
+    parser = argparse.ArgumentParser(
+        description="Install or uninstall the DataLab Jupyter kernel"
+    )
+    parser.add_argument(
+        "action",
+        choices=["install", "uninstall"],
+        help="Action to perform",
+    )
+    parser.add_argument(
+        "--user",
+        action="store_true",
+        default=True,
+        help="Install/uninstall for current user only (default)",
+    )
+    parser.add_argument(
+        "--system",
+        action="store_true",
+        help="Install/uninstall system-wide",
+    )
+    parser.add_argument(
+        "--prefix",
+        type=str,
+        default=None,
+        help="Install prefix path",
+    )
+
+    args = parser.parse_args()
+
+    user = not args.system
+
+    if args.action == "install":
+        install_kernel(user=user, prefix=args.prefix)
+    else:
+        uninstall_kernel(user=user, prefix=args.prefix)
+
+
+if __name__ == "__main__":
+    main()
