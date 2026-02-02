@@ -1,0 +1,259 @@
+Metadata-Version: 2.4
+Name: sanic-restful-framework
+Version: 0.0.1
+Summary: Sanic REST Framework - A fast, async REST API framework for Sanic
+Author-email: Chacer <1364707405c@gmail.com>
+License: MIT
+Project-URL: Homepage, https://github.com/*
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: aiohttp<4,>=3.13
+Requires-Dist: bcrypt>=4.1.2
+Requires-Dist: packaging<27,>=26
+Requires-Dist: pydantic<3,>=2.6.1
+Requires-Dist: pydantic_core<3,>=2.41
+Requires-Dist: PyJWT<3,>=2.10
+Requires-Dist: redis<8,>=7.1
+Requires-Dist: sanic<26,>=25.0.0
+Requires-Dist: sanic_jwt<2,>=1.8.0
+Requires-Dist: tortoise-orm==0.25.1
+Provides-Extra: dev
+Requires-Dist: pytest<10,>=9.0; extra == "dev"
+Requires-Dist: black; extra == "dev"
+Requires-Dist: isort; extra == "dev"
+Requires-Dist: ruff; extra == "dev"
+Requires-Dist: build; extra == "dev"
+Dynamic: license-file
+
+# Sanic REST Framework (SRF)
+
+A RESTful API framework based on [Sanic](https://sanic.dev/), providing a Django REST Framework-like development experience to help you quickly build high-performance Web APIs.
+
+## Features
+
+- 🚀 **Base ViewSets** - Complete CRUD operations (Create, Retrieve, Update, Destroy, List).
+- 🔒 **Pydantic Integration** - Data validation and serialization using Pydantic.
+- 🔍 **Powerful Filtering System** - Support for search, JSON logic filtering, query parameter filtering, and ordering.
+- 📄 **Pagination** - Built-in pagination handler with customizable pagination parameters.
+- 🛡️ **Authentication & Permissions** - JWT-based authentication system with permission control, and provides third-party authentication integration, such as GitHub login.
+- ⚡ **Asynchronous ORM** - Built-in support for asynchronous database queries using Tortoise ORM, and more.
+- 💓 **Health Checks** - Built-in health check routes supporting multiple service checks.
+- 🎯 **Auto Route Registration** - Intelligent route registration with support for custom actions.
+- 🔄 **Rate Limiting** - Built-in rate limiting middleware to control request rates.
+
+## Requirements
+
+- Python >= 3.11
+- Sanic >= 25.0.0
+- Tortoise ORM >= 0.20.0
+- Pydantic >= 2.6.0
+
+## Installation
+
+### Install from Source
+
+```bash
+# Recommended installation method
+pip install sanic-restful-framework
+
+# Install production dependencies
+pip install -e .
+
+# Install development dependencies
+pip install -e ".[dev]"
+```
+
+## Quick Start
+
+To get started with SRF, follow these steps:
+
+1. **Define your models** using Tortoise ORM. Create your database models that inherit from `tortoise.models.Model` and define the necessary fields.
+
+2. **Create Pydantic schemas** for data validation and serialization. Define separate schemas for reading (output) and writing (input) operations.
+
+3. **Create a ViewSet** by inheriting from `BaseViewSet`. Configure the model, search fields, and filter fields. Implement the `queryset` property to return your model's queryset, and optionally override `get_schema()` to return different schemas based on the request method.
+
+4. **Register routes** using `SanicRouter`. Create a router instance with an optional prefix, register your ViewSet with a path, and add the router's blueprint to your Sanic application.
+
+5. **Run your application** using Sanic's built-in server or your preferred ASGI server.
+
+## Core Features
+
+### ViewSets
+
+`BaseViewSet` provides standard CRUD operations:
+
+- `list()` - GET /resource/ - Retrieve a list of resources
+- `create()` - POST /resource/ - Create a new resource
+- `retrieve()` - GET /resource/<id>/ - Retrieve a single resource
+- `update()` - PUT/PATCH /resource/<id>/ - Update a resource
+- `destroy()` - DELETE /resource/<id>/ - Delete a resource
+
+```python
+from srf.views import BaseViewSet
+from .models import Project
+from .schema import ProjectSchemaReader
+
+class ProjectViewSet(BaseViewSet):
+    schema:PydanticBaseModel = ProjectSchemaReader
+
+    @property
+    def queryset(self) -> QuerySet:
+        return Project.all()
+```
+
+Congrats! At this point, you have completed a basic CRUD (Create, Read, Update, Delete) interface, just like in Django REST Framework.
+
+### Custom Actions
+
+Use the `@action` decorator to define custom actions:
+
+```python
+from srf.decorators import action
+from sanic.response import JSONResponse
+
+class UserViewSet(BaseViewSet):
+    @action(detail=False, url_path="self", methods=["get"])
+    async def get_self(self, request):
+        user = self.get_current_user(request)
+        return JSONResponse({"user": user.name})
+
+    @action(detail=True, url_path="activate", methods=["post"])
+    async def activate_user(self, request, pk):
+        user = await self.get_object(request, pk)
+        user.is_active = True
+        await user.save()
+        return JSONResponse({"status": "activated"})
+```
+
+### Filters
+
+The framework includes multiple built-in filters:
+
+#### 1. Search Filter (SearchFilter)
+
+```python
+# GET /users/?search=john
+# Searches for "john" in fields specified by search_fields
+```
+
+#### 2. JSON Logic Filter (JsonLogicFilter)
+
+```python
+# GET /users/?filter={"and":[{"==":[{"var":"is_active"},true]},{"like":[{"var":"name"},"john"]}]}
+```
+
+#### 3. Query Parameter Filter (QueryParamFilter)
+
+```python
+# GET /users/?name=john&is_active=true
+```
+
+#### 4. Ordering Filter (OrderingFactory)
+
+```python
+# GET /users/?sort=name,-created_date
+# Orders by name ascending, created_date descending
+```
+
+### Pagination
+
+Pagination automatically reads `page` and `page_size` from query parameters:
+
+```python
+# GET /users/?page=1&page_size=20
+```
+
+Response format:
+
+```json
+{
+  "count": 100,
+  "next": true,
+  "previous": false,
+  "results": [...]
+}
+```
+
+### Authentication & Permissions
+
+#### Authentication Middleware
+
+The framework provides JWT authentication middleware:
+
+```python
+from srf.middleware.middleware import set_user_to_request_ctx
+
+app.middleware("request")(set_user_to_request_ctx)
+```
+
+#### Permission Classes
+
+```python
+from srf.permission.permission import IsAuthenticated, IsRoleAdminUser
+
+class UserViewSet(BaseViewSet):
+    permission_classes = (IsAuthenticated,)  # Requires authentication
+    # or
+    permission_classes = (IsRoleAdminUser,)  # Requires admin role
+```
+
+### Health Checks
+
+The framework provides health check routes:
+
+```python
+from srf.health.route import bp as health_bp
+
+app.blueprint(health_bp)
+```
+
+Access `/health/` to check the status of various services (Redis, PostgreSQL, SQLite, etc.).
+
+## Configuration
+
+Configure in your application settings:
+
+```python
+from srf.config.settings import DEFAULT_FILTERS
+
+app.config.JWT_SECRET = "your-secret-key"
+app.config.NON_AUTHENTICATE_URL = ('register', 'login', 'health')
+app.config.DEFAULT_FILTERS = DEFAULT_FILTERS
+```
+
+## Dependencies
+
+Main dependencies:
+
+- `sanic>=25.0.0` - Async web framework
+- `pydantic>=2.6.1` - Data validation
+- `tortoise-orm>=0.25.1` - ORM
+- `sanic-jwt>=1.8.0` - JWT authentication
+
+See `pyproject.toml` for the complete dependency list.
+
+## Development
+
+### Install Development Dependencies
+
+```bash
+pip install -e ".[dev]"
+```
+
+## License
+
+MIT License
+
+## Author
+
+| Name   | Email                 |
+| ------ | --------------------- |
+| Chacer | 1364707405c@gmail.com |
+
+## Contributing
+
+Issues and Pull Requests are welcome!
+
+## Want to join? Email us!
