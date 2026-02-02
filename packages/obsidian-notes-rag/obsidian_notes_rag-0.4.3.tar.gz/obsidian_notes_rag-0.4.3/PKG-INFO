@@ -1,0 +1,214 @@
+Metadata-Version: 2.4
+Name: obsidian-notes-rag
+Version: 0.4.3
+Summary: MCP server for semantic search over Obsidian notes using local RAG
+Project-URL: Homepage, https://github.com/ernestkoe/obsidian-notes-rag
+Project-URL: Repository, https://github.com/ernestkoe/obsidian-notes-rag
+Project-URL: Issues, https://github.com/ernestkoe/obsidian-notes-rag/issues
+Author: Ernest Koe
+License-Expression: MIT
+License-File: LICENSE
+Requires-Python: >=3.11
+Requires-Dist: chonkie>=1.0.0
+Requires-Dist: chromadb<1.0.0,>=0.6.0
+Requires-Dist: click>=8.0.0
+Requires-Dist: httpx>=0.25.0
+Requires-Dist: mcp>=1.0.0
+Requires-Dist: openai>=1.0.0
+Requires-Dist: platformdirs>=3.0.0
+Requires-Dist: pyyaml>=6.0
+Requires-Dist: setproctitle>=1.3.0
+Requires-Dist: tomli-w>=1.0.0
+Requires-Dist: watchdog>=3.0.0
+Description-Content-Type: text/markdown
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+# obsidian-notes-rag
+
+MCP server for semantic search over your Obsidian vault. Uses OpenAI embeddings by default (or Ollama for local processing) with ChromaDB for vector storage.
+
+## What it does
+
+Ask natural language questions about your notes:
+- "What did I write about project planning?"
+- "Find notes similar to my meeting notes from last week"
+- "What's in my daily notes about the API refactor?"
+
+## Requirements
+
+- Python 3.11+
+- `OPENAI_API_KEY` environment variable, or local embeddings via [Ollama](https://ollama.ai/) or [LM Studio](https://lmstudio.ai/)
+
+## Quick Start
+
+The easiest way to get started is with [uvx](https://docs.astral.sh/uv/guides/tools/) (no installation required):
+
+```bash
+# Run the setup wizard
+uvx obsidian-notes-rag setup
+```
+
+### Add to Claude Code (CLI)
+
+```bash
+claude mcp add -s user obsidian-notes-rag -- uvx obsidian-notes-rag serve
+```
+
+### Add to Claude Desktop (JSON config)
+
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+
+```json
+{
+  "mcpServers": {
+    "obsidian-notes-rag": {
+      "command": "uvx",
+      "args": ["obsidian-notes-rag", "serve"]
+    }
+  }
+}
+```
+
+### Alternative: Clone and install
+
+```bash
+git clone https://github.com/ernestkoe/obsidian-notes-rag.git
+cd obsidian-notes-rag
+uv sync
+
+uv run obsidian-notes-rag setup
+claude mcp add -s user obsidian-notes-rag -- uv run --directory /path/to/obsidian-notes-rag obsidian-notes-rag serve
+```
+
+The setup wizard will:
+1. Ask for your embedding provider (OpenAI, Ollama, or LM Studio)
+2. Configure your API key (for OpenAI) or local server URL
+3. Set your Obsidian vault path
+4. Choose where to store the search index
+5. Optionally run the initial indexing
+6. Optionally install the watcher service (macOS) for auto-indexing
+
+### Manual Setup (alternative)
+
+```bash
+# Set your API key and index directly
+export OPENAI_API_KEY=sk-...
+uv run obsidian-notes-rag index --vault /path/to/your/vault
+```
+
+### Using Ollama (local, offline)
+
+```bash
+# Install Ollama and pull the embedding model
+ollama pull nomic-embed-text
+
+# Run setup with Ollama, or index directly:
+uv run obsidian-notes-rag --provider ollama index --vault /path/to/your/vault
+```
+
+### Using LM Studio (local, offline)
+
+```bash
+# Start LM Studio and load an embedding model
+# The server auto-detects available models
+
+uv run obsidian-notes-rag --provider lmstudio index --vault /path/to/your/vault
+```
+
+## MCP Tools
+
+Once connected, these tools are available to Claude:
+
+| Tool | What it does |
+|------|--------------|
+| `search_notes` | Find notes matching a query |
+| `get_similar` | Find notes similar to a given note |
+| `get_note_context` | Get a note with related context |
+| `get_stats` | Show index statistics |
+| `reindex` | Update the index |
+
+## Keeping the Index Fresh
+
+### Option 1: Manual reindex
+
+```bash
+uv run obsidian-notes-rag index
+```
+
+### Option 2: Watch for changes (all platforms)
+
+Run the watcher in a terminal to auto-index when files change:
+
+```bash
+uv run obsidian-notes-rag watch
+```
+
+### Option 3: Background service (macOS only)
+
+Install as a launchd service that starts on login:
+
+```bash
+uv run obsidian-notes-rag install-service
+```
+
+The service appears as **obsidian-notes-rag-watcher** in System Settings > Login Items & Extensions > App Background Activity, making it easy to identify and manage.
+
+> **Note:** The setup wizard offers to install this service automatically on macOS. Linux/Windows users can run `watch` manually or configure their own systemd/Task Scheduler jobs.
+
+## CLI Reference
+
+```bash
+obsidian-notes-rag setup                # Interactive setup wizard
+obsidian-notes-rag serve                # Start MCP server (for Claude Code)
+obsidian-notes-rag index [--clear]      # Index vault (--clear to rebuild)
+obsidian-notes-rag search "query"       # Search from command line
+obsidian-notes-rag watch                # Watch for file changes
+obsidian-notes-rag stats                # Show index stats
+obsidian-notes-rag install-service      # Install macOS launchd service
+obsidian-notes-rag uninstall-service    # Remove service
+obsidian-notes-rag service-status       # Check service status
+```
+
+## Configuration
+
+Set your vault path and provider via CLI options or environment variables:
+
+```bash
+# CLI options
+uv run obsidian-notes-rag --vault /path/to/vault index
+uv run obsidian-notes-rag --provider ollama index
+uv run obsidian-notes-rag --provider lmstudio index
+
+# Environment variables
+export OBSIDIAN_RAG_VAULT=/path/to/vault
+export OBSIDIAN_RAG_PROVIDER=ollama  # or "openai" (default) or "lmstudio"
+```
+
+| Variable | Description |
+|----------|-------------|
+| `OPENAI_API_KEY` | OpenAI API key (required for default provider) |
+| `OBSIDIAN_RAG_PROVIDER` | Embedding provider: `openai` (default), `ollama`, or `lmstudio` |
+| `OBSIDIAN_RAG_VAULT` | Path to Obsidian vault |
+| `OBSIDIAN_RAG_DATA` | Where to store the index (default: platform-specific) |
+| `OBSIDIAN_RAG_OLLAMA_URL` | Ollama API URL (default: `http://localhost:11434`) |
+| `OBSIDIAN_RAG_LMSTUDIO_URL` | LM Studio API URL (default: `http://localhost:1234`) |
+| `OBSIDIAN_RAG_MODEL` | Override embedding model |
+
+## How it works
+
+1. Parses your markdown files and splits them by headings
+2. Generates embeddings using OpenAI API (or Ollama for local processing)
+3. Stores vectors in ChromaDB (local, persistent)
+4. MCP server provides semantic search to Claude
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup.
+
+## Support
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/ernestkoe)
+
+## License
+
+MIT
