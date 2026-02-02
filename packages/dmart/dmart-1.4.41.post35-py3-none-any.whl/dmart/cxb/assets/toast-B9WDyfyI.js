@@ -1,0 +1,1 @@
+import"./svelte-B2XmcTi_.js";import{t as s}from"./@zerodevx-BlBZjKxu.js";var t=(o=>(o.info="info",o.warn="warn",o))(t||{});function f(o,i=void 0,r={}){i===void 0&&(i=o=="info"?"Success":"Failed"),s.push(i,{classes:[o],...r})}export{t as L,f as s};
