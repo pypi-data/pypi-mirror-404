@@ -1,0 +1,93 @@
+[project]
+name = "rayforge"
+dynamic = ["version", "dependencies"]
+authors = [
+  { name="Samuel Abels", email="knipknap@gmail.com" },
+]
+description = "A desktop application for laser cutting and engraving"
+readme = "README.md"
+requires-python = ">=3.10"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Intended Audience :: End Users/Desktop",
+    "Intended Audience :: Manufacturing",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/barebaric/rayforge"
+"Bug Tracker" = "https://github.com/barebaric/rayforge/issues"
+
+[project.scripts]
+rayforge = "rayforge.app:main"
+
+[build-system]
+requires = [
+  "setuptools >= 40.9.0", "setuptools-git-versioning"
+]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["rayforge*"]
+
+[tool.setuptools-git-versioning]
+enabled = true
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
+
+[tool.ruff]
+lint = { ignore = ["E203"] }
+builtins = ["_"]
+line-length = 79
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.pyright]
+stubPath = "typings"
+reportMissingModuleSource = false
+include = ["rayforge", "tests/**/test_*.py"]
+
+[tool.mypy]
+mypy_path = "stubs"
+
+[tool.setuptools.data-files]
+"share/applications" = ["data/org.rayforge.rayforge.desktop"]
+"share/metainfo" = ["data/org.rayforge.rayforge.metainfo.xml"]
+"share/mime/packages" = ["data/org.rayforge.rayforge.xml"]
+"share/icons/hicolor/scalable/apps" = ["rayforge/resources/icons/org.rayforge.rayforge.svg"]
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+    "pytest-asyncio",
+    "pytest-mock",
+    "pytest-cov", # Add coverage tool
+    "pygobject-stubs",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "strict"
+asyncio_default_fixture_loop_scope = "function"
+filterwarnings = [
+    # Ignore Swig related deprecation warnings from importlib
+    "ignore::DeprecationWarning:importlib._bootstrap",
+]
+testpaths = ["tests"]
+norecursedirs = [
+    "builddir",
+    ".git",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".pixi",
+    "__pycache__",
+]
+markers = [
+    "ui: marks tests as UI tests that require a graphical environment and a real GTK event loop",
+]
+addopts = "-m 'not ui'"
