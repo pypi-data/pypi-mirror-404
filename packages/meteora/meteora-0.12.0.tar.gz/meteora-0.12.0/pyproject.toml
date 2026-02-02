@@ -1,0 +1,194 @@
+[build-system]
+requires = ["uv_build>=0.9.4,<0.10.0"]
+build-backend = "uv_build"
+
+[project]
+authors = [
+  {email = "marti.bosch@epfl.ch", name = "Martí Bosch"}
+]
+classifiers = [
+  "Natural Language :: English",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13"
+]
+dependencies = [
+  "dask",
+  "geopandas>=1.0.0",
+  "matplotlib",
+  "pint",
+  "pint-pandas",
+  "pooch",
+  "pyregeon",
+  "requests",
+  "requests-cache",
+  "requests-oauthlib",
+  "tqdm"
+]
+description = "Pythonic interface to access data from meteorological stations"
+name = "meteora"
+readme = "README.md"
+requires-python = ">=3.10"
+version = "0.12.0"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
+
+[project.optional-dependencies]
+cx = [
+  "contextily"
+]
+dev = [
+  "build",
+  "commitizen",
+  "pip",
+  "pre-commit",
+  "toml",
+  "twine"
+]
+doc = [
+  "myst-parser",
+  "myst-nb",
+  "pydata-sphinx-theme",
+  "sphinx",
+  "sphinxcontrib-bibtex",
+  "sphinxemoji"
+]
+ox = [
+  "osmnx"
+]
+qc = [
+  "seaborn",
+  "statsmodels"
+]
+test = [
+  "coverage[toml]",
+  "pook",
+  "pytest",
+  "pytest-cov",
+  "python-dotenv[cli]",
+  "requests-mock",
+  "ruff"
+]
+user-guide = [
+  "ecmwf-datastores-client",
+  "netcdf4",
+  "zarr"
+]
+xvec = [
+  "xarray",
+  "xvec>=0.5.0" # need at least v0.5.0 for categorical plots with custom cmap
+]
+xclim = [
+  "xarray",
+  "xclim"
+]
+
+[project.urls]
+Repository = "https://github.com/martibosch/meteora"
+
+[tool.codespell]
+ignore-words-list = "convencional,pres,ser,temperatur"
+skip = "CHANGELOG.md,pixi.lock"
+
+[tool.commitizen]
+major_version_zero = true
+name = "cz_conventional_commits"
+tag_format = "v$version"
+version_provider = "pep621"
+version_scheme = "semver"
+
+[tool.coverage.report]
+exclude_lines = [
+  "except ImportError",
+  "except ModuleNotFoundError",
+  "if self.debug:",
+  "pragma: no cover",
+  "raise NotImplementedError"
+]
+ignore_errors = true
+omit = [
+  "docs/conf.py",
+  "tests/*"
+]
+
+[tool.coverage.run]
+source = [
+  "meteora"
+]
+
+[tool.pixi.dependencies]
+python = ">=3.10,<3.14"
+gdal = ">=3"
+numba = ">=0.61.0"
+ipykernel = ">=7.1.0,<8"
+
+[tool.pixi.environments]
+default = {features = ["ox"], solve-group = "default"}
+cx = {features = ["cx"], solve-group = "default"}
+dev = {features = ["dev"], solve-group = "default"}
+doc = {features = ["cx", "doc", "ox", "qc", "user-guide", "xclim", "xvec"], solve-group = "default"}
+ox = {features = ["ox"], solve-group = "default"}
+qc = {features = ["qc"], solve-group = "default"}
+test = {features = ["ox", "qc", "test", "xclim", "xvec"], solve-group = "default"}
+xclim = {features = ["xclim"], solve-group = "default"}
+xvec = {features = ["xvec"], solve-group = "default"}
+
+[tool.pixi.feature.dev.tasks]
+build = "python -m build"
+check = {cmd = "twine check dist/*", depends-on = ["build"]}
+
+[tool.pixi.feature.doc.tasks]
+build-doc = "sphinx-build docs docs/_build"
+
+[tool.pixi.feature.test.tasks]
+# use dotenv to set api keys as env. vars
+test = "dotenv -f .keys.env run pytest -s --cov=meteora --cov-report=xml tests"
+
+[tool.pixi.pypi-dependencies]
+meteora = {path = ".", editable = true}
+
+[tool.pixi.workspace]
+channels = ["conda-forge"]
+platforms = ["linux-64", "linux-aarch64", "osx-64", "osx-arm64", "win-64"]
+
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.format]
+docstring-code-format = true
+
+[tool.ruff.lint]
+select = [
+  "D",
+  "E",
+  "F",
+  "I"
+]
+
+[tool.ruff.lint.isort]
+known-first-party = [
+  "meteora"
+]
+
+[tool.ruff.lint.per-file-ignores]
+"**/__init__.py" = [
+  "F401"
+]
+"tests/test_meteora.py" = [
+  "D"
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
+
+[tool.uv.build-backend]
+module-name = "meteora"
+module-root = ""
+
+[[tool.uv.index]]
+name = "testpypi"
+url = "https://test.pypi.org/simple/"
+publish-url = "https://test.pypi.org/legacy/"
+explicit = true
