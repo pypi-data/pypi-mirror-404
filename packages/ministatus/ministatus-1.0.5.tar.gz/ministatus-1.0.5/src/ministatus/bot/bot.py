@@ -1,0 +1,93 @@
+import importlib.metadata
+import logging
+
+import aiohttp
+import click
+import discord
+from discord.ext import commands
+
+from ministatus import _user_agent
+from ministatus.bot.cogs import list_extensions
+from ministatus.db import connect_client
+
+log = logging.getLogger(__name__)
+
+
+class Bot(commands.Bot):
+    _sync_on_setup = False
+
+    def __init__(self) -> None:
+        super().__init__(
+            command_prefix=commands.when_mentioned,
+            help_command=None,
+            intents=discord.Intents(
+                guilds=True,
+                messages=True,
+            ),
+            max_messages=None,
+            strip_after_prefix=True,
+        )
+
+    async def login(self, token: str) -> None:
+        try:
+            return await super().login(token)
+        except discord.LoginFailure as e:
+            log.critical("Discord refused our login! Invalidating token from config.")
+            async with connect_client() as client:
+                await client.delete_setting("token")
+
+            raise click.Abort from e
+
+    async def start(self, *args, sync: bool, **kwargs) -> None:
+        self._sync_on_setup = sync
+        async with self._create_http_client() as self.session:
+            return await super().start(*args, **kwargs)
+
+    async def setup_hook(self) -> None:
+        assert self.application is not None
+        async with connect_client() as client:
+            await client.set_setting("appid", self.application.id)
+
+        for extension in list_extensions():
+            log.info(f"Loading extension {extension}")
+            await self.load_extension(extension)
+        await self._maybe_load_jishaku()
+
+        if self._sync_on_setup:
+            commands = await self.tree.sync()
+            log.info("Synchronized %d application command(s)", len(commands))
+
+        invite_link = self.get_standard_invite()
+        log.info("Invite link:\n    %s", invite_link)
+
+    def _create_http_client(self) -> aiohttp.ClientSession:
+        return aiohttp.ClientSession(headers={"User-Agent": _user_agent})
+
+    async def _maybe_load_jishaku(self) -> None:
+        try:
+            version = importlib.metadata.version("jishaku")
+        except importlib.metadata.PackageNotFoundError:
+            pass
+        else:
+            await self.load_extension("jishaku")
+            log.info("Loaded jishaku extension (v%s)", version)
+
+    def get_standard_invite(self, application_id: int | None = None) -> str:
+        if application_id is None:
+            assert self.application is not None
+            application_id = self.application.id
+
+        return discord.utils.oauth_url(
+            application_id,
+            scopes=("bot",),
+            permissions=discord.Permissions(
+                read_messages=True,
+                send_messages=True,
+                send_messages_in_threads=True,
+                embed_links=True,
+                attach_files=True,
+            ),
+        )
+
+
+class Context(commands.Context[Bot]): ...

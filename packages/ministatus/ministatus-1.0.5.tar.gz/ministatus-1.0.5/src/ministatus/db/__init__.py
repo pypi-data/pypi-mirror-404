@@ -1,0 +1,224 @@
+from __future__ import annotations
+
+import logging
+import sqlite3
+import time
+from contextlib import asynccontextmanager, closing, contextmanager
+from contextvars import ContextVar
+from typing import TYPE_CHECKING, Any, AsyncIterator, Iterator
+
+from ministatus import state
+from ministatus.appdirs import DB_PATH
+
+from . import converters as converters
+from .client import DatabaseClient as DatabaseClient
+from .connection import (
+    Connection as Connection,
+    Record as Record,
+    SQLiteConnection as SQLiteConnection,
+    TransactionMode as TransactionMode,
+)
+from .errors import (
+    DatabaseEncryptedError as DatabaseEncryptedError,
+    EncryptionUnsupportedError as EncryptionUnsupportedError,
+)
+from .migrations import (
+    Migration as Migration,
+    Migrations as Migrations,
+    Migrator as Migrator,
+    SQLiteMigrator as SQLiteMigrator,
+    read_migrations as read_migrations,
+)
+from .models import (
+    DiscordChannel as DiscordChannel,
+    DiscordGuild as DiscordGuild,
+    DiscordMember as DiscordMember,
+    DiscordMessage as DiscordMessage,
+    Status as Status,
+    StatusAlert as StatusAlert,
+    StatusDisplay as StatusDisplay,
+    StatusHistory as StatusHistory,
+    StatusHistoryPlayer as StatusHistoryPlayer,
+    StatusMod as StatusMod,
+    StatusQuery as StatusQuery,
+    StatusQueryType as StatusQueryType,
+    DiscordUser as DiscordUser,
+    status_mod_list_adapter as status_mod_list_adapter,
+)
+from .secret import Secret as Secret
+
+if TYPE_CHECKING:
+    import asqlite
+
+LOG_CONNECTION_STACKS = False
+LOG_LONG_CONNECTIONS = 0.1
+
+log = logging.getLogger(__name__)
+
+_current_conn: ContextVar[SQLiteConnection] = ContextVar("_current_conn")
+_real_connect = sqlite3.connect
+
+
+@asynccontextmanager
+async def connect(
+    *,
+    transaction: TransactionMode = True,
+) -> AsyncIterator[SQLiteConnection]:
+    if LOG_CONNECTION_STACKS:
+        log.debug("CONNECT:    %s", _format_connection_stack())
+    if _current_conn.get(None):
+        # Using nested connections within a single task is likely a mistake,
+        # as it is prone to deadlocking.
+        #
+        # If transaction is False and the caller never explicitly starts a transaction,
+        # assuming the default behaviour is to autocommit after each query,
+        # then this deadlock risk is low, but we should avoid it regardless.
+        log.warning("Nested database connection: %s", _format_connection_stack())
+
+    start = time.perf_counter()
+    token = None
+    try:
+        async with _connect(str(DB_PATH)) as conn:
+            wrapped = SQLiteConnection(conn)
+            token = _current_conn.set(wrapped)
+            async with wrapped.transaction(transaction):
+                yield wrapped
+    finally:
+        if token is not None:
+            _current_conn.reset(token)
+        if LOG_CONNECTION_STACKS:
+            log.debug("DISCONNECT: %s", _format_connection_stack())
+        if LOG_LONG_CONNECTIONS > 0:
+            elapsed = time.perf_counter() - start
+            if elapsed >= LOG_LONG_CONNECTIONS:
+                log.debug(
+                    "Connection lasted for %.0fms (%s)",
+                    elapsed * 1000,
+                    _format_connection_stack(),
+                )
+
+
+@asynccontextmanager
+async def connect_client(
+    *,
+    transaction: TransactionMode = True,
+) -> AsyncIterator[DatabaseClient]:
+    async with connect(transaction=transaction) as conn:
+        yield DatabaseClient(conn)
+
+
+async def run_migrations() -> None:
+    migrations = read_migrations()
+    async with connect(transaction="write") as conn:
+        migrator = SQLiteMigrator(conn)
+        await migrator.run_migrations(migrations)
+
+
+def _format_connection_stack() -> str:
+    import traceback
+
+    assert __package__ is not None
+    package = __package__.partition(".")[0]
+
+    stack = [
+        f"{frame.f_code.co_name}:L{frame.f_lineno}"
+        for frame, _ in traceback.walk_stack(None)
+        if package in frame.f_code.co_filename
+        and frame.f_code.co_name not in ("wrapper",)
+    ]
+
+    # <module> -> __call__ -> main -> invoke -> invoke -> invoke -> new_func
+    stack = stack[:-7]
+
+    return " -> ".join(reversed(stack))
+
+
+# Derived from asqlite.connect(), v2.0.0
+def _connect(
+    database: str,
+    *,
+    timeout: float | None = None,
+    **kwargs: Any,
+) -> asqlite._ContextManagerMixin[sqlite3.Connection, asqlite.Connection]:
+    import asyncio
+    from unittest.mock import patch
+
+    import asqlite
+
+    loop = asyncio.get_event_loop()
+    queue = asqlite._Worker(loop=loop)
+    queue.start()
+
+    def factory(con: sqlite3.Connection) -> asqlite.Connection:
+        return asqlite.Connection(con, queue)
+
+    def new_connect(db: str, **kwargs: Any) -> sqlite3.Connection:
+        with patch("sqlite3.connect", _connect_and_encrypt):
+            conn = asqlite._connect_pragmas(db, **kwargs)
+        return conn
+
+    return asqlite._ContextManagerMixin(
+        queue,
+        factory,
+        new_connect,
+        database,
+        timeout=timeout,
+        **kwargs,
+    )
+
+
+@contextmanager
+def connect_sync(*, transaction: bool = True) -> Iterator[sqlite3.Connection]:
+    with closing(_connect_and_encrypt(DB_PATH)) as conn:
+        if transaction:
+            with conn:
+                yield conn
+        else:
+            yield conn
+
+
+if TYPE_CHECKING:
+    _connect_and_encrypt = sqlite3.connect
+else:
+
+    def _connect_and_encrypt(*args, **kwargs):
+        conn = _real_connect(
+            *args,
+            detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES,
+            **kwargs,
+        )
+        if state.DB_PASSWORD is not None:
+            encrypt(conn, state.DB_PASSWORD)
+        return conn
+
+
+def encrypt(
+    conn: sqlite3.Connection,
+    password: Secret[str],
+    *,
+    rekey: bool = False,
+) -> None:
+    # Key formats:
+    # https://www.zetetic.net/sqlcipher/sqlcipher-api/#PRAGMA_key
+    # https://utelle.github.io/SQLite3MultipleCiphers/docs/configuration/config_sql_pragmas/#pragma-key--hexkey
+    key = password.get_secret_value()
+    key = key.replace("'", "''")
+    pragma = "rekey" if rekey else "key"
+
+    try:
+        if rekey:
+            conn.execute("PRAGMA journal_mode = delete")
+
+        c = conn.execute(f"PRAGMA {pragma} = '{key}'")
+
+        if not rekey:
+            conn.execute("SELECT * FROM sqlite_schema")  # Test decryption
+    except sqlite3.DatabaseError as e:
+        if e.sqlite_errorcode == 26:  # SQLITE_NOTADB
+            raise DatabaseEncryptedError() from None
+        raise
+
+    ret = c.fetchone()
+    c.close()
+    if ret is None:
+        raise EncryptionUnsupportedError()  # Expected 'ok' to be returned
