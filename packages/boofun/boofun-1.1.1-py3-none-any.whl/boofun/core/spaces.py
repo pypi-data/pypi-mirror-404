@@ -1,0 +1,167 @@
+"""
+Mathematical spaces for Boolean function analysis.
+
+Provides conversions between different representations:
+- BOOLEAN_CUBE: {0, 1}^n
+- PLUS_MINUS_CUBE: {-1, +1}^n
+- REAL: ℝ^n
+- LOG: Log-probability space
+- GAUSSIAN: Standard normal space
+
+WARNING: Some conversions are lossy (continuous → discrete).
+These will emit warnings unless explicitly silenced.
+"""
+
+import warnings
+from enum import Enum, auto
+from typing import Union
+
+import numpy as np
+
+
+class Space(Enum):
+    BOOLEAN_CUBE = auto()  # {0,1}^n
+    PLUS_MINUS_CUBE = auto()  # {-1,1}^n
+    REAL = auto()  # ℝ^n
+    LOG = auto()  # Log space
+    GAUSSIAN = auto()  # Gaussian space
+
+    @staticmethod
+    def translate(
+        input: Union[int, float, np.ndarray],
+        source_space: "Space",
+        target_space: "Space",
+    ) -> Union[int, float, np.ndarray]:
+        """
+        Translate a scalar or array from one space to another.
+
+        Args:
+            input: Input value(s) to translate
+            source_space: Source mathematical space
+            target_space: Target mathematical space
+
+        Returns:
+            Translated value(s) in target space
+
+        Examples:
+            >>> Space.translate([0, 1], Space.BOOLEAN_CUBE, Space.PLUS_MINUS_CUBE)
+            array([-1,  1])
+            >>> Space.translate([-1, 1], Space.PLUS_MINUS_CUBE, Space.BOOLEAN_CUBE)
+            array([0, 1])
+        """
+        if source_space == target_space:
+            return input
+
+        arr = np.asarray(input)
+
+        # Boolean (0/1) → ±1
+        if source_space == Space.BOOLEAN_CUBE and target_space == Space.PLUS_MINUS_CUBE:
+            return 2 * arr - 1
+
+        # ±1 → Boolean (0/1)
+        if source_space == Space.PLUS_MINUS_CUBE and target_space == Space.BOOLEAN_CUBE:
+            return ((arr + 1) // 2).astype(int)
+
+        # Real-valued input → Boolean (mod 2) - LOSSY!
+        if source_space == Space.REAL and target_space == Space.BOOLEAN_CUBE:
+            warnings.warn(
+                "Lossy conversion: REAL → BOOLEAN_CUBE uses round() % 2. "
+                "Magnitude information is lost.",
+                UserWarning,
+                stacklevel=2,
+            )
+            return (np.round(arr) % 2).astype(int)
+
+        # Boolean → Real (just cast)
+        if source_space == Space.BOOLEAN_CUBE and target_space == Space.REAL:
+            return arr.astype(float)
+
+        # ±1 → Real
+        if source_space == Space.PLUS_MINUS_CUBE and target_space == Space.REAL:
+            return arr.astype(float)
+
+        # Real → ±1 (sign function) - LOSSY!
+        if source_space == Space.REAL and target_space == Space.PLUS_MINUS_CUBE:
+            warnings.warn(
+                "Lossy conversion: REAL → PLUS_MINUS_CUBE uses sign(). "
+                "Magnitude information is lost.",
+                UserWarning,
+                stacklevel=2,
+            )
+            return np.where(arr >= 0, 1, -1)
+
+        # LOG space conversions - LOSSY!
+        if source_space == Space.LOG and target_space == Space.BOOLEAN_CUBE:
+            warnings.warn(
+                "Lossy conversion: LOG → BOOLEAN_CUBE uses threshold at 0.5. "
+                "Probability magnitude is lost.",
+                UserWarning,
+                stacklevel=2,
+            )
+            return (np.exp(arr) > 0.5).astype(int)
+
+        if source_space == Space.BOOLEAN_CUBE and target_space == Space.LOG:
+            # Convert to log probabilities (avoid log(0))
+            prob = np.clip(arr.astype(float), 1e-10, 1 - 1e-10)
+            return np.log(prob)
+
+        # GAUSSIAN space conversions - LOSSY!
+        if source_space == Space.GAUSSIAN and target_space == Space.BOOLEAN_CUBE:
+            warnings.warn(
+                "Lossy conversion: GAUSSIAN → BOOLEAN_CUBE uses CDF threshold. "
+                "Distribution information is lost.",
+                UserWarning,
+                stacklevel=2,
+            )
+            from scipy.stats import norm
+
+            return (norm.cdf(arr) > 0.5).astype(int)
+
+        if source_space == Space.BOOLEAN_CUBE and target_space == Space.GAUSSIAN:
+            # Inverse normal CDF
+            from scipy.stats import norm
+
+            prob = np.clip(arr.astype(float), 1e-10, 1 - 1e-10)
+            return norm.ppf(prob)
+
+        # Cross-conversions through intermediate spaces
+        if source_space == Space.LOG and target_space == Space.PLUS_MINUS_CUBE:
+            # LOG -> BOOLEAN -> ±1
+            boolean = Space.translate(arr, Space.LOG, Space.BOOLEAN_CUBE)
+            return Space.translate(boolean, Space.BOOLEAN_CUBE, Space.PLUS_MINUS_CUBE)
+
+        if source_space == Space.PLUS_MINUS_CUBE and target_space == Space.LOG:
+            # ±1 -> BOOLEAN -> LOG
+            boolean = Space.translate(arr, Space.PLUS_MINUS_CUBE, Space.BOOLEAN_CUBE)
+            return Space.translate(boolean, Space.BOOLEAN_CUBE, Space.LOG)
+
+        raise NotImplementedError(
+            f"Translation from {source_space.name} to {target_space.name} not implemented."
+        )
+
+    @staticmethod
+    def get_canonical_space() -> "Space":
+        """Get the canonical space for internal computations."""
+        return Space.BOOLEAN_CUBE
+
+    @staticmethod
+    def is_discrete(space: "Space") -> bool:
+        """Check if space uses discrete values."""
+        return space in {Space.BOOLEAN_CUBE, Space.PLUS_MINUS_CUBE}
+
+    @staticmethod
+    def is_continuous(space: "Space") -> bool:
+        """Check if space uses continuous values."""
+        return space in {Space.REAL, Space.LOG, Space.GAUSSIAN}
+
+    @staticmethod
+    def get_default_threshold(space: "Space") -> float:
+        """Get default threshold for converting continuous to discrete."""
+        if space == Space.REAL:
+            return 0.5
+        elif space == Space.LOG:
+            return 0.0  # log(0.5) ≈ -0.693, but 0.0 is simpler
+        elif space == Space.GAUSSIAN:
+            return 0.0  # Standard normal median
+        else:
+            return 0.5
