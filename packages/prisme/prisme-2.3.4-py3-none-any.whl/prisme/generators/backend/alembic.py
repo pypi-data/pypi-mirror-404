@@ -1,0 +1,201 @@
+"""Alembic migration generator for Prism.
+
+This generator creates Alembic configuration for database migrations including:
+- alembic.ini configuration file
+- alembic/env.py with async SQLAlchemy support
+- alembic/script.py.mako migration template
+- alembic/versions/ directory for migrations
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from prisme.generators.base import GeneratedFile, GeneratorBase
+from prisme.spec.stack import FileStrategy
+from prisme.utils.template_engine import TemplateRenderer
+
+
+class AlembicGenerator(GeneratorBase):
+    """Generates Alembic configuration for database migrations."""
+
+    REQUIRED_TEMPLATES = [
+        "backend/alembic/alembic.ini.jinja2",
+        "backend/alembic/env.py.jinja2",
+        "backend/alembic/script.py.mako.jinja2",
+    ]
+
+    def __init__(self, *args, **kwargs) -> None:  # type: ignore[no-untyped-def]
+        super().__init__(*args, **kwargs)
+
+        # Initialize template renderer
+        self.renderer = TemplateRenderer()
+        self.renderer.validate_templates_exist(self.REQUIRED_TEMPLATES)
+
+        # Setup paths for generated alembic files
+        backend_base = Path(self.generator_config.backend_output)
+        self.backend_base = backend_base
+        self.alembic_dir = backend_base / "alembic"
+        self.versions_dir = self.alembic_dir / "versions"
+
+        # Package name for imports
+        self.package_name = self.get_package_name()
+
+    def generate_files(self) -> list[GeneratedFile]:
+        """Generate all Alembic configuration files.
+
+        Returns:
+            List of generated files with content and strategies
+        """
+        files = []
+
+        # Generate alembic.ini
+        files.append(self._generate_alembic_ini())
+
+        # Generate env.py
+        files.append(self._generate_env_py())
+
+        # Generate script.py.mako
+        files.append(self._generate_script_mako())
+
+        # Create versions directory marker
+        files.append(self._generate_versions_readme())
+
+        return files
+
+    def _generate_alembic_ini(self) -> GeneratedFile:
+        """Generate alembic.ini configuration file.
+
+        Returns:
+            GeneratedFile for alembic.ini
+        """
+        content = self.renderer.render_file(
+            "backend/alembic/alembic.ini.jinja2",
+            context={
+                "project_name": self.package_name,
+            },
+        )
+
+        return GeneratedFile(
+            path=self.backend_base / "alembic.ini",
+            content=content,
+            strategy=FileStrategy.GENERATE_ONCE,  # Allow user customization
+            description="Alembic configuration",
+        )
+
+    def _generate_env_py(self) -> GeneratedFile:
+        """Generate alembic/env.py with async SQLAlchemy support.
+
+        Returns:
+            GeneratedFile for alembic/env.py
+        """
+        # Get all model names for imports
+        model_names = [model.name for model in self.spec.models]
+
+        # Check if async driver is enabled
+        async_driver = self.database_config.async_driver
+
+        # Check if auth/admin features are enabled (need extra model imports)
+        auth_enabled = self.auth_config and self.auth_config.enabled
+        admin_enabled = (
+            auth_enabled and self.auth_config.admin_panel and self.auth_config.admin_panel.enabled
+        )
+
+        content = self.renderer.render_file(
+            "backend/alembic/env.py.jinja2",
+            context={
+                "package_name": self.package_name,
+                "models": model_names,
+                "async_driver": async_driver,
+                "auth_enabled": auth_enabled,
+                "admin_enabled": admin_enabled,
+            },
+        )
+
+        return GeneratedFile(
+            path=self.alembic_dir / "env.py",
+            content=content,
+            strategy=FileStrategy.ALWAYS_OVERWRITE,  # Keep in sync with models
+            description="Alembic environment configuration",
+        )
+
+    def _generate_script_mako(self) -> GeneratedFile:
+        """Generate alembic/script.py.mako template.
+
+        Returns:
+            GeneratedFile for alembic/script.py.mako
+        """
+        content = self.renderer.render_file(
+            "backend/alembic/script.py.mako.jinja2",
+            context={},
+        )
+
+        return GeneratedFile(
+            path=self.alembic_dir / "script.py.mako",
+            content=content,
+            strategy=FileStrategy.GENERATE_ONCE,  # Allow user customization
+            description="Alembic migration script template",
+        )
+
+    def _generate_versions_readme(self) -> GeneratedFile:
+        """Generate a README in versions directory to ensure it's created.
+
+        Returns:
+            GeneratedFile for alembic/versions/README
+        """
+        content = """# Alembic Migrations
+
+This directory contains database migration scripts generated by Alembic.
+
+## Creating Migrations
+
+Generate a new migration based on model changes:
+
+```bash
+prism db migrate -m "description of changes"
+```
+
+Or using alembic directly:
+
+```bash
+uv run alembic revision --autogenerate -m "description of changes"
+```
+
+## Applying Migrations
+
+Apply all pending migrations:
+
+```bash
+prism db migrate
+```
+
+Or using alembic directly:
+
+```bash
+uv run alembic upgrade head
+```
+
+## Reverting Migrations
+
+Revert the last migration:
+
+```bash
+uv run alembic downgrade -1
+```
+
+Revert all migrations:
+
+```bash
+uv run alembic downgrade base
+```
+"""
+
+        return GeneratedFile(
+            path=self.versions_dir / "README",
+            content=content,
+            strategy=FileStrategy.GENERATE_ONCE,
+            description="Alembic versions directory readme",
+        )
+
+
+__all__ = ["AlembicGenerator"]

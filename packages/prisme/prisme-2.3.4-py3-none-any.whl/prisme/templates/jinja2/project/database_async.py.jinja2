@@ -1,0 +1,30 @@
+"""Async database configuration."""
+
+from __future__ import annotations
+
+from collections.abc import AsyncGenerator
+
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+
+from .config import settings
+
+# Convert postgresql:// to postgresql+asyncpg:// for async support
+_raw_url = settings.database_url
+if _raw_url.startswith("postgresql://"):
+    _database_url = _raw_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+else:
+    _database_url = _raw_url
+
+engine = create_async_engine(_database_url, echo=settings.debug)
+
+async_session = async_sessionmaker(
+    engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+)
+
+
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    """Get async database session."""
+    async with async_session() as session:
+        yield session

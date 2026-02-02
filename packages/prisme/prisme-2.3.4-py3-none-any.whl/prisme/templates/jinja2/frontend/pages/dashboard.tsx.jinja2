@@ -1,0 +1,58 @@
+/**
+ * Dashboard page.
+ *
+ * ✅ YOUR CODE - Safe to modify, will not be overwritten.
+ * This file was generated once by Prism and is yours to customize.
+ */
+
+import React from 'react';
+import type { JSX } from 'react';
+import { Link } from 'react-router-dom';
+{% for model in models %}{% if model.has_list %}
+import { use{{ model.name }}List } from '../hooks/use{{ model.name }}';
+{% endif %}{% endfor %}
+
+export default function DashboardPage(): JSX.Element {
+{% for model in models %}{% if model.has_list %}
+  const { totalCount: {{ model.plural_name | lower }}Count, loading: {{ model.plural_name | lower }}Loading } = use{{ model.name }}List({ page: 1, pageSize: 1 });
+{% endif %}{% endfor %}
+
+  return (
+    <div className="page-container">
+      <header className="page-header">
+        <h1 className="page-title">Dashboard</h1>
+        <p className="page-subtitle">Overview of {{ project_title }}</p>
+      </header>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+{% for model in models %}
+        <Link
+          to="/{{ model.plural_kebab }}"
+          className="card p-6 hover:shadow-md transition-shadow group"
+        >
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-sm font-medium text-muted group-hover:text-foreground transition-colors">
+              {{ model.plural_name }}
+            </h3>
+            <svg className="w-5 h-5 text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5l7 7-7 7" />
+            </svg>
+          </div>
+{% if model.has_list %}
+          <p className="text-2xl font-semibold text-foreground">
+            {{ '{' }}{{ model.plural_name | lower }}Loading ? '—' : {{ model.plural_name | lower }}Count ?? 0{{ '}' }}
+          </p>
+{% else %}
+          <p className="text-2xl font-semibold text-foreground">—</p>
+{% endif %}
+{% if model.has_create %}
+          <div className="mt-3 pt-3 border-t border-border">
+            <span className="text-xs text-primary font-medium">+ Create new</span>
+          </div>
+{% endif %}
+        </Link>
+{% endfor %}
+      </div>
+    </div>
+  );
+}

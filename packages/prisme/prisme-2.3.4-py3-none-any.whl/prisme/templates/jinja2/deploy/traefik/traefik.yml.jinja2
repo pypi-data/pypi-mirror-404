@@ -1,0 +1,55 @@
+# Traefik Static Configuration
+# Handles HTTPS termination and dynamic routing for *.{{ domain }}
+
+api:
+  dashboard: true
+  insecure: false
+
+log:
+  level: INFO
+
+accessLog:
+  filePath: "/var/log/traefik/access.log"
+  bufferingSize: 100
+
+entryPoints:
+  web:
+    address: ":80"
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+          permanent: true
+
+  websecure:
+    address: ":443"
+    http:
+      tls:
+        certResolver: letsencrypt-dns
+        domains:
+          - main: "{{ domain }}"
+            sans:
+              - "*.{{ domain }}"
+
+certificatesResolvers:
+  letsencrypt-dns:
+    acme:
+      email: {{ ssl_email }}
+      storage: /letsencrypt/acme.json
+      dnsChallenge:
+        provider: hetzner
+        delayBeforeCheck: 60
+        resolvers:
+          - "1.1.1.1:53"
+          - "8.8.8.8:53"
+
+providers:
+  file:
+    directory: /etc/traefik/dynamic
+    watch: true
+
+  docker:
+    endpoint: "unix:///var/run/docker.sock"
+    exposedByDefault: false
+    network: {{ project_name }}_network
