@@ -1,0 +1,217 @@
+Metadata-Version: 2.4
+Name: opentelemetry-exporter-cloudwatch-emf
+Version: 0.1.2
+Summary: OpenTelemetry metrics exporter for AWS CloudWatch using Embedded Metric Format (EMF)
+Author-email: Darren Haas <mail+pypi@darrenhaas.com>
+License: Apache-2.0
+Project-URL: Homepage, https://github.com/darrenhaas/cw-emf-exporter
+Project-URL: Repository, https://github.com/darrenhaas/cw-emf-exporter
+Project-URL: Issues, https://github.com/darrenhaas/cw-emf-exporter/issues
+Keywords: opentelemetry,cloudwatch,emf,metrics,aws,observability
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: Apache Software License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: System :: Monitoring
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: opentelemetry-sdk>=1.20.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0.0; extra == "dev"
+Requires-Dist: pytest-cov>=4.0.0; extra == "dev"
+Requires-Dist: black>=24.0.0; extra == "dev"
+Requires-Dist: isort>=5.13.0; extra == "dev"
+Requires-Dist: flake8>=7.0.0; extra == "dev"
+Requires-Dist: mypy>=1.8.0; extra == "dev"
+Dynamic: license-file
+
+# OpenTelemetry CloudWatch EMF Exporter
+
+[![PyPI version](https://badge.fury.io/py/opentelemetry-exporter-cloudwatch-emf.svg)](https://badge.fury.io/py/opentelemetry-exporter-cloudwatch-emf)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+
+An OpenTelemetry metrics exporter for AWS CloudWatch using [Embedded Metric Format (EMF)](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch_Embedded_Metric_Format.html).
+
+## Why?
+
+OpenTelemetry doesn't have a native Python SDK for exporting metrics directly to CloudWatch. The recommended approach is to run an ADOT Collector sidecar, which isn't always practical (e.g., AWS App Runner, Lambda, simple deployments).
+
+This exporter prints EMF-formatted JSON to stdout. When running in AWS environments, CloudWatch Logs automatically parses EMF and creates CloudWatch Metrics—no collector required.
+
+## Installation
+
+```bash
+pip install opentelemetry-exporter-cloudwatch-emf
+```
+
+## Quick Start
+
+```python
+from opentelemetry import metrics
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+from opentelemetry_exporter_cloudwatch_emf import CloudWatchEMFExporter
+
+# Create exporter
+exporter = CloudWatchEMFExporter(namespace="MyApplication")
+
+# Set up meter provider
+reader = PeriodicExportingMetricReader(exporter, export_interval_millis=60000)
+provider = MeterProvider(metric_readers=[reader])
+metrics.set_meter_provider(provider)
+
+# Create metrics
+meter = metrics.get_meter("my-service")
+counter = meter.create_counter("requests", unit="1", description="Request count")
+histogram = meter.create_histogram("latency", unit="ms", description="Request latency")
+
+# Record metrics
+counter.add(1, {"endpoint": "/api/users", "method": "GET"})
+histogram.record(45.2, {"endpoint": "/api/users"})
+```
+
+## Output
+
+The exporter prints EMF JSON to stdout:
+
+```json
+{"_aws":{"Timestamp":1700000000000,"CloudWatchMetrics":[{"Namespace":"MyApplication","Dimensions":[["endpoint","method"]],"Metrics":[{"Name":"requests","Unit":"Count","StorageResolution":60}]}]},"requests":1,"endpoint":"/api/users","method":"GET"}
+```
+
+CloudWatch Logs automatically parses this and creates metrics in the `MyApplication` namespace.
+
+## Configuration
+
+```python
+exporter = CloudWatchEMFExporter(
+    namespace="MyApp",           # Required: CloudWatch namespace (1-256 chars)
+    output=sys.stdout,           # Output stream (default: stdout)
+    dimension_keys=["service"],  # Filter dimensions (default: all attributes)
+    max_dimensions=10,           # Max dimensions per metric (default: 30)
+    storage_resolution=1,        # 1=high-res, 60=standard (default: 60)
+)
+```
+
+### Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `namespace` | str | Required | CloudWatch metrics namespace |
+| `output` | TextIO | stdout | Output stream for EMF JSON |
+| `dimension_keys` | list | None | Attribute keys to use as dimensions (None = all) |
+| `max_dimensions` | int | 30 | Maximum dimensions per metric (CloudWatch limit) |
+| `storage_resolution` | int | 60 | 1 for high-resolution, 60 for standard |
+| `timestamp_fn` | callable | None | Custom timestamp function (returns epoch ms) |
+
+## Supported Metric Types
+
+| OTel Type | EMF Output |
+|-----------|------------|
+| Counter | Single metric value |
+| Gauge | Single metric value |
+| Histogram | `{name}_count`, `{name}_sum`, `{name}_min`, `{name}_max` |
+
+### Histogram Handling
+
+OpenTelemetry histograms are converted to four derived CloudWatch metrics:
+
+| Derived Metric | Description | Unit |
+|---------------|-------------|------|
+| `{name}_count` | Number of observations | Count |
+| `{name}_sum` | Sum of all observed values | Original unit |
+| `{name}_min` | Minimum observed value | Original unit |
+| `{name}_max` | Maximum observed value | Original unit |
+
+**Note:** OpenTelemetry histogram bucket boundaries are not preserved. CloudWatch EMF does not support native histogram bucket representation, so percentile calculations (p50, p99, etc.) are not available. If you need percentiles, consider using CloudWatch's `Values` and `Counts` format via a custom exporter or the ADOT Collector.
+
+Example: A histogram named `request_latency` with unit `ms` produces:
+- `request_latency_count` (Count)
+- `request_latency_sum` (Milliseconds)
+- `request_latency_min` (Milliseconds)
+- `request_latency_max` (Milliseconds)
+
+## Unit Mapping
+
+OpenTelemetry units (UCUM) are automatically mapped to CloudWatch units:
+
+| OTel | CloudWatch |
+|------|------------|
+| `s` | Seconds |
+| `ms` | Milliseconds |
+| `By` | Bytes |
+| `KiBy` | Kilobytes |
+| `1` | Count |
+| `%` | Percent |
+
+## AWS Environment
+
+EMF works automatically in these AWS environments:
+- **Lambda**: CloudWatch Logs integration built-in
+- **ECS/Fargate**: Logs sent to CloudWatch via awslogs driver
+- **App Runner**: Stdout automatically sent to CloudWatch Logs
+- **EC2**: Use CloudWatch agent to send logs
+
+## Best Practices
+
+### Dimension Cardinality
+
+Be careful with high-cardinality dimensions (user IDs, request IDs). Each unique dimension combination creates a separate metric, impacting costs.
+
+```python
+# Good: Low cardinality
+exporter = CloudWatchEMFExporter(
+    namespace="MyApp",
+    dimension_keys=["service", "environment", "endpoint"],
+)
+
+# Bad: High cardinality (avoid)
+# dimension_keys=["user_id", "request_id"]
+```
+
+### High-Resolution Metrics
+
+Use `storage_resolution=1` for sub-minute granularity (additional cost):
+
+```python
+exporter = CloudWatchEMFExporter(
+    namespace="MyApp",
+    storage_resolution=1,  # 1-second resolution
+)
+```
+
+## Development
+
+```bash
+# Install dev dependencies
+pip install -e ".[dev]"
+
+# Run tests
+pytest
+
+# Format code
+black src tests
+isort src tests
+
+# Lint
+flake8 src tests
+mypy src
+```
+
+## License
+
+Apache 2.0 - See [LICENSE](LICENSE) for details.
+
+## Contributing
+
+Contributions welcome! Please open an issue or PR.
+
+## Related
+
+- [OpenTelemetry Python](https://github.com/open-telemetry/opentelemetry-python)
+- [CloudWatch EMF Specification](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch_Embedded_Metric_Format_Specification.html)
+- [AWS EMF Feature Request](https://github.com/open-telemetry/opentelemetry-python-contrib/issues/2490)
