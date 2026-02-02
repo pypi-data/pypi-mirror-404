@@ -1,0 +1,79 @@
+"""{{ project_name }} API."""
+
+from __future__ import annotations
+
+import logging
+from contextlib import asynccontextmanager
+from collections.abc import AsyncGenerator
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from .config import settings
+from .database import engine
+
+logger = logging.getLogger(__name__)
+
+# Import routers - uses relative imports within the package
+try:
+    from .api.rest.router import router as rest_router
+    HAS_REST = True
+except ImportError as e:
+    logger.warning("REST router not available: %s", e)
+    HAS_REST = False
+
+try:
+    from .api.graphql.schema import get_graphql_router
+    HAS_GRAPHQL = True
+except ImportError as e:
+    logger.warning("GraphQL router not available: %s", e)
+    HAS_GRAPHQL = False
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    """Application lifespan handler."""
+    # Startup - auto-create tables for development
+    # In production, use Alembic migrations instead
+    try:
+        from .models.base import Base
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+    except ImportError:
+        logging.warning(
+            "Models not found. Run 'prisme generate' to generate code from your spec."
+        )
+    yield
+    # Shutdown
+    await engine.dispose()
+
+
+app = FastAPI(
+    title="{{ project_title }}",
+    description="{{ description }}",
+    version="0.1.0",
+    lifespan=lifespan,
+)
+
+# CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint."""
+    return {"status": "healthy"}
+
+
+# Include routers if generated
+if HAS_REST:
+    app.include_router(rest_router, prefix="/api")
+
+if HAS_GRAPHQL:
+    app.include_router(get_graphql_router(), prefix="/graphql")

@@ -1,0 +1,219 @@
+name: Docker Build
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+  release:
+    types: [published]
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  build-backend:
+    name: Build Backend Image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set lowercase image name
+        run: echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        if: {% raw %}github.event_name != 'pull_request'{% endraw %}
+        uses: docker/login-action@v3
+        with:
+          registry: {% raw %}${{ env.REGISTRY }}{% endraw %}
+          username: {% raw %}${{ github.actor }}{% endraw %}
+          password: {% raw %}${{ secrets.GITHUB_TOKEN }}{% endraw %}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: {% raw %}${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend{% endraw %}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={% raw %}{{version}}{% endraw %}
+            type=semver,pattern={% raw %}{{major}}.{{minor}}{% endraw %}
+            type=sha,prefix={% raw %}{{branch}}{% endraw %}-
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.backend.prod
+          push: {% raw %}${{ github.event_name != 'pull_request' }}{% endraw %}
+          tags: {% raw %}${{ steps.meta.outputs.tags }}{% endraw %}
+          labels: {% raw %}${{ steps.meta.outputs.labels }}{% endraw %}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  build-frontend:
+    name: Build Frontend Image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set lowercase image name
+        run: echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        if: {% raw %}github.event_name != 'pull_request'{% endraw %}
+        uses: docker/login-action@v3
+        with:
+          registry: {% raw %}${{ env.REGISTRY }}{% endraw %}
+          username: {% raw %}${{ github.actor }}{% endraw %}
+          password: {% raw %}${{ secrets.GITHUB_TOKEN }}{% endraw %}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: {% raw %}${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend{% endraw %}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={% raw %}{{version}}{% endraw %}
+            type=semver,pattern={% raw %}{{major}}.{{minor}}{% endraw %}
+            type=sha,prefix={% raw %}{{branch}}{% endraw %}-
+
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.frontend.prod
+          push: {% raw %}${{ github.event_name != 'pull_request' }}{% endraw %}
+          tags: {% raw %}${{ steps.meta.outputs.tags }}{% endraw %}
+          labels: {% raw %}${{ steps.meta.outputs.labels }}{% endraw %}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  test-images:
+    name: Test Docker Images
+    runs-on: ubuntu-latest
+    needs: [build-backend, build-frontend]
+    if: {% raw %}github.event_name == 'pull_request'{% endraw %}
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: test_db
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build images for testing
+        run: |
+          docker compose -f docker-compose.prod.yml build
+
+      - name: Create .env.prod file
+        run: |
+          cp .env.prod.example .env.prod
+          sed -i 's/CHANGE_ME_IN_PRODUCTION/postgres/g' .env.prod
+          sed -i 's/GENERATE_RANDOM_SECRET_KEY_HERE/test-secret-key-123/g' .env.prod
+
+      - name: Run containers
+        run: |
+          docker compose -f docker-compose.prod.yml up -d
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@postgres:5432/test_db
+
+      - name: Wait for services to be healthy
+        run: |
+          timeout 60 bash -c 'until docker compose -f docker-compose.prod.yml ps | grep -q "healthy"; do sleep 2; done'
+
+      - name: Test backend health endpoint
+        run: |
+          docker compose -f docker-compose.prod.yml exec -T backend curl -f http://localhost:8000/health
+
+      - name: Test frontend health endpoint
+        run: |
+          docker compose -f docker-compose.prod.yml exec -T frontend wget --spider http://localhost/health
+
+      - name: Show logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.prod.yml logs
+
+      - name: Tear down
+        if: always()
+        run: |
+          docker compose -f docker-compose.prod.yml down -v
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: [build-backend, build-frontend]
+    if: {% raw %}github.event_name != 'pull_request'{% endraw %}
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set lowercase image name
+        run: echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
+
+      - name: Run Trivy vulnerability scanner (Backend)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: {% raw %}${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:${{ github.sha }}{% endraw %}
+          format: 'sarif'
+          output: 'trivy-backend-results.sarif'
+
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: 'trivy-backend-results.sarif'
+          category: 'backend-image'
+
+      - name: Run Trivy vulnerability scanner (Frontend)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: {% raw %}${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:${{ github.sha }}{% endraw %}
+          format: 'sarif'
+          output: 'trivy-frontend-results.sarif'
+
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: 'trivy-frontend-results.sarif'
+          category: 'frontend-image'

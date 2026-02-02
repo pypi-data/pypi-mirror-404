@@ -1,0 +1,18 @@
+FROM mcr.microsoft.com/devcontainers/python:{{ python_version }}
+
+# Install uv
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.local/bin:$PATH"
+
+{% if include_frontend %}
+# Install Node.js {{ node_version }}
+RUN curl -fsSL https://deb.nodesource.com/setup_{{ node_version }}.x | bash - \
+    && apt-get install -y nodejs \
+    && npm install -g pnpm
+{% endif %}
+
+# Install pre-commit
+RUN pip install pre-commit
+
+# Set working directory
+WORKDIR /workspaces/{{ project_name | default('app') }}
