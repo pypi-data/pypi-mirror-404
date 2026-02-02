@@ -1,0 +1,27 @@
+- name: Main Playbook
+  hosts: all
+  gather_facts: yes
+
+  tasks:
+    - name: Setup
+      include_tasks: setup.yml
+
+    - name: Git Configuration
+      include_tasks: github/git_configuration.yml
+      when: DEPLOY_MODE | default('pull') != 'push'
+
+    - name: Push Code (Zero Touch)
+      include_tasks: push_code_tasks.yml
+      when: DEPLOY_MODE | default('pull') == 'push'
+
+    - name: Setup Project Environment File
+      include_tasks: setup_project_env.yml
+
+    - name: Docker Setup
+      include_tasks: docker/docker_setup.yml
+
+    - name: Project Service
+      include_tasks: project_service.yml
+
+    - name: Cleanup
+      include_tasks: cleanup.yml
