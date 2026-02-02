@@ -1,0 +1,68 @@
+- name: Git Configuration Playbook
+  block:
+    - name: Ensure Git is installed
+      package:
+        name: git
+        state: present
+      become: yes
+    
+    # --- Git Credential Setup ---
+    - name: Check if Git credentials file exists
+      stat:
+        path: ~/.git-credentials
+      register: git_credentials_stat
+
+    - name: Read contents of Git credentials file
+      slurp:
+        src: ~/.git-credentials
+      register: git_credentials_content
+      when: git_credentials_stat.stat.exists
+
+    - name: Decode Git credentials content
+      set_fact:
+        git_credentials: "{{ git_credentials_content.content | b64decode }}"
+      when: git_credentials_stat.stat.exists
+
+    - name: Fail if Git credentials not configured and vars not provided
+      fail:
+        msg: >
+          Git credentials not found and GITHUB_USERNAME/GITHUB_TOKEN not provided. Aborting.
+      when: >
+        (not git_credentials_stat.stat.exists or
+        ("{{ GITHUB_USERNAME }}" not in git_credentials | default(''))) and
+        (GITHUB_USERNAME is not defined or GITHUB_TOKEN is not defined)
+
+    - name: Configure Git with GitHub token if not already configured
+      shell: |
+        git config --global credential.helper store
+        echo "https://{{ GITHUB_USERNAME }}:{{ GITHUB_TOKEN }}@github.com" > ~/.git-credentials
+      become: yes
+      when: >
+        (not git_credentials_stat.stat.exists or
+        ("{{ GITHUB_USERNAME }}" not in git_credentials | default(''))) and
+        (GITHUB_USERNAME is defined and GITHUB_TOKEN is defined)
+
+    # --- Git Clone or Pull Logic ---
+    - name: Check if .git directory exists (repo already cloned)
+      stat:
+        path: "{{ project_dest_dir }}/.git"
+      register: project_dir_stat
+
+    - name: Pull latest changes if repository already exists
+      shell: |
+        cd {{ project_dest_dir }}
+        git remote set-url origin {{ GITHUB_PROJECT_URL }}
+        git fetch origin
+        git checkout {{ GITHUB_BRANCH }}
+        git pull origin {{ GITHUB_BRANCH }}
+      when: project_dir_stat.stat.exists
+      become: yes
+
+    - name: Clone the Project repository if not already cloned
+      git:
+        repo: "{{ GITHUB_PROJECT_URL }}"
+        dest: "{{ project_dest_dir }}"
+        version: "{{ GITHUB_BRANCH }}"
+        depth: 1
+      when: not project_dir_stat.stat.exists
+      become: yes
