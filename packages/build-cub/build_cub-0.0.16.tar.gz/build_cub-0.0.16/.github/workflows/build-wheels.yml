@@ -1,0 +1,111 @@
+name: Build and Publish
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:  # allows manual trigger for testing
+
+jobs:
+  build:
+    name: Build distributions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Build sdist and wheel
+        run: uv build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/*
+
+  publish:
+    name: Publish to PyPI
+    needs: [build]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    environment: pypi
+    permissions:
+      id-token: write
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - name: List distributions
+        run: ls -la dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+
+###############################################################################
+# CIBUILDWHEEL - For when build-cub has native extensions
+# Uncomment this section if/when build-cub itself needs compiled extensions
+# (e.g., if we add Cython/Rust components for performance)
+###############################################################################
+
+#  build_wheels:
+#    name: Build wheels on ${{ matrix.os }}
+#    runs-on: ${{ matrix.os }}
+#    strategy:
+#      matrix:
+#        os: [ubuntu-latest, macos-latest, windows-latest]
+#
+#    steps:
+#      - uses: actions/checkout@v4
+#        with:
+#          fetch-depth: 0
+#          fetch-tags: true
+#
+#      - name: Install uv
+#        uses: astral-sh/setup-uv@v5
+#
+#      # Unix: bash shell activation
+#      - name: Install build dependencies (Unix)
+#        if: runner.os != 'Windows'
+#        run: uv venv && source .venv/bin/activate && uv pip install cibuildwheel setuptools wheel
+#        shell: bash
+#
+#      # Windows: cmd shell activation
+#      - name: Install build dependencies (Windows)
+#        if: runner.os == 'Windows'
+#        run: uv venv && .venv\Scripts\activate.bat && uv pip install cibuildwheel setuptools wheel
+#        shell: cmd
+#
+#      - name: Build wheels (Unix)
+#        if: runner.os != 'Windows'
+#        run: source .venv/bin/activate && cibuildwheel --output-dir wheelhouse
+#        shell: bash
+#        env:
+#          # Build for Python 3.12, 3.13, 3.14
+#          CIBW_BUILD: "cp312-* cp313-* cp314-*"
+#          # Skip 32-bit and musllinux builds
+#          CIBW_SKIP: "*-win32 *-manylinux_i686 *musllinux*"
+#
+#      - name: Build wheels (Windows)
+#        if: runner.os == 'Windows'
+#        run: .venv\Scripts\activate && cibuildwheel --output-dir wheelhouse
+#        shell: cmd
+#        env:
+#          CIBW_BUILD: "cp312-* cp313-* cp314-*"
+#          CIBW_SKIP: "*-win32 *-manylinux_i686 *musllinux*"
+#
+#      - uses: actions/upload-artifact@v4
+#        with:
+#          name: wheels-${{ matrix.os }}
+#          path: ./wheelhouse/*.whl
+#
+# NOTE: If using cibuildwheel, update the publish job's "needs" to:
+#   needs: [build_wheels, build_sdist]
+# And rename the "build" job above to "build_sdist" (remove wheel building from it)
