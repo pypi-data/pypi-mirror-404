@@ -1,0 +1,206 @@
+import unittest
+import numpy as np
+from pygenalgo.genome.gene import Gene
+from pygenalgo.genome.chromosome import Chromosome
+
+from pygenalgo.utils.utilities import cost_function, clamp
+from pygenalgo.utils.auxiliary import (unique_pairs,
+                                       apply_corrections,
+                                       average_hamming_distance)
+
+
+class TestAuxiliary(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        print(">> TestAuxiliary - START -")
+
+    # _end_def_
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        print(">> TestAuxiliary - FINISH -", end='\n\n')
+
+    # _end_def_
+
+    def test_unique_pairs(self):
+        """
+        Test the functionality of unique_pairs.
+        """
+
+        # Test value.
+        n_size = 10
+
+        # The correct result C(10, 2) is 45.
+        n_result = 45
+
+        # They should be exactly equal.
+        self.assertEqual(unique_pairs(n_size), n_result)
+
+        # Ensure the correct error is raised.
+        with self.assertRaises(ValueError):
+            unique_pairs(-10)
+
+        # Ensure the correct error is raised.
+        with self.assertRaises(ValueError):
+            unique_pairs(1)
+    # _end_def_
+
+    def test_clamp(self):
+        """
+        Test the functionality of clamp.
+        """
+
+        # Number of repetitions.
+        n_repeats = 10
+
+        for i in range(n_repeats):
+            x_lower = np.random.randint(0, 5)
+            x_upper = np.random.randint(6, 9)
+
+            xi = 9.0*np.random.random()
+
+            r1 = min(max(xi, x_lower), x_upper)
+            r2 = clamp(xi, x_lower, x_upper)
+
+            # They should be exactly equal.
+            self.assertEqual(r1, r2)
+        # _end_for_
+    # _end_def_
+
+    def test_apply_corrections(self):
+        """
+        Tests the apply_corrections method, creating a dummy
+        population and invalidating manually some Genes.
+
+        :return: None.
+        """
+
+        def rand_func():
+            """
+            Dummy random function.
+            """
+            return 0
+        # _end_def_
+
+        @cost_function
+        def fit_func(individual):
+            """
+            Dummy fitness function.
+            """
+            return sum([xi.value for xi in individual]), False
+        # _end_def_
+
+        # Create a test population.
+        test_population = [Chromosome([Gene(0, rand_func),
+                                       Gene(1, rand_func),
+                                       Gene(2, rand_func)]),
+
+                           Chromosome([Gene(3, rand_func),
+                                       Gene(4, rand_func),
+                                       Gene(5, rand_func)]),
+
+                           Chromosome([Gene(6, rand_func),
+                                       Gene(7, rand_func),
+                                       Gene(8, rand_func)])
+                           ]
+
+        # Run the corrections algorithms.
+        t0_corrections, _ = apply_corrections(test_population, fit_func)
+
+        # There should be exactly '0' corrected Genes.
+        self.assertEqual(0, t0_corrections)
+
+        # Now invalidate manually '2' Genes.
+        test_population[0][0].is_valid = False
+        test_population[1][1].is_valid = False
+
+        # Here we set a new Chromosome in the population, where a Gene datum is not
+        # initialized. When the datum field is 'None', the gene is assumed 'invalid'.
+        test_population[2] = Chromosome([Gene(0, rand_func),
+                                         Gene(1, rand_func),
+                                         Gene(None, rand_func)])
+
+        # Run the corrections algorithms.
+        t3_corrections, _ = apply_corrections(test_population, fit_func)
+
+        # There should be exactly '3' corrected Genes.
+        self.assertEqual(3, t3_corrections)
+    # _end_def_
+
+    def test_average_hamming_distance(self):
+        """
+        Tests the average Humming distance at the two extreme cases:
+
+            1) when all the chromosomes are the same (dist = 0.0)
+
+            2) when all the chromosomes are different (dist = 1.0)
+
+        :return: None.
+        """
+
+        # Create a test population 1.
+        test_population_1 = [Chromosome([Gene('0', lambda: str('x')),
+                                         Gene('1', lambda: str('x')),
+                                         Gene('2', lambda: str('x')),
+                                         Gene('3', lambda: str('x'))]),
+
+                             Chromosome([Gene('1', lambda: str('x')),
+                                         Gene('2', lambda: str('x')),
+                                         Gene('3', lambda: str('x')),
+                                         Gene('0', lambda: str('x'))]),
+
+                             Chromosome([Gene('2', lambda: str('x')),
+                                         Gene('3', lambda: str('x')),
+                                         Gene('0', lambda: str('x')),
+                                         Gene('1', lambda: str('x'))]),
+
+                             Chromosome([Gene('3', lambda: str('x')),
+                                         Gene('0', lambda: str('x')),
+                                         Gene('1', lambda: str('x')),
+                                         Gene('2', lambda: str('x'))])
+                             ]
+
+        # Get the average Hamming distance.
+        avg_dist = average_hamming_distance(test_population_1)
+
+        # The distance should be 1.0 (or 100%),
+        # because no two chromosomes have the
+        # same gene values.
+        self.assertEqual(1.0, avg_dist)
+
+        # Create a test population 2.
+        test_population_2 = [Chromosome([Gene('0', lambda: str('x')),
+                                         Gene('1', lambda: str('x')),
+                                         Gene('2', lambda: str('x')),
+                                         Gene('3', lambda: str('x'))]),
+
+                             Chromosome([Gene('0', lambda: str('x')),
+                                         Gene('1', lambda: str('x')),
+                                         Gene('2', lambda: str('x')),
+                                         Gene('3', lambda: str('x'))]),
+
+                             Chromosome([Gene('0', lambda: str('x')),
+                                         Gene('1', lambda: str('x')),
+                                         Gene('2', lambda: str('x')),
+                                         Gene('3', lambda: str('x'))]),
+
+                             Chromosome([Gene('0', lambda: str('x')),
+                                         Gene('1', lambda: str('x')),
+                                         Gene('2', lambda: str('x')),
+                                         Gene('3', lambda: str('x'))])
+                             ]
+
+        # Get the average Hamming distance.
+        avg_dist = average_hamming_distance(test_population_2)
+
+        # The distance should be 0.0 (or 0%),
+        # because all chromosomes have the same gene values.
+        self.assertEqual(0.0, avg_dist)
+    # _end_def_
+
+# _end_class_
+
+
+if __name__ == '__main__':
+    unittest.main()
