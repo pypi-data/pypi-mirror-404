@@ -1,0 +1,508 @@
+Metadata-Version: 2.4
+Name: nspec
+Version: 1.0.1
+Summary: Feature request and implementation specification management tool
+License: MIT
+License-File: LICENSE
+Keywords: requirements,specifications,project-management,validation,cli
+Author: Novabuiltdevv
+Requires-Python: >=3.11,<4.0
+Classifier: Development Status :: 4 - Beta
+Classifier: Environment :: Console
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Programming Language :: Python :: 3.14
+Classifier: Topic :: Software Development :: Documentation
+Classifier: Topic :: Software Development :: Quality Assurance
+Provides-Extra: completion
+Provides-Extra: mcp
+Requires-Dist: argcomplete (>=3.0,<4.0) ; extra == "completion"
+Requires-Dist: mcp (>=1.0,<2.0) ; extra == "mcp"
+Requires-Dist: textual (>=7.4,<8.0)
+Project-URL: Documentation, https://github.com/Novabuiltdevv/nspec#readme
+Project-URL: Homepage, https://github.com/Novabuiltdevv/nspec
+Project-URL: Repository, https://github.com/Novabuiltdevv/nspec
+Description-Content-Type: text/markdown
+
+# nspec
+
+> Specification-driven project management for AI-native development
+
+**nspec** is a CLI tool for managing feature requests (FRs), implementation specifications (IMPLs), and architecture decision records (ADRs) in a structured, validated workflow. It provides 6-layer validation, dependency graph analysis, engineering metrics, an interactive TUI, and deep integration with AI coding assistants like Claude Code.
+
+## Features
+
+### Core Specification Management
+- **FR/IMPL Pairing** - Every feature request gets a matching implementation spec. Orphans are detected automatically.
+- **Architecture Decision Records** - ADRs (FR-900-999 range) with DRAFT/PROPOSED/ACCEPTED/DEPRECATED/SUPERSEDED lifecycle.
+- **Hierarchical Tasks** - Nested task trees with `[ ]` pending, `[x]` done, `[~]` obsolete, and `[->XXX]` delegated markers.
+- **Acceptance Criteria** - Categorized criteria (Functional, Performance, Quality, Documentation) with progress tracking.
+- **Story CRUD** - Create, delete, complete, supersede, and reject stories from the CLI with optional `--git-add`.
+
+### 6-Layer Validation Engine
+1. **Format** - Markdown structure, required fields, ID format (3-digit), priority/status/LOE regex validation.
+2. **Dataset Loading** - Parse all FR and IMPL documents with fail-fast error reporting.
+3. **Existence** - FR/IMPL pairing, orphan detection, mixed-location detection.
+4. **Dependency** - Graph validation, circular reference detection, dangling dependency cleanup.
+5. **Business Logic** - Priority inheritance (child <= parent), status consistency, LOE totals, completion parity.
+6. **Ordering** - Dependency-based document ordering for generated output.
+
+### Dependency & Epic Management
+- **Dependency Graph** - Add, remove, and visualize dependencies between stories.
+- **Circular Reference Detection** - Prevents invalid dependency cycles.
+- **Epic Hierarchy** - Stories grouped under epics (E0-E3 priority). Auto-assignment of ungrouped stories.
+- **Priority Inheritance** - Child stories cannot exceed parent epic priority.
+
+### Engineering Metrics & Analytics
+- **Velocity** - Commits, LOC, active days, stories completed per period.
+- **Quality** - Test coverage, lint issues, cyclomatic complexity, maintainability index.
+- **DORA Metrics** - Story velocity tier, quality gate pass rate, change failure rate.
+- **Activity Heatmap** - GitHub-style commit calendar in the TUI.
+
+### Interactive Terminal UI
+- **Story Table** - Multi-column sortable display with epic filtering.
+- **Detail Panel** - Sidebar showing full story metadata, tasks, and criteria.
+- **Real-time Search** - Filter stories with `Ctrl+/`, navigate matches with `n`/`p`.
+- **Follow Mode** - Auto-tracks the currently active story.
+- **Reports Screen** - Epic summaries, velocity charts, quality metrics.
+- **Live Reload** - Watches the docs directory and refreshes on file changes.
+
+## Quick Start
+
+```bash
+# Initialize nspec in your project (auto-detects stack)
+nspec init
+
+# Validate all specifications
+nspec validate
+
+# Generate consolidated NSPEC.md
+nspec generate
+
+# Dashboard with metrics
+nspec dashboard
+
+# Open interactive TUI
+nspec tui
+
+# Create your first spec
+nspec spec create --title "My Feature"
+```
+
+## Installation
+
+### Using pipx (recommended)
+```bash
+pipx install nspec
+```
+
+### Using pip
+```bash
+pip install nspec
+```
+
+### With MCP server support
+```bash
+pip install nspec[mcp]
+```
+
+### Using poetry
+```bash
+poetry add --group dev nspec
+```
+
+### Using uv
+```bash
+uv add --dev nspec
+```
+
+### From source
+```bash
+git clone https://github.com/Novabuiltdevv/nspec.git
+cd nspec
+poetry install
+```
+
+## Project Setup
+
+`nspec init` auto-detects your project stack and scaffolds the full nspec structure:
+
+```bash
+# Auto-detect everything
+nspec init
+
+# Specify CI platform explicitly
+nspec init --ci github
+
+# Custom docs directory
+nspec init --docs-root specifications/
+
+# Overwrite existing files
+nspec init --force
+```
+
+Generated structure:
+```
+project-root/
+├── .novabuilt.dev/nspec/config.toml  # Path config with commented defaults
+├── nspec.mk                          # Includable Makefile fragment
+└── docs/
+    ├── frs/active/TEMPLATE.md    # FR template
+    ├── impls/active/TEMPLATE.md  # IMPL template
+    └── completed/{done,superseded,rejected}/
+```
+
+### Makefile Integration
+
+Add the generated Makefile fragment to your project:
+
+```makefile
+include nspec.mk
+```
+
+This provides targets: `nspec.validate`, `nspec.generate`, `nspec.dashboard`, `nspec.tui`, `nspec.stats`, `nspec.check`.
+
+The `NSPEC` variable is auto-configured for your stack (e.g., `poetry run nspec`, `npx nspec`, `uv run nspec`).
+
+### CI/CD Integration
+
+`nspec init` generates CI configuration when it detects your platform:
+
+```bash
+nspec init --ci github      # .github/workflows/nspec.yml
+nspec init --ci cloudbuild   # cloudbuild.yaml
+nspec init --ci gitlab       # .gitlab-ci.yml
+```
+
+All CI templates validate specifications and generate NSPEC.md on every push/PR.
+
+## Configuration
+
+All nspec configuration lives in `.novabuilt.dev/nspec/config.toml`.
+
+### Config File Schema
+
+```toml
+[paths]
+feature_requests = "10-feature-requests"   # FR directory (relative to docs root)
+implementation = "11-implementation"        # IMPL directory (relative to docs root)
+completed = "12-completed"                 # Completed archive directory
+completed_done = "done"                    # Subdirectory for completed stories
+completed_superseded = "superseded"        # Subdirectory for superseded stories
+completed_rejected = "rejected"            # Subdirectory for rejected stories
+
+[defaults]
+epic = "001"                               # Default epic for --create-new
+```
+
+All values above are the built-in defaults. The generated config file comments out default values so you only see what you've customized.
+
+### Priority Order
+
+Configuration is resolved in this order (highest priority first):
+
+1. **CLI arguments** - `--docs-root`, `--epic`, etc.
+2. **Environment variables** - `NSPEC_FR_DIR`, `NSPEC_IMPL_DIR`, `NSPEC_COMPLETED_DIR`, etc.
+3. **Config file** - `.novabuilt.dev/nspec/config.toml`
+4. **Built-in defaults** - Hardcoded fallbacks
+
+### Environment Variables
+
+| Variable | Config Equivalent | Description |
+|----------|-------------------|-------------|
+| `NSPEC_FR_DIR` | `paths.feature_requests` | FR directory path |
+| `NSPEC_IMPL_DIR` | `paths.implementation` | IMPL directory path |
+| `NSPEC_COMPLETED_DIR` | `paths.completed` | Completed archive path |
+
+### Spec & Epic Tracking
+
+nspec persists active work state in `.novabuilt.dev/nspec/`:
+
+| File | Purpose |
+|------|---------|
+| `.novabuilt.dev/nspec/state.json` | Active spec ID, epic, and session state (written by `activate` / `session start`) |
+| `.novabuilt.dev/nspec/config.toml` | Project configuration (paths, defaults) |
+
+These files enable tools like the MCP server, status line, and session management to know what you're working on without CLI flags.
+
+## MCP Server
+
+nspec includes a built-in [MCP](https://modelcontextprotocol.io/) (Model Context Protocol) server for direct integration with AI coding assistants. Instead of the assistant parsing CLI output, it calls structured tools that return typed data.
+
+### Installation
+
+```bash
+pip install nspec[mcp]
+```
+
+### Project-Local Configuration (recommended)
+
+Add a `.mcp.json` to your project root so any MCP-compatible tool picks up nspec automatically:
+
+```json
+{
+  "mcpServers": {
+    "nspec": {
+      "command": "nspec-mcp",
+      "args": []
+    }
+  }
+}
+```
+
+If you're using poetry or uv, point to your managed entrypoint:
+
+```json
+{
+  "mcpServers": {
+    "nspec": {
+      "command": "poetry",
+      "args": ["run", "nspec-mcp"]
+    }
+  }
+}
+```
+
+### Claude Code Configuration
+
+Alternatively, add to your project's `.claude/settings.json` or global Claude Code settings:
+
+```json
+{
+  "mcpServers": {
+    "nspec": {
+      "command": "nspec-mcp",
+      "args": []
+    }
+  }
+}
+```
+
+### Available Tools
+
+**Query tools** (read-only):
+
+| Tool | Description |
+|------|-------------|
+| `epics` | List all epics with progress percentages |
+| `show` | Show full spec details (FR + IMPL combined) |
+| `next_spec` | Find highest-priority unblocked spec |
+| `get_epic` | Get currently active epic ID |
+| `validate` | Run 6-layer validation engine |
+| `session_start` | Initialize work session (shows pending tasks, blockers, suggested action) |
+| `blocked_specs` | List specs with blocked tasks or paused status |
+
+**Mutation tools** (modify spec files):
+
+| Tool | Description |
+|------|-------------|
+| `task_complete` | Mark IMPL task as complete (with test gate) |
+| `criteria_complete` | Mark acceptance criterion as complete (with test gate) |
+| `activate` | Set spec to Active and persist as current |
+| `advance` | Advance spec to next logical status |
+| `complete` | Complete and archive spec to done |
+| `create_spec` | Create new FR+IMPL pair with auto-assigned ID |
+| `set_priority` | Change priority (cascades to dependents) |
+| `add_dep` | Add dependency between specs |
+| `remove_dep` | Remove dependency |
+| `task_block` | Mark a task as blocked with a reason |
+| `task_unblock` | Remove blocked marker from a task |
+| `park` | Pause a spec (sets IMPL to Paused) |
+
+**Session tools** (cross-session state):
+
+| Tool | Description |
+|------|-------------|
+| `session_save` | Persist session state for handoff (auto-parks after 3 failures) |
+| `session_resume` | Load saved session state for a spec |
+| `session_clear` | Delete session state file |
+
+All tools accept an optional `docs_root` parameter (default: `./docs`).
+
+### Test Gate
+
+`task_complete` and `criteria_complete` run `make test-quick` before marking items as done. This ensures tests pass before any task is checked off. Pass `run_tests=false` to skip the gate.
+
+### SSE Transport
+
+For web clients or non-stdio environments, use SSE transport:
+
+```bash
+nspec-mcp --sse
+```
+
+## CLI Reference
+
+nspec supports both subcommands (`nspec validate`) and legacy flags (`nspec --validate`). Subcommands are the preferred form.
+
+### Project Setup
+| Command | Description |
+|---------|-------------|
+| `nspec init` | Scaffold nspec project (auto-detects stack) |
+| `nspec init --ci github` | Scaffold with GitHub Actions CI |
+| `nspec init --force` | Overwrite existing files |
+
+### Validation & Output
+| Command | Description |
+|---------|-------------|
+| `nspec validate` | Run all 6 validation layers |
+| `nspec validate criteria --id ID` | Validate acceptance criteria for a spec |
+| `nspec generate` | Generate NSPEC.md and NSPEC_COMPLETED.md |
+| `nspec dashboard` | Generate + show engineering metrics |
+| `nspec stats` | Show velocity, quality, and DORA metrics |
+| `nspec statusline` | Compact status for editor integration |
+
+### Spec Management (`nspec spec`)
+| Command | Description |
+|---------|-------------|
+| `nspec spec create --title "T" [--priority P1] [--epic ID]` | Create FR+IMPL pair |
+| `nspec spec delete --id ID [--force]` | Delete FR+IMPL files |
+| `nspec spec complete --id ID` | Archive to completed/done |
+| `nspec spec supersede --id ID` | Archive to completed/superseded |
+| `nspec spec reject --id ID` | Archive to completed/rejected |
+| `nspec spec finalize --id ID` | Show spec completion status |
+| `nspec spec progress [--id ID]` | Task and acceptance criteria progress |
+| `nspec spec deps --id ID` | List direct dependencies |
+| `nspec spec context --id ID` | LLM-friendly YAML context for an epic |
+
+### Dependencies (`nspec dep`)
+| Command | Description |
+|---------|-------------|
+| `nspec dep add --to ID --dep DEP` | Add dependency |
+| `nspec dep remove --to ID --dep DEP` | Remove dependency |
+| `nspec dep move --to EPIC --dep ID` | Move spec to epic |
+
+### Tasks & Properties (`nspec task`)
+| Command | Description |
+|---------|-------------|
+| `nspec task check --id ID --task-id 1.1` | Mark task complete |
+| `nspec task criteria --id ID --criteria-id AC-F1` | Mark criterion complete |
+| `nspec task set-priority --id ID --priority P0` | Change spec priority |
+| `nspec task set-loe --id ID --loe "3d"` | Set level of effort |
+| `nspec task next-status --id ID` | Advance IMPL to next status |
+| `nspec task set-status --id ID --fr-status N --impl-status N` | Set status codes directly |
+
+### Session Management (`nspec session`)
+| Command | Description |
+|---------|-------------|
+| `nspec session start --id ID` | Initialize work session |
+| `nspec session log --id ID --note "text"` | Append execution notes |
+| `nspec session handoff --id ID` | Generate session handoff summary |
+| `nspec session sync --id ID [--force]` | Sync spec state across files |
+| `nspec session files [--since-commit REF]` | List modified files |
+
+### Architecture Decision Records (`nspec adr`)
+| Command | Description |
+|---------|-------------|
+| `nspec adr create --title "Decision"` | Create ADR (FR-900-999 range) |
+| `nspec adr list` | List all ADRs with status |
+
+## Document Formats
+
+### FR (Feature Request)
+```markdown
+# FR-001: Feature Title
+
+**Priority:** 🔥 P0
+**Status:** 🔵 Active
+**Type:** Feature
+deps: [002, 003]
+
+## Overview
+Feature description...
+
+## Acceptance Criteria
+- [ ] AC-F1: First criterion
+- [x] AC-F2: Second criterion (completed)
+- [~] AC-F3: Third criterion (obsolete)
+```
+
+### IMPL (Implementation)
+```markdown
+# IMPL-001: Feature Title
+
+**Status:** 🔵 Active
+**LOE:** 3d
+
+## Tasks
+- [ ] 1. First task
+- [x] 2. Second task (completed)
+  - [ ] 2.1. Subtask
+  - [→220] 2.2. Delegated to story 220
+```
+
+### ADR (Architecture Decision Record)
+ADRs use the FR format in the 900-999 ID range with statuses: DRAFT, PROPOSED, ACCEPTED, DEPRECATED, SUPERSEDED.
+
+## Status Codes
+
+| FR Status | IMPL Status |
+|-----------|-------------|
+| 🟡 Proposed | 🟡 Planning |
+| 🔵 In Design | 🔵 Active |
+| 🔵 Active | 🧪 Testing |
+| ✅ Completed | 🟠 Ready |
+| ❌ Rejected | ⏳ Paused |
+| 🔄 Superseded | ⚪ Hold |
+| ⏳ Deferred | |
+
+## Priority Levels
+
+| Stories | Epics |
+|---------|-------|
+| 🔥 P0 Critical | 🚀 E0 Critical |
+| 🟠 P1 High | 🎯 E1 High |
+| 🟡 P2 Medium | 🎪 E2 Medium |
+| 🔵 P3 Low | 🎨 E3 Low |
+
+## Development
+
+```bash
+# Install dependencies
+poetry install
+
+# Run tests
+make test
+
+# Fast tests (fail-fast, no coverage)
+make test-quick
+
+# Coverage report
+make test-cov
+
+# All quality checks (format, lint, typecheck)
+make check
+
+# Full CI pipeline
+make ci
+```
+
+## Publishing
+
+```bash
+./release.sh
+```
+
+See [PUBLISHING.md](PUBLISHING.md) for detailed instructions.
+
+## Contributing
+
+Contributions welcome! Please feel free to submit a Pull Request.
+
+## License
+
+MIT License - see [LICENSE](LICENSE) for details.
+
+## Credits
+
+Built with:
+- [Poetry](https://python-poetry.org/) - Dependency management
+- [Textual](https://textual.textualize.io/) - Terminal UI framework
+- [Rich](https://rich.readthedocs.io/) - Terminal formatting
+- [MCP](https://modelcontextprotocol.io/) - Model Context Protocol
+
