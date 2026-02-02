@@ -1,0 +1,114 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+# If not already done, install task with
+# sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b ~/.local/bin
+# windows: winget install task.task or download from https://github.com/go-task/task/releases
+version: '3'
+
+tasks:
+  install:uv:
+    internal: true
+    cmds:
+      - cmd: powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+        platforms: ["windows"]
+      - cmd: curl -LsSf https://astral.sh/uv/install.sh | sh
+        platforms: ["linux", "darwin"]
+    status:
+      - 'command -v uv'
+
+  install:trivy:
+    internal: true
+    cmds:
+      - cmd: winget install aquasecurity.trivy
+        platforms: ["windows"]
+      - cmd: curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin
+        platforms: ["linux", "darwin"]
+    status:
+      - 'command -v trivy'
+
+  install:pre-commit:
+    internal: true
+    deps:
+      - install:uv
+    cmds:
+      - uv tool install prek
+    status:
+      - 'command -v prek'
+
+  init:
+    desc: Initialize the environment and install pre-commit hooks
+    deps:
+      - install:pre-commit
+    cmds:
+      - uv sync
+      - prek install
+
+  update:
+    desc: Update dependencies and pre-commit hooks
+    deps:
+      - install:pre-commit
+    cmds:
+      - uv lock --upgrade
+      - prek autoupdate
+
+  lint:
+    desc: Run linters
+    deps:
+      - install:pre-commit
+    cmds:
+      - prek run --all-files
+
+  security:
+    desc: Run vulnerability checks on project dependencies
+    deps:
+      - install:trivy
+    cmds:
+      - trivy fs --exit-code 1 --scanners vuln --dependency-tree uv.lock
+    sources:
+      - uv.lock
+
+  mypy:
+    desc: Run type checking
+    deps:
+      - install:uv
+    cmds:
+      - cmd: uv run mypy pycivil
+    sources:
+      - pycivil/**/*.py
+      - pyproject.toml
+
+  test:
+    desc: Run the tests
+    cmds:
+      - uv sync --group test
+      - uv run pytest -m "not needLatex and not codeaster" {{.CLI_ARGS}} --cov -v
+
+  test-with-latex:
+    desc: Run the tests with Latex
+    cmds:
+      - uv run pytest -m needLatex {{.CLI_ARGS}}  --cov -v
+
+  test-with-aster:
+    desc: Run the tests with code_aster
+    cmds:
+      - uv run pytest -m codeaster {{.CLI_ARGS}}  --cov -v
+
+  test-docker:
+    desc: Run the tests inside docker
+    cmds:
+      - docker compose up -d
+      - docker compose exec -ti pycivile /bin/bash -c 'pip install pytest pytest-mock mongomock httpx && pytest -v tests{{.CLI_ARGS}} --in-container'
+
+  default:
+    cmds:
+      - task: lint
+      - task: test
+      - task: mypy
+      - task: security
+
+  docs:
+    desc: Display the documentation
+    deps:
+      - install:uv
+    cmds:
+      - uv run --only-group docs mkdocs serve
+

@@ -1,0 +1,69 @@
+DEBUT(LANG='FR')
+
+
+mesh1 = LIRE_MAILLAGE(identifier='0:1',
+                      UNITE=20)
+
+model_NL = AFFE_MODELE(identifier='1:1',
+                       AFFE=_F(MODELISATION='PLAN',
+                               PHENOMENE='THERMIQUE',
+                               TOUT='OUI'),
+                       MAILLAGE=mesh1)
+
+Cv00 = DEFI_FONCTION(identifier='2:1',
+                     NOM_PARA='TEMP',
+                     PROL_DROITE='CONSTANT',
+                     PROL_GAUCHE='CONSTANT',
+                     VALE=(20.0, 2070000.0, 99.0, 2070000.0, 100.0, 3381000.0, 115.0, 3381000.0, 200.0, 2254000.0, 400.0, 2403500.0, 1200.0, 2226399.0))
+
+FIRERWS = DEFI_FONCTION(identifier='3:1',
+                        NOM_PARA='INST',
+                        PROL_DROITE='CONSTANT',
+                        PROL_GAUCHE='CONSTANT',
+                        VALE=(0.0, 20.0, 180.0, 890.0, 300.0, 1140.0, 600.0, 1200.0, 1800.0, 1300.0, 3600.0, 1350.0, 5400.0, 1300.0, 7200.0, 1200.0, 10800.0, 1200.0))
+
+CONDMIN = DEFI_FONCTION(identifier='4:1',
+                        NOM_PARA='TEMP',
+                        PROL_DROITE='CONSTANT',
+                        PROL_GAUCHE='CONSTANT',
+                        VALE=(20.0, 1.333, 100.0, 1.2297, 115.0, 1.2111, 200.0, 1.1108, 400.0, 0.9072, 1200.0, 0.5488))
+
+mater_NL = DEFI_MATERIAU(identifier='5:1',
+                         THER_NL=_F(LAMBDA=CONDMIN,
+                                    RHO_CP=Cv00))
+
+fieldma1_NL = AFFE_MATERIAU(identifier='6:1',
+                            AFFE=_F(GROUP_MA=('PLATEQ', ),
+                                    MATER=(mater_NL, )),
+                            MODELE=model_NL)
+
+listr0 = DEFI_LIST_REEL(identifier='7:1',
+                        DEBUT=0.0,
+                        INTERVALLE=_F(JUSQU_A=10800.0,
+                                      PAS=600.0))
+
+null = DEFI_CONSTANTE(identifier='8:1',
+                      VALE=0.0)
+
+#load_NL = AFFE_CHAR_THER_F(identifier='9:1',
+#                           MODELE=model_NL,
+#                           TEMP_IMPO=_F(GROUP_MA=('EDGE_TOP', 'EDGE_LEFT', 'EDGE_RIGHT'),
+#                                        TEMP=FIRERWS))
+
+load_NL1 = AFFE_CHAR_THER_F(identifier='9:1',
+                           MODELE=model_NL,
+                           TEMP_IMPO=_F(GROUP_MA=('BOTTOM'),
+                                        TEMP=FIRERWS))
+
+resther0 = THER_NON_LINE(identifier='10:1',
+                         CHAM_MATER=fieldma1_NL,
+                         ETAT_INIT=_F(VALE=20.0),
+                         EXCIT=_F(CHARGE=load_NL1),
+                         INCREMENT=_F(LIST_INST=listr0),
+                         MODELE=model_NL)
+
+IMPR_RESU(identifier='11:1',
+          RESU=_F(RESULTAT=resther0),
+          UNITE=80)
+
+FIN()
