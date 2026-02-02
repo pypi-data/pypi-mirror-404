@@ -1,0 +1,54 @@
+## ncBacktester
+
+ncBacktester is a small, opinionated Python package for backtesting simple long-only strategies driven by a `Hold_Signal` column on OHLCV data. It is designed for clarity and education rather than exhaustive feature coverage.
+
+**Quick summary:** feed time-series OHLCV data with a `Hold_Signal` (1 = hold, 0 = not hold), instantiate `Backtest`, call `.run()` and examine metrics and plots.
+
+**Install (development)**
+
+```bash
+pip install ncBacktester
+```
+
+**Minimal Quick Start**
+
+```python
+import pandas as pd
+from ncBacktester.backtest import Backtest
+
+# data must include: Open, High, Low, Close, Volume, Hold_Signal
+data = pd.read_csv('your_data.csv', parse_dates=['Date'], index_col='Date')
+
+bt = Backtest(data=data, initial_capital=10000.0, stop_loss_pct=0.05, commission=0.001)
+results = bt.run()
+
+print(results['metrics'])          # key performance metrics
+results['equity_curve'].plot()     # equity curve
+bt.plot(save_path='backtest.png')  # static plots
+```
+
+**Required data format**
+- Columns: `Open`, `High`, `Low`, `Close`, `Volume`, `Hold_Signal`.
+- `Hold_Signal` should be 0 or 1; changes 0→1 trigger buys, 1→0 trigger sells.
+
+**Main components**
+- `Backtest` ([ncBacktester/ncBacktester/backtest.py](ncBacktester/ncBacktester/backtest.py)): orchestrates the workflow — validate data, initialize components, execute strategy, compute metrics, and prepare plots.
+- `StrategyExecutor` ([ncBacktester/ncBacktester/strategy_executor.py](ncBacktester/ncBacktester/strategy_executor.py)): implements trade sizing and execution logic (uses `Close` prices and accounts for `commission`).
+- `MetricsCalculator` ([ncBacktester/ncBacktester/metrics.py](ncBacktester/ncBacktester/metrics.py)): computes performance statistics (Sharpe, Sortino, CAGR, drawdowns, etc.) from trades and the equity curve.
+- `StopLossManager` ([ncBacktester/ncBacktester/stop_loss.py](ncBacktester/ncBacktester/stop_loss.py)): supports fixed and trailing stop loss behaviour during the backtest.
+- `Plotter` ([ncBacktester/ncBacktester/plotter.py](ncBacktester/ncBacktester/plotter.py)): generates static plots showing price, trades, equity curve and drawdowns.
+
+**Behavior & assumptions**
+- Buys and sells are executed at the bar `Close` where the `Hold_Signal` changes.
+- On a buy the framework purchases as many shares as possible with available capital; on sell it liquidates the full position.
+- Stop loss (fixed or trailing) is optional and configured via `Backtest(stop_loss_pct=..., trailing_stop_pct=...)`.
+
+**Advanced usage**
+- If you want to reuse `StrategyExecutor` or `StopLossManager` directly, import them from their modules and instantiate with the same parameters used by `Backtest`.
+
+
+
+**Contributing & license**
+- This project is intended for learning; contributions and issues are welcome.
+- Licensed under the MIT License.
+
