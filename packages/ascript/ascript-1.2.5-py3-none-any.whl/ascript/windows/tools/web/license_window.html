@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AScript 引擎</title>
+    <link href="./libs/bootstrap/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --vs-bg-main: #1e1e1e;
+            --vs-bg-side: #252526;
+            --vs-border: #333333;
+            --vs-accent: #007acc;
+            --vs-text: #888888;
+            --vs-text-light: #cccccc;
+            --vs-input-bg: #3c3c3c;
+            --vs-error: #f48771;
+        }
+
+        html, body {
+            height: 100%; margin: 0; padding: 0;
+            background-color: var(--vs-bg-main);
+            color: var(--vs-text-light);
+            font-family: 'Microsoft YaHei', 'Segoe UI', system-ui, sans-serif;
+            overflow: hidden; display: flex; flex-direction: column;
+            user-select: none;
+        }
+
+        header {
+            background-color: var(--vs-bg-side);
+            padding: 20px 28px;
+            border-bottom: 1px solid var(--vs-border);
+            flex-shrink: 0;
+        }
+
+        #app-name {
+            font-size: 1.1rem; font-weight: 600; color: #fff;
+            margin: 0; letter-spacing: 0.5px;
+        }
+
+        main { flex: 1; padding: 28px; overflow-y: auto; display: flex; flex-direction: column; }
+
+        .meta-group { display: flex; gap: 40px; margin-bottom: 10px; flex-shrink: 0; }
+        .meta-label { font-size: 11px; color: #555; text-transform: uppercase; display: block; margin-bottom: 6px; font-weight: bold; }
+        .meta-value { font-family: 'Consolas', monospace; font-size: 14px; color: var(--vs-accent); }
+
+        #desc-container {
+            flex: 1;
+            font-size: 14px;
+            line-height: 1.8;
+            color: #999;
+            overflow-y: auto;
+            margin-bottom: 20px;
+            padding-top: 0;
+            padding-right: 10px;
+        }
+
+        #desc-container b, #desc-container strong { color: #ddd; font-weight: 600; }
+        #desc-container p { margin: 0 0 1.2rem 0; }
+
+        .auth-wrapper { margin-top: auto; padding-top: 20px; border-top: 1px solid var(--vs-border); }
+
+        .vs-input-group {
+            display: flex; background: var(--vs-input-bg);
+            border: 1px solid transparent; height: 36px; border-radius: 2px;
+            transition: border 0.2s; align-items: stretch;
+        }
+        .vs-input-group.error { border-color: var(--vs-error) !important; }
+        .vs-input-group:focus-within { border-color: var(--vs-accent); }
+
+        #license-key {
+            background: transparent; border: none; color: white;
+            padding: 0 12px; flex: 1; font-size: 13px; outline: none;
+        }
+
+        .btn-vs-action {
+            background: var(--vs-accent); color: white; border: none;
+            padding: 0 16px; font-size: 12px; cursor: pointer;
+            display: flex; flex-direction: row; align-items: center;
+            justify-content: center; min-width: 90px;
+        }
+
+        .btn-link-vs {
+            color: var(--vs-accent); background: none; border: none;
+            font-size: 11px; cursor: pointer; padding: 0; margin-left: 15px;
+            text-decoration: underline; opacity: 0.8;
+        }
+        .btn-link-vs:hover { opacity: 1; }
+
+        #card-expire {
+            color: #aaa;
+            font-size: 11px;
+            margin-left: 10px;
+            padding: 2px 6px;
+            background: #2d2d2d;
+            border-radius: 2px;
+            font-family: 'Consolas', monospace;
+        }
+
+        .spinner {
+            width: 12px; height: 12px; border: 2px solid rgba(255,255,255,0.2);
+            border-radius: 50%; border-top-color: #fff;
+            animation: spin 0.8s linear infinite; margin-right: 8px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        footer { flex-shrink: 0; }
+        .btn-launch {
+            width: 100%; border: none; padding: 16px;
+            font-weight: 600; text-transform: uppercase; font-size: 13px;
+            background: #333; color: #666; transition: 0.3s;
+        }
+        .btn-launch:not(:disabled) { background: var(--vs-accent); color: white; cursor: pointer; }
+
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-thumb { background: #333; }
+    </style>
+</head>
+<body>
+
+<header>
+    <div class="d-flex justify-content-between align-items-center">
+        <h1 id="app-name">引擎系统</h1>
+        <div id="price-tag" style="font-size: 10px; padding: 2px 8px; border: 1px solid #333; color: #555;">...</div>
+    </div>
+</header>
+
+<main>
+    <div class="meta-group">
+        <div><span class="meta-label">应用 ID</span><span id="app-id" class="meta-value">--</span></div>
+        <div><span class="meta-label">开发作者</span><span id="app-auth" class="meta-value">--</span></div>
+    </div>
+
+    <div id="desc-container">正在检索应用配置信息...</div>
+
+    <div id="auth-section" class="auth-wrapper" style="display: none;">
+        <div id="active-info" style="display: none; margin-bottom: 12px;">
+            <div class="d-flex align-items-center justify-content-between">
+                <div>
+                    <span style="color: #4ade80; font-size: 12px;">● 授权验证成功</span>
+                    <span id="card-expire"></span>
+                </div>
+                <button class="btn-link-vs" onclick="resetAuth()">更换激活码</button>
+            </div>
+        </div>
+
+        <div id="input-area">
+            <div class="vs-input-group" id="input-container">
+                <input type="text" id="license-key" placeholder="输入激活码以解锁专业功能" autocomplete="off">
+                <button class="btn-vs-action" id="activate-btn" onclick="handleActivate()">
+                    <span id="btn-content" style="display:flex; align-items:center;">激活</span>
+                </button>
+            </div>
+            <div id="expire-msg" class="text-danger mt-2" style="display:none; font-size: 11px;">验证失败：授权码无效或已过期。</div>
+        </div>
+    </div>
+</main>
+
+<footer>
+    <button id="enter-btn" class="btn-launch" disabled onclick="handleEnter()">立即启动系统</button>
+</footer>
+
+<script>
+    async function initPage() {
+        try {
+            const appData = await window.callPython("get_app_info");
+            document.getElementById('app-name').innerText = appData.name;
+            document.getElementById('app-auth').innerText = appData.auth;
+            document.getElementById('app-id').innerText = appData.id;
+            document.getElementById('desc-container').innerHTML = appData.desc;
+
+            const priceTag = document.getElementById('price-tag');
+            if (appData.is_free === 1) {
+                priceTag.innerText = "社区免费版";
+                priceTag.style.color = "#28a745";
+                document.getElementById('enter-btn').disabled = false;
+            } else {
+                priceTag.innerText = "专业授权版";
+                priceTag.style.color = "#ffbf00";
+                document.getElementById('auth-section').style.display = 'block';
+                const cachedKey = await window.callPython("get_cached_key");
+                if (cachedKey) {
+                    document.getElementById('license-key').value = cachedKey;
+                    handleActivate(cachedKey);
+                }
+            }
+        } catch(e) { console.error(e); }
+    }
+
+    async function handleActivate(keyOverride = null) {
+        const keyInput = document.getElementById('license-key');
+        const inputContainer = document.getElementById('input-container');
+        const btn = document.getElementById('activate-btn');
+        const btnContent = document.getElementById('btn-content');
+        const expireMsg = document.getElementById('expire-msg');
+        const key = keyOverride || keyInput.value.trim();
+
+        if (!key) {
+            inputContainer.classList.add('error');
+            setTimeout(() => inputContainer.classList.remove('error'), 1000);
+            return;
+        }
+
+        // 重置状态
+        btn.disabled = true;
+        btnContent.innerHTML = '<div class="spinner"></div><span>验证中</span>';
+        expireMsg.style.display = 'none';
+        inputContainer.classList.remove('error');
+
+        try {
+            // 这里获取的是 Python activate_key 返回的原始对象 (包含 code 和 data)
+            const res = await window.callPython("activate_key", key);
+
+            // 核心逻辑：只有 code == 1 且 data.status == 1 才是激活成功
+            if (res && res.code === 1 && res.data && res.data.status === 1) {
+                document.getElementById('active-info').style.display = 'block';
+                document.getElementById('input-area').style.display = 'none';
+                document.getElementById('card-expire').innerText = "到期时间: " + res.data.expire;
+                document.getElementById('enter-btn').disabled = false;
+                expireMsg.style.display = 'none';
+            } else {
+                // 如果 status 不为 1 (例如过期 status=2，或者错误 code=0)
+                inputContainer.classList.add('error');
+                expireMsg.style.display = 'block';
+
+                // 优先展示后端返回的错误消息
+                let errorText = "验证失败：授权码无效或已过期。";
+                if (res && res.data && res.data.msg) errorText = "验证失败：" + res.data.msg;
+                else if (res && res.msg) errorText = "提示：" + res.msg;
+
+                expireMsg.innerText = errorText;
+                document.getElementById('enter-btn').disabled = true;
+                document.getElementById('active-info').style.display = 'none';
+            }
+        } catch (e) {
+            expireMsg.innerText = "异常：无法连接验证服务器";
+            expireMsg.style.display = 'block';
+        } finally {
+            btn.disabled = false;
+            btnContent.innerHTML = '激活';
+        }
+    }
+
+    function resetAuth() {
+        document.getElementById('active-info').style.display = 'none';
+        document.getElementById('input-area').style.display = 'block';
+        document.getElementById('enter-btn').disabled = true;
+        document.getElementById('expire-msg').style.display = 'none';
+    }
+
+    function handleEnter() { window.callPython("start_app"); }
+    window.addEventListener('onPythonReady', initPage);
+</script>
+</body>
+</html>

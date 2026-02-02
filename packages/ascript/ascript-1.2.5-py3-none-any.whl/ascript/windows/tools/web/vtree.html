@@ -1,0 +1,496 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>控件检索工具 AScript-Windows</title>
+    <meta charset="utf-8">
+    <meta content="width=device-width, initial-scale=1, shrink-to-fit=no" name="viewport">
+    <meta content="" name="description">
+    <meta content="Webpixels" name="author">
+
+    <head>
+        <script>
+            (function () {
+                // 立即检测系统主题
+                const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                const theme = isDark ? 'dark' : 'light';
+
+                // 在页面还没渲染 Body 之前，就给 html 加上主题属性
+                document.documentElement.setAttribute('data-bs-theme', theme);
+
+                // 预设背景色，防止内容加载延迟时的白底
+                document.documentElement.style.backgroundColor = isDark ? '#212529' : '#ffffff';
+            })();
+        </script>
+
+        <link rel="stylesheet" href="css/bootstrap.min.css">
+    </head>
+    <style>
+        .attr-title {
+            min-width: 100px;
+        }
+
+        @keyframes hidePreloader {
+            0% {
+                width: 100%;
+                height: 100%;
+            }
+
+            100% {
+                width: 0;
+                height: 0;
+            }
+        }
+
+        body>div.preloader {
+            position: fixed;
+            width: 100%;
+            height: 100%;
+            z-index: 1071;
+            opacity: 0;
+            transition: opacity .5s ease;
+            overflow: hidden;
+            pointer-events: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        body:not(.loaded)>div.preloader {
+            opacity: 1;
+        }
+
+        body:not(.loaded) {
+            overflow: hidden;
+        }
+
+        body.loaded>div.preloader {
+            animation: hidePreloader .5s linear .5s forwards;
+        }
+    </style>
+
+    <!-- Favicon -->
+    <link href="./img/ico/favicon.png" rel="icon" type="image/png"><!-- Font Awesome -->
+    <!-- Bootstrap 的 CSS 文件 -->
+    <link href="./libs/bootstrap/css/bootstrap.min.css" rel="stylesheet">
+    <link href="css/screen.css" rel="stylesheet">
+    <link href="./libs/bootstrap-icons/font/bootstrap-icons.css" rel="stylesheet">
+
+    <link href="./libs/treeview/css/jquery.treeview.css" rel="stylesheet" type="text/css" />
+    <link href="./libs/jquery-menu/jquery.contextMenu.min.css" rel="stylesheet" type="text/css">
+
+    <link href="./libs/jquery-zTree/css/zTreeStyle.css" rel="stylesheet" type="text/css">
+    <link href="./css/viewtree.css" rel="stylesheet" type="text/css">
+
+
+</head>
+
+<body style="width: 100%; height: 100vh; overflow: auto;">
+
+    <div class="sel_attr_fixer shadow-info" id="sel_attr_fixer" style="width: 50%;">
+        <div class="toast-header">
+            <strong class="mr-auto" id="sel_attr_fixer_title">inputType</strong>
+
+            <button class="btn btn-sm btn-danger mr-2" data-dismiss="toast" id="sel_attr_fixer_del" type="button">
+                删除该属性
+            </button>
+            <button aria-label="Close" class="ml-2 mb-1 close" data-dismiss="toast" id="sel_attr_fixer_close"
+                type="button">
+                <span aria-hidden="true">&times;</span>
+            </button>
+        </div>
+        <div class="toast-body">
+            <div class="input-group input-group-sm  mb-1">
+                <input aria-describedby="button-addon4" aria-label=" with two button addons" class="form-control"
+                    id="sel_attr_fixer_value" placeholder="" type="text">
+                <div class="input-group-append">
+                    <button class="btn btn-info" id="sel_attr_fixer_submit" type="button"><i data-feather="check"></i>
+                        修改
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- <section class="p-0 m-0"> -->
+    <div style="width: 100%; height: 100%;display: flex; flex-direction: row;">
+        <div style="flex: 1; height: 100vh; overflow: auto;  padding: 0; display: flex; flex-direction: column;">
+            <div class="row border-bottom align-items-center py-2 px-0"
+                style="background-color: var(--bs-body-tertiary-bg); margin: 0; min-height: 50px;">
+
+                <div class="toolbar-wrapper w-100">
+                    <div class="container-fluid p-0">
+                        <div class="row g-2 align-items-center m-0">
+
+                            <div class="col-auto">
+                                <div class="input-group input-group-sm shadow-sm" style="min-width: 300px;"> <span
+                                        class="input-group-text border-secondary-subtle"
+                                        style="background-color: var(--bs-secondary-bg);">
+                                        窗口
+                                    </span>
+                                    <button aria-expanded="false"
+                                        class="btn btn-outline-secondary dropdown-toggle text-start flex-grow-1 border-secondary-subtle"
+                                        data-bs-toggle="dropdown" id="windowSelector" type="button"
+                                        style="background-color: var(--bs-body-bg); color: var(--bs-body-color); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                        -- 请选择探测窗口 --
+                                    </button>
+                                    <button class="btn btn-outline-secondary border-secondary-subtle" type="button"
+                                        id="refreshWinBtn" onclick="refreshWindows()" title="刷新窗口列表"
+                                        style="background-color: var(--bs-body-bg);">
+                                        <i class="bi bi-arrow-clockwise" id="refreshIcon"></i>
+                                    </button>
+                                    <ul class="dropdown-menu shadow" id="windowList"></ul>
+                                </div>
+                            </div>
+
+                            <div class="col-auto">
+                                <div class="input-group input-group-sm shadow-sm" style="width: 140px;"> <span
+                                        class="input-group-text border-secondary-subtle"
+                                        style="background-color: var(--bs-secondary-bg);">深度</span>
+                                    <input class="form-control border-secondary-subtle text-center" id="depthInput"
+                                        min="0" type="number" value="0"
+                                        style="background-color: var(--bs-body-bg); color: var(--bs-body-color);">
+                                    <span class="input-group-text border-secondary-subtle" data-bs-toggle="tooltip"
+                                        title="最大探测深度, 0 代表不限制深度"
+                                        style="cursor: help; background-color: var(--bs-secondary-bg);">
+                                        <i class="bi bi-question-circle"></i>
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div class="col-auto">
+                                <button class="btn btn-primary btn-sm px-4 fw-bold shadow-sm" onclick="startAnalyze()">
+                                    <i class="bi bi-play-fill"></i> 开始探测
+                                </button>
+                            </div>
+
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+
+            <div class="container">
+
+            </div>
+
+
+            <div id="sel_result" style="display: none;">
+                <div class="alert bg-primary" role="alert" style="display: flex; flex-direction: row; ">
+
+                    <button class="btn btn-danger" data-placement="bottom" data-toggle="tooltip" id="del_selector_res"
+                        title="关闭" type="button">
+                        <i data-feather="x"></i>
+                    </button>
+
+                    <button class="btn btn-success ml-2" data-placement="bottom" data-toggle="tooltip"
+                        id="del_selector_copy" title="复制Selector" type="button">
+                        <i data-feather="copy"></i>
+                    </button>
+
+
+                    <div class="ml-3" style="display: flex; flex-direction: column;">
+                        <span class="text-light" id="current_sel"></span>
+                        <span class="text-white" id="current_sel_result_count">共找到3个符合条件的结果</span>
+
+
+                    </div>
+                </div>
+            </div>
+
+            <!-- Navbar nav -->
+            <div style="display: flex;flex-direction: row;  overflow: scroll; flex:1">
+                <div id="image_container"
+                    style="position: relative; width: 30%; height: 100%; background-color: var(--bs-tertiary-bg);">
+                    <div class="img-view" id="phoneimgView">
+                        <img class="cellphone-screen" id="cellphoneScreen" style="width: 100%; height: 100%;">
+                    </div>
+                    <div class="right_bar"
+                        style="background-color: var(--bs-body-bg); border-left: 1px solid var(--bs-border-color);">
+                        <span><i class="bottom_bar_change" data-feather="move"></i></span>
+                    </div>
+                </div>
+
+                <div id="viewtree_contain" style="flex:1;overflow: auto; padding: 10px; padding-bottom: 20px;">
+                    <div id="nt_box"
+                        style="display: none; background: #fff7e6; border: 1px solid #ffd591; padding: 5px 10px; margin-bottom: 10px; border-radius: 4px; display: none; align-items: center; font-size: 12px; color: #854331;">
+                        <span id="close_nt" title="关闭并返回全量树"
+                            style="cursor: pointer; font-weight: bold; margin-right: 10px; font-size: 16px;">×</span>
+                        <span id="nt_msg" style="flex: 1;">共找到 0 个控件</span>
+                        <span id="copy_nt_code" title="复制Selector代码"
+                            style="cursor: pointer; color: #1890ff; text-decoration: underline;">复制代码</span>
+                    </div>
+                    <ul class="ztree" id="treeDemo"></ul>
+                </div>
+            </div>
+        </div>
+        <div class="phoneimgview_board shadow-lg" id="phoneimgview_board" style="width: 0%; height: 0%; display: none;">
+            <!-- <div style="height: 25px;" >x</div> -->
+            <div class="bottom_bar">
+                <span id="bottom_bar_change"><i class="bottom_bar_change" data-feather="maximize"></i></span>
+            </div>
+
+        </div>
+
+        <div class="attrView shadow-lg bg-body-tertiary border-start" id="attrView"
+            style="position: absolute; right: 0; top: 0; bottom: 0; width: 400px; overflow: hidden; z-index: 1000; flex-direction: column;">
+
+            <div class="d-flex align-items-center"
+                style="position: absolute; right: 15px; top: 15px; z-index: 1010; pointer-events: none;">
+
+                <span class="badge border border-secondary-subtle text-secondary fw-normal me-2"
+                    style="font-size: 10px; padding: 2px 5px; opacity: 0.8; background: transparent; letter-spacing: 0.5px;">
+                    ESC
+                </span>
+
+                <button type="button" class="btn-close" aria-label="Close" onclick="hideAttrView()"
+                    style="font-size: 10px; pointer-events: all; cursor: pointer;">
+                </button>
+            </div>
+
+            <div class="attr_body p-3"
+                style="height: 70%; overflow-y: auto; overflow-x: hidden; border-bottom: 2px solid var(--bs-border-color-translucent);">
+
+                <h5 class="mb-3">
+                    <span class="badge bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle">
+                        属性检索
+                    </span>
+                </h5>
+
+                <div id="property" class="mb-3"></div>
+
+                <h5 class="mb-3">
+                    <span class="badge bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle">
+                        关系检索
+                    </span>
+                </h5>
+
+                <div class="input-group input-group-sm mb-2 shadow-sm">
+                    <span class="input-group-text bg-body-secondary border-secondary-subtle text-secondary"
+                        style="width: 75px; justify-content: center;">
+                        parent
+                    </span>
+
+                    <input class="form-control border-secondary-subtle bg-body" id="p_i_parent" type="text" value="" title="n (正序), -n (逆序)；空：全选" placeholder="空=全体；±整数=正/逆序位置；" >
+
+                    <button class="btn btn-outline-primary border-secondary-subtle" id="p_add_parent" type="button"
+                        style="width: 35px;" data-type="number" onclick="addSelectorStep('parent', 'p_i_parent', this)">
+                        <i class="bi bi-plus-lg"></i>
+                    </button>
+                </div>
+
+                <div class="input-group input-group-sm mb-2 shadow-sm">
+                    <span class="input-group-text bg-body-secondary border-secondary-subtle text-secondary"
+                        style="width: 75px; justify-content: center;">
+                        brother
+                    </span>
+
+                    <input class="form-control border-secondary-subtle bg-body" id="p_i_brother" type="text" value="" title="n (正序), -n (逆序)；偏移：0.n (向下), -0.n (向上)；空：全选" placeholder="空=全体；±整数=正/逆序位置；±小数=向下/上偏移量" >
+
+                    <button class="btn btn-outline-primary border-secondary-subtle" id="p_add_brother" type="button"
+                        style="width: 35px;" data-type="number"
+                        onclick="addSelectorStep('brother', 'p_i_brother', this)">
+                        <i class="bi bi-plus-lg"></i>
+                    </button>
+                </div>
+
+                <div class="input-group input-group-sm mb-2 shadow-sm">
+                    <span class="input-group-text bg-body-secondary border-secondary-subtle text-secondary"
+                        style="width: 75px; justify-content: center;">
+                        child
+                    </span>
+
+                    <input class="form-control border-secondary-subtle bg-body" id="p_i_child" type="text" value="" title="n (正序), -n (逆序)；空：全选" placeholder="空=全体；±整数=正/逆序位置；">
+
+                    <button class="btn btn-outline-primary border-secondary-subtle" id="p_add_child" type="button"
+                        style="width: 35px;" data-type="number" onclick="addSelectorStep('child', 'p_i_child', this)">
+                        <i class="bi bi-plus-lg"></i>
+                    </button>
+                </div>
+
+
+                <h5 class="mb-3">
+                    <span class="badge bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle">
+                        动作追加
+                    </span>
+                </h5>
+
+
+                <div class="input-group input-group-sm mb-2 shadow-sm">
+                    <span class="input-group-text bg-body-secondary border-secondary-subtle text-secondary"
+                        style="width: 75px; justify-content: center;">
+                        click
+                    </span>
+
+                    <!-- <input class="form-control border-secondary-subtle bg-body" id="p_i_child" type="text" value="1"> -->
+
+                    <button class="btn btn-outline-primary border-secondary-subtle" id="p_add_click" type="button"
+                        style="width: 35px;" data-type="number" onclick="addSelectorStep('click', 'p_i_click', this)">
+                        <i class="bi bi-plus-lg"></i>
+                    </button>
+                </div>
+
+                <div class="input-group input-group-sm mb-2 shadow-sm">
+                    <span class="input-group-text bg-body-secondary border-secondary-subtle text-secondary"
+                        style="width: 75px; justify-content: center;">
+                        input
+                    </span>
+
+                    <input class="form-control border-secondary-subtle bg-body" id="p_i_input" type="text" value="">
+                    <button class="btn btn-outline-primary border-secondary-subtle" id="p_add_input" type="button"
+                        style="width: 35px;" data-type="string" onclick="addSelectorStep('input', 'p_i_input', this)">
+                        <i class="bi bi-plus-lg"></i>
+                    </button>
+                </div>
+
+
+
+                <div style="height: 10px;"></div>
+            </div>
+
+            <div class="attr_footer p-3 bg-body-secondary" style="height: 30%; overflow: hidden;">
+
+                <div class="d-flex justify-content-between align-items-center mb-2 px-1">
+                    <span class="text-secondary-emphasis opacity-50 fw-medium"
+                        style="font-size: 10px; letter-spacing: 0.5px;">SELECTOR PREVIEW</span>
+
+                    <div class="d-flex align-items-center">
+                        <button type="button"
+                            class="btn btn-primary rounded-1 py-0 px-2 me-2 d-flex align-items-center border-0"
+                            style="font-size: 13px; height: 22px; --bs-btn-bg: #0d6efd; --bs-btn-hover-bg: #0b5ed7;"
+                            onclick="undoSelectorStep()">
+                            <span>撤销</span>
+                        </button>
+
+                        <button type="button"
+                            class="btn btn-danger rounded-1 shadow-sm py-0 px-2 d-flex align-items-center border-0"
+                            style="font-size: 13px; height: 22px; --bs-btn-bg: #dc3545; --bs-btn-hover-bg: #bb2d3b;"
+                            onclick="resetSelectorChain()">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" fill="currentColor"
+                                class="bi bi-trash3-fill me-1" viewBox="0 0 16 16">
+                                <path
+                                    d="M11 1.5v1h3.5a.5.5 0 0 1 0 1h-.538l-.853 10.66A2 2 0 0 1 11.115 16h-6.23a2 2 0 0 1-1.994-1.84L2.038 3.5H1.5a.5.5 0 0 1 0-1H5v-1A1.5 1.5 0 0 1 6.5 0h3A1.5 1.5 0 0 1 11 1.5m-5 0v1h4v-1a.5.5 0 0 0-.5-.5h-3a.5.5 0 0 0-.5.5M4.5 5.029l.5 8.5a.5.5 0 1 0 .998-.06l-.5-8.5a.5.5 0 1 0-.998.06m6.53-.528a.5.5 0 0 0-.528.47l-.5 8.5a.5.5 0 0 0 .998.058l.5-8.5a.5.5 0 0 0-.47-.528M8 4.5a.5.5 0 0 0-.5.5v8.5a.5.5 0 0 0 1 0V5a.5.5 0 0 0-.5-.5" />
+                            </svg>
+                            <span>重置</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="selector-integrated-outer shadow-sm border border-secondary-subtle rounded d-flex flex-column"
+                    style="height: calc(100% - 25px); overflow: hidden; background-color: var(--bs-dark-bg-subtle);">
+
+                    <div id="p_i_xml_container" class="form-control flex-grow-1"
+                        style="background-color: var(--bs-dark-bg-subtle); color: var(--bs-emphasis-color); font-family: 'Consolas', monospace; font-size: 13px; border: none; padding: 12px; height: 110px; overflow-y: auto; line-height: 2;">
+                    </div>
+
+                    <div id="edit-popover-content" class="d-none">
+                        <div class="input-group input-group-sm">
+                            <input type="text" id="popover-input"
+                                class="form-control form-control-sm bg-dark text-white border-secondary">
+                            <button class="btn btn-primary btn-sm" id="popover-save-btn">确定</button>
+                        </div>
+                    </div>
+
+                    <div class="d-flex border-top border-secondary-subtle">
+                        <button class="btn btn-sm dropdown-toggle rounded-0 border-0" type="button"
+                            data-bs-toggle="dropdown" id="find_mode_btn"
+                            style="width: 125px; font-size: 12px; background-color: var(--bs-tertiary-bg); color: var(--bs-emphasis-color);">
+                            find()
+                        </button>
+                        <ul class="dropdown-menu shadow border-secondary-subtle">
+                            <li><a class="dropdown-item" onclick="setFindMode('find')">find()</a></li>
+                            <li><a class="dropdown-item" onclick="setFindMode('find_all')">find_all()</a></li>
+                        </ul>
+
+                        <button
+                            class="btn btn-sm btn-primary flex-grow-1 rounded-0 border-0 border-start border-white border-opacity-10"
+                            onclick="testSelector()" style="font-size: 13px; font-weight: 600; letter-spacing: 0.5px;">
+                            <i class="bi bi-play-fill"></i> 测试
+                        </button>
+
+                        <button
+                            class="btn btn-sm btn-success flex-grow-1 rounded-0 border-0 border-start border-white border-opacity-10"
+                            onclick="copySelector()" style="font-size: 13px; font-weight: 600; letter-spacing: 0.5px;">
+                            <i class="bi bi-clipboard-check"></i> 复制
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+
+    <div class="con_tools_bar" id="con_tools_bar" style="position: absolute; bottom: 0; width: 100%;">
+
+        <span class="viewtree_toolsbar_item" data-placement="bottom" data-toggle="tooltip" id="package_con"
+            title="当前程序包名">
+            <i class="bi bi-window"></i><span class="ml-1" id="node_package"></span>
+        </span>
+
+        <span class="viewtree_toolsbar_item" data-placement="bottom" data-toggle="tooltip" title="控件总数">
+            <i data-feather="pie-chart"></i> <span class="ml-1" id="header_total_number"></span>
+        </span>
+
+        <span class="viewtree_toolsbar_item" data-placement="bottom" data-toggle="tooltip" title="当前控件中心坐标">
+            <i data-feather="mouse-pointer"></i><span class="ml-1" id="header_viewcenter"></span>
+        </span>
+
+        <span class="viewtree_toolsbar_item text-secondary" data-placement="bottom" data-toggle="tooltip" title=""
+            style="opacity: 0.7;">
+            鼠标悬浮停留1秒,快速定位控件.
+        </span>
+
+        <span class="badge border border-danger text-danger viewtree_toolsbar_item" data-placement="bottom"
+            data-toggle="tooltip" id="attr_close_tip" style="display: none; background: transparent;" title="">
+            Esc关闭属性面板
+        </span>
+
+    </div>
+
+    <div aria-hidden="true" aria-labelledby="exampleModalLabel" class="modal fade" id="exampleModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="exampleModalLabel">检索属性设置</h5>
+                    <button aria-label="Close" class="close" data-dismiss="modal" type="button">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    ...
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" data-dismiss="modal" type="button">取消</button>
+                    <button class="btn btn-primary" type="button">设置</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+
+    <!--<script src="./js/utils/map.js"></script>-->
+    <script src="./libs/jquery/jquery.min.js"></script>
+    <script src="./libs/jquery-zTree/js/jquery.ztree.all.min.js" type="text/javascript"></script>
+    <script src="./libs/jquery-menu/jquery.contextMenu.js"></script>
+    <script src="./libs/bootstrap/js/bootstrap.bundle.min.js"></script>
+    <script src="./libs/feather-icons/dist/feather.min.js"></script>
+    <script src="/eel.js" type="text/javascript"></script>
+    <!-- Quick JS -->
+    <!--<script src="./libs/quickwebsite/quick-website.js"></script>-->
+
+
+
+    <script src="./js/viewtree/vtree.js"></script>
+    <script>
+        feather.replace({
+            'width': '1em',
+            'height': '1em'
+        })
+    </script>
+</body>
+
+</html>
