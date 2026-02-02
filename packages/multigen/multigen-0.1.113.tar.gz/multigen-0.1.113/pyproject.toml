@@ -1,0 +1,190 @@
+[project]
+name = "multigen"
+version = "0.1.113"
+authors = [
+    { name = "Shakeeb Alireza", email = "shakfu@users.noreply.github.com" }
+]
+description = "Python-to-Many code translation"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.9"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Code Generators",
+    "Topic :: Software Development :: Compilers",
+]
+keywords = ["code-generation", "compiler", "metaprogramming"]
+dependencies = []
+
+[project.optional-dependencies]
+llvm = ["llvmlite>=0.43.0"]
+z3 = ["z3-solver>=4.13.0"]
+verification = ["z3-solver>=4.13.0"]  # Alias for backward compatibility
+all = ["llvmlite>=0.43.0", "z3-solver>=4.13.0"]
+
+[build-system]
+requires = ["uv_build>=0.8.19,<0.9.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+# data = []
+# wheel-exclude = []
+source-include = ["tests/**", "CHANGELOG.md"]
+# source-exclude = []
+
+[dependency-groups]
+dev = [
+    "ruff>=0.13.1",
+    "isort>=6.0.1",
+    "mypy>=1.18.2",
+    "pytest>=8.4.2",
+    "pytest-cov>=7.0.0",
+    "sphinx>=7.0.0",
+    "sphinx-rtd-theme>=2.0.0",
+    "myst-parser>=2.0.0",
+    "pytest-review>=0.1.1",
+    "twine>=6.2.0",
+    "llvmlite>=0.43.0",
+    "z3-solver>=4.15.3.0",
+]
+extra = [
+    "z3-solver>=4.15.3.0",
+]
+llvm = [
+    "llvmlite>=0.43.0",
+]
+
+
+[project.urls]
+Homepage = "https://github.com/shakfu/multigen"
+Documentation = "https://multigen.readthedocs.io"
+Repository = "https://github.com/shakfu/multigen"
+"Bug Tracker" = "https://github.com/shakfu/multigen/issues"
+
+[project.scripts]
+multigen = "multigen.cli.main:main"
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra -q --strict-markers --strict-config"
+testpaths = ["tests"]
+# Ignore translation/ - contains Python source files for MultiGen translation, not pytest tests
+norecursedirs = ["tests/translation"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+    "py2c: marks tests for Python-to-C conversion",
+    "intelligence: marks tests for intelligence layer",
+    "frontend: marks tests for frontend analysis components",
+]
+
+[tool.coverage.run]
+source = ["src/multigen"]
+branch = true
+omit = [
+    "*/tests/*",
+    "*/test_*",
+    "*/conftest.py",
+    "*/backends/c/ext/stc/*",  # External STC library
+]
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]
+
+[tool.coverage.html]
+directory = "htmlcov"
+
+[tool.mypy]
+python_version = "3.9"
+# warn_return_any = true
+# warn_unused_configs = true
+disallow_untyped_defs = true
+# disallow_incomplete_defs = true
+check_untyped_defs = true
+# disallow_untyped_decorators = true
+# no_implicit_optional = true
+# warn_redundant_casts = true
+# warn_unused_ignores = true
+# warn_no_return = true
+# warn_unreachable = true
+# strict_equality = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+
+[tool.ruff]
+line-length = 120
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "C90", "I", "N", "D", "UP", "B", "A", "S", "T20", "Q"]
+ignore = [
+    "C901",  # Function complexity - managed via design patterns
+    "D100",  # Missing docstring in public module
+    "D102",  # Missing docstring in public method
+    "D104",  # Missing docstring in public package
+    "D107",  # Missing docstring in __init__
+    "D200",  # One-line docstring should fit on one line
+    "D205",  # 1 blank line required between summary line and description
+    "D400",  # First line should end with a period
+    "D401",  # First line should be in imperative mood
+    "E501",  # Line too long - many edge cases in code generation
+    "S101",  # Assert usage - acceptable for internal validation
+    "S110",  # try-except-pass - acceptable for optional features
+    "S112",  # try-except-continue - acceptable for optional features
+    "S603",  # Subprocess call - intentional in compiler
+    "S607",  # Partial executable path - intentional in compiler
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["D101", "D102", "D103", "D104", "S101"]
+"__init__.py" = ["F401"]
+# External STC library files
+"src/multigen/backends/c/ext/stc/src/*" = ["F821", "E501", "D103"]
+# Forward references for type annotations (intentional)
+"src/multigen/backends/go/type_inference.py" = ["F821"]
+"src/multigen/backends/rust/type_inference.py" = ["F821"]
+"src/multigen/backends/haskell/loop_strategies.py" = ["F821"]
+"src/multigen/backends/haskell/statement_visitor.py" = ["F821"]
+"src/multigen/backends/ocaml/loop_strategies.py" = ["F821"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.isort]
+profile = "black"
+line_length = 120
+multi_line_output = 3
+include_trailing_comma = true
+force_grid_wrap = 0
+use_parentheses = true
+ensure_newline_before_comments = true
