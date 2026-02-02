@@ -1,0 +1,393 @@
+#!/usr/bin/env python3
+"""
+souleyez.storage.findings - Findings/vulnerabilities database operations
+"""
+
+from typing import Any, Dict, List, Optional
+
+from .database import get_db
+
+
+class FindingsManager:
+    """Manages findings (vulnerabilities, misconfigurations, etc.) in the database."""
+
+    def __init__(self):
+        self.db = get_db()
+
+    def add_finding(
+        self,
+        engagement_id: int,
+        title: str,
+        finding_type: str,
+        severity: str = "info",
+        description: str = None,
+        host_id: int = None,
+        tool: str = None,
+        refs: str = None,
+        port: int = None,
+        path: str = None,
+        evidence: str = None,
+    ) -> int:
+        """
+        Add a finding to the database.
+
+        Args:
+            engagement_id: Engagement ID
+            title: Finding title/summary
+            finding_type: Type of finding (e.g., 'vulnerability', 'misconfiguration', etc.)
+            severity: Severity level ('critical', 'high', 'medium', 'low', 'info')
+            description: Detailed description
+            host_id: Associated host ID (optional)
+            tool: Tool that discovered the finding
+            refs: Reference URL or CVE
+            port: Associated port number
+            path: Web path or file path
+            evidence: Proof/output showing the issue
+
+        Returns:
+            Finding ID
+        """
+        # Check for duplicate finding
+        duplicate_query = """
+            SELECT id FROM findings
+            WHERE engagement_id = ?
+                AND title = ?
+                AND COALESCE(tool, '') = ?
+                AND COALESCE(host_id, 0) = ?
+                AND COALESCE(port, 0) = ?
+                AND COALESCE(path, '') = ?
+        """
+        duplicate = self.db.execute_one(
+            duplicate_query,
+            (engagement_id, title, tool or "", host_id or 0, port or 0, path or ""),
+        )
+
+        if duplicate:
+            return duplicate["id"]
+
+        data = {
+            "engagement_id": engagement_id,
+            "title": title,
+            "finding_type": finding_type,
+            "severity": severity,
+        }
+
+        if description:
+            data["description"] = description
+        if host_id:
+            data["host_id"] = host_id
+        if tool:
+            data["tool"] = tool
+        if refs:
+            data["refs"] = refs
+        if port:
+            data["port"] = port
+        if path:
+            data["path"] = path
+        if evidence:
+            data["evidence"] = evidence
+
+        return self.db.insert("findings", data)
+
+    def get_finding(self, finding_id: int) -> Optional[Dict[str, Any]]:
+        """Get a finding by ID."""
+        query = "SELECT * FROM findings WHERE id = ?"
+        return self.db.execute_one(query, (finding_id,))
+
+    def list_findings(
+        self,
+        engagement_id: int,
+        host_id: int = None,
+        severity: str = None,
+        tool: str = None,
+        finding_type: str = None,
+        search: str = None,
+        ip_address: str = None,
+        limit: int = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        List findings with optional filters.
+
+        Args:
+            engagement_id: Engagement ID
+            host_id: Filter by host ID (optional)
+            severity: Filter by severity (optional)
+            tool: Filter by tool (optional)
+            finding_type: Filter by finding type (optional)
+            search: Search in title and description (optional)
+            ip_address: Filter by IP address (optional)
+            limit: Maximum number of results to return (optional)
+
+        Returns:
+            List of finding dicts
+        """
+        query = """
+            SELECT
+                f.*,
+                h.ip_address,
+                h.hostname,
+                COALESCE(h.hostname, h.ip_address) as affected_target
+            FROM findings f
+            LEFT JOIN hosts h ON f.host_id = h.id
+            WHERE f.engagement_id = ?
+        """
+        params = [engagement_id]
+
+        if host_id:
+            query += " AND f.host_id = ?"
+            params.append(host_id)
+
+        if severity:
+            query += " AND f.severity = ?"
+            params.append(severity)
+
+        if tool:
+            query += " AND f.tool = ?"
+            params.append(tool)
+
+        if finding_type:
+            query += " AND f.finding_type = ?"
+            params.append(finding_type)
+
+        if search:
+            query += " AND (f.title LIKE ? OR f.description LIKE ?)"
+            search_pattern = f"%{search}%"
+            params.append(search_pattern)
+            params.append(search_pattern)
+
+        if ip_address:
+            query += " AND h.ip_address LIKE ?"
+            params.append(f"%{ip_address}%")
+
+        query += " ORDER BY f.created_at DESC"
+
+        if limit:
+            query += " LIMIT ?"
+            params.append(limit)
+
+        return self.db.execute(query, tuple(params))
+
+    def update_finding(self, finding_id: int, **kwargs) -> bool:
+        """
+        Update finding fields.
+
+        Args:
+            finding_id: Finding ID
+            **kwargs: Fields to update (severity, description, etc.)
+
+        Returns:
+            True if update succeeded
+        """
+        if not kwargs:
+            return False
+
+        set_clause = ", ".join([f"{k} = ?" for k in kwargs.keys()])
+        query = f"UPDATE findings SET {set_clause} WHERE id = ?"
+        params = list(kwargs.values()) + [finding_id]
+
+        try:
+            self.db.execute(query, tuple(params))
+            return True
+        except Exception:
+            return False
+
+    def delete_finding(self, finding_id: int) -> bool:
+        """
+        Delete a finding.
+
+        Raises:
+            PermissionError: If user lacks FINDING_DELETE permission
+        """
+        # Check permission
+        from souleyez.auth import get_current_user
+        from souleyez.auth.permissions import Permission, PermissionChecker
+
+        user = get_current_user()
+        if user:
+            checker = PermissionChecker(user.role, user.tier)
+            if not checker.has_permission(Permission.FINDING_DELETE):
+                raise PermissionError("Permission denied: FINDING_DELETE required")
+
+        try:
+            self.db.execute("DELETE FROM findings WHERE id = ?", (finding_id,))
+            return True
+        except Exception:
+            return False
+
+    def get_findings_summary(self, engagement_id: int) -> Dict[str, int]:
+        """
+        Get summary of findings by severity.
+
+        Returns:
+            Dict with counts: {'critical': 0, 'high': 5, 'medium': 10, ...}
+        """
+        query = """
+            SELECT severity, COUNT(*) as count
+            FROM findings
+            WHERE engagement_id = ?
+            GROUP BY severity
+        """
+        results = self.db.execute(query, (engagement_id,))
+
+        summary = {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0}
+
+        for row in results:
+            severity = row.get("severity", "info")
+            count = row.get("count", 0)
+            if severity in summary:
+                summary[severity] = count
+
+        return summary
+
+    def get_unique_types(self, engagement_id: int) -> List[str]:
+        """Get list of unique finding types in engagement."""
+        query = """
+            SELECT DISTINCT finding_type
+            FROM findings
+            WHERE engagement_id = ? AND finding_type IS NOT NULL
+            ORDER BY finding_type
+        """
+        results = self.db.execute(query, (engagement_id,))
+        return [row["finding_type"] for row in results if row.get("finding_type")]
+
+    def get_unique_tools(self, engagement_id: int) -> List[str]:
+        """Get list of unique tools that generated findings in engagement."""
+        query = """
+            SELECT DISTINCT tool
+            FROM findings
+            WHERE engagement_id = ? AND tool IS NOT NULL
+            ORDER BY tool
+        """
+        results = self.db.execute(query, (engagement_id,))
+        return [row["tool"] for row in results if row.get("tool")]
+
+    def calculate_risk_score(
+        self,
+        severity: str,
+        cvss_score: float = None,
+        has_exploit: bool = False,
+        is_authenticated: bool = False,
+    ) -> int:
+        """
+        Calculate risk score (0-100) based on severity, CVSS, and context.
+
+        Args:
+            severity: Severity level
+            cvss_score: CVSS score if available
+            has_exploit: Whether public exploit exists
+            is_authenticated: Whether auth is required
+
+        Returns:
+            Risk score 0-100
+        """
+        # Base score from severity
+        severity_scores = {
+            "critical": 90,
+            "high": 70,
+            "medium": 50,
+            "low": 30,
+            "info": 10,
+        }
+        base = severity_scores.get(severity.lower(), 50)
+
+        # Adjust for CVSS if available
+        if cvss_score is not None:
+            base = int((cvss_score / 10.0) * 100)
+
+        # Modifiers
+        if has_exploit:
+            base = min(100, base + 15)
+        if not is_authenticated:
+            base = min(100, base + 10)
+
+        return base
+
+    def auto_classify_severity(
+        self,
+        cve_id: str = None,
+        cvss_score: float = None,
+        service: str = None,
+        port: int = None,
+    ) -> str:
+        """
+        Automatically classify severity based on available info.
+
+        Args:
+            cve_id: CVE identifier
+            cvss_score: CVSS score
+            service: Service name
+            port: Port number
+
+        Returns:
+            Severity level
+        """
+        # Use CVSS score if available
+        if cvss_score is not None:
+            if cvss_score >= 9.0:
+                return "critical"
+            elif cvss_score >= 7.0:
+                return "high"
+            elif cvss_score >= 4.0:
+                return "medium"
+            elif cvss_score >= 0.1:
+                return "low"
+            else:
+                return "info"
+
+        # Check for critical services/ports
+        critical_ports = [22, 23, 3389, 445, 139]  # SSH, Telnet, RDP, SMB
+        if port and port in critical_ports:
+            return "high"
+
+        # Default
+        return "medium"
+
+    def add_cve_finding(
+        self,
+        engagement_id: int,
+        host_id: int,
+        cve_id: str,
+        service: str,
+        port: int,
+        cvss_score: float = None,
+        tool: str = None,
+    ) -> int:
+        """
+        Add a CVE-based finding with auto-classification.
+
+        Args:
+            engagement_id: Engagement ID
+            host_id: Host ID
+            cve_id: CVE identifier
+            service: Service name
+            port: Port number
+            cvss_score: CVSS score
+            tool: Tool that found it
+
+        Returns:
+            Finding ID
+        """
+        severity = self.auto_classify_severity(
+            cve_id=cve_id, cvss_score=cvss_score, port=port
+        )
+
+        title = f"{cve_id} - Vulnerable {service}"
+        description = f"Service {service} on port {port} is vulnerable to {cve_id}"
+
+        if cvss_score:
+            description += f" (CVSS: {cvss_score})"
+
+        return self.add_finding(
+            engagement_id=engagement_id,
+            title=title,
+            finding_type="vulnerability",
+            severity=severity,
+            description=description,
+            host_id=host_id,
+            port=port,
+            cve_id=cve_id,
+            cvss_score=cvss_score,
+            tool=tool,
+            category="cve",
+            refs=f"https://nvd.nist.gov/vuln/detail/{cve_id}",
+        )
