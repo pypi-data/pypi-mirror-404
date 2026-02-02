@@ -1,0 +1,49 @@
+# file: autobyteus/autobyteus/agent/status/status_enum.py
+from enum import Enum
+
+class AgentStatus(str, Enum):
+    """
+    Defines the possible operational statuses of an agent.
+    Renamed from the legacy operational state enum.
+    """
+    UNINITIALIZED = "uninitialized"            # Agent object created, but runtime not started or fully set up.
+    BOOTSTRAPPING = "bootstrapping"            # Agent is running its internal initialization/bootstrap sequence.
+    IDLE = "idle"                              # Fully initialized and ready for new input.
+    
+    PROCESSING_USER_INPUT = "processing_user_input"     # Actively processing a user message, typically preparing for an LLM call.
+    AWAITING_LLM_RESPONSE = "awaiting_llm_response"     # Sent a request to LLM, waiting for the full response or stream.
+    ANALYZING_LLM_RESPONSE = "analyzing_llm_response"   # Received LLM response, analyzing it for next actions (e.g., tool use, direct reply).
+    
+    AWAITING_TOOL_APPROVAL = "awaiting_tool_approval"   # Paused, needs external (user) approval for a tool invocation.
+    TOOL_DENIED = "tool_denied"                         # A proposed tool execution was denied by the user. Agent is processing the denial.
+    EXECUTING_TOOL = "executing_tool"                   # Tool has been approved (or auto-approved) and is currently running.
+    PROCESSING_TOOL_RESULT = "processing_tool_result"   # Received a tool's result, actively processing it (often leading to another LLM call).
+    
+    SHUTTING_DOWN = "shutting_down"               # Shutdown sequence has been initiated.
+    SHUTDOWN_COMPLETE = "shutdown_complete"       # Agent has fully stopped and released resources.
+    ERROR = "error"                               # An unrecoverable error has occurred. Agent might be non-operational.
+
+    def __str__(self) -> str:
+        return self.value
+
+    def is_initializing(self) -> bool:
+        """Checks if the agent is in any of the initializing statuses."""
+        return self in [
+            AgentStatus.BOOTSTRAPPING,
+        ]
+
+    def is_processing(self) -> bool:
+        """Checks if the agent is in any active processing status (post-initialization, pre-shutdown)."""
+        return self in [
+            AgentStatus.PROCESSING_USER_INPUT,
+            AgentStatus.AWAITING_LLM_RESPONSE,
+            AgentStatus.ANALYZING_LLM_RESPONSE,
+            AgentStatus.AWAITING_TOOL_APPROVAL,
+            AgentStatus.TOOL_DENIED,
+            AgentStatus.EXECUTING_TOOL,
+            AgentStatus.PROCESSING_TOOL_RESULT,
+        ]
+    
+    def is_terminal(self) -> bool:
+        """Checks if the status is a terminal state (shutdown or error)."""
+        return self in [AgentStatus.SHUTDOWN_COMPLETE, AgentStatus.ERROR]

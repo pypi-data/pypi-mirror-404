@@ -1,0 +1,99 @@
+# file: autobyteus/autobyteus/agent/context/agent_runtime_state.py
+import logging
+from typing import Dict, Any, Optional, TYPE_CHECKING
+
+from autobyteus.agent.events.agent_input_event_queue_manager import AgentInputEventQueueManager 
+from autobyteus.agent.events.event_store import AgentEventStore
+from autobyteus.agent.status.status_deriver import AgentStatusDeriver
+# AgentOutputDataManager is no longer part of AgentRuntimeState
+# from autobyteus.agent.events.agent_output_data_manager import AgentOutputDataManager       
+
+from autobyteus.llm.base_llm import BaseLLM
+from autobyteus.agent.status.status_enum import AgentStatus 
+from autobyteus.agent.workspace.base_workspace import BaseAgentWorkspace
+from autobyteus.agent.tool_invocation import ToolInvocation
+# LLMConfig is no longer needed here
+# from autobyteus.llm.utils.llm_config import LLMConfig 
+from autobyteus.task_management.todo_list import ToDoList
+
+if TYPE_CHECKING:
+    from autobyteus.agent.status.manager import AgentStatusManager 
+    from autobyteus.tools.base_tool import BaseTool 
+    from autobyteus.agent.tool_invocation import ToolInvocationTurn
+    from autobyteus.memory.memory_manager import MemoryManager
+
+logger = logging.getLogger(__name__)
+
+class AgentRuntimeState:
+    """
+    Encapsulates the dynamic, stateful data of an agent instance.
+    Input event queues are initialized by the AgentWorker during minimal runtime init.
+    Output data is now handled by emitting events via AgentExternalEventNotifier.
+    """
+    def __init__(self,
+                 agent_id: str, 
+                 workspace: Optional[BaseAgentWorkspace] = None,
+                 custom_data: Optional[Dict[str, Any]] = None):
+        if not agent_id or not isinstance(agent_id, str):
+            raise ValueError("AgentRuntimeState requires a non-empty string 'agent_id'.")
+        if workspace is not None and not isinstance(workspace, BaseAgentWorkspace): # pragma: no cover
+            raise TypeError(f"AgentRuntimeState 'workspace' must be a BaseAgentWorkspace or None. Got {type(workspace)}")
+
+        self.agent_id: str = agent_id 
+        self.current_status: AgentStatus = AgentStatus.UNINITIALIZED 
+        self.llm_instance: Optional[BaseLLM] = None  
+        self.tool_instances: Optional[Dict[str, 'BaseTool']] = None 
+        
+        self.input_event_queues: Optional[AgentInputEventQueueManager] = None 
+        self.event_store: Optional[AgentEventStore] = None
+        self.status_deriver: Optional[AgentStatusDeriver] = None
+        # REMOVED: self.output_data_queues attribute
+        
+        self.workspace: Optional[BaseAgentWorkspace] = workspace
+        self.pending_tool_approvals: Dict[str, ToolInvocation] = {}
+        self.custom_data: Dict[str, Any] = custom_data or {}
+        
+        # NEW: State for multi-tool call invocation turns, with a very explicit name.
+        self.active_multi_tool_call_turn: Optional['ToolInvocationTurn'] = None
+        
+        # NEW: State for the agent's personal ToDoList
+        self.todo_list: Optional[ToDoList] = None
+
+        # NEW: Memory manager and active turn tracking
+        self.memory_manager: Optional["MemoryManager"] = None
+        self.active_turn_id: Optional[str] = None
+        
+        self.processed_system_prompt: Optional[str] = None
+        # self.final_llm_config_for_creation removed
+        
+        self.status_manager_ref: Optional['AgentStatusManager'] = None 
+         
+        logger.info(f"AgentRuntimeState initialized for agent_id '{self.agent_id}'. Initial status: {self.current_status.value}. Workspace linked. InputQueues pending initialization. Output data via notifier.")
+
+    def store_pending_tool_invocation(self, invocation: ToolInvocation) -> None:
+        if not isinstance(invocation, ToolInvocation) or not invocation.id: # pragma: no cover
+            logger.error(f"Agent '{self.agent_id}': Attempted to store invalid ToolInvocation for approval: {invocation}")
+            return
+        self.pending_tool_approvals[invocation.id] = invocation
+        logger.info(f"Agent '{self.agent_id}': Stored pending tool invocation '{invocation.id}' ({invocation.name}).")
+
+    def retrieve_pending_tool_invocation(self, invocation_id: str) -> Optional[ToolInvocation]:
+        invocation = self.pending_tool_approvals.pop(invocation_id, None)
+        if invocation:
+            logger.info(f"Agent '{self.agent_id}': Retrieved pending tool invocation '{invocation_id}' ({invocation.name}).")
+        else: # pragma: no cover
+            logger.warning(f"Agent '{self.agent_id}': Pending tool invocation '{invocation_id}' not found.")
+        return invocation
+    
+    def __repr__(self) -> str:
+        # status_repr removed or renamed
+        llm_status = "Initialized" if self.llm_instance else "Not Initialized"
+        tools_status = f"{len(self.tool_instances)} Initialized" if self.tool_instances is not None else "Not Initialized"
+        input_queues_status = "Initialized" if self.input_event_queues else "Not Initialized"
+        # REMOVED output_queues_status from repr
+        active_turn_status = "Active" if self.active_multi_tool_call_turn else "Inactive"
+        return (f"AgentRuntimeState(agent_id='{self.agent_id}', current_status='{self.current_status.value}', "
+                f"llm_status='{llm_status}', tools_status='{tools_status}', "
+                f"input_queues_status='{input_queues_status}', "
+                f"pending_approvals={len(self.pending_tool_approvals)}, "
+                f"multi_tool_call_turn='{active_turn_status}')")
