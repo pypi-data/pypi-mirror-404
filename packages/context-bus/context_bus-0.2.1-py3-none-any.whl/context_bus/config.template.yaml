@@ -1,0 +1,154 @@
+# Context Bus Configuration
+# Copy to ~/.config/context-bus/config.yaml
+
+# =============================================================================
+# MODEL CONFIGURATION
+# =============================================================================
+# Define your primary, secondary, and tertiary models.
+# Context Bus will switch between them based on usage limits.
+
+models:
+  # Primary model - used by default until usage threshold
+  primary:
+    name: opus
+    cli: claude                    # CLI command to invoke
+    usage_check: session_status    # How to check usage (session_status | api | manual)
+    
+  # Secondary model - fallback when primary hits limits
+  secondary:
+    name: codex
+    cli: codex
+    usage_check: none              # Codex doesn't have usage limits
+    
+  # Tertiary model (optional) - fallback for secondary
+  tertiary:
+    name: gemini
+    cli: gemini
+    usage_check: none
+    enabled: false                 # Set to true to enable
+    
+  # Local model (optional) - for background tasks / offline
+  local:
+    name: llama3.1:8b
+    provider: ollama
+    endpoint: http://localhost:11434
+    enabled: false                 # Set to true to enable
+
+# =============================================================================
+# SWITCHING RULES
+# =============================================================================
+
+thresholds:
+  # When primary usage hits this %, switch to secondary
+  switch_to_secondary: 95
+  
+  # When usage drops below this % (indicates reset), switch back to primary
+  switch_back: 50
+  
+  # Minimum time between switches (seconds) - prevents rapid toggling
+  min_switch_interval: 300
+
+# =============================================================================
+# NOTIFICATIONS
+# =============================================================================
+
+notifications:
+  enabled: true
+  
+  # Channel: telegram | discord | slack | none
+  channel: telegram
+  
+  # Telegram settings
+  telegram:
+    chat_id: ""                    # Your Telegram chat ID
+    # Bot token is read from TELEGRAM_BOT_TOKEN env var or OpenClaw config
+    
+  # Discord settings  
+  discord:
+    webhook_url: ""
+    
+  # Slack settings
+  slack:
+    webhook_url: ""
+    
+  # What to notify about
+  events:
+    on_switch: true                # Notify when switching models
+    on_return: true                # Notify when returning to primary
+    on_error: true                 # Notify on errors
+    on_threshold_warning: true     # Notify at 85% usage
+
+# =============================================================================
+# SAFETY RULES
+# =============================================================================
+
+safety:
+  # Before switching BACK to primary, check:
+  check_tasks_before_return: true  # Ensure no tasks are in_progress
+  check_subagents: true            # Ensure no spawned sessions are active
+  
+  # If checks fail:
+  wait_if_busy: true               # Wait and retry on next heartbeat
+  max_wait_heartbeats: 10          # Give up after this many heartbeats
+
+# =============================================================================
+# CONTEXT BUS DIRECTORIES
+# =============================================================================
+
+paths:
+  # Where to store context bus files
+  context_dir: ~/.context-bus
+  
+  # Workspace files to read for context
+  workspace_files:
+    - AGENTS.md
+    - MEMORY.md
+    - memory/*.md
+    
+  # Files to include in handoff
+  handoff_includes:
+    - handoff.json
+    - rolling-summary.md
+    - relevant-context.md
+
+# =============================================================================
+# INTEGRATIONS
+# =============================================================================
+
+integrations:
+  # OpenClaw / Clawdbot integration
+  openclaw:
+    enabled: true
+    heartbeat_file: HEARTBEAT.md   # Will be updated with Context Bus rules
+    
+  # qmd semantic search integration
+  qmd:
+    enabled: true
+    collection: default
+    top_k: 10
+    
+  # Agent Rules Sync integration
+  agent_rules_sync:
+    enabled: false
+    add_to_shared_rules: true
+
+# =============================================================================
+# ADVANCED
+# =============================================================================
+
+advanced:
+  # Rolling summary settings
+  summary:
+    max_tokens: 400
+    update_on_switch: true
+    use_local_llm: false           # Use local model for summary generation
+    
+  # Handoff settings
+  handoff:
+    include_recent_actions: 10     # Number of recent actions to include
+    include_semantic_context: true
+    
+  # Logging
+  logging:
+    level: info                    # debug | info | warn | error
+    file: ~/.config/context-bus/context-bus.log
