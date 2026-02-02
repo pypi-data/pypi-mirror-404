@@ -1,0 +1,54 @@
+services:
+  # CPU version (default)
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./polybos_engine:/app/polybos_engine:ro
+      - ${MEDIA_PATH:-/mnt/media}:/media:ro
+    environment:
+      - WHISPER_MODEL=${WHISPER_MODEL:-large-v3}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    restart: unless-stopped
+
+  # GPU version (NVIDIA CUDA)
+  api-gpu:
+    build:
+      context: .
+      dockerfile: Dockerfile.cuda
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./polybos_engine:/app/polybos_engine:ro
+      - ${MEDIA_PATH:-/mnt/media}:/media:ro
+    environment:
+      - WHISPER_MODEL=${WHISPER_MODEL:-large-v3}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    profiles:
+      - gpu
+    restart: unless-stopped
+
+  # Apple Silicon (MLX dependencies, but CPU in Docker - see README)
+  api-mlx:
+    build:
+      context: .
+      dockerfile: Dockerfile.mlx
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./polybos_engine:/app/polybos_engine:ro
+      - ${MEDIA_PATH:-/mnt/media}:/media:ro
+    environment:
+      - WHISPER_MODEL=${WHISPER_MODEL:-large-v3}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    profiles:
+      - mlx
+    restart: unless-stopped
