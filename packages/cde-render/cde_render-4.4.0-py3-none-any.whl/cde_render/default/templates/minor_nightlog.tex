@@ -1,0 +1,87 @@
+<<% extends "_base.override.tex" %>>
+
+<<% block documentclass_options -%>>
+    a4paper,parskip=half,11pt,twoside
+<<%- endblock %>>
+
+<<% block packages %>>
+    \usepackage{tabularx}
+<<% endblock %>>
+
+<<% block preamble %>>
+    \geometry{top=2cm, bottom=2cm, inner=2cm, outer=2cm, bindingoffset=2cm, head=1cm, foot=1cm}
+
+    \chead[]{}
+    \lehead[]{Minderjährigen-Aufenthalts-Logbuch <<<day|date('%A, %d.%m.')|e>>>}
+    \rohead[]{\rightmark}
+    \ofoot[]{\thepage}
+    \cfoot[]{}
+
+    \newcommand{\head}[1]{\textcolor{white}{\textbf{#1}}}
+<<% endblock %>>
+
+
+<<% block content %>>
+    <<% block title_page %>>
+        % Overview page
+        \newgeometry{top=2cm, bottom=2cm, inner=2cm, outer=2cm, bindingoffset=0cm, head=1cm, foot=1cm}
+        \thispagestyle{empty}
+        {\huge
+            \textbf{Minderjährigen-Aufenthalts-Logbuch} \\
+            <<<day.strftime('%A, %d.%m.')>>>
+        }
+
+        \vspace{\baselineskip}
+        Stand: <<< EVENT.timestamp|datetime >>>
+
+        <<% block title_page_content %>>
+            Hier könnten eure Minderjährigenregeln stehen.
+        <<% endblock %>>
+
+        \vspace{\fill}
+        <<% block title_page_footer %>>
+            \hspace{\fill}
+            <<% if CONFIG.layout.logo_file %>>
+                \includegraphics[height=5cm]{<<< find_asset(CONFIG.layout.logo_file) >>>}
+            <<% endif %>>
+        <<% endblock %>>
+    <<% endblock %>>
+
+    \newpage
+    \restoregeometry
+
+    <<% set ns = namespace(first_on_doublepage=participants[0]) %>>
+    <<% for list in participants|batch(4) -%>>
+        <<# Some facy logic for the lexicographic \rightmark #>>
+        <<% if loop.index is odd %>>
+            <<% set ns.first_on_doublepage = list[0] %>>
+        <<% else %>>
+            \renewcommand\rightmark{
+                <<< ns.first_on_doublepage.name.common_forename.split(' ')[0]|e ->>>
+                --<<< list[-1].name.common_forename.split(' ')[0]|e >>>}
+        <<% endif %>>
+
+        <<% for p in list -%>>
+            {
+                \Large\bfseries <<< p.name.common|e >>>\vphantom{lg}
+            }
+
+            \rowcolors{2}{gray!20}{white}
+            \begin{tabularx}{\textwidth}{|p{2.5cm}|X|X|}
+                \hline
+                \rowcolor{black} \head{Uhrzeit} & \head{Neuer Aufenthaltsort} & \head{Mit wem?} \\
+                \hline
+                <<%- for i in range(0,4) -%>>
+                    & \parbox[t][1.2cm-\baselineskip][t]{1cm}{}  & \\
+                    \hline
+                <<% endfor -%>>
+            \end{tabularx}
+
+            <<% if not loop.last -%>>
+                \vspace{1.5\baselineskip}
+            <<%- endif -%>>
+        <<% endfor %>>
+        \newpage
+    <<% endfor %>>
+
+<<% endblock %>>

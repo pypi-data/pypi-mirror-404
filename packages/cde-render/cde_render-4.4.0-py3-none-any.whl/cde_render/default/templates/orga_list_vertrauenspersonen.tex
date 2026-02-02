@@ -1,0 +1,44 @@
+<<# Orga-internal list of Vertrauenspersonen for one event part.
+
+    Required template variables:
+    * part: The event part this list is for.
+    * registrations: A sorted list filtered for those acting as Vertrauensperson during the event part.
+        This is determined by a field specified in the config.
+#>>
+<<% extends "_lists.base.override.tex" %>>
+
+<<% set title = "Orga-Liste Vertrauenspersonen " + (part.title|e if part else EVENT.title) %>>
+<<% set num_columns = 4 + 2 * part.tracks|length %>>
+<<% set portrait = true %>>
+
+<<% block table_head %>>
+    \head{Vorname} & \head{Nachname}
+    & \head{Unterkunft}
+    <<% for track in part.tracks %>>
+        & \head{Kurs<<% if part.tracks|length > 1 %>> <<< track.shortname|e >>><<% endif %>>}
+        & \head{Kursraum<<% if part.tracks|length > 1 %>> <<< track.shortname|e >>><<% endif %>>}
+    <<% endfor %>>
+     & \head{Handy}
+<<% endblock %>>
+
+<<% block table_body %>>
+    <<% for registration in registrations %>>
+        <<< registration.name.list_forename|e >>> &
+        <<< registration.name.list_surname|e >>> &
+        <<% with lodgement = registration.parts[part].lodgement -%>>
+            <<% if lodgement -%>><<< lodgement.title|e >>><<%- endif %>>
+        <<%- endwith %>> &
+        <<% for track in part.tracks -%>>
+            <<% with course = registration.tracks[track].course -%>>
+                <<% if course -%>>
+                    <<< course.nr >>>. <<< course.shortname[:20]|e >>> &
+                    <<%- if track.course_room_field -%>>
+                        <<< course.fields.get(track.course_room_field, "--")|e or "--" >>>
+                    <<%- endif %>> &
+                <<%- endif %>>
+            <<%- endwith %>>
+        <<%- endfor %>>
+        <<< registration.mobile|phone|e >>> \\
+        \hline
+    <<% endfor %>>
+<<% endblock %>>

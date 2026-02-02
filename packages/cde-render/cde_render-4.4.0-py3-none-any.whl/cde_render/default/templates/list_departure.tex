@@ -1,0 +1,59 @@
+<<% extends "_lists.base.override.tex" %>>
+
+<<% set title = ("Busliste " + part.shortname_if_needed).strip() %>>
+<<% set portrait = True %>>
+<<% set num_columns = 5 if config.bus_field else 4 %>>
+<<% set show_timestamp = True %>>
+
+
+<<% block table_head %>>
+    \head{Vorname} & \head{Nachname} & \multicolumn{2}{c}{ \head{Abfahrt} }
+    <<% if config.bus_field %>>& \head{Bus}<<% endif %>>
+<<% endblock %>>
+
+<<% block table_body %>>
+    <<% for departing_participant in participants %>>
+        <<< departing_participant.registration.name.list_forename|e >>> &
+        <<< departing_participant.registration.name.list_surname|e >>> &
+        <<% set maybe = not departing_participant.time_is_missing and departing_participant.time and departing_participant.time.date() != part.end %>>
+        <<% if departing_participant.part.status == ENUMS.RegistrationPartStati.guest %>>
+            (Gast)
+        <<% endif %>>
+        <<%- if departing_participant.transport is none -%>>
+            Kein Datenfeld konfiguriert.
+        <<%- elif departing_participant.is_stay or departing_participant.is_present_next -%>>
+            Ich bleibe hier.
+        <<%- elif departing_participant.is_car -%>>
+            Auto
+        <<%- elif departing_participant.is_train -%>>
+            Zug
+        <<%- elif departing_participant.is_misc -%>>
+            Sonstiges
+        <<%- elif departing_participant.transport -%>>
+            <<< departing_participant.transport >>>
+        <<%- else -%>>
+            ?
+        <<%- endif -%>>
+        &
+        <<% if maybe %>>(<<% endif %>>
+        <<%- if departing_participant.time is none -%>>
+            Kein Datenfeld konfiguriert.
+        <<%- elif departing_participant.time_is_missing -%>>
+            ?
+        <<%- elif departing_participant.time.date() == part.end -%>>
+            <<< departing_participant.time|datetime('%H:%M') >>>
+        <<%- else -%>>
+            <<< departing_participant.time|datetime('%d.%m. %H:%M') >>>
+        <<%- endif -%>>
+        <<% if maybe %>>)<<% endif %>>
+        <<% if config.bus_field %>>
+            &
+            <<% set bus_name = departing_participant.bus %>>
+            <<% if config.bus_descriptions %>>
+                <<% set bus_name = config.bus_descriptions.get(bus_name, bus_name) %>>
+            <<% endif %>>
+            <<< bus_name|e >>>
+        <<% endif %>>
+        \\ \hline
+    <<% endfor %>>
+<<% endblock %>>

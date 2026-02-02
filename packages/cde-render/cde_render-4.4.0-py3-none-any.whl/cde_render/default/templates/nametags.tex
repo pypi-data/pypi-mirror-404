@@ -1,0 +1,278 @@
+<<% extends "_base.override.tex" %>>
+
+<<% block documentclass_options %>>12pt,parskip=half+<<% endblock %>>
+
+<<% block preamble %>>
+    \geometry{top=2cm, bottom=2cm, left=1.5cm, right=1.5cm, head=1cm, foot=1cm}
+
+    \addtokomafont{disposition}{\headingfamily}
+
+    \ihead[]{Nametags <<< EVENT.title|e >>><<% if part %>> (<<<part.title|e>>>) <<% endif %>>}
+    \chead[]{}
+    \ohead[]{\rightmark}
+    \cfoot[]{}
+    \ifoot[Seite \thepage]{Seite \thepage}
+
+    % Nametag special hacks
+    \setlength{\fboxsep}{0pt}
+    \setlength{\fboxrule}{.5pt}
+    \setlength{\parindent}{0pt}
+    % savebox to place nametags contents above the background
+    \newsavebox{\ntcontent}
+
+    % for \ding{34} (scissor symbol)
+    \usepackage{pifont}
+<<% endblock %>>
+
+<<% block content %>>
+    % Overview page
+    \thispagestyle{plain}
+    \section*{Nametags for <<< EVENT.title|e >>>}
+    Generated nametags with rearside.
+
+    Print double-sided with binding (turning) on the long edge.
+
+    You'll need the following (differently colored) sheets:
+
+    \begin{itemize}
+        \item 1 sheet for this overview page (or print only page 3-$\infty$)
+        <<% for block_name, registrations in registration_groups %>>
+            <<% set num_sheets = (registrations|length/8)|round(method='ceil') %>>
+            \item <<<num_sheets|int>>> sheet<<% if num_sheets != 1%>>s<<% endif %>> for \textit{<<< block_name|e >>>}
+        <<% endfor %>>
+    \end{itemize}
+
+    \vspace{3\baselineskip}
+
+    Stand: <<< EVENT.timestamp|datetime >>>
+
+    \newpage
+    \null\newpage
+
+    <<% for block_name, registrations in registration_groups %>>
+        \renewcommand\rightmark{<<< block_name|e >>>}
+        <<# Split each block of participants into chunks of eight nametags for a single page each #>>%
+        <<% for list in registrations|batch(8) -%>>
+            \renewcommand{\arraystretch}{0}
+            \begin{tabular}{ @{} p{9cm} @{\hspace{\fboxrule}} p{9cm} @{} }
+                %
+                <<# Iterate chunk of participants to generate frontside #>>%
+                <<% for p in list %>>
+                    \begin{lrbox}{\ntcontent}
+                        \fbox{\hspace{3mm}\begin{minipage}[b][5.5cm][t]{8.4cm}
+                            \vspace{4mm}
+                            <<%- block nametag_frontside scoped %>>
+                                % Name
+                                \parbox[c][1.7cm][t]{8.4cm}{
+                                    <<%- block nametag_name %>>
+                                        \headingfamily
+                                        % Forename
+                                        <<% set forename = p.name.nametag_forename|override(p, CONFIG.data.overrides.nametag_forename) %>>
+                                        <<% set font_size, line_size = UTIL.get_font_size(CONFIG.nametags.forename_fontsizes, forename) %>>
+                                        \fontsize{<<< font_size >>>}{<<< line_size >>>}
+                                        \selectfont \textbf{\mbox{<<< forename|e >>>}}
+                                        % Pronouns
+                                        <<% set pronouns = p.name.nametag_pronouns|override(p, CONFIG.data.overrides.nametag_pronouns) %>>
+                                        <<% if pronouns -%>>
+                                            <<% set font_size, line_size = UTIL.get_font_size(CONFIG.nametags.pronouns_fontsizes, pronouns) %>>
+                                            \fontsize{<<< font_size >>>}{<<< line_size >>>}
+                                            \selectfont \hfill\mbox{(<<< pronouns|e >>>)}
+                                        <<% endif %>>\\
+                                        % Surname
+                                        <<% set surname = p.name.nametag_surname|override(p, CONFIG.data.overrides.nametag_surname) %>>
+                                        <<% set font_size, line_size = UTIL.get_font_size(CONFIG.nametags.surname_fontsizes, surname) %>>
+                                        \fontsize{<<< font_size >>>}{<<< line_size >>>}
+                                        \selectfont \textbf{\mbox{<<< surname|e >>>}}
+                                    <<% endblock -%>>
+                                }%
+                                \offinterlineskip
+                                \\[2mm]%
+                                % Lodgment
+                                \parbox[t][1.1cm][c]{<<< 84-11*CONFIG.nametags.max_front_icons >>>mm}{%
+                                    \raggedright%
+                                    <<% block nametag_lodgement -%>>
+                                        <<% for part in ([part] if part else EVENT.parts[:2]) -%>>
+                                            <<% if part in p.parts and p.parts[part].lodgement %>>
+                                                <<< p.parts[part].lodgement.title|e >>>
+                                                <<% if not loop.last %>>\\<<% endif %>>
+                                            <<% endif %>>
+                                        <<% endfor %>>
+                                    <<%- endblock %>>
+                                }%
+                                \hspace*{\fill}%
+                                % Right side icons
+                                \parbox[t][1.1cm][c]{<<< [11*CONFIG.nametags.max_front_icons, 0]|max >>>mm}{
+                                    \raggedleft%
+                                    <<% block nametag_frontrighticons %>>
+                                        <<% if not part and not p.is_participant
+                                               or part and p.parts[part].status != ENUMS.RegistrationPartStati.participant -%>>
+                                            \hspace{3mm}%
+                                            \includegraphics[keepaspectratio=true, height=0.8cm, width=0.8cm]{<<< find_asset('nametag_guest') >>>}%
+                                        <<% endif %>>
+                                        <<% if not p.age_class.is_full -%>>
+                                            \hspace{3mm}%
+                                            \includegraphics[keepaspectratio=true, height=0.8cm, width=0.8cm]{<<< find_asset('nametag_minor') >>>}%
+                                        <<% endif %>>
+                                        <<% if block_name == 'vertrauenspersonen' -%>>
+                                            \hspace{3mm}%
+                                            \includegraphics[keepaspectratio=true, height=0.8cm, width=0.8cm]{<<< find_asset('nametag_vertrauensperson') >>>}%
+                                        <<% endif %>>
+                                        <<% if p.is_orga -%>>
+                                            \hspace{3mm}%
+                                            \includegraphics[keepaspectratio=true, height=0.8cm, width=0.8cm]{<<< find_asset('nametag_orga') >>>}%
+                                        <<% endif %>>
+                                    <<% endblock %>>
+                                }%
+                                \\[1mm]%
+                                % Course(s)
+                                <<% block nametag_courses -%>>
+                                    <<% with courses, merged, attends_any_course = UTIL.get_nametag_courses(
+                                            p, part.tracks[:2] if part else EVENT.tracks[:2],
+                                            CONFIG.nametags.merge_courses, CONFIG.nametags.second_track_always_right) -%>>
+                                        <<% for course in courses -%>>
+                                            <<% if course -%>>
+                                                <<% block nametag_single_course scoped %>>
+                                                    % Course icon
+                                                    <<% block nametag_single_course_icon %>>
+                                                        <<% if CONFIG.nametags.course_icon_path -%>>
+                                                            \parbox[t][17mm][c]{15mm}{
+                                                                <<%- with icon = find_asset(CONFIG.nametags.course_icon_path, format_data=course.__dict__) -%>>
+                                                                    <<% if icon -%>>
+                                                                        \centering
+                                                                        \includegraphics[keepaspectratio=true, width=1.2cm, height=1.2cm]{<<< icon >>>}
+                                                                    <<% else %>>
+                                                                        \
+                                                                    <<% endif -%>>
+                                                                <<% endwith -%>>
+                                                            }%
+                                                        <<% endif -%>>
+                                                    <<% endblock %>>
+                                                    % Course name
+                                                    \parbox[t][17mm][c]{<<% if courses|length > 1 %>>25.4mm<<% else %>>58.9mm<<% endif %>>}{
+                                                        \begin{flushleft}
+                                                            {<<<course.shortname|e>>>
+                                                                <<% if p in course.instructors %>><<<CONFIG.nametags.course_instructor_suffix|e>>><<% endif %>>
+                                                                <<% if merged %>><<<CONFIG.nametags.merge_courses_suffix|e>>><<% endif %>>}
+                                                        \end{flushleft}
+                                                    }%
+                                                <<% endblock %>>
+                                            <<#- print an explicit 'Orga' course note.
+                                                 If the orga attends a course in any track, we print this note for each track where he does not attend a course.
+                                                 If the orga does not attend any course, we print this only once (at the first iteration). -#>>
+                                            <<%- elif p.is_orga and (attends_any_course or loop.first) -%>>
+                                                <<% block nametag_orga_course scoped %>>
+                                                    % Use aka logo as orga logo
+                                                    <<# This is for layout reasons, to align the orga course with other courses #>>
+                                                    <<% if CONFIG.nametags.course_icon_path -%>>
+                                                        \parbox[t][17mm][c]{15mm}{
+                                                            <<%- with icon = find_asset(CONFIG.layout.get('logo_file')) -%>>
+                                                                <<% if icon -%>>
+                                                                    \includegraphics[keepaspectratio=true, width=1.2cm, height=1.2cm]{<<< icon >>>}
+                                                                <<% else %>>
+                                                                    \
+                                                                <<% endif -%>>
+                                                            <<% endwith -%>>
+                                                        }%
+                                                    <<% endif -%>>
+                                                    % Use 'Orga' as course name
+                                                    \parbox[t][17mm][c]{<<% if courses|length > 1 %>>25.4mm<<% else %>>58.9mm<<% endif %>>}{
+                                                        \begin{flushleft}
+                                                            Orga
+                                                        \end{flushleft}
+                                                    }%
+                                                <<% endblock %>>
+                                            <<% else %>>
+                                              \hspace*{40.4mm}
+                                            <<%- endif %>>
+                                            <<%- if not loop.last %>>\hspace{3mm}<<% endif %>>%
+                                        <<% endfor -%>>
+                                    <<% endwith -%>>
+                                <<% endblock -%>>
+                            <<% endblock -%>>
+                        \end{minipage}\hspace{3mm}}
+                    \end{lrbox}
+                    \vspace{-\fboxrule}
+                    \mbox{%
+                        <<# cut marker left #>>
+                        <<% if loop.index is not divisibleby 2 and loop.index < 7 %>>
+                            \llap{\raisebox{-0.25\baselineskip}[0pt][0pt]{\parbox{6mm}{\raisebox{-0.25\baselineskip}{\ding{34}}\dotfill}}}%
+                        <<% endif -%>>
+                        <<# background and content #>>
+                        \rlap{\includegraphics[width=9cm, height=5.5cm]{<<< find_asset('nametag_background.pdf') >>>}}%
+                        \hspace{-\fboxrule}%
+                        \usebox{\ntcontent}%
+                        <<# cut marker right #>>
+                        <<% if loop.index is divisibleby 2 and loop.index < 7 %>>
+                            \rlap{\raisebox{-0.25\baselineskip}[0pt][0pt]{\parbox{6mm}{\dotfill\raisebox{-0.25\baselineskip}{\reflectbox{\ding{34}}}}}}%
+                        <<% endif -%>>
+                    }
+                    <<% if loop.index is divisibleby 2 %>>\\<<% else %>>&<<% endif %>>
+                <<% endfor %>>
+            \end{tabular}
+
+            <<# Backside of nametags #>>
+            \newpage
+            \begin{tabular}{ @{} p{9cm} @{\hspace{\fboxrule}} p{9cm} @{} }
+                %
+                <<# Iterate chunk of participants with every pair swapped to generate backside #>>%
+                <<% for p in list|inverse_chunks(2) %>>
+                    \hspace{5mm}\begin{minipage}[t][5.5cm][t]{8.0cm}%
+                        \vspace{6mm}
+                        <<%- block nametag_rearside scoped %>>
+                            <<%- block nametag_reartext scoped %>>
+                                <<%- block nametag_reartext_course_room scoped %>>
+                                    <<# Use the same tracks as for the courses on the frontside. #>>
+                                    <<% with tracks = part.tracks[:2] if part else EVENT.tracks[:2] %>>
+                                        <<% with rooms, merged = UTIL.get_course_rooms(p, tracks) %>>
+                                            <<% if rooms|length > 1 %>>Kursräume<<% else %>>Kursraum<<% endif %>>:
+                                            <<% for room in rooms -%>>
+                                                <<< room|e ->>>
+                                                <<% if not loop.last %>>, <<% endif %>>
+                                                <<% if merged %>><<< Config.nametags.merge_courses_suffix >>><<% endif %>>
+                                            <<%- else -%>>
+                                                —
+                                            <<%- endfor -%>>
+                                        <<% endwith %>>
+                                    <<% endwith %>>
+                                <<% endblock %>>
+
+                                <<% block nametag_reartext_additional scoped %>>
+                                <<% endblock %>>
+                            <<% endblock %>>
+
+
+                            \vspace{\fill}
+                            <<%- block nametag_rearlefticons scoped -%>>
+                                <<%- block nametag_mealicons scoped -%>>
+                                    <<% for meal in p.meals if meal.asset_name %>>
+                                        <<% set meal_asset = find_asset(meal.asset_name) %>>
+                                        <<% if meal_asset %>>
+                                            \includegraphics[keepaspectratio=true, width=1cm, height=1cm]{<<<- meal_asset >>>}
+                                        <<% else %>>
+                                            <<< meal.asset_name|e >>>
+                                        <<% endif %>>
+                                    <<% endfor %>>
+                                <<%- endblock %>>
+                                <<%- block nametag_rearlefticons_additional -%>>
+                                <<%- endblock %>>
+                            <<% endblock -%>>
+                            \hspace{\fill}
+                            <<%- block nametag_rearrighticons scoped %>>
+                                <<% for puzzle in puzzles.get(p) if part is none or part in puzzle.parts -%>>
+                                    \includegraphics[keepaspectratio=true, width=1cm, height=1cm]{<<< find_asset(puzzle.get_asset_name()) >>>}
+                                    <<%- if not loop.last -%>>
+                                        \hspace{1mm}
+                                    <<%- endif %>>
+                                <<%- endfor -%>>
+                            <<% endblock -%>>
+                        <<% endblock -%>>
+                        \vspace{6mm}
+                    \end{minipage}\hspace{5mm}%
+                    \vspace{\fboxrule}
+                    <<% if loop.index is divisibleby 2 %>>\\<<% else %>>&<<% endif %>>
+                <<% endfor %>>
+            \end{tabular}
+            \newpage
+        <<% endfor %>>
+    <<% endfor %>>
+<<% endblock %>>

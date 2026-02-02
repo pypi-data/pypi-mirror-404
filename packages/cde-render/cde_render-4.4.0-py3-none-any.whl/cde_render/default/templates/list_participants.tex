@@ -1,0 +1,64 @@
+<<# List of participants to be posted to the blackboard at the event.
+
+    Required template variables:
+    * registrations: List of all participants to be included in list
+    * parts: List of event parts to show the lodgement assignment of the participants for
+    * tracks: List of event tracks to show the course assignment of the participants for
+    * title_suffix: (optional) Suffix to be appended to the title "Teilnahmeliste"
+#>>
+<<% extends "_lists.base.override.tex" %>>
+
+<<% set title = "Teilnahmeliste" + title_suffix|default('') %>>
+<<% if parts|length != EVENT.parts|length %>>
+    <<% for part in parts %>>
+        <<% set title = title + " " + part.title|e %>>
+    <<% endfor %>>
+<<% endif %>>
+
+<<% set num_columns = 2 + tracks|length + parts|length %>>
+<<% set portrait = (tracks|length + parts|length) < 3 %>>
+<<% set show_timestamp = True %>>
+
+<<% block table_head %>>
+    \head{Vorname} & \head{Nachname}
+    <<% for part in parts -%>>
+        & \head{Unterkunft<<% if EVENT.parts|length > 1 %>> <<< part.shortname|e >>><<% endif %>>}
+    <<% endfor %>>
+    <<% for track in tracks -%>>
+        & \head{Kurs<<% if EVENT.tracks|length > 1 %>> <<< track.shortname|e >>><<% endif %>>}
+    <<% endfor %>>
+<<% endblock %>>
+
+<<% block table_body %>>
+    <<% for registration in registrations %>>
+        <<< registration.name.list_forename|e >>> &
+        <<< registration.name.list_surname|e >>>
+        <<% for part in parts -%>>
+            ~&
+            <<# This only displays the guest flag, filtering should happen in target function. #>>
+            <<% with status = registration.parts[part].status -%>>
+                <<% if status == ENUMS.RegistrationPartStati.guest -%>>
+                    \custombox{Gast}
+                <<%- endif %>>
+            <<%- endwith %>>
+            <<% with lodgement = registration.parts[part].lodgement -%>>
+                <<% if registration.parts[part].status.is_present and lodgement %>>
+                    <<< lodgement.title|e >>>
+                <<% endif %>>
+            <<%- endwith %>>
+        <<% endfor %>>
+        <<% for track in tracks -%>>
+            & <<% if registration.tracks[track].registration_part.status == ENUMS.RegistrationPartStati.participant -%>>
+                <<% with course = registration.tracks[track].course -%>>
+                    <<% if course -%>>
+                        <<< course.nr|e >>>. <<< course.shortname|e >>>
+                        <<% if registration.is_orga %>><<< CONFIG.participant_lists.orga_suffix|e >>><<% endif %>>
+                    <<% elif registration.is_orga %>>
+                        Orga
+                    <<% endif %>>
+                <<% endwith -%>>
+            <<% endif -%>>
+        <<% endfor %>> \\
+        \hline
+    <<% endfor %>>
+<<% endblock %>>

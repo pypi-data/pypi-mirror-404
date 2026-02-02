@@ -1,0 +1,48 @@
+<<# Checklist, to check presence of all minors each evening of one EventPart.
+
+    Required template variables:
+    * part: The EventPart to generate the lists for
+    * registrations: List of all minor participants of this EventPart
+#>>
+<<% extends "_lists.base.override.tex" %>>
+
+<<% set title = "Minderjährigen-Checkliste " + part.title|e %>>
+
+<<% set hide_header = True %>>
+<<% set portrait = part.days|list|length < 5 %>>
+<<% set show_timestamp = True %>>
+
+<<% block packages %>>
+    \usepackage{amssymb}
+<<% endblock %>>
+
+<<% block table_columnspec %>>
+    |lll|l| <<< "c|" * (part.end - part.begin).days >>> l|
+<<% endblock %>>
+
+<<% block table_head %>>
+    & \head{Vorname} & \head{Nachname}
+    & \head{Unterkunft}
+    <<% for day in (part.days|list)[:-1] %>>
+        & \head{<<< day|date("%d.%m.") >>>}
+    <<% endfor %>>
+     & \head{Handy}
+<<% endblock %>>
+
+<<% block table_body %>>
+    <<% for registration in registrations %>>
+        \custombox{<<< registration.age_class.name >>>} &
+        <<< registration.name.list_forename|e >>> &
+        <<< registration.name.list_surname|e >>> &
+        <<% if registration.parts[part].status.is_present -%>>
+            <<% with lodgement = registration.parts[part].lodgement -%>>
+                <<% if lodgement -%>><<< lodgement.title|e >>><<%- endif %>>
+            <<%- endwith %>> &
+            <<< "$\square$&" * (part.end - part.begin).days >>>
+        <<%- else -%>>
+            \multicolumn{1}{c|}{---}& <<< "-&" * (part.end - part.begin).days >>>
+        <<%- endif %>>
+        <<< registration.mobile|phone|e >>> \\
+        \hline
+    <<% endfor %>>
+<<% endblock %>>

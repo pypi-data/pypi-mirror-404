@@ -1,0 +1,46 @@
+<<% extends "_lists.base.tex" %>>
+
+<<% set title = "Geburtstage" + ((" " + part.shortname) if part else "") %>>
+
+<<% set portrait = True %>>
+
+<<# The allergies field can be very long, thus make it a wrapping field. #>>
+<<%- block table_columnspec -%>>
+    |lll <<< "p{4cm}" if CONFIG.data.meal_allergies_field >>> <<< "l" if part is none >>> l|
+<<%- endblock table_columnspec %>>}
+
+<<% block table_head %>>
+    \head{Vorname} & \head{Nachname} & \head{Essen}
+    <<% if CONFIG.data.meal_allergies_field %>>
+        & \head{Allergien}
+    <<% endif %>>
+    <<% if not part %>>
+        & \head{Teile}
+    <<% endif %>>
+    & \head{Geburtstag}
+<<% endblock %>>
+
+<<% block table_body %>>
+    <<% for registration in registrations %>>
+        <<< registration.name.list_forename|e >>>
+        & <<< registration.name.list_surname|e >>>
+        & <<< registration.fields.get(CONFIG.data.meal_field)|e >>>
+        <<% if CONFIG.data.meal_allergies_field %>>
+            & <<< registration.fields.get(CONFIG.data.meal_allergies_field)|e >>>
+        <<% endif %>>
+        <<% if not part %>>
+            &
+            <<% for part in EVENT.parts if registration.parts[part].status.is_present %>>
+                <<< part.shortname|e >>>
+                <<%- if not loop.last %>>, <<% endif %>>
+            <<% endfor %>>
+        <<% endif %>>
+        &
+        <<% for birthday in (registration.parts[part] if part else registration).event_birthdays %>>
+            <<< birthday|date('%d.%m.%Y')|e >>> (<<< birthday.year - registration.birthday.year >>>)
+            <<%- if not loop.last %>>, <<% endif %>>
+        <<% endfor %>>
+        \\
+    <<%- endfor %>>
+    \hline
+<<% endblock %>>

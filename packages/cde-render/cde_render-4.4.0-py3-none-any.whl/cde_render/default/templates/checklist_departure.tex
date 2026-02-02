@@ -1,0 +1,41 @@
+<<% extends "_lists.base.override.tex" %>>
+
+<<% set title = ("Bus Checklisten " + part.shortname_if_needed).strip() %>>
+<<% set show_timestamp = True %>>
+<<% set portrait = True %>>
+
+<<% block packages %>>
+    \usepackage{amssymb}
+<<% endblock %>>
+
+<<% block content %>>
+    <<% for bus, departing_participants in busses|sort %>>
+        \renewcommand\rightmark{Bus <<< bus|string|e >>>}
+        <<% if config.bus_descriptions %>>
+            <<% set bus = config.bus_descriptions.get(bus|string, bus_name) %>>
+        <<% endif %>>
+        {\centering
+            \headingfamily\bfseries\huge{} <<< EVENT.title|e >>> – Auscheckliste Bus <<< bus|string|e >>>
+        }
+
+        \textit{<<< departing_participants|length >>> Personen.}
+        \rowcolors{2}{gray!25}{white}
+        \begin{longtable}{|llllcc|}
+            \hline
+            \rowcolor{design} \head{Vorname} & \head{Nachame} & \head{Abreisezeit} & \head{Mobil} & \head{ausgecheckt} & \head{im Bus} \\
+            \hline
+            \endhead
+
+            <<% for departing_participant in departing_participants %>>
+                <<< departing_participant.registration.name.list_forename|e >>> &
+                <<< departing_participant.registration.name.list_surname|e >>> &
+                <<% if not departing_participant.time_is_missing %>>
+                    <<< departing_participant.time|datetime('%H:%M')|e >>>
+                <<% endif %>> &
+                <<< departing_participant.registration.mobile|phone|e >>> &
+                $\square$ & $\square$ \\ \hline
+            <<% endfor %>>
+        \end{longtable}
+        \clearpage
+     <<% endfor %>>
+<<% endblock %>>

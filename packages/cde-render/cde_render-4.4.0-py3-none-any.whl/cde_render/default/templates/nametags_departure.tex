@@ -1,0 +1,68 @@
+<<% extends "_base.override.tex" %>>
+
+<<% block documentclass_options %>>12pt,parskip=half+<<% endblock %>>
+
+<<% block preamble %>>
+    \geometry{top=21.5mm, bottom=21.5mm, left=0pt, right=0pt, head=0pt, foot=10mm}
+    \newcommand{\range}{XXX -- YYY}
+    \ihead{\hspace{0.5cm}\range}
+    \ifoot{\hspace{0.5cm}\range}
+    \ohead{\range\hspace{0.5cm}}
+    \ofoot{\range\hspace{0.5cm}}
+    \renewcommand{\arraystretch}{0}
+<<% endblock %>>
+
+<<% block content -%>>
+    <<% for list in participants|batch(10) -%>>
+        \renewcommand{\range}{<<< list[0].registration.name.nametag_forename.split()[0]|e >>> -- <<< list[-1].registration.name.nametag_forename.split()[0]|e >>>}
+        \begin{tabular}{ @{} p{105mm} @{} p{105mm} @{} }
+        <<% for departing_participant in list -%>>
+            \vspace*{6mm}%
+            \hspace*{6mm}%
+            \begin{minipage}[b][38.8mm][t]{93mm}
+                <<%- block nametag_name scoped %>>
+                    \headingfamily
+                    % Forename
+                    <<% set forename = departing_participant.registration.name.nametag_forename|override(departing_participant.registration, CONFIG.data.overrides.nametag_forename) %>>
+                    <<% set font_size, line_size = UTIL.get_font_size(CONFIG.nametags.forename_fontsizes, forename) %>>
+                    \fontsize{<<< font_size >>>}{<<< line_size >>>}
+                    \selectfont \textbf{\mbox{<<< forename|e >>>}}
+                    % Pronouns
+                    <<% set pronouns = departing_participant.registration.name.nametag_pronouns|override(departing_participant.registration, CONFIG.data.overrides.nametag_pronouns) %>>
+                    <<% if pronouns -%>>
+                        <<% set font_size, line_size = UTIL.get_font_size(CONFIG.nametags.pronouns_fontsizes, pronouns) %>>
+                        \fontsize{<<< font_size >>>}{<<< line_size >>>}
+                        \selectfont \hfill\mbox{(<<< pronouns|e >>>)}
+                    <<% endif %>>\\
+                    % Surname
+                    <<% set surname = departing_participant.registration.name.nametag_surname|override(departing_participant.registration, CONFIG.data.overrides.nametag_surname) %>>
+                    <<% set font_size, line_size = UTIL.get_font_size(CONFIG.nametags.surname_fontsizes, surname) %>>
+                    \fontsize{<<< font_size >>>}{<<< line_size >>>}
+                    \selectfont \textbf{\mbox{<<< surname|e >>>}}
+                <<% endblock -%>>
+                \vfill
+                <<% block departure_info scoped %>>
+                    <<% if departing_participant.is_car %>>
+                        Auto
+                        <<% if not departing_participant.time_is_missing %>>
+                            <<% if departing_participant.time.date() != part.end %>>am <<< departing_participant.time|datetime('%d.%m.') >>><<% endif %>>
+                            um <<< departing_participant.time|datetime('%H:%M') >>> Uhr
+                        <<% endif %>>
+                    <<% else %>>
+                        <<% if config.bus_field %>>
+                            <<% set bus_name = departing_participant.bus %>>
+                            <<% if config.bus_descriptions %>>
+                                <<% set bus_name = config.bus_descriptions.get(bus_name, bus_name) %>>
+                            <<% endif %>>
+                            <<< bus_name|e >>>
+                        <<% endif %>>
+                    <<% endif %>>
+                <<% endblock %>>
+            \end{minipage}%
+            \vspace*{6mm}%
+            <<% if loop.index is divisibleby 2 %>>\\<<% else -%>>&<<% endif -%>>
+        <<% endfor -%>>
+        \end{tabular}
+        \clearpage
+    <<% endfor -%>>
+<<% endblock %>>
