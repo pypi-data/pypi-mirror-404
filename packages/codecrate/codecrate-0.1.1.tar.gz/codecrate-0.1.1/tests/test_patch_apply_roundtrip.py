@@ -1,0 +1,110 @@
+from __future__ import annotations
+
+import shutil
+from pathlib import Path
+
+from codecrate.diffgen import generate_patch_markdown
+from codecrate.discover import discover_python_files
+from codecrate.markdown import render_markdown
+from codecrate.packer import pack_repo
+from codecrate.udiff import apply_file_diffs, parse_unified_diff
+
+
+def _extract_diff_blocks(md_text: str) -> str:
+    lines = md_text.splitlines()
+    out: list[str] = []
+    i = 0
+    while i < len(lines):
+        if lines[i].strip() == "```diff":
+            i += 1
+            while i < len(lines) and lines[i].strip() != "```":
+                out.append(lines[i])
+                i += 1
+        i += 1
+    return "\n".join(out) + "\n"
+
+
+def test_patch_apply_roundtrip(tmp_path: Path):
+    root = tmp_path / "repo"
+    root.mkdir()
+    f = root / "a.py"
+    f.write_text("def f():\n    return 1\n", encoding="utf-8")
+
+    # old pack is just a baseline markdown with one file; for this test, keep it simple:
+    old_md = (
+        "# Codecrate Context Pack\n\n"
+        "## Manifest\n\n"
+        "```codecrate-manifest\n"
+        "{\n"
+        '  "format": "codecrate.v4",\n'
+        '  "root": ".",\n'
+        '  "files": [\n'
+        '    {"path": "a.py", "module": "a", "line_count": 2, "classes": [],\n'
+        '     "defs": [{"path": "a.py", "module": "a", "qualname": "f", '
+        '"id": "ID", "local_id": "ID", "kind": "function", '
+        '"decorator_start": 1, "def_line": 1, "body_start": 2, '
+        '"end_line": 2, "doc_start": null, "doc_end": null, '
+        '"is_single_line": false}]}\n'
+        "  ]\n"
+        "}\n"
+        "```\n\n"
+        "## Function Library\n\n"
+        "### ID — `a.f` (a.py:L1–L2)\n"
+        "```python\n"
+        "def f():\n"
+        "    return 1\n"
+        "```\n\n"
+        "## Files\n\n"
+        "### `a.py` (L1–L2)\n"
+        "```python\n"
+        "def f():\n"
+        "    ...  # ↪ FUNC:ID\n"
+        "```\n"
+    )
+
+    # change current file
+    f.write_text("def f():\n    return 2\n", encoding="utf-8")
+
+    patch_md = generate_patch_markdown(old_md, root)
+    diff_text = _extract_diff_blocks(patch_md)
+    diffs = parse_unified_diff(diff_text)
+    apply_file_diffs(diffs, root)
+
+    assert f.read_text(encoding="utf-8") == "def f():\n    return 2\n"
+
+
+def test_patch_apply_add_delete(tmp_path: Path) -> None:
+    base = tmp_path / "base"
+    base.mkdir()
+
+    (base / "a.py").write_text("def a():\n    return 1\n", encoding="utf-8")
+    (base / "b.py").write_text("def b():\n    return 2\n", encoding="utf-8")
+
+    disc = discover_python_files(
+        base, include=["**/*.py"], exclude=[], respect_gitignore=False
+    )
+    pack, canon = pack_repo(disc.root, disc.files, keep_docstrings=True, dedupe=False)
+    old_md = render_markdown(pack, canon)
+
+    # Create a "current" repo: delete b.py, add c.py
+    cur = tmp_path / "cur"
+    shutil.copytree(base, cur)
+    (cur / "b.py").unlink()
+    (cur / "c.py").write_text("def c():\n    return 3\n", encoding="utf-8")
+
+    patch_md = generate_patch_markdown(old_md, cur)
+    diff_text = _extract_diff_blocks(patch_md)
+    diffs = parse_unified_diff(diff_text)
+
+    # Apply patch to a fresh copy of base
+    apply_root = tmp_path / "apply"
+    shutil.copytree(base, apply_root)
+    apply_file_diffs(diffs, apply_root)
+
+    assert (apply_root / "a.py").read_text(encoding="utf-8") == (
+        cur / "a.py"
+    ).read_text(encoding="utf-8")
+    assert not (apply_root / "b.py").exists()
+    assert (apply_root / "c.py").read_text(encoding="utf-8") == (
+        cur / "c.py"
+    ).read_text(encoding="utf-8")
