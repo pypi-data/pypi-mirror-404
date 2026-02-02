@@ -1,0 +1,151 @@
+Metadata-Version: 2.4
+Name: signalflow-trading
+Version: 0.3.0
+Summary: SignalFlow: modular framework for trading signal generation, validation and execution
+Author: pathway2nothing
+License: MIT License
+        
+        Copyright (c) 2025 SignalFlow-Trading
+        
+        Permission is hereby granted, free of charge, to any person obtaining a copy
+        of this software and associated documentation files (the "Software"), to deal
+        in the Software without restriction, including without limitation the rights
+        to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+        copies of the Software, and to permit persons to whom the Software is
+        furnished to do so, subject to the following conditions:
+        
+        The above copyright notice and this permission notice shall be included in all
+        copies or substantial portions of the Software.
+        
+        THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+        IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+        FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+        AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+        LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+        OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+        SOFTWARE.
+Project-URL: Homepage, https://signalflow-trading.com
+Project-URL: Source, https://github.com/pathway2nothing/signalflow-trading
+Project-URL: Issues, https://github.com/pathway2nothing/signalflow-trading/issues
+Requires-Python: >=3.12
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: pandas>=2.0.0
+Requires-Dist: polars>=0.20.0
+Requires-Dist: duckdb>=1.0.0
+Requires-Dist: loguru>=0.7.0
+Requires-Dist: aiohttp>=3.9.0
+Requires-Dist: scikit-learn>=1.3.0
+Requires-Dist: optuna>=3.0.0
+Requires-Dist: numba>=0.58.0
+Requires-Dist: lightning>=2.1.0
+Requires-Dist: numpy>=1.24.0
+Requires-Dist: pandas-ta>=0.3.14b
+Provides-Extra: docs
+Requires-Dist: mkdocs>=1.6; extra == "docs"
+Requires-Dist: mkdocs-material>=9.5; extra == "docs"
+Requires-Dist: mkdocstrings[python]>=0.25; extra == "docs"
+Requires-Dist: pymdown-extensions>=10.0; extra == "docs"
+Requires-Dist: mkdocs-minify-plugin>=0.7.0; extra == "docs"
+Requires-Dist: mike>=2.1.0; extra == "docs"
+Requires-Dist: mkdocs-macros-plugin>=1.5.0; extra == "docs"
+Dynamic: license-file
+
+# SignalFlow
+
+**SignalFlow** is a high-performance Python framework for algorithmic trading, designed to manage the full strategy lifecycle from signal detection to execution. It bridges the gap between research and production by providing a robust pipeline for signal generation, meta-labeling validation, and automated trading.
+
+## Core Architecture: The Signal Pipeline
+
+The framework implements a modular three-stage processing logic:
+
+1. **🕵️ Signal Detector**: Scans market data (OHLCV or tick) to identify potential market events. Detectors can range from simple SMA crossovers to complex deep learning models.
+
+2. **⚖️ Signal Validator (Meta-Labeling)**: Based on Lopez de Prado's methodology, this stage assesses the quality and risk of detected signals using classification models (e.g., LightGBM, XGBoost).
+
+3. **♟️ Trading Strategy**: Converts validated signals into actionable trade positions, managing entry, exit, and risk.
+
+
+## Key Features
+
+* **Polars-First Performance**: Core data processing utilizes `polars` for extreme efficiency with large datasets.
+
+* **Production Ready**: Code written for research and backtesting is designed for direct deployment to live trading.
+
+* **Advanced Labeling**: Native support for Triple-Barrier Method and Fixed-Horizon labeling for ML training.
+
+
+* **Kedro Integration**: Fully compatible with Kedro for reproducible R&D and automated data pipelines.
+
+* **Flexible Extensibility**: Easily add custom features via the `@sf_component` registry.
+
+
+## Quick Start
+
+### Installation
+
+```bash
+pip install signalflow-trading
+
+```
+
+### Signal Detection Example
+
+```python
+from signalflow.core import RawDataView
+from signalflow.detector import SmaCrossSignalDetector
+
+# Initialize a detector (SMA 20/50 crossover)
+detector = SmaCrossSignalDetector(fast_period=20, slow_period=50)
+
+# Run detection on a data snapshot
+signals = detector.run(raw_data_view)
+
+```
+
+### Signal Validation (Meta-Labeling)
+
+```python
+from signalflow.validator import SklearnSignalValidator
+
+# Create a validator using LightGBM
+validator = SklearnSignalValidator(model_type="lightgbm")
+
+# Fit the model on labeled historical signals
+validator.fit(X_train, y_train)
+
+# Validate new signals to get success probabilities
+validated_signals = validator.validate_signals(signals, features)
+
+```
+
+## Tech Stack
+
+* **Data**: `polars`, `pandas`, `duckdb`.
+
+* **ML/Compute**: `pytorch`, `lightning`, `scikit-learn`, `numba`, `optuna`.
+
+* **Technical Analysis**: `pandas-ta`.
+
+
+## Package Structure
+
+* `signalflow.core`: Core data containers (`RawData`, `Signals`) and registries.
+
+* `signalflow.data`: Binance API loaders and DuckDB storage.
+
+* `signalflow.feature`: Feature extractors and technical indicator adapters.
+
+* `signalflow.target`: Advanced labeling techniques for machine learning.
+
+* `signalflow.detector`: Ready-to-use signal detection algorithms.
+
+
+
+---
+
+**License:** MIT 
+
+**Author:** pathway2nothing 
+
+---
