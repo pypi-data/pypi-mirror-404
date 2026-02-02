@@ -1,0 +1,19 @@
+from DiscordTranscript.chat_exporter import (
+    AttachmentHandler,
+    AttachmentToDataURIHandler,
+    AttachmentToDiscordChannelHandler,
+    export,
+    quick_export,
+    raw_export,
+)
+
+__version__ = "1.3.1"
+
+__all__ = (
+    export,
+    raw_export,
+    quick_export,
+    AttachmentHandler,
+    AttachmentToDataURIHandler,
+    AttachmentToDiscordChannelHandler,
+)
