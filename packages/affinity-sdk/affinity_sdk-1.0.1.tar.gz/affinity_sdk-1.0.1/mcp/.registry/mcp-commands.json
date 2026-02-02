@@ -1,0 +1,475 @@
+{
+  "_comment": "MCP Command Registry Config. Only commands listed here are exposed via discover-commands. Edit this file to control what CLI commands LLMs can discover.",
+  "commands": {
+    "person get": {
+      "whenToUse": "Get full details for a person. Selector formats: numeric ID, Affinity URL, or 'email:user@example.com'. Use --expand list-entries to check which lists the person is on (efficient single-entity lookup). Use --with-interaction-dates for last/next meeting dates and email activity.",
+      "examples": [
+        "person get 12345",
+        "person get email:john@example.com",
+        "person get 12345 --expand list-entries",
+        "person get 12345 --with-interaction-dates"
+      ],
+      "relatedCommands": ["person ls", "person field"]
+    },
+    "person ls": {
+      "whenToUse": "Search persons by name/email. ALWAYS use --query for text search (simpler, more reliable). Avoid --filter with complex expressions containing quotes.",
+      "examples": [
+        "person ls --query 'John Smith'",
+        "person ls --query 'john@example.com'"
+      ],
+      "relatedCommands": ["person get", "person field"],
+      "mcpBehavior": {
+        "limitEnforced": true,
+        "allFlagBlocked": true,
+        "defaultLimit": 1000,
+        "maxLimit": 10000
+      }
+    },
+    "person create": {
+      "whenToUse": "Create a new person in the CRM.",
+      "relatedCommands": ["person get", "person update"]
+    },
+    "person update": {
+      "whenToUse": "Update an existing person's details.",
+      "relatedCommands": ["person get"]
+    },
+    "person delete": {
+      "whenToUse": "Delete a person from the CRM. Use with caution.",
+      "relatedCommands": ["person get"]
+    },
+    "person field": {
+      "whenToUse": "Manage global field values on a person.",
+      "relatedCommands": ["person get", "field ls"]
+    },
+    "person merge": {
+      "whenToUse": "Merge a duplicate person into a primary person (beta). Combines data from both records. Returns a taskUrl - use 'task wait' to poll for completion.",
+      "examples": [
+        "person merge 123 456"
+      ],
+      "relatedCommands": ["person get", "person ls", "task wait"]
+    },
+    "person files ls": {
+      "whenToUse": "List files attached to a person. Use this first to get file IDs, then use 'person files read' to read file content inline (works in Claude Desktop/Cowork), or 'get-file-url' for presigned URLs.",
+      "examples": ["person files ls 67890", "person files ls \"email:john@example.com\" --max-results 10"],
+      "relatedCommands": ["person get", "person files read", "person files upload"],
+      "mcpNote": "After listing, use 'person files read' with fileId to read content inline (recommended for Claude Desktop/Cowork), or 'get-file-url' for presigned URLs.",
+      "mcpBehavior": {
+        "limitEnforced": true,
+        "allFlagBlocked": true,
+        "defaultLimit": 1000,
+        "maxLimit": 10000
+      }
+    },
+    "person files read": {
+      "whenToUse": "Read file content inline with chunking support. Returns base64-encoded content. Use this when Claude Desktop/Cowork blocks presigned URLs (userfiles.affinity.co). For large files, use --offset and --limit to fetch in chunks.",
+      "examples": [
+        "person files read 67890 --file-id 123456",
+        "person files read 67890 --file-id 123456 --offset 0 --limit 1MB",
+        "person files read 67890 --file-id 123456 --offset 1048576 --limit 500KB"
+      ],
+      "relatedCommands": ["person files ls", "person get"],
+      "mcpNote": "Response includes hasMore and nextOffset for chunked downloads. LLMs with Python sandbox can reassemble chunks and process with tools like PyPDF2, pandas, PIL."
+    },
+    "person files upload": {
+      "whenToUse": "Upload files/documents to a person.",
+      "examples": ["person files upload 123 --file doc.pdf"],
+      "relatedCommands": ["person get", "person files ls"]
+    },
+    "company get": {
+      "whenToUse": "Get full details for a company. Selector formats: numeric ID, Affinity URL, 'domain:example.com', or 'name:Company Name'. Use --expand list-entries to check which lists the company is on (efficient single-entity lookup). Use --with-interaction-dates for last/next meeting dates and email activity.",
+      "examples": [
+        "company get 12345",
+        "company get domain:wellybox.com",
+        "company get 12345 --expand list-entries",
+        "company get 12345 --with-interaction-dates"
+      ],
+      "relatedCommands": ["company ls", "company field"]
+    },
+    "company ls": {
+      "whenToUse": "List or search ALL companies in CRM. Use --query for text search (name, domain). NOT for list-specific fields like Status.",
+      "relatedCommands": ["company get", "company field"],
+      "mcpBehavior": {
+        "limitEnforced": true,
+        "allFlagBlocked": true,
+        "defaultLimit": 1000,
+        "maxLimit": 10000
+      }
+    },
+    "company create": {
+      "whenToUse": "Create a new company in the CRM.",
+      "relatedCommands": ["company get", "company update"]
+    },
+    "company update": {
+      "whenToUse": "Update an existing company's details.",
+      "relatedCommands": ["company get"]
+    },
+    "company delete": {
+      "whenToUse": "Delete a company from the CRM. Use with caution.",
+      "relatedCommands": ["company get"]
+    },
+    "company field": {
+      "whenToUse": "Manage global field values on a company.",
+      "relatedCommands": ["company get", "field ls"]
+    },
+    "company merge": {
+      "whenToUse": "Merge a duplicate company into a primary company (beta). Combines data from both records. Returns a taskUrl - use 'task wait' to poll for completion.",
+      "examples": [
+        "company merge 123 456"
+      ],
+      "relatedCommands": ["company get", "company ls", "task wait"]
+    },
+    "company files ls": {
+      "whenToUse": "List files attached to a company. Use this first to get file IDs, then use 'company files read' to read file content inline (works in Claude Desktop/Cowork), or 'get-file-url' for presigned URLs.",
+      "examples": ["company files ls 12345", "company files ls \"name:Acme Corp\" --max-results 10"],
+      "relatedCommands": ["company get", "company files read", "company files upload"],
+      "mcpNote": "After listing, use 'company files read' with fileId to read content inline (recommended for Claude Desktop/Cowork), or 'get-file-url' for presigned URLs.",
+      "mcpBehavior": {
+        "limitEnforced": true,
+        "allFlagBlocked": true,
+        "defaultLimit": 1000,
+        "maxLimit": 10000
+      }
+    },
+    "company files read": {
+      "whenToUse": "Read file content inline with chunking support. Returns base64-encoded content. Use this when Claude Desktop/Cowork blocks presigned URLs (userfiles.affinity.co). For large files, use --offset and --limit to fetch in chunks.",
+      "examples": [
+        "company files read 12345 --file-id 123456",
+        "company files read 12345 --file-id 123456 --offset 0 --limit 1MB",
+        "company files read 12345 --file-id 123456 --offset 1048576 --limit 500KB"
+      ],
+      "relatedCommands": ["company files ls", "company get"],
+      "mcpNote": "Response includes hasMore and nextOffset for chunked downloads. LLMs with Python sandbox can reassemble chunks and process with tools like PyPDF2, pandas, PIL."
+    },
+    "company files upload": {
+      "whenToUse": "Upload files/documents to a company.",
+      "examples": ["company files upload 123 --file doc.pdf"],
+      "relatedCommands": ["company get", "company files ls"]
+    },
+    "opportunity get": {
+      "whenToUse": "Get opportunity details. Use --expand persons/companies for associations.",
+      "relatedCommands": ["opportunity ls", "opportunity field"]
+    },
+    "opportunity ls": {
+      "whenToUse": "List opportunities. Note: opportunities exist only within a specific list (pipeline).",
+      "relatedCommands": ["opportunity get", "list ls"],
+      "mcpBehavior": {
+        "limitEnforced": true,
+        "allFlagBlocked": true,
+        "defaultLimit": 1000,
+        "maxLimit": 10000
+      }
+    },
+    "opportunity create": {
+      "whenToUse": "Create a new opportunity in a pipeline.",
+      "relatedCommands": ["opportunity get", "opportunity update"]
+    },
+    "opportunity update": {
+      "whenToUse": "Update an existing opportunity.",
+      "relatedCommands": ["opportunity get"]
+    },
+    "opportunity delete": {
+      "whenToUse": "Delete an opportunity. Use with caution.",
+      "relatedCommands": ["opportunity get"]
+    },
+    "opportunity field": {
+      "whenToUse": "Manage field values on an opportunity.",
+      "relatedCommands": ["opportunity get", "field ls"]
+    },
+    "opportunity files ls": {
+      "whenToUse": "List files attached to an opportunity. Use this first to get file IDs, then use 'opportunity files read' to read file content inline (works in Claude Desktop/Cowork), or 'get-file-url' for presigned URLs.",
+      "examples": ["opportunity files ls 98765"],
+      "relatedCommands": ["opportunity get", "opportunity files read", "opportunity files upload"],
+      "mcpNote": "After listing, use 'opportunity files read' with fileId to read content inline (recommended for Claude Desktop/Cowork), or 'get-file-url' for presigned URLs.",
+      "mcpBehavior": {
+        "limitEnforced": true,
+        "allFlagBlocked": true,
+        "defaultLimit": 1000,
+        "maxLimit": 10000
+      }
+    },
+    "opportunity files read": {
+      "whenToUse": "Read file content inline with chunking support. Returns base64-encoded content. Use this when Claude Desktop/Cowork blocks presigned URLs (userfiles.affinity.co). For large files, use --offset and --limit to fetch in chunks.",
+      "examples": [
+        "opportunity files read 98765 --file-id 123456",
+        "opportunity files read 98765 --file-id 123456 --offset 0 --limit 1MB",
+        "opportunity files read 98765 --file-id 123456 --offset 1048576 --limit 500KB"
+      ],
+      "relatedCommands": ["opportunity files ls", "opportunity get"],
+      "mcpNote": "Response includes hasMore and nextOffset for chunked downloads. LLMs with Python sandbox can reassemble chunks and process with tools like PyPDF2, pandas, PIL."
+    },
+    "opportunity files upload": {
+      "whenToUse": "Upload files/documents to an opportunity.",
+      "examples": ["opportunity files upload 123 --file doc.pdf"],
+      "relatedCommands": ["opportunity get", "opportunity files ls"]
+    },
+    "list ls": {
+      "whenToUse": "Find list IDs by name. Use before list export or field ls.",
+      "relatedCommands": ["list get", "field ls"],
+      "mcpBehavior": {
+        "limitEnforced": true,
+        "allFlagBlocked": true,
+        "defaultLimit": 1000,
+        "maxLimit": 10000
+      }
+    },
+    "list get": {
+      "whenToUse": "Get list details including type and field count.",
+      "relatedCommands": ["list ls", "field ls"]
+    },
+    "list create": {
+      "whenToUse": "Create a new list (person, company, or opportunity type).",
+      "relatedCommands": ["list ls", "list get"]
+    },
+    "list export": {
+      "whenToUse": "ONLY for --saved-view (Affinity saved views). For ALL other list operations, use the 'query' tool instead - it supports filtering, includes (persons, companies, interactions), expands (interactionDates, unreplied), and aggregations.",
+      "examples": [
+        "list export \"Pipeline\" --saved-view \"Active Deals\" --csv > deals.csv"
+      ],
+      "relatedCommands": ["query", "list get", "field ls"],
+      "mcpBehavior": {
+        "limitEnforced": true,
+        "allFlagBlocked": true,
+        "defaultLimit": 1000,
+        "maxLimit": 10000
+      }
+    },
+    "entry get": {
+      "whenToUse": "Get full details for a single list entry by ID.",
+      "relatedCommands": ["entry field", "query"]
+    },
+    "entry add": {
+      "whenToUse": "Add a person or company to a list.",
+      "relatedCommands": ["entry get", "entry delete"]
+    },
+    "entry field": {
+      "whenToUse": "Update field values on a list entry.",
+      "examples": [
+        "entry field \"Pipeline\" 12345 --set Status \"Active\"",
+        "entry field \"Pipeline\" 12345 --set \"Deal Size\" 50000"
+      ],
+      "relatedCommands": ["entry get", "field ls"]
+    },
+    "entry delete": {
+      "whenToUse": "Remove an entry from a list. Use with caution.",
+      "relatedCommands": ["entry get"]
+    },
+    "field ls": {
+      "whenToUse": "See what custom fields exist on a list. Helps understand available filter fields and dropdown options.",
+      "relatedCommands": ["list ls", "entry field"]
+    },
+    "field history": {
+      "whenToUse": "Audit who changed a field value and when. Use to track status changes, see modification timestamps, or investigate field value history. REQUIRES exactly one entity selector: --person-id, --company-id, --opportunity-id, or --list-entry-id.",
+      "requiredOneOf": [["--person-id", "--company-id", "--opportunity-id", "--list-entry-id"]],
+      "examples": [
+        "field history field-123456 --person-id 789",
+        "field history field-123456 --company-id 456",
+        "field history field-123456 --list-entry-id 999 --max-results 50"
+      ],
+      "relatedCommands": ["field ls", "person get", "company get", "opportunity get", "entry get"],
+      "mcpBehavior": {
+        "limitEnforced": true,
+        "defaultLimit": 1000,
+        "maxLimit": 10000
+      }
+    },
+    "field create": {
+      "whenToUse": "Create a new custom field on a list or globally.",
+      "relatedCommands": ["field ls", "field delete"]
+    },
+    "field delete": {
+      "whenToUse": "Delete a custom field. Use with caution - this removes all data in that field.",
+      "relatedCommands": ["field ls"]
+    },
+    "interaction ls": {
+      "whenToUse": "List interactions for an entity. Requires --type (repeatable, or 'all') and one entity selector (--person-id, --company-id, or --opportunity-id). Date range defaults to all-time; use --days or --after to limit. Auto-chunks ranges > 1 year.",
+      "requiredOneOf": [["--person-id", "--company-id", "--opportunity-id"]],
+      "examples": [
+        "interaction ls --type all --company-id 456",
+        "interaction ls --type email --type meeting --person-id 123 --days 30",
+        "interaction ls --type meeting --person-id 123 --days 30",
+        "interaction ls --type call --person-id 789 --after 2024-01-01 --before 2024-06-30"
+      ],
+      "relatedCommands": ["interaction get", "interaction create", "note ls"],
+      "mcpBehavior": {
+        "limitEnforced": true,
+        "defaultLimit": 1000,
+        "maxLimit": 10000
+      }
+    },
+    "interaction get": {
+      "whenToUse": "Get details of a specific interaction by ID.",
+      "relatedCommands": ["interaction ls", "interaction update"]
+    },
+    "interaction create": {
+      "whenToUse": "Log a meeting, call, or email. Requires --type and --participants.",
+      "relatedCommands": ["interaction ls", "note create"]
+    },
+    "interaction update": {
+      "whenToUse": "Update an existing interaction.",
+      "relatedCommands": ["interaction get"]
+    },
+    "interaction delete": {
+      "whenToUse": "Delete an interaction. Use with caution.",
+      "relatedCommands": ["interaction get"]
+    },
+    "note ls": {
+      "whenToUse": "List notes attached to an entity.",
+      "relatedCommands": ["note get", "note create"],
+      "mcpBehavior": {
+        "limitEnforced": true,
+        "allFlagBlocked": true,
+        "defaultLimit": 1000,
+        "maxLimit": 10000
+      }
+    },
+    "note get": {
+      "whenToUse": "Get details of a specific note by ID.",
+      "relatedCommands": ["note ls", "note update"]
+    },
+    "note create": {
+      "whenToUse": "Add a note to an entity. Simpler than interactions for quick notes.",
+      "relatedCommands": ["note ls", "interaction create"]
+    },
+    "note update": {
+      "whenToUse": "Update an existing note.",
+      "relatedCommands": ["note get"]
+    },
+    "note delete": {
+      "whenToUse": "Delete a note. Use with caution.",
+      "relatedCommands": ["note get"]
+    },
+    "reminder ls": {
+      "whenToUse": "List reminders. Filter by entity (--person-id, --company-id, --opportunity-id), user (--owner-id, --creator-id), type, status, or due date range (--due-after/--due-before).",
+      "relatedCommands": ["reminder get", "reminder create"],
+      "mcpBehavior": {
+        "limitEnforced": true,
+        "allFlagBlocked": true,
+        "defaultLimit": 1000,
+        "maxLimit": 10000
+      }
+    },
+    "reminder get": {
+      "whenToUse": "Get details of a specific reminder by ID.",
+      "relatedCommands": ["reminder ls", "reminder update"]
+    },
+    "reminder create": {
+      "whenToUse": "Create a reminder for follow-up on an entity.",
+      "relatedCommands": ["reminder ls", "reminder update"]
+    },
+    "reminder update": {
+      "whenToUse": "Update an existing reminder.",
+      "relatedCommands": ["reminder get"]
+    },
+    "reminder delete": {
+      "whenToUse": "Delete a reminder.",
+      "relatedCommands": ["reminder get"]
+    },
+    "relationship-strength ls": {
+      "whenToUse": "List relationship strengths for a person or external ID. Shows connection quality and team members who know them.",
+      "relatedCommands": ["person get"]
+    },
+    "query": {
+      "whenToUse": "For complex data queries. PREFERRED over list export for all list operations except --saved-view. Always use --dry-run first to preview API call count. Supports cursor-based pagination for truncated responses - pass nextCursor value to resume.",
+      "syntax": {
+        "structure": "{\"from\": \"<entity>\", \"where\": {...}, \"include\": [...], \"expand\": [...], \"select\": [...], \"orderBy\": [...], \"groupBy\": \"<field>\", \"aggregate\": {...}, \"limit\": N}",
+        "entities": ["persons", "companies", "opportunities", "listEntries", "interactions", "notes"],
+        "operators": {
+          "comparison": ["eq", "neq", "gt", "gte", "lt", "lte"],
+          "string": ["contains", "starts_with", "ends_with"],
+          "collection": ["in", "between", "has_any", "has_all", "contains_any", "contains_all"],
+          "null": ["is_null", "is_not_null", "is_empty"]
+        },
+        "compound": ["and", "or", "not"],
+        "quantifiers": ["all", "none", "exists", "_count (e.g. companies._count)"],
+        "relativeDates": ["-30d", "+7d", "today", "now", "yesterday", "tomorrow"]
+      },
+      "critical": {
+        "listEntriesRequiresFilter": "listEntries MUST have where clause with listId or listName - e.g. {\"path\": \"listName\", \"op\": \"eq\", \"value\": \"Pipeline\"}",
+        "includeVsExpand": "include fetches related entities (separate section), expand adds computed data to each record",
+        "quantifiersNeedMaxRecords": "all/none/exists/_count on persons/companies/opportunities cause N+1 calls - always add maxRecords",
+        "multiSelectFields": "Use has_any/has_all for multi-select dropdown fields, not eq/in"
+      },
+      "include": {
+        "persons": ["companies", "opportunities", "interactions", "notes", "listEntries"],
+        "companies": ["persons", "opportunities", "interactions", "notes", "listEntries"],
+        "listEntries": ["entity", "persons", "companies", "opportunities", "interactions"],
+        "withParams": "{\"interactions\": {\"limit\": 50, \"days\": 180}}"
+      },
+      "expand": {
+        "interactionDates": "Last/next meeting dates, email dates, team members (persons, companies, listEntries)",
+        "unreplied": "Detect unreplied incoming messages (email/chat) with date, daysSince, type, subject"
+      },
+      "fieldPaths": {
+        "customFields": "fields.<FieldName> for list entry custom fields",
+        "wildcard": "fields.* selects all custom fields",
+        "array": "emails[0] for array access"
+      },
+      "outputFormats": {
+        "toon": "Default, token-efficient (~40% fewer tokens)",
+        "markdown": "Best for LLM analysis - tables are easy to comprehend",
+        "json": "Full structure for programmatic use",
+        "csv": "For spreadsheets"
+      },
+      "truncationResumption": {
+        "description": "When truncated=true, use the nextCursor value to resume fetching the remaining data",
+        "usage": "Pass the nextCursor value as the cursor parameter with the IDENTICAL query",
+        "important": "NEVER fabricate a cursor - only use the exact nextCursor value from the response. Query and format MUST match exactly",
+        "allFormatsSupported": "Cursor pagination works with all output formats (toon, markdown, json, jsonl, csv)",
+        "modes": {
+          "streaming": "Simple queries without orderBy/aggregate",
+          "full-fetch": "Complex queries with orderBy/aggregate - results are cached for efficient resumption"
+        }
+      },
+      "examples": [
+        "query --query '{\"from\": \"persons\", \"limit\": 10}' --dry-run",
+        "query --query '{\"from\": \"persons\", \"where\": {\"path\": \"email\", \"op\": \"contains\", \"value\": \"@acme.com\"}, \"include\": [\"companies\"], \"limit\": 50}'",
+        "query --query '{\"from\": \"listEntries\", \"where\": {\"path\": \"listName\", \"op\": \"eq\", \"value\": \"Dealflow\"}, \"select\": [\"entityName\", \"fields.*\"], \"limit\": 100}'",
+        "query --query '{\"from\": \"listEntries\", \"where\": {\"path\": \"listName\", \"op\": \"eq\", \"value\": \"Dealflow\"}, \"expand\": [\"interactionDates\", \"unreplied\"], \"limit\": 50}'",
+        "query --query '{\"from\": \"listEntries\", \"where\": {\"path\": \"listName\", \"op\": \"eq\", \"value\": \"Dealflow\"}, \"include\": [{\"interactions\": {\"days\": 90, \"limit\": 20}}], \"limit\": 50}'",
+        "query --query '{\"from\": \"opportunities\", \"groupBy\": \"fields.Status\", \"aggregate\": {\"count\": {\"count\": true}, \"totalValue\": {\"sum\": \"fields.Deal Value\"}}}'",
+        "query --query '{\"from\": \"persons\", \"where\": {\"and\": [{\"path\": \"email\", \"op\": \"is_not_null\"}, {\"path\": \"companies._count\", \"op\": \"gte\", \"value\": 1}]}, \"include\": [\"companies\"], \"limit\": 100}' --dry-run",
+        "query --query '{\"from\": \"companies\", \"where\": {\"path\": \"createdAt\", \"op\": \"gte\", \"value\": \"-30d\"}, \"limit\": 50}'",
+        "query --query '{\"from\": \"listEntries\", \"where\": {\"and\": [{\"path\": \"listName\", \"op\": \"eq\", \"value\": \"Pipeline\"}, {\"path\": \"fields.Team Member\", \"op\": \"has_any\", \"value\": [\"Alice\", \"Bob\"]}]}, \"limit\": 100}'"
+      ],
+      "relatedCommands": ["person ls", "company ls", "list export"]
+    },
+    "resolve-url": {
+      "whenToUse": "Parse an Affinity UI URL to extract entity type and IDs. Useful when user pastes an Affinity link.",
+      "examples": [
+        "resolve-url 'https://app.affinity.co/persons/123'"
+      ],
+      "relatedCommands": ["person get", "company get", "opportunity get", "list get", "entry get"]
+    },
+    "task get": {
+      "whenToUse": "Get current status of an async task (pending/in_progress/success/failed). Operations like 'company merge' and 'person merge' return taskUrls that complete in the background.",
+      "examples": [
+        "task get 'https://api.affinity.co/v2/tasks/abc123'"
+      ],
+      "relatedCommands": ["task wait", "company merge", "person merge"]
+    },
+    "task wait": {
+      "whenToUse": "Wait for an async task to complete. Polls with exponential backoff until success/failure. Use after 'company merge' or 'person merge'.",
+      "examples": [
+        "task wait 'https://api.affinity.co/v2/tasks/abc123'",
+        "task wait 'https://api.affinity.co/v2/tasks/abc123' --timeout 60"
+      ],
+      "relatedCommands": ["task get", "company merge", "person merge"]
+    },
+    "whoami": {
+      "whenToUse": "Show current authenticated user and tenant information.",
+      "relatedCommands": ["config check-key"]
+    },
+    "config setup-key": {
+      "whenToUse": "Securely configure the Affinity API key. Use when key is not set up.",
+      "relatedCommands": ["config check-key", "whoami"]
+    },
+    "config check-key": {
+      "whenToUse": "Check if an API key is configured. Useful for troubleshooting authentication issues.",
+      "relatedCommands": ["config setup-key", "whoami"]
+    },
+    "config path": {
+      "whenToUse": "Show the path to the configuration file. Useful for debugging.",
+      "relatedCommands": ["config check-key"]
+    }
+  }
+}

@@ -1,0 +1,256 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  mcp-shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: ShellCheck (Bash 3.2 compatible)
+        run: |
+          # Run shellcheck on all MCP shell scripts
+          # --shell=bash ensures bash-specific checks
+          # --severity=error catches only errors (not style warnings)
+          # Add --severity=warning for stricter checking
+          find mcp -name '*.sh' -type f | xargs shellcheck --shell=bash --severity=error
+
+      - name: Check Bash 3.2 array compatibility
+        run: |
+          # Bash 3.2 fails with "unbound variable" when expanding empty arrays
+          # with set -u (nounset). The safe pattern is: ${arr[@]+"${arr[@]}"}
+          #
+          # This check finds arrays that are:
+          # 1. Initialized as empty: arr=() or local arr=()
+          # 2. In scripts using set -u
+          # 3. Expanded without the safe pattern
+
+          echo "========================================"
+          echo "Checking for unsafe empty array expansions"
+          echo "========================================"
+          echo ""
+
+          errors=0
+          files_checked=0
+
+          for file in $(find mcp -name '*.sh' -type f | sort); do
+            # Skip if file doesn't use set -u
+            if ! grep -qE 'set -[a-z]*u|set -o nounset' "$file" 2>/dev/null; then
+              continue
+            fi
+
+            files_checked=$((files_checked + 1))
+
+            # Find arrays initialized as empty: arr=() or local arr=() or local -a arr=()
+            empty_arrays=$(grep -oE '(local[[:space:]]+(-a[[:space:]]+)?)?[a-zA-Z_][a-zA-Z0-9_]*=\(\)' "$file" 2>/dev/null | \
+                           sed -E 's/^(local[[:space:]]+(-a[[:space:]]+)?)?([a-zA-Z_][a-zA-Z0-9_]*)=\(\)$/\3/' | sort -u) || true
+
+            if [ -z "$empty_arrays" ]; then
+              continue
+            fi
+
+            file_has_errors=false
+
+            # Process each array name (handle newlines properly)
+            echo "$empty_arrays" | while IFS= read -r arr; do
+              [ -z "$arr" ] && continue
+
+              # Find lines with this array expanded unsafely (not using +".." pattern)
+              # The safe pattern is: ${arr[@]+"${arr[@]}"}
+              # Unsafe pattern is: "${arr[@]}" without the + prefix
+              unsafe_lines=$(grep -nE "\"\\\$\{${arr}\[@\]\}\"" "$file" 2>/dev/null | \
+                             grep -vE "\+\"\\\$\{${arr}" || true)
+
+              if [ -n "$unsafe_lines" ]; then
+                echo "$unsafe_lines" | while IFS=: read -r linenum content; do
+                  [ -z "$linenum" ] && continue
+
+                  # Skip comment lines
+                  case "$content" in
+                    *'#'*)
+                      # Check if # comes before the array reference
+                      prefix="${content%%\$\{${arr}*}"
+                      if echo "$prefix" | grep -q '#'; then
+                        continue
+                      fi
+                      ;;
+                  esac
+
+                  if [ "$file_has_errors" = false ]; then
+                    echo ""
+                    echo "ERROR in: $file"
+                    echo "Array '$arr' may be empty and will fail with 'set -u' in Bash 3.2"
+                    file_has_errors=true
+                    # Write to temp file to track errors across subshells
+                    echo "1" >> /tmp/bash32_errors_$$
+                  fi
+                  echo "  Line $linenum: $(echo "$content" | head -c 120)"
+                done
+              fi
+            done
+          done
+
+          # Count errors from temp file (subshell can't modify parent variables)
+          if [ -f /tmp/bash32_errors_$$ ]; then
+            errors=$(wc -l < /tmp/bash32_errors_$$)
+            rm -f /tmp/bash32_errors_$$
+          fi
+
+          echo ""
+          echo "========================================"
+          echo "Checked $files_checked files with 'set -u'"
+
+          if [ "$errors" -gt 0 ]; then
+            echo "Found $errors unsafe array expansion(s)"
+            echo "========================================"
+            echo ""
+            echo "HOW TO FIX:"
+            echo "  Replace: \"\${arr[@]}\""
+            echo "  With:    \${arr[@]+\"\${arr[@]}\"}"
+            echo ""
+            echo "This pattern safely expands to nothing when the array is empty."
+            echo "See: https://stackoverflow.com/q/7577052"
+            exit 1
+          fi
+
+          echo "All array expansions are Bash 3.2 compatible!"
+          echo "========================================"
+
+  mcp-plugin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build MCP plugin
+        run: make -C mcp plugin
+
+      - name: Verify plugin structure
+        run: |
+          # Ensure critical files exist after build (ZIP-based distribution)
+          make -C mcp verify
+          test -f mcp/.claude-plugin/xaffinity-mcp.sh
+          test -f mcp/.claude-plugin/plugin.json
+          test -f mcp/.claude-plugin/xaffinity-mcp-plugin.zip
+          test -f mcp/.claude-plugin/VERSION
+          echo "Plugin structure validated successfully"
+
+      - name: Test ZIP extraction
+        run: |
+          cd mcp/.claude-plugin
+          mkdir -p .mcp-extracted
+          unzip -q xaffinity-mcp-plugin.zip -d .mcp-extracted
+          test -x .mcp-extracted/xaffinity-mcp.sh
+          test -d .mcp-extracted/tools
+          test -d .mcp-extracted/prompts
+          echo "ZIP extraction test passed"
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Lint
+        run: |
+          ruff format --check .
+          ruff check .
+
+      - name: Type check
+        run: |
+          mypy affinity
+
+      - name: Test
+        run: |
+          pytest --cov=affinity --cov-report=term-missing --cov-report=xml
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.xml
+          fail_ci_if_error: false
+
+      - name: Traceability mapping is up to date
+        run: |
+          if [ -d docs/internal ]; then
+            python tools/generate_requirements_mapping.py
+            git diff --exit-code docs/internal/requirements_to_tests_mapping.md
+          else
+            echo "Skipping traceability mapping (docs/internal not present in repo checkout)."
+          fi
+
+      - name: MCP commands registry is valid
+        run: |
+          # Verify registry file exists and is valid JSON with expected structure
+          python -c "
+          import json
+          import sys
+          with open('mcp/.registry/commands.generated.json') as f:
+              data = json.load(f)
+          # Check _generated metadata (auto-generated indicator)
+          assert '_generated' in data, 'Missing _generated metadata'
+          assert 'generator' in data['_generated'], 'Missing generator in _generated'
+          assert 'cliVersion' in data['_generated'], 'Missing cliVersion in _generated'
+          # Check commands structure
+          assert 'commands' in data, 'Missing commands key'
+          assert isinstance(data['commands'], list), 'commands must be a list'
+          assert len(data['commands']) > 0, 'commands list is empty'
+          for cmd in data['commands']:
+              assert 'name' in cmd, f'Command missing name: {cmd}'
+              assert 'category' in cmd, f'Command {cmd[\"name\"]} missing category'
+              assert cmd['category'] in ('read', 'write', 'local'), f'Invalid category for {cmd[\"name\"]}'
+          print(f'Registry valid: {len(data[\"commands\"])} commands (v{data[\"_generated\"][\"cliVersion\"]})')
+          "
+          # Regenerate registry and verify it matches committed version
+          python tools/generate_mcp_command_registry.py
+          git diff --exit-code mcp/.registry/commands.generated.json
+
+  test-timezone:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        tz: ["UTC", "America/New_York", "Europe/London", "Asia/Tokyo"]
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Test with TZ=${{ matrix.tz }}
+        env:
+          TZ: ${{ matrix.tz }}
+        run: |
+          pytest tests/test_isodatetime.py -v
