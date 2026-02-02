@@ -1,0 +1,505 @@
+"""
+Retry and timeout utilities for Instructor integration.
+
+Provides decorators and context managers for handling transient failures
+and validation retries with exponential backoff and configurable timeouts.
+"""
+
+import asyncio
+import functools
+import logging
+import time
+from typing import Any, Callable, List, Optional, Type, TypeVar, Union
+
+logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
+
+# Common transient errors that should be retried
+TRANSIENT_ERRORS = (
+    TimeoutError,
+    ConnectionError,
+    ConnectionResetError,
+    ConnectionRefusedError,
+    OSError,  # Includes network errors
+)
+
+# Instructor-specific retryable errors
+INSTRUCTOR_RETRYABLE_ERRORS = (
+    # Pydantic validation errors (instructor may auto-retry these)
+    "ValidationError",
+    # API rate limits
+    "RateLimitError",
+    # Temporary service errors
+    "ServiceUnavailableError",
+    "InternalServerError",
+)
+
+
+class RetryExhaustedError(Exception):
+    """Raised when all retry attempts have been exhausted."""
+
+    def __init__(self, message: str, last_error: Optional[Exception] = None, attempts: int = 0):
+        super().__init__(message)
+        self.last_error = last_error
+        self.attempts = attempts
+
+
+class TimeoutExceededError(Exception):
+    """Raised when an operation exceeds its timeout."""
+
+    def __init__(self, message: str, timeout: float, operation: str = ""):
+        super().__init__(message)
+        self.timeout = timeout
+        self.operation = operation
+
+
+class InstructorExtractionError(Exception):
+    """Raised when Instructor extraction fails after all retries."""
+
+    def __init__(
+        self,
+        message: str,
+        schema_name: str = "",
+        last_error: Optional[Exception] = None,
+        validation_errors: Optional[List[str]] = None,
+    ):
+        super().__init__(message)
+        self.schema_name = schema_name
+        self.last_error = last_error
+        self.validation_errors = validation_errors or []
+
+
+class ValidationRetryExhaustedError(Exception):
+    """Raised when validation retries are exhausted."""
+
+    def __init__(
+        self,
+        message: str,
+        schema_name: str = "",
+        attempts: int = 0,
+        validation_errors: Optional[List[str]] = None,
+    ):
+        super().__init__(message)
+        self.schema_name = schema_name
+        self.attempts = attempts
+        self.validation_errors = validation_errors or []
+
+
+def is_validation_error(e: Exception) -> bool:
+    """Check if an exception is a Pydantic validation error."""
+    error_type = type(e).__name__
+    return (
+        error_type == "ValidationError"
+        or "validation" in str(e).lower()
+        or "pydantic" in type(e).__module__.lower() if hasattr(type(e), '__module__') else False
+    )
+
+
+def is_retryable_error(e: Exception) -> bool:
+    """Check if an exception should be retried."""
+    error_type = type(e).__name__
+    error_str = str(e).lower()
+
+    # Check against known retryable types
+    if error_type in INSTRUCTOR_RETRYABLE_ERRORS:
+        return True
+
+    # Check for rate limit indicators
+    if "rate" in error_str and "limit" in error_str:
+        return True
+
+    # Check for temporary service issues
+    if any(term in error_str for term in ["temporarily", "unavailable", "503", "429"]):
+        return True
+
+    # Check if it's a transient network error
+    if isinstance(e, TRANSIENT_ERRORS):
+        return True
+
+    return False
+
+
+async def with_timeout(
+    coro: Any,
+    timeout: float,
+    operation_name: str = "operation",
+) -> Any:
+    """Execute a coroutine with a timeout.
+
+    Args:
+        coro: The coroutine to execute
+        timeout: Timeout in seconds
+        operation_name: Name of the operation (for error messages)
+
+    Returns:
+        The result of the coroutine
+
+    Raises:
+        TimeoutExceededError: If the operation times out
+    """
+    try:
+        return await asyncio.wait_for(coro, timeout=timeout)
+    except asyncio.TimeoutError:
+        raise TimeoutExceededError(
+            f"{operation_name} timed out after {timeout}s",
+            timeout=timeout,
+            operation=operation_name,
+        )
+
+
+async def with_retry(
+    func: Callable[..., Any],
+    *args,
+    max_retries: int = 3,
+    retry_delay: float = 1.0,
+    retry_on: Optional[List[Type[Exception]]] = None,
+    retry_on_validation: bool = True,
+    operation_name: str = "operation",
+    **kwargs,
+) -> Any:
+    """Execute a function with retry logic.
+
+    Uses exponential backoff between retries.
+
+    Args:
+        func: The async function to execute
+        *args: Positional arguments for the function
+        max_retries: Maximum number of retry attempts
+        retry_delay: Initial delay between retries (doubles each retry)
+        retry_on: List of exception types to retry on (None = use defaults)
+        retry_on_validation: Whether to retry on validation errors
+        operation_name: Name of the operation (for logging)
+        **kwargs: Keyword arguments for the function
+
+    Returns:
+        The result of the function
+
+    Raises:
+        RetryExhaustedError: If all retries are exhausted
+    """
+    retry_errors = tuple(retry_on) if retry_on else TRANSIENT_ERRORS
+    last_error: Optional[Exception] = None
+    validation_errors: List[str] = []
+    delay = retry_delay
+
+    for attempt in range(max_retries + 1):
+        try:
+            if asyncio.iscoroutinefunction(func):
+                return await func(*args, **kwargs)
+            else:
+                return func(*args, **kwargs)
+
+        except retry_errors as e:
+            last_error = e
+            if attempt < max_retries:
+                logger.warning(
+                    f"{operation_name} failed (attempt {attempt + 1}/{max_retries + 1}): {e}. "
+                    f"Retrying in {delay}s..."
+                )
+                await asyncio.sleep(delay)
+                delay *= 2  # Exponential backoff
+            else:
+                logger.error(
+                    f"{operation_name} failed after {max_retries + 1} attempts: {e}"
+                )
+
+        except Exception as e:
+            # Check for validation errors
+            if retry_on_validation and is_validation_error(e):
+                last_error = e
+                validation_errors.append(str(e))
+
+                if attempt < max_retries:
+                    logger.warning(
+                        f"{operation_name} validation failed (attempt {attempt + 1}/{max_retries + 1}): {e}. "
+                        f"Retrying in {delay}s..."
+                    )
+                    await asyncio.sleep(delay)
+                    delay *= 2
+                else:
+                    raise ValidationRetryExhaustedError(
+                        f"{operation_name} validation failed after {max_retries + 1} attempts",
+                        attempts=max_retries + 1,
+                        validation_errors=validation_errors,
+                    )
+            # Check for other retryable errors
+            elif is_retryable_error(e):
+                last_error = e
+                if attempt < max_retries:
+                    logger.warning(
+                        f"{operation_name} failed (attempt {attempt + 1}/{max_retries + 1}): {e}. "
+                        f"Retrying in {delay}s..."
+                    )
+                    await asyncio.sleep(delay)
+                    delay *= 2
+                else:
+                    logger.error(
+                        f"{operation_name} failed after {max_retries + 1} attempts: {e}"
+                    )
+            else:
+                # Non-retryable error
+                raise
+
+    raise RetryExhaustedError(
+        f"{operation_name} failed after {max_retries + 1} attempts",
+        last_error=last_error,
+        attempts=max_retries + 1,
+    )
+
+
+async def with_timeout_and_retry(
+    func: Callable[..., Any],
+    *args,
+    timeout: float = 30.0,
+    max_retries: int = 3,
+    retry_delay: float = 1.0,
+    retry_on: Optional[List[Type[Exception]]] = None,
+    retry_on_validation: bool = True,
+    operation_name: str = "operation",
+    **kwargs,
+) -> Any:
+    """Execute a function with both timeout and retry logic.
+
+    Each attempt has its own timeout. Retries are attempted if the operation
+    times out or encounters a transient error.
+
+    Args:
+        func: The async function to execute
+        *args: Positional arguments for the function
+        timeout: Timeout per attempt in seconds
+        max_retries: Maximum number of retry attempts
+        retry_delay: Initial delay between retries
+        retry_on: List of exception types to retry on
+        retry_on_validation: Whether to retry on validation errors
+        operation_name: Name of the operation
+        **kwargs: Keyword arguments for the function
+
+    Returns:
+        The result of the function
+    """
+    # Include TimeoutExceededError in retryable errors
+    retry_errors = list(retry_on) if retry_on else list(TRANSIENT_ERRORS)
+    retry_errors.append(TimeoutExceededError)
+    retry_errors.append(asyncio.TimeoutError)
+
+    async def timed_func(*a, **kw):
+        if asyncio.iscoroutinefunction(func):
+            return await with_timeout(func(*a, **kw), timeout, operation_name)
+        else:
+            return func(*a, **kw)
+
+    return await with_retry(
+        timed_func,
+        *args,
+        max_retries=max_retries,
+        retry_delay=retry_delay,
+        retry_on=retry_errors,
+        retry_on_validation=retry_on_validation,
+        operation_name=operation_name,
+        **kwargs,
+    )
+
+
+def retry_decorator(
+    max_retries: int = 3,
+    retry_delay: float = 1.0,
+    retry_on: Optional[List[Type[Exception]]] = None,
+    retry_on_validation: bool = True,
+    timeout: Optional[float] = None,
+):
+    """Decorator to add retry logic to an async function.
+
+    Args:
+        max_retries: Maximum number of retry attempts
+        retry_delay: Initial delay between retries
+        retry_on: List of exception types to retry on
+        retry_on_validation: Whether to retry on validation errors
+        timeout: Optional timeout per attempt
+
+    Example:
+        @retry_decorator(max_retries=3, timeout=30.0)
+        async def my_extraction():
+            return client.chat.completions.create(response_model=User, ...)
+    """
+    def decorator(func: Callable[..., T]) -> Callable[..., T]:
+        @functools.wraps(func)
+        async def wrapper(*args, **kwargs) -> T:
+            operation_name = func.__name__
+
+            if timeout:
+                return await with_timeout_and_retry(
+                    func,
+                    *args,
+                    timeout=timeout,
+                    max_retries=max_retries,
+                    retry_delay=retry_delay,
+                    retry_on=retry_on,
+                    retry_on_validation=retry_on_validation,
+                    operation_name=operation_name,
+                    **kwargs,
+                )
+            else:
+                return await with_retry(
+                    func,
+                    *args,
+                    max_retries=max_retries,
+                    retry_delay=retry_delay,
+                    retry_on=retry_on,
+                    retry_on_validation=retry_on_validation,
+                    operation_name=operation_name,
+                    **kwargs,
+                )
+
+        return wrapper
+    return decorator
+
+
+class ExtractionRetryContext:
+    """Context manager for Instructor extraction retries with metrics tracking.
+
+    Tracks retry attempts, validation errors, total time, and errors for observability.
+
+    Example:
+        async with ExtractionRetryContext(max_retries=3, schema_name="User") as ctx:
+            result = await ctx.execute(
+                client.chat.completions.create,
+                response_model=User,
+                messages=[...],
+            )
+            print(f"Completed in {ctx.total_time}s with {ctx.attempts} attempts")
+    """
+
+    def __init__(
+        self,
+        max_retries: int = 3,
+        retry_delay: float = 1.0,
+        timeout: Optional[float] = None,
+        retry_on: Optional[List[Type[Exception]]] = None,
+        retry_on_validation: bool = True,
+        schema_name: str = "",
+        operation: str = "extraction",
+    ):
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
+        self.timeout = timeout
+        self.retry_on = retry_on
+        self.retry_on_validation = retry_on_validation
+        self.schema_name = schema_name
+        self.operation = operation
+
+        # Metrics
+        self.attempts = 0
+        self.total_time = 0.0
+        self.errors: List[Exception] = []
+        self.validation_errors: List[str] = []
+        self.success = False
+        self._start_time: Optional[float] = None
+
+    async def __aenter__(self) -> "ExtractionRetryContext":
+        self._start_time = time.perf_counter()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> bool:
+        if self._start_time:
+            self.total_time = time.perf_counter() - self._start_time
+        return False  # Don't suppress exceptions
+
+    async def execute(self, func: Callable[..., Any], *args, **kwargs) -> Any:
+        """Execute the extraction with retry logic.
+
+        Args:
+            func: The function to execute (e.g., client.chat.completions.create)
+            *args: Positional arguments
+            **kwargs: Keyword arguments
+
+        Returns:
+            The extracted model instance
+        """
+        retry_errors = tuple(self.retry_on) if self.retry_on else TRANSIENT_ERRORS
+        delay = self.retry_delay
+
+        for attempt in range(self.max_retries + 1):
+            self.attempts = attempt + 1
+
+            try:
+                if self.timeout:
+                    result = await with_timeout(
+                        func(*args, **kwargs) if asyncio.iscoroutinefunction(func) else asyncio.coroutine(lambda: func(*args, **kwargs))(),
+                        self.timeout,
+                        self.operation,
+                    )
+                else:
+                    if asyncio.iscoroutinefunction(func):
+                        result = await func(*args, **kwargs)
+                    else:
+                        result = func(*args, **kwargs)
+
+                self.success = True
+                return result
+
+            except (TimeoutExceededError, asyncio.TimeoutError, *retry_errors) as e:
+                self.errors.append(e)
+
+                if attempt < self.max_retries:
+                    logger.warning(
+                        f"{self.operation} failed (attempt {attempt + 1}/{self.max_retries + 1}): {e}"
+                    )
+                    await asyncio.sleep(delay)
+                    delay *= 2
+                else:
+                    raise RetryExhaustedError(
+                        f"{self.operation} failed after {self.max_retries + 1} attempts",
+                        last_error=e,
+                        attempts=self.attempts,
+                    )
+
+            except Exception as e:
+                self.errors.append(e)
+
+                # Check for validation errors
+                if self.retry_on_validation and is_validation_error(e):
+                    self.validation_errors.append(str(e))
+
+                    if attempt < self.max_retries:
+                        logger.warning(
+                            f"{self.operation} validation failed (attempt {attempt + 1}/{self.max_retries + 1}): {e}"
+                        )
+                        await asyncio.sleep(delay)
+                        delay *= 2
+                    else:
+                        raise InstructorExtractionError(
+                            f"{self.operation} validation failed after {self.max_retries + 1} attempts",
+                            schema_name=self.schema_name,
+                            last_error=e,
+                            validation_errors=self.validation_errors,
+                        )
+                # Check for other retryable errors
+                elif is_retryable_error(e):
+                    if attempt < self.max_retries:
+                        logger.warning(
+                            f"{self.operation} failed (attempt {attempt + 1}/{self.max_retries + 1}): {e}"
+                        )
+                        await asyncio.sleep(delay)
+                        delay *= 2
+                    else:
+                        raise RetryExhaustedError(
+                            f"{self.operation} failed after {self.max_retries + 1} attempts",
+                            last_error=e,
+                            attempts=self.attempts,
+                        )
+                else:
+                    raise
+
+    def get_metrics(self) -> dict:
+        """Get retry metrics for tracing."""
+        return {
+            "attempts": self.attempts,
+            "total_time": self.total_time,
+            "success": self.success,
+            "error_count": len(self.errors),
+            "validation_error_count": len(self.validation_errors),
+            "schema_name": self.schema_name,
+            "errors": [str(e) for e in self.errors[-3:]],  # Last 3 errors
+            "validation_errors": self.validation_errors[-3:],  # Last 3 validation errors
+        }
