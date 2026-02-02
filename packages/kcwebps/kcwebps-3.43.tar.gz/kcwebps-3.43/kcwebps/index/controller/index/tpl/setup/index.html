@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<html>
+<head>
+<meta charset="utf-8" />
+<title>kcwebps</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+<meta name="HandheldFriendly" content="true"/>
+<meta name="MobileOptimized" content="320"/>
+<%include file="/app/common/html/include/static.html"/>
+</head>
+<style>
+*{padding:0px;margin:0px}
+.el-header, .el-footer {background-color: #B3C0D1;line-height: 60px;padding:0px;}
+.kcws-side-scroll::-webkit-scrollbar{width:0px;}
+.el-table__header-wrapper {width: 100%;height:10px}
+.el-tabs__content {
+    overflow: hidden;
+    position: relative;
+    margin-top: -14px;
+}
+</style>
+<body>
+<div id="app">
+    <el-menu :default-active="activeIndex" class="el-menu-demo" mode="horizontal" @select="handleSelect" >
+        <el-menu-item index="/index/index/setup/basepage">基本配置</el-menu-item>
+        <el-menu-item v-if="platform.indexOf('Linux') !== -1" index="/index/index/setup/startpage">开机启动项</el-menu-item>
+        <el-menu-item index="/index/index/setup/bacrecpage">备份恢复</el-menu-item>
+        <el-menu-item index="/index/index/setup/pythonrun" title="基于终端运行的项目管理器，目前支持python和php命令行运行的项目">cli项目管理器</el-menu-item>
+        <el-menu-item v-if="platform.indexOf('Linux') !== -1" index="/index/index/plan">计划任务</el-menu-item>
+        <el-menu-item index="/index/index/menu">导航管理</el-menu-item>
+        <el-menu-item index="/index/index/task">任务队列</el-menu-item>
+        <!-- <el-menu-item index="/index/index/socket">实时通讯日志</el-menu-item> -->
+    </el-menu>
+    <div v-bind:style="'padding:0px;width:100%;height:'+(winheight-61)+'px;overflow:hidden'">
+        <transition v-if="!is_url(activeIndex) && !isIE()" name="el-fade-in-linear">
+            <div v-show="show">
+                <iframe v-bind:srcdoc="iframedoc" id="iframe" style="margin:0px;padding:0px;border:0px" frameborder="0" frameborder="0" marginheight="0" marginwidth="0"  width="100%" v-bind:height="(winheight-60)+'px'"></iframe>
+            </div>
+        </transition>
+        <transition v-else name="el-fade-in-linear">
+            <div v-show="show">
+                <iframe id="iframe" :src="activeIndex" style="margin:0px;padding:0px;border:0px" frameborder="0" frameborder="0" marginheight="0" marginwidth="0"  width="100%" v-bind:height="(winheight-60)+'px'"></iframe>
+            </div>
+        </transition>
+    </div>
+</div>
+</body>
+<script>
+var backup="";
+var Vues=null;
+Vues=new Vue({
+    el: '#app',
+    data:{
+        kcwebsimg:"${config.domain['kcwebsimg']}",platform:"${platform}",
+        winheight:document.documentElement.clientHeight,winwidth:document.documentElement.clientWidth,
+        activeIndex: '/index/index/setup/basepage',show:false,
+        iframedoc:"基本配置",title:'基本配置',icon:'/images/icon/confige.gif',httpurl:'',
+    },
+    mounted:function(){
+        self=this
+        window.onresize = function(){
+            self.winheight=document.documentElement.clientHeight
+            self.winwidth=document.documentElement.clientWidth
+        }
+        this.gethtml(self.activeIndex)
+    },
+    methods: {
+        handleSelect:function(key, keyPath) {
+            this.show=false
+            this.gethtml(key)
+        },
+        gethtml:function(url){
+            var self=this;
+            if(!self.is_url(url) && !self.isIE()){
+                self.getcontent(url).then(function(html){
+                    setTimeout(function(){self.show=true;},300)
+                    self.iframedoc=html
+                }).catch(function(err){
+                    setTimeout(function(){
+                        self.show=true;
+                        if (err.response) {
+                            self.iframedoc=err.response.data
+                        }else{
+                            self.$message({message: "网络异常，",type: 'error'});
+                        }
+                    },300)
+                });
+            }
+        },isIE:function() {
+            if(!!window.ActiveXObject || "ActiveXObject" in window){
+                return true;
+            }else{
+                return false;
+        　　 }
+        },
+    }
+});
+</script>
+</html>

@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+<meta charset="utf-8" />
+<title>kcwebps</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+<meta name="HandheldFriendly" content="true"/>
+<meta name="MobileOptimized" content="320"/>
+<%include file="/app/common/html/include/static.html"/>
+<style>
+*{padding:0px;margin:0px}
+.el-header, .el-footer {background-color: #B3C0D1;line-height: 60px;padding:0px;}
+.kcws-side-scroll::-webkit-scrollbar{width:0px;}
+.el-table__header-wrapper {width: 100%;height:10px}
+.el-tabs__content {
+    overflow: hidden;
+    position: relative;
+    margin-top: -14px;
+}
+</style>
+</head>
+<body>
+<div id="app">
+    <el-tabs v-model="activeName">
+        <el-tab-pane label="我的插件" name="myplug">
+            <el-table :data="mypluglist" :height="winheight-56">
+                <el-table-column prop="title" label="" width="20px">
+                        <template slot-scope="scope">
+                            
+                        </template>
+                </el-table-column>
+                <el-table-column prop="title" label="" width="100px">
+                    <template slot-scope="scope">
+                        <img :src="scope.row.icon" style="height:50px;float:left">
+                    </template>
+                </el-table-column>
+                <el-table-column prop="name" label="">
+                    <template slot-scope="scope">
+                        <div style="font-size:14px;height:30px;float:left;width:100%">插件名：{{scope.row.name}}（{{scope.row.title}}）</div>
+                        <div style="font-size:14px;float:left;;width:100%">简介：{{scope.row.describes}}</div>
+                    </template>
+                </el-table-column>
+                <el-table-column width="200">
+                    <template slot-scope="scope">
+                        <div>
+                            <el-button type="primary" icon="el-icon-plus" @click="openurl('/'+scope.row.modular+'/'+scope.row.name)" size="mini" plain style="height:20px;padding-top:4px">浏览</el-button>
+                            <!-- <el-button type="primary" v-if="kcwebsuserinfo.id" @click="uploadplug(scope.row)" icon="el-icon-upload" size="mini" plain style="height:20px;padding-top:4px">打包上传</el-button> -->
+                            <el-button type="danger" icon="el-icon-close" @click="uninstallplug(scope.row)" size="mini" plain style="height:20px;padding-top:4px">卸载</el-button>
+                        </div>
+                    </template>
+                </el-table-column>
+            </el-table>
+        </el-tab-pane>
+        <el-tab-pane label="插件市场" name="plugyun">
+            <div style="height:38px;background:#FFF;margin:0px auto;width:100%;padding-top:10px;">
+                &nbsp&nbsp
+                <el-button-group>
+                    <el-input size="mini" style="width:200px;float:left" placeholder="关键字搜索" v-model="kw"></el-input>
+                    <el-button size="mini" icon="el-icon-search" @click="data.pagenow=1;plug_list()" type="success">搜索</el-button>
+                </el-button-group>
+            </div>
+            <div style="margin:0 auto;width:100%">
+                <el-table :data="data.lists" :height="winheight-140">
+                    <el-table-column prop="title" label="" width="20px">
+                            <template slot-scope="scope">
+                                
+                            </template>
+                    </el-table-column>
+                    <el-table-column prop="title" label="" width="100px">
+                        <template slot-scope="scope">
+                            <img :src="scope.row.icon" style="height:80px;float:left">
+                        </template>
+                    </el-table-column>
+                    <el-table-column prop="name" label="">
+                        <template slot-scope="scope">
+                            <div style="font-size:14px;height:30px;float:left;width:100%">插件名：{{scope.row.name}}（{{scope.row.title}}）</div>
+                            <div style="font-size:14px;height:30px;float:left;width:100%">
+                                <span style="font-size:14px;float:left;margin-top:-2px;">发布：</span>
+                                <img v-if="scope.row.url" @click="openurl(scope.row.url)" :src="scope.row.user.img_head" alt="" style="height:20px;float:left;cursor:pointer;">
+                                <img v-else :src="scope.row.user.img_head" alt="" style="height:20px;float:left">
+                                <span v-if="scope.row.url" @click="openurl(scope.row.url)" style="font-size:14px;float:left;margin-left:2px;margin-top:-2px;cursor:pointer;">{{scope.row.user.nickname}}</span>
+                                <span v-else style="font-size:14px;float:left;margin-left:2px;margin-top:-2px;width:160px;overflow:hidden">{{scope.row.user.nickname}}</span>
+                                <img v-for="item1 in scope.row.ation" :src="item1.icon" :title="item1.title" :alt="item1.describe" style="height:30px;float:left;margin-left:20px;margin-top:-5px">
+                            </div>
+                            <div style="font-size:14px;float:left;;width:100%">简介：{{scope.row.describes}}</div>
+                        </template>
+                    </el-table-column>
+                    <el-table-column width="200">
+                    <template slot-scope="scope">
+                        <span v-if="scope.row.status==0">
+                            <el-button v-if="scope.row.token" @click="installplug(scope.row)" type="text" size="mini">使用授权码安装</el-button>
+                            <el-button v-else @click="installplug(scope.row)" type="text" size="mini">一键安装</el-button>
+                        </span>
+                        <span v-else-if="scope.row.status==2" type="text" size="mini"><i class="el-icon-loading"></i>安装中...</span>
+                        <span v-else-if="scope.row.status==3" type="text" size="mini"><i class="el-icon-loading"></i>卸载中...</span>
+                        <el-button-group v-else-if="scope.row.status==1 || scope.row.status==5">
+                            <el-button type="success" v-if="scope.row.status==1" size="mini" style="height:20px;padding-top:4px">已安装</el-button>
+                            <el-button type="text" v-else size="mini" @click="installplug(scope.row,'update')" style="height:20px;padding-top:4px">升级到{{scope.row.edition[0]}}</el-button>
+                            <el-button type="primary" @click="openurl('/'+scope.row.modular+'/'+scope.row.name)" size="mini" plain style="height:20px;padding-top:4px">浏览</el-button>
+                            <!-- <el-button type="primary" v-if="scope.row.user_id==kcwebsuserinfo.id" @click="uploadplug(scope.row)" icon="el-icon-upload" size="mini" plain style="height:20px;padding-top:4px">打包上传</el-button> -->
+                            <el-button type="danger" @click="uninstallplug(scope.row)" size="mini" plain style="height:20px;padding-top:4px">卸载</el-button>
+                        </el-button-group>
+                        <span v-else-if="scope.row.status==1">
+                            所属模块不匹配
+                        </span>
+                    </template>
+                    </el-table-column>
+                </el-table>
+                <!-- <div style="height:30px">
+                    <el-alert title="插件安装或卸载完成后需要重启应用生效，安装或卸载过程中，不得重启应用或服务器，如果您希望打包上传您的插件，请在模块管理中注册或绑定kcwebs一账通账号" type="info" close-text="知道了"> </el-alert>
+                </div> -->
+                <div class="block" style="background:#FFF;margin-top:4px;height:36px;padding-top:4px">
+                    <el-pagination background
+                        :current-page="1" :page-size="data.pagesize" @current-change="handleCurrentChange"
+                        layout="total, prev, pager, next, jumper" :total="data.count">
+                    </el-pagination>
+                </div>
+            </div>
+        </el-tab-pane>
+    </el-tabs>
+</div>
+</body>
+<script>
+var vm = new Vue({
+    el: '#app',
+    data: {
+        winheight:document.documentElement.clientHeight,winwidth:document.documentElement.clientWidth,
+        activeName:"plugyun",
+        admin:{name:'',icon:'',username:'',password:'',phone:'',nickname:''},admindialog:{status:false,title:'添加管理'},
+        kw:"${kw}",
+        data:{
+            'pagesize':20,
+            'count':0,
+            'pagenow':1,
+            'lists':[]
+        },kcwebsuserinfo:{username:'',password:'',code:''},
+        mypluglist:[],
+        modular:"${modular}"
+    },
+    mounted:function(){
+        self=this
+        window.onresize = function(){
+            self.winheight=document.documentElement.clientHeight
+            self.winwidth=document.documentElement.clientWidth
+        }
+        self.plug_list()
+    },
+    methods: {
+        openurl:function(url){
+            layer.open({
+                type: 2,title: false,shadeClose: true,shade: 0.8,
+                area: ['95%', '95%'],content:url
+            }); 
+        },
+        uploadplug:function(item){ //打包插件上传
+            self=this
+			self.post("/index/index/plug/uploadplug/",item,'请稍后...').then(function(res){
+                self.$message({message: "上传成功",type: 'success'});
+			})
+        },
+        handleCurrentChange:function(val) {
+			self.data.pagenow=val
+			self.plug_list()
+		},
+        plug_list:function(){
+            self=this
+			self.get("/index/index/plug/plug_list/"+self.modular+"/"+self.data.pagenow+"/1",{'kw':self.kw},'请稍后...').then(function(res){
+				self.data=res.data
+                self.mypluglist=res.plug
+                if(res.kcwebsuserinfo){
+                    self.kcwebsuserinfo=res.kcwebsuserinfo
+                }
+			})
+        },
+        uninstallplug:function(item){
+            self=this
+            self.$confirm("此操作将卸载‘"+item.title+"’，是否继续", '温馨提示', {
+                confirmButtonText: '是',
+                cancelButtonText: '否',
+                type: 'warning'
+            }).then(function(){
+                self.post("/index/index/plug/uninstallplug/",item,'正在卸载插件，请稍后...').then(function(res){
+                    item.status=0
+                    self.$message({message: "卸载成功",type: 'success'});
+                })
+            }).catch(function(){});
+        },installplug:function(item,type){
+            self=this
+            var platform="${platform}";
+            /*if(platform.indexOf('Windows')!=-1){
+                if(item.modular=='intapp' && item.name=='index'){
+                    self.$message({message: "该插件不支持在windows系统运行应用中升级",type: 'error'});
+                    return '';
+                }
+            }*/
+            if(item.token && type!='update'){
+                self.$prompt('请输授权码', '提示', {
+                confirmButtonText: '确定',
+                cancelButtonText: '取消',
+                inputValidator:function(value){
+                    if(value && value.length>=2 && value.length<=32){
+                        return true
+                    }else{
+                        return "请输入2到32位字符"
+                    }
+                }
+                }).then(function(value){
+                    self.post("/index/index/plug/installplug/",{menu:item.menu,title:item.title,icon:item.icon,modular:item.modular,name:item.name,edition:item.edition[0],token:value.value,describes:item.describes},'正在安装插件，请稍后...').then(function(res){
+                        if(res.code==0){
+                            item.status=1
+                            self.$message({message: "安装成功",type: 'success'});
+                        }else if(res.code==1){
+                            self.$message({message:res.msg,type: 'error'});
+                            self.installplug(item,'insert')
+                        }else{
+                            self.$message({message:res.msg,type: 'error'});
+                        }
+                    })
+                }).catch(function(){});
+            }else{
+                if(type=='update'){
+                    msggg="此操作将升级 "+item.name+"=="+item.edition[0]+" 到您的系统中，是否继续"
+                }else{
+                    msggg="此操作将安装‘"+item.name+"’到您的系统中，是否继续"
+                }
+                self.$confirm(msggg, '温馨提示', {
+                    confirmButtonText: '是',
+                    cancelButtonText: '否',
+                    type: 'warning'
+                }).then(function(){
+                    self.post("/index/index/plug/installplug/",{menu:item.menu,title:item.title,icon:item.icon,modular:item.modular,name:item.name,edition:item.edition[0],token:"",describes:item.describes},'正在安装插件，请稍后...').then(function(res){
+                        if(res.code==0){
+                            item.status=1
+                            self.$message({message: "安装成功，点击左下角 ‘重启当前应用生效’",type: 'success'});
+                        }else if(res.code==1){
+                            self.installplug(item,'insert')
+                        }else{
+                            self.$message({message:res.msg,type: 'error'});
+                        }
+                    })
+                }).catch(function(){});
+            }
+        }
+    }
+});
+</script>
+</html>
