@@ -1,0 +1,343 @@
+"""
+XmlWriteFileToolParsingState: Streams <tool name="write_file"> blocks.
+
+This state specializes the generic XmlToolParsingState to stream file content
+and capture the path for display. Argument parsing is handled later by the
+ToolInvocationAdapter.
+"""
+from typing import TYPE_CHECKING, Optional
+
+from .xml_tool_parsing_state import XmlToolParsingState
+from ..events import SegmentType
+
+if TYPE_CHECKING:
+    from ..parser_context import ParserContext
+
+
+class XmlWriteFileToolParsingState(XmlToolParsingState):
+    """
+    Streams <tool name="write_file"> tool calls.
+    
+    This state operates identically to XmlToolParsingState but provides
+    a distinct type (WRITE_FILE) and specialized metadata handling if needed.
+    """
+    
+    SEGMENT_TYPE = SegmentType.WRITE_FILE
+    START_CONTENT_MARKER = "__START_CONTENT__"
+    END_CONTENT_MARKER = "__END_CONTENT__"
+    CONTENT_ARG_CLOSE_TAG = "</arg>"
+    
+    def __init__(self, context: "ParserContext", opening_tag: str):
+        super().__init__(context, opening_tag)
+        if self._tool_name != "write_file":
+            pass
+            
+        # Internal state for streaming
+        self._found_content_start = False
+        self._content_buffering = "" 
+        self._captured_path: Optional[str] = None
+        self._defer_start = True # New flag to defer emission
+        self._swallowing_remaining = False # New flag to swallow closing tags
+        self._content_mode = "seek_marker"
+        self._content_seek_buffer = ""
+        self._marker_tail = ""
+        
+    def run(self) -> None:
+        """
+        Custom run loop to stream ONLY the content argument.
+        """
+        from .text_state import TextState
+        
+        if self._swallowing_remaining:
+            self._handle_swallowing()
+            return
+
+        # Note: We do NOT emit start immediately anymore.
+        
+        if not self.context.has_more_chars():
+            return
+
+        chunk = self.context.consume_remaining()
+        
+        if not self._found_content_start:
+            self._content_buffering += chunk
+            
+            import re
+            
+            # 1. Try to find path if missing
+            if not self._captured_path:
+                path_match = re.search(r'<arg\s+name=["\']path["\']>([^<]+)</arg>', self._content_buffering, re.IGNORECASE)
+                if path_match:
+                    self._captured_path = path_match.group(1).strip()
+                    # Now we have path, we can emit start if we were waiting for it
+                    if self._defer_start and not self._segment_started:
+                        # Construct metadata with path
+                        meta = self._get_start_metadata()
+                        meta["path"] = self._captured_path
+                        self.context.emit_segment_start(self.SEGMENT_TYPE, **meta)
+                        self._segment_started = True
+                        self._defer_start = False
+
+            # 2. Look for content start
+            match = re.search(r'<arg\s+name=["\']content["\']>', self._content_buffering, re.IGNORECASE)
+            
+            if match:
+                self._found_content_start = True
+                end_of_tag = match.end()
+                
+                # If we still haven't emitted start (e.g. no path found but content started), emit now without path
+                if not self._segment_started:
+                    self.context.emit_segment_start(self.SEGMENT_TYPE, **self._get_start_metadata())
+                    self._segment_started = True
+                
+                # Update path in metadata if we found it late (redundant but safe)
+                if self._captured_path:
+                    self.context.update_current_segment_metadata(path=self._captured_path)
+                
+                real_content = self._content_buffering[end_of_tag:]
+                self._content_buffering = "" 
+                self._content_mode = "seek_marker"
+                self._content_seek_buffer = ""
+                self._marker_tail = ""
+                self._tail = ""
+                self._process_content_chunk(real_content)
+            else:
+                # If closing tool and still no content
+                if "</tool>" in self._content_buffering:
+                    # If start never happened, force it
+                    if not self._segment_started:
+                        self.context.emit_segment_start(self.SEGMENT_TYPE, **self._get_start_metadata())
+                        self._segment_started = True
+                        
+                    self._on_segment_complete() 
+                    self.context.emit_segment_end()
+                    self.context.transition_to(TextState(self.context))
+        else:
+            self._process_content_chunk(chunk)
+
+    def _process_content_chunk(self, chunk: str) -> None:
+        """Process content chunk, supporting optional content markers."""
+        if not chunk:
+            return
+
+        if self._content_mode == "marker":
+            self._process_marker_content(chunk)
+            return
+
+        if self._content_mode == "default":
+            self._process_default_content(chunk)
+            return
+
+        self._process_seek_marker_content(chunk)
+
+    def _process_seek_marker_content(self, chunk: str) -> None:
+        """Seek __START_CONTENT__ before committing to default parsing."""
+        self._content_seek_buffer += chunk
+
+        start_idx = self._content_seek_buffer.find(self.START_CONTENT_MARKER)
+        if start_idx != -1:
+            after_start = self._content_seek_buffer[start_idx + len(self.START_CONTENT_MARKER):]
+            # Strip leading newline after marker to avoid empty first line
+            if after_start.startswith("\n"):
+                after_start = after_start[1:]
+            self._content_seek_buffer = ""
+            self._content_mode = "marker"
+            self._marker_tail = ""
+            self._tail = ""
+            if after_start:
+                self._process_marker_content(after_start)
+            return
+
+        closing_idx = self._content_seek_buffer.find(self.CONTENT_ARG_CLOSE_TAG)
+        if closing_idx != -1:
+            buffered = self._content_seek_buffer
+            self._content_seek_buffer = ""
+            self._content_mode = "default"
+            self._tail = ""
+            self._process_default_content(buffered)
+            return
+
+        stripped = self._content_seek_buffer.lstrip()
+        if stripped and not self.START_CONTENT_MARKER.startswith(stripped):
+            buffered = self._content_seek_buffer
+            self._content_seek_buffer = ""
+            self._content_mode = "default"
+            self._tail = ""
+            self._process_default_content(buffered)
+
+    def _process_default_content(self, chunk: str) -> None:
+        """Process content chunk, stripping closing tags."""
+        closing_tag = self.CONTENT_ARG_CLOSE_TAG
+        combined = self._tail + chunk
+
+        idx = combined.find(closing_tag)
+
+        if idx != -1:
+            actual_content = combined[:idx]
+            if actual_content:
+                self.context.emit_segment_content(actual_content)
+
+            # We found the end of the content argument.
+            # Instead of stopping, we switch to swallowing mode to eat </arguments></tool>
+            self._tail = ""
+            remainder = combined[idx + len(closing_tag):]
+            self._content_buffering = remainder
+            self._swallowing_remaining = True
+
+            # Immediately try to finish if we have the closing tags
+            self._handle_swallowing()
+            return
+
+        holdback_len = len(closing_tag) - 1
+        if len(combined) > holdback_len:
+            safe = combined[:-holdback_len]
+            if safe:
+                self.context.emit_segment_content(safe)
+            self._tail = combined[-holdback_len:]
+        else:
+            self._tail = combined
+
+    def _process_marker_content(self, chunk: str) -> None:
+        """Process content chunk when inside __START_CONTENT__/__END_CONTENT__ markers.
+        
+        The __END_CONTENT__ sentinel is only valid if followed by optional whitespace
+        and then </arg>. This prevents false positives when file content contains
+        the literal __END_CONTENT__ string.
+        """
+        import re
+        
+        combined = self._marker_tail + chunk
+        end_marker = self.END_CONTENT_MARKER
+        closing_tag = self.CONTENT_ARG_CLOSE_TAG
+
+        # Priority 1: Check for the explicit end marker WITH lookahead validation
+        # We need to find __END_CONTENT__ that is followed by whitespace* + </arg>
+        search_start = 0
+        while True:
+            idx = combined.find(end_marker, search_start)
+            if idx == -1:
+                break
+                
+            remainder_after_marker = combined[idx + len(end_marker):]
+            
+            # Validate: must be followed by whitespace* + </arg>
+            if re.match(r'^\s*</arg>', remainder_after_marker):
+                # Valid sentinel - emit content and transition
+                actual_content = combined[:idx]
+                if actual_content:
+                    self.context.emit_segment_content(actual_content)
+
+                self._marker_tail = ""
+                remainder = combined[idx + len(end_marker):]
+                self._content_buffering = remainder
+                self._swallowing_remaining = True
+                self._handle_swallowing()
+                return
+            elif remainder_after_marker.strip() == "":
+                # Indeterminate - need more data to decide if this is valid
+                # Hold back from idx onwards
+                if idx > 0:
+                    # Emit safe content before the potential marker
+                    safe_content = combined[:idx]
+                    if safe_content:
+                        self.context.emit_segment_content(safe_content)
+                    self._marker_tail = combined[idx:]
+                else:
+                    self._marker_tail = combined
+                return
+            else:
+                # False positive - this __END_CONTENT__ is part of the file content
+                # Continue searching for the next occurrence
+                search_start = idx + len(end_marker)
+
+        # Priority 2: Check for closing arg tag as fallback (missing sentinel case)
+        # Only treat </arg> as terminator if it looks like the actual XML structure end
+        # (i.e. followed by </arguments> or </tool>)
+        idx_close = combined.find(closing_tag)
+        if idx_close != -1:
+            remainder_after_close = combined[idx_close + len(closing_tag):]
+            
+            # Check if followed by standard XML closure (ignoring whitespace)
+            # We match if we see the start of the next tag, OR if we have only whitespace (ambiguous - wait)
+            
+            is_valid_closure = False
+            # If we see the next tag immediately start
+            if re.match(r'^\s*(?:</arguments>|</tool>)', remainder_after_close):
+                is_valid_closure = True
+            
+            # If we have indeterminate whitespace, we must hold back to be sure
+            elif remainder_after_close.strip() == "":
+                 # We can't decide yet. Hold back everything from existing tag start.
+                 # But we can allow partial emit of previous content if we separate it.
+                 # Let's just hold back the whole combined tail to be safe/simple.
+                 self._marker_tail = combined
+                 return
+
+            if is_valid_closure:
+                actual_content = combined[:idx_close]
+                
+                # User request: remove the last \n for the file content
+                # This specifically handles the indented </arg> case logic
+                if re.search(r'\n\s*$', actual_content):
+                    actual_content = re.sub(r'\n\s*$', '', actual_content)
+                
+                if actual_content:
+                    self.context.emit_segment_content(actual_content)
+                
+                self._marker_tail = ""
+                remainder = combined[idx_close + len(closing_tag):]
+                self._content_buffering = remainder
+                self._swallowing_remaining = True
+                self._handle_swallowing()
+                return
+
+        # Holdback logic
+        # We need to hold back enough to detect EITHER marker OR closing_tag + context
+        # </arg> (6) + \s + </tool> (7) ~= 15-20 chars holdback
+        # But to be safe against splitting </arguments>, let's hold back ~20 chars.
+        # Also need to account for __END_CONTENT__ (16 chars) + whitespace + </arg> (6) = ~25 chars
+        
+        max_holdback = 35 # Safe buffer for regex lookahead
+        
+        if len(combined) > max_holdback:
+            safe = combined[:-max_holdback]
+            if safe:
+                self.context.emit_segment_content(safe)
+            self._marker_tail = combined[-max_holdback:]
+        else:
+            self._marker_tail = combined
+
+    def _handle_swallowing(self) -> None:
+        """Consume stream until </tool> is found."""
+        from .text_state import TextState
+        
+        # Add any new data to buffer
+        self._content_buffering += self.context.consume_remaining()
+        
+        closing_tag = "</tool>"
+        idx = self._content_buffering.find(closing_tag)
+        
+        if idx != -1:
+            # We found the end!
+            # We are done with this tool.
+            
+            # Anything after </tool> belongs to the next state (TextState)
+            remainder = self._content_buffering[idx + len(closing_tag):]
+            
+            self._on_segment_complete()
+            self.context.emit_segment_end()
+            if remainder:
+                # Rewind so the next state can parse the remainder (e.g., another tool tag).
+                self.context.rewind_by(len(remainder))
+            self.context.transition_to(TextState(self.context))
+        else:
+            # Nothing yet, keep swallowing (clearing buffer to avoid memory issues if valid)
+            # But we need to keep a holdback in case </tool> is split?
+            # </tool> is 7 chars.
+            holdback_len = len(closing_tag) - 1
+            if len(self._content_buffering) > holdback_len:
+                # Discard safe prefix
+                self._content_buffering = self._content_buffering[-holdback_len:]
+
+    def _on_segment_complete(self) -> None:
+        return None
