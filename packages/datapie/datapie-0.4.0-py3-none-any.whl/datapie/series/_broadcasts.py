@@ -1,0 +1,66 @@
+r"""
+Broadcast functionality for time series
+"""
+
+
+#[
+
+from __future__ import annotations
+
+import numpy as _np
+from .. import wrongdoings as _wrongdoings
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from typing import Self
+    from .main import Series
+
+#]
+
+
+#-------------------------------------------------------------------------------
+# Mixin methods
+#-------------------------------------------------------------------------------
+
+
+class Mixin:
+    #[
+
+    def broadcast_variants(self, num_variants, ) -> None:
+        """
+        Broadcast variants to match the specified number of variants
+        """
+        if self.data.shape[1] == num_variants:
+            return
+        if self.data.shape[1] == 1:
+            self.data = _np.repeat(self.data, num_variants, axis=1, )
+            return
+        raise _wrongdoings.Error("Cannot broadcast variants")
+
+    #]
+
+
+#-------------------------------------------------------------------------------
+# Standalone functions for use across modules
+#-------------------------------------------------------------------------------
+
+
+def broadcast_variants_when_needed(
+    self: Series,
+    other: Series,
+) -> None:
+    r"""
+    Broadcast variants between two Series objects if needed
+    """
+    #[
+    if self.num_variants == other.num_variants:
+        return
+    if self.num_variants == 1:
+        self.broadcast_variants(other.num_variants, )
+        return
+    if other.num_variants == 1:
+        other.broadcast_variants(self.num_variants, )
+        return
+    raise _wrongdoings.Error("Cannot broadcast time series variants")
+    #]
+
