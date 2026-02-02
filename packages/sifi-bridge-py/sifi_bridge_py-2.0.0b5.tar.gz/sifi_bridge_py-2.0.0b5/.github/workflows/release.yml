@@ -1,0 +1,34 @@
+name: release
+
+on:
+  push:
+    tags:
+      # Supports tags like: 1.0.0, 2.0.0-beta.1, 2.0.0-b.1, v2.0.0, etc.
+      - "[0-9]+.[0-9]+.[0-9]+*"
+      - "v[0-9]+.[0-9]+.[0-9]+*"
+
+jobs:
+  pypi-publish:
+    name: build and upload release to PyPI
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Build package
+        run: uv build
+
+      - name: Publish package distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
