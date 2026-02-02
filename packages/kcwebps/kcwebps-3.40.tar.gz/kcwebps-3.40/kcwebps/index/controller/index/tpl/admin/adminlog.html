@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+<meta charset="utf-8" />
+<title>kcwebps</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+<meta name="HandheldFriendly" content="true"/>
+<meta name="MobileOptimized" content="320"/>
+<%include file="/app/common/html/include/static.html"/>
+<style>
+*{padding:0px;margin:0px}
+.el-header, .el-footer {background-color: #B3C0D1;line-height: 60px;padding:0px;}
+.kcws-side-scroll::-webkit-scrollbar{width:0px}
+</style>
+</head>
+<body>
+<div id="app" class="background">
+    <div style="height:33px;padding-top:10px;margin:4px auto;width:100%;background:#FFF">
+        &nbsp&nbsp
+        <el-select v-model="method" placeholder="操作类型" style="width:120px;" size="mini">
+            <el-option label="删除操作(DELETE)" value="DELETE"></el-option>
+            <el-option label="更新操作(PUT)" value="PUT"></el-option>
+            <el-option label="提交操作(POST)" value="POST"></el-option>
+            <el-option label="获取操作(GET)" value="GET"></el-option>
+        </el-select>
+        <el-button-group>
+            <el-input placeholder="搜索关键字" v-model="kw" class="input-with-select" size="mini">
+                <el-select v-model="types" slot="prepend" placeholder="搜索条件" style="width:120px">
+                  <el-option label="按手机搜索" value="phone"></el-option>
+                  <el-option label="按姓名搜索" value="name"></el-option>
+                  <el-option label="按日志名搜索" value="title"></el-option>
+                  <el-option label="POST参数" value="dataparam"></el-option>
+                  <el-option label="GET参数" value="getparam"></el-option>
+                  <el-option label="路由参数" value="routeparam"></el-option>
+                </el-select>
+                <el-button @click="getlist" slot="append" icon="el-icon-search"></el-button>
+            </el-input>
+        </el-button-group>
+        
+    </div>
+    <div style="margin:0 auto;width:100%">
+            <el-table :data="data.lists" :height="winheight-100" @selection-change="handleSelectionChange">
+                <el-table-column type="selection" width="55"></el-table-column>
+                <el-table-column prop="icon" label="头像" width="50">
+                    <template slot-scope="scope">
+                        <img v-if="scope.row.icon" :src="scope.row.icon" alt="" style="height:30px;width:30px;border-radius: 50%">
+                    </template>
+                </el-table-column>
+                <el-table-column prop="name" label="姓名" width="100"></el-table-column>
+                <el-table-column prop="phone" label="用户手机" width="120"></el-table-column>
+                <el-table-column prop="method" label="请求类型" width="150">
+                    <template slot-scope="scope">
+                        <el-tag type="danger" effect="dark" v-if="scope.row.method=='DELETE'">删除操作(DELETE)</el-tag>
+                        <el-tag type="warning" effect="dark" v-else-if="scope.row.method=='PUT'">更新操作(PUT)</el-tag>
+                        <el-tag type="success" effect="dark" v-else-if="scope.row.method=='POST'">提交操作(POST)</el-tag>
+                        <el-tag effect="dark" v-else-if="scope.row.method=='GET'">获取操作(GET)</el-tag>
+                        <el-tag effect="dark" v-else>{{scope.row.method}}</el-tag>
+                    </template>
+                </el-table-column>
+                <el-table-column prop="modular" label="请求模块" width="120"></el-table-column>
+                <el-table-column prop="plug" label="请求插件" width="120"></el-table-column>
+                <el-table-column prop="controller" label="控制器" width="140"></el-table-column>
+                <el-table-column prop="function" label="方法" width="160"></el-table-column>
+                <el-table-column prop="remote_addr" label="访问IP" width="120"></el-table-column>
+                <el-table-column prop="logintime" label="操作时间" width="120">
+                    <template slot-scope="scope">
+                        <span v-html="time_date(scope.row.addtime)"></span>
+                    </template>
+                </el-table-column>
+                <el-table-column prop="routeparam" label="路由参数" width="160">
+                    <template slot-scope="scope">
+                        <el-tag type="info" v-if="scope.row.routeparam != '[]'">{{scope.row.routeparam}}</el-tag>
+                    </template>
+                </el-table-column>
+                <el-table-column prop="title" label="日志名"></el-table-column>
+                <el-table-column prop="" label="" width="80">
+                    <template slot-scope="scope">
+                        <el-button @click="logdeta(scope.row)" size="mini">详细</el-button>
+                    </template>
+                </el-table-column>
+            </el-table>
+            <div class="block" style="background:#FFF;margin-top:4px;height:36px;padding-top:4px">
+                <span style="float:left;margin-top:2px">&nbsp&nbsp&nbsp<el-button size="mini" type="danger" @click="deletes" icon="el-icon-delete">清空</el-button>&nbsp</span>
+                <span style="float:left;margin-top:2px">&nbsp&nbsp&nbsp<el-button size="mini" type="danger" @click="deletes30" icon="el-icon-delete">删除30天前的日志</el-button>&nbsp</span>
+                <el-pagination background
+                    @size-change="handleSizeChange" @current-change="handleCurrentChange"
+                    :current-page="1" :page-size="data.pagesize"
+                    layout="total, sizes, prev, pager, next, jumper" :total="data.count">
+                </el-pagination>
+            </div>
+    </div>
+    <el-dialog
+    :title="'操作详细'"
+    :visible.sync="admindialog.status"
+    width="800px" top="30px">
+    <div :style="'padding:0px 5px 10px 5px;height:'+(winheight-140)+'px;overflow-y:auto;'">
+        <table style="width:790px;">
+            <tr v-if="deta.icon" style="height:120px;background:#F2F2F2">
+                <td style="width:100px;padding-left:10px">用户头像</td>
+                <td style="padding-left:10px"><img :src="deta.icon" alt="" style="height:100px;width:100px;border-radius: 50%"></td>
+            </tr>
+            <tr v-if="deta.name" style="height:40px;background:#F2F2F2">
+                <td style="padding-left:10px">操作用户</td>
+                <td style="padding-left:10px">{{deta.name}}</td>
+            </tr>
+            <tr v-if="deta.phone" style="height:40px;background:#F2F2F2">
+                <td style="padding-left:10px">用户手机</td>
+                <td style="padding-left:10px">{{deta.phone}}</td>
+            </tr>
+            <tr v-if="deta.title" style="height:40px;background:#F2F2F2">
+                <td style="padding-left:10px">操作名称</td>
+                <td style="padding-left:10px">{{deta.title}}</td>
+            </tr>
+            <tr style="height:40px;background:#F2F2F2">
+                <td style="padding-left:10px">操作类型</td>
+                <td style="padding-left:10px">
+                    <el-tag type="danger" effect="dark" v-if="deta.method=='DELETE'">删除操作(DELETE)</el-tag>
+                    <el-tag type="warning" effect="dark" v-else-if="deta.method=='PUT'">更新操作(PUT)</el-tag>
+                    <el-tag type="success" effect="dark" v-else-if="deta.method=='POST'">提交操作(POST)</el-tag>
+                    <el-tag effect="dark" v-else-if="deta.method=='GET'">获取操作(GET)</el-tag>
+                    <el-tag effect="dark" v-else>{{deta.method}}</el-tag>
+                </td>
+            </tr>
+            <tr style="height:40px;background:#F2F2F2">
+                <td style="padding-left:10px">路由</td>
+                <td style="padding-left:10px">/{{deta.modular}}/{{deta.plug}}/{{deta.controller}}/{{deta.function}}
+                    <span v-for="item in deta.routeparamarr">/{{item}}</span>
+                    {{deta.getparam}}
+                </td>
+            </tr>
+            <tr style="height:40px;background:#F2F2F2">
+                <td style="padding-left:10px">ip归属地</td>
+                <td style="padding-left:10px">
+                    <a :href="'https://www.ip138.com/iplookup.asp?ip='+deta.remote_addr+'&action=2'" target="_blank">{{deta.remote_addr}}</a>
+                    <!-- <span v-if="jzz" class="el-icon-loading"></span>
+                    <span v-else>{{ip_Place.country}} {{ip_Place.province}} {{ip_Place.city}} {{ip_Place.county}} {{ip_Place.area}} {{ip_Place.operators}} {{ip_Place.yunyin}} {{ip_Place.net}}</span> -->
+                </td>
+            </tr>
+            <tr style="background:#F2F2F2">
+                <td style="padding-left:10px">post参数</td>
+                <td>
+                    <div id="resdatastyle">
+                        <pre id="json-renderer" style="display: block;white-space: pre;"></pre>
+                    </div>
+                </td>
+            </tr>
+        </table>
+    </div>
+    </el-dialog>
+</div>
+</body>
+<script>
+var vm = new Vue({
+    el: '#app',
+    data: {
+        winheight:document.documentElement.clientHeight,winwidth:document.documentElement.clientWidth,
+        kw:'',types:'phone',method:"",
+        data:{
+            'pagesize':20,
+            'count':0,
+            'pagenow':1,
+            'lists':[]
+        },
+        admindialog:{status:false},
+        deta:{},
+        ip_Place:{},//ip归属地信息
+        jzz:false,
+    },
+    mounted:function(){
+        self=this
+        window.onresize = function(){
+            self.winheight=document.documentElement.clientHeight
+            self.winwidth=document.documentElement.clientWidth
+        }
+        self.getlist()
+    },
+    methods: {
+        logdeta:function(item){
+            self=this
+            self.admindialog.status=true
+			self.get("/index/index/admin/logdeta/"+item.id).then(function(res){
+				self.deta=res.data
+                // $('#json-renderer').html(res.dataparam);
+                try{
+                    $("#resdatastyle").css({'background':'#FFF','color':'#000'})
+                    $('#json-renderer').jsonViewer(eval('(' + res.data.dataparam + ')'), {collapsed: 0,withQuotes: 0});
+                }catch(e){
+                    $("#resdatastyle").css({'background':'#817E7E','color':'#34E2E2'})
+                    $('#json-renderer').text(res.data.dataparam)
+                }
+                // self.jzz=true
+                // self.get("/index/index/index/ip_Place/"+item.remote_addr).then(function(res){
+                //     self.ip_Place=res.data;self.jzz=false
+                // }).catch(function(){self.jzz=false});
+			})
+        },
+        getlist:function(){
+            self=this
+			self.get("/index/index/admin/loglist",{method:self.method,types:self.types,kw:self.kw,pagesize:self.data.pagesize,pagenow:self.data.pagenow}).then(function(res){
+				self.data=res.data
+			})
+        },
+        deletes:function(){
+			self=this
+            self.$confirm('此操作将永久删除该所有记录, 是否继续?', '删除提醒', {
+            confirmButtonText: '删除',
+            cancelButtonText: '取消',
+            type: 'warning'
+            }).then(function(){
+                self.delete("/index/index/admin/deletelogs",{},"正在删除中...").then(function(res){
+                    self.data.pagenow=1
+                    self.getlist()
+                    self.$message({type: 'success',message: '所有记录已删除!'});
+                })
+            }).catch(function(){});
+		},
+        deletes30:function(){
+			self=this
+            self.$confirm('此操作将永久删除30天前的记录, 是否继续?', '删除提醒', {
+            confirmButtonText: '删除',
+            cancelButtonText: '取消',
+            type: 'warning'
+            }).then(function(){
+                self.delete("/index/index/admin/deletelog30",{},"正在删除中...").then(function(res){
+                    self.data.pagenow=1
+                    self.getlist()
+                    self.$message({type: 'success',message: '已删除'});
+                })
+            });
+		},
+        handleSelectionChange:function(val) {
+            self=this
+			self.Change=val
+		},
+        handleSizeChange:function(val) {
+            self=this
+			self.data.pagesize=val
+			self.getlist()
+		},
+        handleCurrentChange:function(val) {
+			self.data.pagenow=val
+			self.getlist()
+		}
+    }
+});
+</script>
+</html>

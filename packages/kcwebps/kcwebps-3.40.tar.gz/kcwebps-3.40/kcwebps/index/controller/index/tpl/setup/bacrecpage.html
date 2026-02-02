@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<html>
+<head>
+<meta charset="utf-8" />
+<title>kcwebps</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no" />
+<meta name="HandheldFriendly" content="true" />
+<meta name="MobileOptimized" content="320" />
+<%include file="/app/common/html/include/static.html"/>
+</head>
+<style>
+*{padding:0px;margin:0px}
+.el-header, .el-footer {background-color: #B3C0D1;line-height: 60px;padding:0px;}
+.kcws-side-scroll::-webkit-scrollbar{width:0px;}
+.el-table__header-wrapper {width: 100%;height:10px}
+.el-tabs__content {
+    overflow: hidden;
+    position: relative;
+    margin-top: -14px;
+}
+</style>
+<body>
+<div id="app">
+<div style="padding:10px">
+            <div style="padding:10px;width:400px;float:left;">
+                <div style="height:40px;">
+                    <el-button size="small" @click="backup()" icon="el-icon-sort" type="primary" title="备份所有文稿，包括文档网站软件等...">备份所有</el-button>
+                    <el-button size="small" @click="recovery()" icon="el-icon-sort" type="success" title="恢复所有文稿，包括文档网站软件等...">恢复所有</el-button>
+                    <el-button @click="download()" icon="el-icon-download" size="small">下载备份文件</el-button>
+                </div>
+                <div style="min-height:200px;width:360px">
+                    <el-upload class="upload-demo" drag :limit="1" action="/index/index/setup/postsup" :multiple="false">
+                        <i class="el-icon-upload"></i>
+                        <div class="el-upload__text">将备份文件拖到此处，或<em>点击上传</em></div>
+                        <div class="el-upload__tip" slot="tip">只能上传压缩包zip文件</div>
+                    </el-upload>
+                </div>
+            </div>
+            <div v-if="aliyunosslist.length" style="padding:10px;width:400px;float:left">
+                <h3 style="height:40px;">阿里云oss文稿备份点</h3>
+                <el-table :data="aliyunosslist" style="width: 100%">
+                    <el-table-column prop="" label="">
+                        <template slot-scope="scope">
+                            <img :src="kcwebsimg+'/icon/zip.png'" style="float:left;height:30px;">
+                            <span style="float:left;margin-top:5px;margin-left:5px;">{{scope.row.name}}</span>
+                        </template>
+                    </el-table-column>
+                    <el-table-column prop="" label="" width="50">
+                        <template slot-scope="scope">
+                            <el-button type="text" @click="aliyunossdownload(scope.row.path)">恢复</el-button>
+                        </template>
+                    </el-table-column>
+                </el-table>
+            </div>
+            <div v-if="aliyunossmysqllist.length" style="padding:10px;width:400px;float:left">
+                <h3 style="height:40px;">阿里云oss mysql备份点</h3>
+                <el-table :data="aliyunossmysqllist" style="width: 100%">
+                    <el-table-column prop="" label="">
+                        <template slot-scope="scope">
+                            <div v-if="scope.row.type=='file'">
+                                <img :src="kcwebsimg+'/icon/zip.png'" style="float:left;height:30px;">
+                                <img v-else :src="kcwebsimg+'/icon/folder.png'" style="float:left;height:30px;">
+                                <span style="float:left;margin-top:5px;margin-left:5px;">{{scope.row.name}}</span>
+                            </div>
+                            <div v-else @click="getaliyunosslist(scope.row.path)" style="cursor:pointer">
+                                <img :src="kcwebsimg+'/icon/folder.png'" style="float:left;height:30px;">
+                                <span style="float:left;margin-top:5px;margin-left:5px;">{{scope.row.name}}</span>
+                            </div>
+                        </template>
+                    </el-table-column>
+                    <el-table-column prop="" label="" width="50">
+                        <template slot-scope="scope">
+                            <el-button @click="recoverymysql(scope.row.path)" v-if="scope.row.type=='file'" type="text">恢复</el-button>
+                        </template>
+                    </el-table-column>
+                </el-table>
+            </div>
+</div>
+</div>
+</body>
+<script>
+var backup="";
+var Vues=null;
+Vues=new Vue({
+    el: '#app',
+    data:{
+        kcwebsimg:"${config.domain['kcwebsimg']}",
+        winheight:document.documentElement.clientHeight,winwidth:document.documentElement.clientWidth,upload:{fileList:[]},
+        config:{
+            aliyun:{
+                address:'',
+                bucket:'',
+                access_key:'',
+                access_key_secret:'',
+                backpath:''
+            }
+        },aliyunosslist:[],aliyunossmysqllist:[]
+    },
+    mounted:function(){
+        self=this
+        window.onresize = function(){
+            self.winheight=document.documentElement.clientHeight
+            self.winwidth=document.documentElement.clientWidth
+        }
+        self.obtain()
+    },
+    methods: {
+        //从阿里云恢复文稿
+        aliyunossdownload:function(filepath,types){
+            self=this
+            self.$confirm("该操作会还原系统备份文稿，是否继续", '警告', {
+                confirmButtonText: '是',
+                cancelButtonText: '否',
+                type: 'warning'
+            }).then(function(){
+                self.get("/index/index/setup/aliyunossdownload",{filepath:filepath},"请稍后...").then(function(res){
+                    self.$notify({title: '成功',duration:5000,message:res.msg,type: 'success'});
+                })
+            }).catch(function(){});
+        },
+        //恢复mysql
+        recoverymysql:function(filepath){
+            self=this
+            var edition="5.6"
+            if(filepath.indexOf('5.7')!=-1){
+                edition='5.7'
+            }
+            if(filepath.indexOf('8.0')!=-1){
+                edition='8.0'
+            }
+            self.$confirm("该操作会还原mysql备份数据，是否继续", '警告', {
+                confirmButtonText: '是',
+                cancelButtonText: '否',
+                type: 'warning'
+            }).then(function(){
+                self.get("/intapp/soft/mysql/recovery/whole/1/"+edition,{db:filepath},"请稍后...").then(function(res){
+                    self.$notify({title:"消息提示",duration:5000,message:res.msg,type: 'success'});
+                })
+            }).catch(function(){});
+        },
+        getaliyunosslist:function(prefix){
+            self=this
+            self.get("/index/index/setup/aliyunosslist",{prefix:prefix},"请稍后...").then(function(res){
+                self.aliyunossmysqllist=res.data
+            })
+        },
+        obtain:function(){
+			self=this
+            self.get("/index/index/setup/aliyunosslist/mysql",null,"请稍后...").then(function(res){
+                self.aliyunossmysqllist=res.data
+            })
+            self.get("/index/index/setup/aliyunosslist/app",null,"请稍后...").then(function(res){
+                self.aliyunosslist=res.data
+            })
+		},
+        download:function(){
+            window.location.href="/index/index/setup/download/backup.zip";
+        },
+        backup:function(dirname){
+            var self=this;
+            self.get("/index/index/setup/backup",{dirname:dirname}).then(function(res){
+                if(res.code==0){
+                    self.$notify({title: '成功',duration:5000,message:res.msg,type: 'success'});
+                }else if(res.code==1){
+                    self.$confirm(res.msg, '温馨提示', {
+                        confirmButtonText: '是',
+                        cancelButtonText: '否',
+                        type: 'warning'
+                    }).then(function(){
+                        self.get("/index/index/setup/backup",{dirname:dirname,qzx:1}).then(function(res){
+                            if(res.code==0){
+                                self.$notify({title: '成功',duration:5000,message:res.msg,type: 'success'});
+                            }else if(res.code==1){
+                                self.$message({message:res,msg,type: 'error'});
+                            }
+                        })
+                    }).catch(function(){});
+                }
+            })
+        },
+        recovery:function(dirname){
+            var self=this;
+            self.get("/index/index/setup/recovery",{dirname:dirname}).then(function(res){
+                if(res.code==0){
+                    self.$notify({title: '成功',duration:5000,message:res.msg,type: 'success'});
+                }else if(res.code==1){
+                    self.$confirm(res.msg, '温馨提示', {
+                        confirmButtonText: '是',
+                        cancelButtonText: '否',
+                        type: 'warning'
+                    }).then(function(){
+                        self.get("/index/index/setup/recovery",{dirname:dirname,qzx:1}).then(function(res){
+                            if(res.code==0){
+                                self.$notify({title: '成功',duration:5000,message:res.msg,type: 'success'});
+                            }else if(res.code==1){
+                                self.$message({message:res,msg,type: 'error'});
+                            }
+                        })
+                    }).catch(function(){});
+                }
+            })
+        },
+        handleClick(tab, event) {
+            
+        }
+    }
+});
+</script>
+</html>

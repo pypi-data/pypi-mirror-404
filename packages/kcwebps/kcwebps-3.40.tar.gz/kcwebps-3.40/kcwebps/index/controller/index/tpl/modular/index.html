@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+<meta charset="utf-8" />
+<title>kcwebps</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+<meta name="HandheldFriendly" content="true"/>
+<meta name="MobileOptimized" content="320"/>
+<%include file="/app/common/html/include/static.html"/>
+<style>
+*{padding:0px;margin:0px}
+.el-header, .el-footer {background-color: #B3C0D1;line-height: 60px;padding:0px;}
+.kcws-side-scroll::-webkit-scrollbar{width:0px;}
+.el-table__header-wrapper {width: 100%;height:10px}
+</style>
+</head>
+<body>
+<div id="app">
+        <el-dialog
+        :title="kcwebsuserdialog.title"
+        :visible.sync="kcwebsuserdialog.status"
+        width="500px">
+        <el-form ref="form" :model="kcwebsuserinfo" label-width="80px" label-position="left" size="mini">
+        <el-form-item label="账号">
+            <el-input placeholder="手机/邮箱/用户名" v-model="kcwebsuserinfo.username"></el-input>
+        </el-form-item>
+        <el-form-item label="密码">
+            <el-input placeholder="kcwebs一账通密码" v-model="kcwebsuserinfo.password"></el-input>
+        </el-form-item>
+        <el-form-item v-if="kcwebsuserdialog.types=='reg'" label="验证码">
+            <el-input placeholder="邮箱或短信验证码" v-model="kcwebsuserinfo.code" style="width:260px"></el-input>
+            <el-button type="primary" :disabled="kcwebsuserdialog.disabled" @click="kcwebssebduser">发送</el-button>
+        </el-form-item>
+        </el-form>
+        <span v-if="kcwebsuserdialog.types=='reg'" slot="footer" class="dialog-footer">
+            <el-button type="primary" @click="kcwebsreg()">注册</el-button>
+        </span>
+        <span v-else slot="footer" class="dialog-footer">
+            <el-button v-if="kcwebsuserinfo && kcwebsuserinfo.id" type="primary" @click="banduser()">修改</el-button>
+            <el-button v-else type="primary" @click="banduser()">绑定</el-button>
+        </span>
+        </el-dialog>
+    <div style="height:38px;padding-top:0px;background:#FFF;padding-top:5px;margin:4px auto;width:100%">
+        &nbsp&nbsp
+        <el-button-group>
+            <el-input size="mini" style="width:200px;float:left" placeholder="关键字搜索" v-model="kw"></el-input>
+            <el-button size="mini" icon="el-icon-search" @click="data.pagenow=1;modular_list()" type="success">搜索</el-button>
+        </el-button-group>
+        <!-- <span v-if="kcwebsuserinfo.id">
+            <el-button size="mini" @click="kcwebsuserdialog.status=true;kcwebsuserdialog.title='修改kcwebs一账通'" style="float:right;margin-right:10px;" type="text">修改kcwebs一账通信息</el-button>
+        </span>
+        <span v-else>
+            <el-button size="mini" @click="kcwebsuserdialog.status=true;kcwebsuserdialog.title='注册kcwebs一账通';kcwebsuserdialog.types='reg'" style="float:right;margin-right:10px;" type="text">注册kcwebs一账通</el-button>
+            <el-button size="mini" @click="kcwebsuserdialog.status=true;kcwebsuserdialog.title='绑定kcwebs一账通';kcwebsuserdialog.types=''" style="float:right;margin-right:10px;" type="text">绑定kcwebs一账通</el-button>
+        </span> -->
+    </div>
+    <div style="margin:0 auto;width:100%">
+            <el-table :data="data.lists" :height="winheight-130">
+                <el-table-column prop="title" label="" width="20px">
+                        <template slot-scope="scope">
+                            
+                        </template>
+                    </el-table-column>
+                <el-table-column prop="title" label="" width="100px">
+                    <template slot-scope="scope">
+                        <img :src="scope.row.icon" style="height:80px;float:left">
+                    </template>
+                </el-table-column>
+                <el-table-column prop="name" label="">
+                    <template slot-scope="scope">
+                        <div style="font-size:14px;height:30px;float:left;width:100%">模块名：{{scope.row.name}}（{{scope.row.title}}）</div>
+                        <div style="font-size:14px;height:30px;float:left;width:100%">
+                            <span style="font-size:14px;float:left;margin-top:-2px;">发布：</span>
+                            <img v-if="scope.row.url" @click="openurl(scope.row.url)" :src="scope.row.user.img_head" alt="" style="height:20px;float:left;cursor:pointer;">
+                            <img v-else :src="scope.row.user.img_head" alt="" style="height:20px;float:left">
+                            <span v-if="scope.row.url" @click="openurl(scope.row.url)" style="font-size:14px;float:left;margin-left:2px;margin-top:-2px;cursor:pointer;">{{scope.row.user.nickname}}</span>
+                            <span v-else style="font-size:14px;float:left;margin-left:2px;margin-top:-2px;width:160px;overflow:hidden">{{scope.row.user.nickname}}</span>
+                            <img v-for="item1 in scope.row.ation" :src="item1.icon" :title="item1.title" :alt="item1.describe" style="height:30px;float:left;margin-left:20px;margin-top:-5px">
+                        </div>
+                        <div style="font-size:14px;float:left;;width:100%">简介：{{scope.row.describes}}</div>
+                    </template>
+                </el-table-column>
+                <el-table-column width="440">
+                <template slot-scope="scope">
+                    <span v-if="scope.row.status==0">
+                        <el-button v-if="scope.row.token" @click="installmodular(scope.row)" type="text" size="mini">使用授权码安装</el-button>
+                        <el-button v-else @click="installmodular(scope.row)" type="text" size="mini">一键安装</el-button>
+                    </span>
+                    <span v-else-if="scope.row.status==2" type="text" size="mini"><i class="el-icon-loading"></i>安装中...</span>
+                    <span v-else-if="scope.row.status==3" type="text" size="mini"><i class="el-icon-loading"></i>卸载中...</span>
+                    <div v-else-if="scope.row.status==1">
+                        <el-button type="success" icon="el-icon-check" size="mini">已安装</el-button>
+                        <el-button size="mini" @click="openurl('/index/index/plug/index/'+scope.row.name)">管理插件</el-button>
+                        <el-button type="primary" icon="el-icon-plus" @click="openurl('/'+scope.row.name)" size="mini" plain style="height:20px;padding-top:4px">浏览</el-button>
+                        <!-- <el-button type="primary" v-if="scope.row.user_id==kcwebsuserinfo.id" @click="uploadmodular(scope.row)" icon="el-icon-upload" size="mini" plain style="height:20px;padding-top:4px">打包上传</el-button> -->
+                        <el-button v-if="scope.row.name != 'intapp' && scope.row.name != 'index'" type="danger" icon="el-icon-close" @click="uninstallmodular(scope.row)" size="mini" plain style="height:20px;padding-top:4px">一键卸载</el-button>
+                    </div>
+                    
+                </template>
+                </el-table-column>
+            </el-table>
+            <div style="height:30px">
+                <el-alert title="模块安装或卸载完成后需要重启应用生效，安装或卸载过程中，不得重启应用或服务器" type="info" close-text="知道了"> </el-alert>
+            </div>
+            <div class="block" style="background:#FFF;margin-top:4px;height:36px;padding-top:4px">
+                <el-pagination background
+                    :current-page="1" :page-size="data.pagesize" @current-change="handleCurrentChange"
+                    layout="total, prev, pager, next, jumper" :total="data.count">
+                </el-pagination>
+            </div>
+    </div>
+
+</div>
+</body>
+<script>
+var vm = new Vue({
+    el: '#app',
+    data: {
+        winheight:document.documentElement.clientHeight,winwidth:document.documentElement.clientWidth,
+        kw:'',
+        data:{
+            'pagesize':20,
+            'count':0,
+            'pagenow':1,
+            'lists':[]
+        },
+        kcwebsuserinfo:{username:'',password:'',code:''},
+        kcwebsuserdialog:{status:false,title:'',types:'',disabled:false}
+    },
+    mounted:function(){
+        self=this
+        window.onresize = function(){
+            self.winheight=document.documentElement.clientHeight
+            self.winwidth=document.documentElement.clientWidth
+        }
+        self.modular_list()
+    },
+    methods: {
+        openurl:function(url){
+            layer.open({
+                type: 2,title: false,shadeClose: true,shade: 0.8,
+                area: ['95%', '95%'],content:url
+            }); 
+        },
+        uploadmodular:function(item){ //打包模块上传
+            self=this
+			self.post("/index/index/modular/uploadmodular/",item,'请稍后...').then(function(res){
+                self.$message({message: "上传成功",type: 'success'});
+			})
+        },
+        kcwebssebduser:function(){
+            self=this
+			self.post("/index/index/modular/kcwebssebduser/",self.kcwebsuserinfo,'请稍后...').then(function(res){
+                if(res.code==0){
+                    self.$message({message: "发送成功",type: 'success'});
+                    self.kcwebsuserdialog.disabled=true;
+                }else{
+                    self.$message({message: res.msg,type: 'error'});
+                }
+			})
+        },
+        kcwebsreg:function(){
+            self=this
+			self.post("/index/index/modular/kcwebsreg/",self.kcwebsuserinfo,'请稍后...').then(function(res){
+                if(res.code==0){
+                    self.$message({message: "注册成功",type: 'success'});
+                    self.kcwebsuserdialog.status=false;
+                }else{
+                    self.$message({message: res.msg,type: 'error'});
+                }
+			})
+        },
+        banduser:function(){
+            self=this
+			self.post("/index/index/modular/banduser",self.kcwebsuserinfo,'请稍后...').then(function(res){
+                if(res.code==0){
+                    self.$message({message: "绑定成功",type: 'success'});
+                    self.kcwebsuserdialog.status=false;
+                }else{
+                    self.$message({message: res.msg,type: 'error'});
+                }
+			})
+        },
+        handleCurrentChange:function(val) {
+			self.data.pagenow=val
+			self.modular_list()
+		},
+        modular_list:function(){
+            self=this
+			self.get("/index/index/modular/modular_list",{'kw':self.kw,'pagenow':self.data.pagenow},'请稍后...').then(function(res){
+				self.data=res.data
+                if(res.kcwebsuserinfo){
+                    self.kcwebsuserinfo=res.kcwebsuserinfo
+                }
+			})
+        },
+        uninstallmodular:function(item){
+            self=this
+            self.$confirm("此操作将卸载‘"+item.title+"’，是否继续", '温馨提示', {
+                confirmButtonText: '是',
+                cancelButtonText: '否',
+                type: 'warning'
+            }).then(function(){
+                self.post("/index/index/modular/uninstallmodular/",item,'正在卸载模块，请稍后...').then(function(res){
+                    item.status=0
+                    self.$message({message: "卸载成功",type: 'success'});
+                })
+            }).catch(function(){});
+        },installmodular:function(item){
+            self=this
+            if(item.token){
+                self.$prompt('请输授权码', '提示', {
+                confirmButtonText: '确定',
+                cancelButtonText: '取消',
+                inputValidator:function(value){
+                    if(value.length>=2&&value.length<=32){
+                        return true
+                    }else{
+                        return "请输入2到32位字符"
+                    }
+                }
+                }).then(function(value){
+                    self.post("/index/index/modular/installmodular/",{title:item.title,icon:item.icon,name:item.name,token:value.value},'正在安装模块，请稍后...').then(function(res){
+                        item.status=1
+                        self.$message({message: "安装成功",type: 'success'});
+                    })
+                }).catch(function(){});
+            }else{
+                self.$confirm("此操作将安装‘"+item.title+"’到您的系统中，是否继续", '温馨提示', {
+                    confirmButtonText: '是',
+                    cancelButtonText: '否',
+                    type: 'warning'
+                }).then(function(){
+                    self.post("/index/index/modular/installmodular/",{title:item.title,icon:item.icon,name:item.name,token:''},'正在安装模块，请稍后...').then(function(res){
+                        item.status=1
+                        self.$message({message: "安装成功",type: 'success'});
+                    })
+                }).catch(function(){});
+            }
+        }
+    }
+});
+</script>
+</html>
