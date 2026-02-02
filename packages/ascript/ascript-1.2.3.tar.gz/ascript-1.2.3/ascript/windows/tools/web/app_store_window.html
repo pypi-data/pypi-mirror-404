@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="zh-CN" style="background-color: #1e1e1e !important;">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="dark">
+    <title>AScript Store</title>
+    <link href="./libs/bootstrap/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --vs-bg-main: #1e1e1e;
+            --vs-bg-side: #252526;
+            --vs-border: #333333;
+            --vs-accent: #007acc;
+            --vs-text: #888888;
+            --vs-text-light: #cccccc;
+            --vs-input-bg: #3c3c3c;
+            --vs-error: #f48771;
+            --vs-stop: #e51400;
+        }
+
+        html, body {
+            height: 100%; margin: 0; padding: 0;
+            background-color: #1e1e1e !important;
+            color: var(--vs-text-light);
+            font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+            overflow: hidden; display: flex; flex-direction: column;
+            user-select: none;
+        }
+
+        /* --- 加载层 --- */
+        #init-loader {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #1e1e1e;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            z-index: 99999;
+            transition: opacity 0.3s ease-out;
+        }
+        .loader-text { margin-top: 15px; color: #666; font-size: 11px; letter-spacing: 2px; }
+
+        .spinner {
+            width: 22px; height: 22px;
+            border: 2px solid rgba(255, 255, 255, 0.15);
+            border-top-color: #ffffff;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        .spinner-sm { width: 14px; height: 14px; border-width: 2px; margin-right: 6px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* --- 首页样式 --- */
+        #home-page, #detail-page {
+            display: none; height: 100%;
+            background-color: #1e1e1e;
+        }
+        #home-page { flex-direction: column; align-items: center; justify-content: center; }
+        .search-wrapper { width: 520px; text-align: center; }
+        .logo { font-size: 32px; font-weight: 300; margin-bottom: 30px; letter-spacing: 2px; color: #eee; }
+        .logo b { color: var(--vs-accent); font-weight: 600; }
+
+        /* 搜索框基础样式 */
+        .search-bar {
+            display: flex;
+            background: var(--vs-input-bg);
+            border: 1px solid var(--vs-border);
+            border-radius: 4px; padding: 4px;
+            transition: border-color 0.2s;
+        }
+        /* 空输入时的红圈提醒 */
+        .search-bar.error { border-color: var(--vs-error) !important; }
+        .search-bar:focus-within { border-color: var(--vs-accent); }
+
+        .search-bar input { flex: 1; background: transparent; border: none; color: white; padding: 8px 15px; outline: none; font-size: 14px; }
+        .btn-search { background: var(--vs-accent); color: white; border: none; padding: 0 20px; border-radius: 2px; cursor: pointer; display: flex; align-items: center; }
+        #search-error { color: var(--vs-error); font-size: 12px; margin-top: 12px; min-height: 18px; }
+        .history-container { margin-top: 40px; width: 100%; display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+        .history-tag { background: var(--vs-bg-side); border: 1px solid var(--vs-border); padding: 5px 15px; border-radius: 20px; font-size: 12px; color: #888; cursor: pointer; transition: 0.2s; }
+        .history-tag:hover { border-color: var(--vs-accent); color: white; }
+
+        /* --- 详情页样式 --- */
+        #detail-page { flex-direction: column; }
+        .nav-header { background: var(--vs-bg-side); padding: 12px 20px; border-bottom: 1px solid var(--vs-border); display: flex; align-items: center; }
+        .back-link { color: var(--vs-accent); cursor: pointer; font-size: 13px; text-decoration: none; }
+        header { background-color: var(--vs-bg-side); padding: 20px 28px; border-bottom: 1px solid var(--vs-border); }
+        main { flex: 1; padding: 28px; overflow-y: auto; display: flex; flex-direction: column; }
+        .meta-group { display: flex; gap: 40px; margin-bottom: 15px; }
+        .meta-label { font-size: 11px; color: #555; text-transform: uppercase; font-weight: bold; margin-bottom: 4px; display: block; }
+        .meta-value { font-family: 'Consolas', monospace; font-size: 14px; color: var(--vs-accent); }
+        #desc-container { flex: 1; font-size: 14px; line-height: 1.8; color: #999; margin-bottom: 20px; }
+        #desc-container b { color: #ccc; }
+        .auth-panel { border-top: 1px solid var(--vs-border); padding-top: 20px; margin-top: auto; }
+        .vs-input-group { display: flex; background: var(--vs-input-bg); border: 1px solid transparent; height: 38px; border-radius: 2px; }
+        .vs-input-group.error { border-color: var(--vs-error); }
+        .vs-input-group:focus-within { border-color: var(--vs-accent); }
+        #license-key { background: transparent; border: none; color: white; padding: 0 12px; flex: 1; font-size: 13px; outline: none; }
+        .btn-action { background: var(--vs-accent); color: white; border: none; padding: 0 16px; font-size: 12px; cursor: pointer; }
+
+        /* --- 运行按钮优化 --- */
+        .btn-launch {
+            flex: 1; border: none; padding: 16px;
+            font-weight: 400; font-size: 13px;
+            letter-spacing: 0.5px;
+            background: #333; color: #666;
+            transition: background 0.3s, color 0.3s;
+            position: relative; overflow: hidden; z-index: 1;
+            opacity: 1 !important;
+        }
+        .no-transition { transition: none !important; }
+        .btn-launch:not(:disabled) { background: var(--vs-accent); color: white; cursor: pointer; }
+        .btn-launch.btn-stop { background: var(--vs-stop) !important; color: white !important; }
+        .btn-launch.deploying { background: #2d2d2d !important; color: #ffffff !important; }
+
+        .progress-bg {
+            position: absolute; top: 0; left: 0; bottom: 0;
+            width: 0%; background: var(--vs-accent);
+            z-index: -1; transition: width 0.1s linear;
+        }
+        .btn-text { position: relative; z-index: 2; }
+
+        .btn-clear { width: 50px; background: #333; color: #888; border: 1px solid var(--vs-border); display: flex; align-items: center; justify-content: center; transition: 0.2s; }
+        .btn-clear:hover { background: #444; color: var(--vs-error); border-color: var(--vs-error); }
+    </style>
+</head>
+<body>
+
+<div id="init-loader">
+    <div class="spinner"></div>
+    <div class="loader-text">ASCRIPT ENGINE CONNECTING</div>
+</div>
+
+<div id="home-page">
+    <div class="search-wrapper">
+        <div class="logo">AScript <b>STORE</b></div>
+        <div id="search-bar-container" class="search-bar">
+            <input type="text" id="search-input" placeholder="请输入小程序 ID 搜索..." spellcheck="false"
+                   oninput="document.getElementById('search-bar-container').classList.remove('error')"
+                   onkeyup="if(event.keyCode==13) handleSearch()">
+            <button class="btn-search" id="search-btn" onclick="handleSearch()">搜索</button>
+        </div>
+        <div id="search-error"></div>
+        <div class="history-container" id="history-list"></div>
+    </div>
+</div>
+
+<div id="detail-page">
+    <div class="nav-header" id="nav-header"><span class="back-link" onclick="goBack()">❮ 返回搜索列表</span></div>
+    <header>
+        <div class="d-flex justify-content-between align-items-center">
+            <h1 id="app-name" style="font-size: 1.1rem; margin:0; color:#fff;">--</h1>
+            <div id="price-tag" style="font-size: 10px; padding: 2px 8px; border: 1px solid #333;">--</div>
+        </div>
+    </header>
+    <main>
+        <div class="meta-group">
+            <div><span class="meta-label">应用 ID</span><span id="view-app-id" class="meta-value">--</span></div>
+            <div><span class="meta-label">开发作者</span><span id="view-app-auth" class="meta-value">--</span></div>
+        </div>
+        <div id="desc-container">--</div>
+        <div id="auth-section" class="auth-panel" style="display: none;">
+            <div id="active-info" style="display: none; margin-bottom: 12px;">
+                <div class="d-flex align-items-center justify-content-between">
+                    <div><span style="color: #4ade80; font-size: 12px;">● 授权验证成功</span><span id="card-expire" style="color: #666; font-size: 11px; margin-left:10px;"></span></div>
+                    <button class="btn-action" style="background:none; text-decoration:underline; font-size:11px;" onclick="resetAuth()">更换卡密</button>
+                </div>
+            </div>
+            <div id="input-area">
+                <div class="vs-input-group" id="input-container">
+                    <input type="text" id="license-key" placeholder="输入激活码以解锁专业功能" autocomplete="off">
+                    <button class="btn-action" id="activate-btn" onclick="handleActivate()">激活</button>
+                </div>
+                <div id="expire-msg" class="text-danger mt-2" style="display:none; font-size: 11px;"></div>
+            </div>
+        </div>
+    </main>
+    <footer style="padding: 15px 28px; background: var(--vs-bg-side); border-top: 1px solid var(--vs-border);">
+        <div class="d-flex gap-2">
+            <button id="enter-btn" class="btn-launch" disabled onclick="handleMainAction()">
+                <div id="btn-progress" class="progress-bg"></div>
+                <span id="btn-text" class="btn-text">立即运行程序系统</span>
+            </button>
+            <button id="clear-btn" class="btn-clear" style="display:none;" title="清理并重置环境" onclick="handleClearEnv()">
+                <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/><path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/></svg>
+            </button>
+        </div>
+    </footer>
+</div>
+
+<script>
+    let currentApp = null;
+    let isSingleAppMode = false;
+    let statusTimer = null;
+    let isDeploying = false;
+    let lastKnownRunning = false;
+
+    window.updateDownloadProgress = function(percent) {
+        const progressBg = document.getElementById('btn-progress');
+        const btnText = document.getElementById('btn-text');
+        if (progressBg) progressBg.style.width = percent + '%';
+        if (btnText) btnText.innerText = `正在获取资源... ${percent}%`;
+    }
+
+    // 核心修复逻辑：搜索处理
+    async function handleSearch(manualId) {
+        const input = document.getElementById('search-input');
+        const searchBar = document.getElementById('search-bar-container');
+        const btn = document.getElementById('search-btn');
+        const err = document.getElementById('search-error');
+        const appId = manualId || input.value.trim();
+
+        if (!appId) {
+            searchBar.classList.add('error'); // 触发红圈提醒
+            err.innerText = "请输入小程序 ID 后再进行搜索";
+            return;
+        } else {
+            searchBar.classList.remove('error');
+        }
+
+        btn.disabled = true;
+        btn.innerHTML = '<div class="spinner spinner-sm"></div>';
+        err.innerText = "";
+
+        try {
+            const res = await window.callPython("get_app_info", String(appId));
+            if (res.code === 1) {
+                await renderDetailPage(res.data);
+                hideLoader();
+            } else {
+                err.innerText = res.msg;
+                if (manualId && isSingleAppMode) {
+                    isSingleAppMode = false;
+                    document.getElementById('home-page').style.display = 'flex';
+                    await refreshHistory();
+                }
+                hideLoader();
+            }
+        } catch (e) { err.innerText = "网络连接异常"; hideLoader(); }
+        finally { btn.disabled = false; btn.innerText = "搜索"; }
+    }
+
+    // 状态更新与运行逻辑保持之前的“不模糊”修复方案
+    function updateButtonState(isRunning) {
+        const btn = document.getElementById('enter-btn');
+        const btnText = document.getElementById('btn-text');
+        const progressBg = document.getElementById('btn-progress');
+        const clearBtn = document.getElementById('clear-btn');
+        lastKnownRunning = isRunning;
+
+        if (isDeploying) return;
+
+        btn.classList.add('no-transition');
+        btn.classList.remove('deploying');
+        progressBg.style.width = '0%';
+        btn.offsetHeight;
+        btn.classList.remove('no-transition');
+
+        if (isRunning) {
+            btn.disabled = false;
+            btnText.innerText = "停止程序系统运行";
+            btn.classList.add('btn-stop');
+            clearBtn.style.display = 'none';
+        } else {
+            btn.classList.remove('btn-stop');
+            const isAuth = (currentApp.is_free === 1) || document.getElementById('active-info').style.display === 'block';
+
+            if (isAuth) {
+                btn.disabled = false;
+                btnText.innerText = "立即运行程序系统";
+                clearBtn.style.display = 'flex';
+            } else {
+                btn.disabled = true;
+                btnText.innerText = "请先激活专业版";
+                clearBtn.style.display = 'none';
+            }
+        }
+    }
+
+    async function handleMainAction() {
+        const btn = document.getElementById('enter-btn');
+        const btnText = document.getElementById('btn-text');
+        const progressBg = document.getElementById('btn-progress');
+
+        // 如果是停止逻辑，保持不变
+        if (btn.classList.contains('btn-stop') || lastKnownRunning) {
+            await window.callPython("stop_app", String(currentApp.id));
+            updateButtonState(false);
+            return;
+        }
+
+        // 运行逻辑
+        isDeploying = true;
+        btn.disabled = true;
+        btn.classList.add('deploying');
+        progressBg.style.width = '0%';
+        btnText.innerText = "正在检查资源...";
+
+        try {
+            const dlRes = await window.callPython("download_app", currentApp);
+            if (dlRes.code === 1) {
+                progressBg.style.width = '100%';
+                btnText.innerText = "环境部署中，请稍候...";
+
+                // 执行启动
+                const startRes = await window.callPython("start_app", currentApp);
+
+                // --- 关键修复：衔接逻辑 ---
+                if (startRes && startRes.code === 1) {
+                    // 1. 立即强制更新 UI 为运行状态，不等待轮询
+                    lastKnownRunning = true;
+                    isDeploying = false; // 结束部署状态
+                    updateButtonState(true); // 强制渲染为“停止按钮”样式
+
+                    // 2. 这里的动画衔接：让进度条满格后再消失
+                    setTimeout(() => {
+                        progressBg.style.width = '0%';
+                    }, 500);
+                } else {
+                    throw new Error(startRes.msg || "启动失败");
+                }
+            } else {
+                alert(dlRes.msg);
+                isDeploying = false;
+                updateButtonState(false);
+            }
+        } catch(e) {
+            console.error(e);
+            alert("启动异常: " + (e.message || e));
+            isDeploying = false;
+            updateButtonState(false);
+        }
+    }
+
+    // 其余函数 (init, goBack, renderDetailPage等) 全部保持不变...
+    async function init() {
+        try {
+            await refreshHistory();
+            const config = await window.callPython("get_init_config");
+            if (config && config.default_id) {
+                isSingleAppMode = true;
+                await handleSearch(config.default_id);
+            } else {
+                isSingleAppMode = false;
+                document.getElementById('home-page').style.display = 'flex';
+                requestAnimationFrame(() => { setTimeout(hideLoader, 50); });
+            }
+        } catch (e) { hideLoader(); }
+    }
+
+    async function refreshHistory() {
+        const history = await window.callPython("get_history");
+        const listDom = document.getElementById('history-list');
+        listDom.innerHTML = (history || []).map(item => `
+            <div class="history-tag" onclick="handleSearch('${item.id}')">${item.name}</div>
+        `).join('');
+    }
+
+    async function renderDetailPage(data) {
+        currentApp = data;
+        document.getElementById('home-page').style.display = 'none';
+        document.getElementById('detail-page').style.display = 'flex';
+        document.getElementById('nav-header').style.display = isSingleAppMode ? 'none' : 'flex';
+        document.getElementById('app-name').innerText = data.name;
+        document.getElementById('view-app-id').innerText = data.id;
+        document.getElementById('view-app-auth').innerText = data.auth || "官方认证";
+        document.getElementById('desc-container').innerHTML = data.desc;
+
+        const authSection = document.getElementById('auth-section');
+        if (data.is_free === 1) {
+            document.getElementById('price-tag').innerText = "社区免费版";
+            document.getElementById('price-tag').style.color = "#28a745";
+            authSection.style.display = 'none';
+        } else {
+            document.getElementById('price-tag').innerText = "专业授权版";
+            document.getElementById('price-tag').style.color = "#ffbf00";
+            authSection.style.display = 'block';
+            const cached = await window.callPython("get_cached_key", String(data.id));
+            if (cached) {
+                document.getElementById('license-key').value = cached;
+                await handleActivate(cached);
+            }
+        }
+        startStatusPolling();
+    }
+
+    function startStatusPolling() {
+        if(statusTimer) clearInterval(statusTimer);
+        checkNow();
+        statusTimer = setInterval(checkNow, 1500);
+        async function checkNow() {
+            if (currentApp && !isDeploying) {
+                try {
+                    const res = await window.callPython("check_status", String(currentApp.id));
+                    updateButtonState(!!res.running);
+                } catch(e) { console.error("Poll error", e); }
+            }
+        }
+    }
+
+    function hideLoader() {
+        const loader = document.getElementById('init-loader');
+        if (loader.style.display === 'none') return;
+        loader.style.opacity = '0';
+        setTimeout(() => { loader.style.display = 'none'; }, 300);
+    }
+
+    async function handleClearEnv() {
+        if (!confirm("确定要删除虚拟环境并重置吗？下次启动将重新部署。")) return;
+        const res = await window.callPython("clear_env", String(currentApp.id));
+        alert(res.msg);
+    }
+
+    async function handleActivate(keyOverride = null) {
+        const keyInput = document.getElementById('license-key');
+        const btn = document.getElementById('activate-btn');
+        const expireMsg = document.getElementById('expire-msg');
+        const container = document.getElementById('input-container');
+        const key = keyOverride || keyInput.value.trim();
+        if (!key) return;
+        btn.disabled = true;
+        btn.innerHTML = '<div class="spinner spinner-sm"></div>';
+        expireMsg.style.display = 'none';
+        container.classList.remove('error');
+        try {
+            const res = await window.callPython("activate_key", String(currentApp.id), String(key));
+            if (res && res.code === 1 && res.data && res.data.status === 1) {
+                document.getElementById('active-info').style.display = 'block';
+                document.getElementById('input-area').style.display = 'none';
+                document.getElementById('card-expire').innerText = "到期: " + res.data.expire;
+                updateButtonState(lastKnownRunning);
+            } else {
+                container.classList.add('error');
+                expireMsg.style.display = 'block';
+                expireMsg.innerText = res.msg || "授权码无效";
+            }
+        } finally {
+            btn.disabled = false;
+            btn.innerText = '激活';
+        }
+    }
+
+    function resetAuth() {
+        document.getElementById('active-info').style.display = 'none';
+        document.getElementById('input-area').style.display = 'block';
+        document.getElementById('license-key').value = "";
+        updateButtonState(lastKnownRunning);
+    }
+
+    function goBack() {
+        if(statusTimer) clearInterval(statusTimer);
+        document.getElementById('detail-page').style.display = 'none';
+        document.getElementById('home-page').style.display = 'flex';
+        refreshHistory();
+    }
+
+    window.addEventListener('onPythonReady', init);
+</script>
+</body>
+</html>
