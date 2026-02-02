@@ -1,0 +1,1239 @@
+# test_project チュートリアル
+
+Railway Framework の**型安全なパイプライン**を体験しましょう！
+
+## 学べること
+
+- Contract（型契約）によるデータ定義
+- Node（処理単位）の実装
+- IDE補完の活用
+- TDDワークフロー
+- typed_pipeline による依存関係の自動解決
+- バージョン管理と安全なアップグレード
+- 終端ノード（ExitContract）による型安全な終了処理
+
+## 所要時間
+
+約15分
+
+## 前提条件
+
+- Python 3.10以上
+- uv インストール済み（`curl -LsSf https://astral.sh/uv/install.sh | sh`）
+- VSCode推奨（IDE補完を体験するため）
+
+## セットアップ
+
+```bash
+uv sync --group dev
+cp .env.example .env
+```
+
+---
+
+## Step 1: Hello World（2分）
+
+まずは動作確認から。
+
+### 1.1 実行
+
+```bash
+uv run railway run hello
+```
+
+**期待される出力:**
+```
+Hello, World!
+```
+
+🎉 **2分で動きました！** 次のStepでは、型安全の核心「Contract」を学びます。
+
+---
+
+## Step 2: Contract - データの「契約」を定義する（3分）
+
+従来のパイプラインの問題点：
+
+```python
+# ❌ 従来: 何が入っているか分からない
+def process(data):
+    users = data["users"]  # KeyError? typo? IDE補完なし
+```
+
+Railwayでは**Contract**でデータ構造を定義します：
+
+```python
+# ✅ Railway: 型で明確に定義
+class UsersFetchResult(Contract):
+    users: list[User]
+    total: int
+```
+
+### 2.1 Contractを作成
+
+```bash
+railway new contract UsersFetchResult
+```
+
+### 2.2 ファイルを編集
+
+`src/contracts/users_fetch_result.py` を以下の内容で**上書き**してください:
+
+```python
+"""UsersFetchResult contract."""
+
+from railway import Contract
+
+
+class User(Contract):
+    """ユーザーエンティティ"""
+    id: int
+    name: str
+    email: str
+
+
+class UsersFetchResult(Contract):
+    """fetch_usersノードの出力契約"""
+    users: list[User]
+    total: int
+```
+
+**ポイント:**
+- **Pydantic BaseModel** がベース（自動バリデーション）
+- フィールドに型を指定 → **IDE補完が効く**
+
+---
+
+## Step 3: TDD - テストを先に書く（3分）
+
+Railwayでは**テストファースト**を推奨。まず失敗するテストを書きます。
+
+### 3.1 型付きノードを生成
+
+```bash
+railway new node fetch_users --output UsersFetchResult
+```
+
+`--output` オプションで出力型を指定すると、テストファイルも型付きで生成されます。
+
+### 3.2 テストを編集（Red Phase）
+
+`tests/nodes/test_fetch_users.py` を以下の内容で**上書き**してください:
+
+```python
+"""Tests for fetch_users node."""
+
+from contracts.users_fetch_result import UsersFetchResult
+from nodes.fetch_users import fetch_users
+
+
+class TestFetchUsers:
+    def test_returns_users_fetch_result(self):
+        """正しい型を返すこと"""
+        result = fetch_users()
+        assert isinstance(result, UsersFetchResult)
+
+    def test_returns_at_least_one_user(self):
+        """少なくとも1人のユーザーを返すこと"""
+        result = fetch_users()
+        assert result.total >= 1  # IDE補完が効く！
+        assert len(result.users) == result.total
+```
+
+**💡 ポイント: モックが不要！**
+
+```python
+# ❌ 従来: Contextのモックが必要
+def test_fetch_users():
+    ctx = MagicMock()
+    fetch_users(ctx)
+    ctx.__setitem__.assert_called_with(...)
+
+# ✅ Railway: 引数を渡して戻り値を確認するだけ
+def test_fetch_users():
+    result = fetch_users()
+    assert result.total >= 1
+```
+
+### 3.3 テスト実行（失敗を確認）
+
+```bash
+uv run pytest tests/nodes/test_fetch_users.py -v
+```
+
+🔴 **Red Phase!** テストが失敗することを確認しました。
+
+---
+
+## Step 4: Node実装（3分）
+
+テストを通すための実装を書きます。
+
+### 4.1 ノードを実装（Green Phase）
+
+`src/nodes/fetch_users.py` を以下の内容で**上書き**してください:
+
+```python
+"""fetch_users node."""
+
+from railway import node
+from contracts.users_fetch_result import UsersFetchResult, User
+
+
+@node(output=UsersFetchResult)
+def fetch_users() -> UsersFetchResult:
+    """ユーザー一覧を取得する"""
+    users = [
+        User(id=1, name="Alice", email="alice@example.com"),
+        User(id=2, name="Bob", email="bob@example.com"),
+    ]
+    return UsersFetchResult(
+        users=users,
+        total=len(users),
+    )
+```
+
+### 4.2 テスト実行（成功を確認）
+
+```bash
+uv run pytest tests/nodes/test_fetch_users.py -v
+```
+
+🟢 **Green Phase!** テストが通りました。
+
+**ポイント:**
+- `@node(output=UsersFetchResult)` で出力型を宣言
+- 純粋関数：引数を受け取り、値を返すだけ
+- 型が保証される
+
+---
+
+## Step 5: IDE補完を体験する（2分）
+
+Output Modelパターンの最大の利点を体験しましょう。
+
+### 5.1 別のノードを作成
+
+```bash
+railway new contract ReportResult
+railway new node generate_report --input users:UsersFetchResult --output ReportResult
+```
+
+### 5.2 ContractとNodeを編集
+
+`src/contracts/report_result.py`:
+
+```python
+"""ReportResult contract."""
+
+from datetime import datetime
+from railway import Contract
+
+
+class ReportResult(Contract):
+    """レポート生成結果"""
+    content: str
+    user_count: int
+    generated_at: datetime
+```
+
+### 5.3 VSCodeで補完を試す
+
+`src/nodes/generate_report.py` を開き、以下のように編集してみてください:
+
+```python
+"""generate_report node."""
+
+from datetime import datetime
+from railway import node
+from contracts.users_fetch_result import UsersFetchResult
+from contracts.report_result import ReportResult
+
+
+@node(
+    inputs={"users": UsersFetchResult},
+    output=ReportResult,
+)
+def generate_report(users: UsersFetchResult) -> ReportResult:
+    # ここで users. と入力して Ctrl+Space を押してください！
+    names = ", ".join(u.name for u in users.users)  # IDE補完が効く！
+    return ReportResult(
+        content=f"Users: {names}",
+        user_count=users.total,  # typo するとIDEが警告
+        generated_at=datetime.now(),
+    )
+```
+
+🎉 **IDE補完が効く！** `users.` と入力すると候補が表示されます。
+
+---
+
+## Step 6: typed_pipeline - 依存関係の自動解決（3分）
+
+複数のNodeを組み合わせてパイプラインを構築します。
+
+### 6.1 エントリポイントを作成
+
+```bash
+railway new entry user_report
+```
+
+`src/user_report.py` を以下の内容で**上書き**してください:
+
+```python
+"""user_report entry point."""
+
+from railway import entry_point, typed_pipeline
+
+from nodes.fetch_users import fetch_users
+from nodes.generate_report import generate_report
+
+
+@entry_point
+def main():
+    """ユーザーレポートを生成する"""
+    result = typed_pipeline(
+        fetch_users,      # UsersFetchResult を出力
+        generate_report,  # UsersFetchResult を入力 → ReportResult を出力
+    )
+
+    print(result.content)      # IDE補完が効く！
+    print(f"Count: {result.user_count}")
+    return result
+
+
+if __name__ == "__main__":
+    main()
+```
+
+### 6.2 実行
+
+```bash
+uv run railway run user_report
+```
+
+**期待される出力:**
+```
+Users: Alice, Bob
+Count: 2
+```
+
+**依存関係の自動解決:**
+
+```
+fetch_users ──────────────> generate_report
+  output: UsersFetchResult    input: UsersFetchResult
+                              output: ReportResult
+```
+
+フレームワークが**型を見て自動的に依存関係を解決**します。
+
+### 6.3 Nodeはパイプライン構成に依存しない
+
+これがOutput Modelパターンの核心的な利点です:
+
+```python
+# 構成1: シンプル
+typed_pipeline(fetch_users, generate_report)
+
+# 構成2: 間にフィルター処理を追加
+typed_pipeline(fetch_users, filter_active_users, generate_report)
+
+# 構成3: データ加工を追加
+typed_pipeline(fetch_users, enrich_users, generate_report)
+
+# ↑ どの構成でも generate_report の実装は同じ！
+```
+
+**なぜこれが重要か:**
+
+| 従来 | Railway |
+|------|---------|
+| パイプライン変更時にNode修正が必要 | Node修正不要 |
+| 前後のNode実装を意識 | 入出力Contractだけを意識 |
+| 結合テストが必須 | 単体テストで十分 |
+
+`generate_report` は**「UsersFetchResultを受け取りReportResultを返す」**という契約だけを守ればよく、パイプラインの全体構成には一切依存しません。
+
+---
+
+## Step 7: 安全なリファクタリング（2分）
+
+Output Modelパターンのもう一つの利点を体験します。
+
+### 7.1 フィールド名を変更したい
+
+`UsersFetchResult.total` を `count` に変更したいとします。
+
+### 7.2 従来の問題
+
+```python
+# ❌ 従来: 文字列なので grep で探すしかない
+data["total"]  # どこで使われてる？ 変更漏れがあっても実行時まで気づかない
+```
+
+### 7.3 Railwayでの安全な変更
+
+1. **Contract を変更:**
+   `src/contracts/users_fetch_result.py` の `total` を `count` に変更
+
+2. **IDEが全参照箇所をハイライト**
+
+3. **一括リネーム (F2キー)**
+
+4. **型チェックで確認:**
+   ```bash
+   uv run mypy src/
+   ```
+
+🎉 **変更漏れゼロ！** IDEと型チェッカーが守ってくれます。
+
+---
+
+## Step 8: エラーハンドリング（実践）（5分）
+
+Railway Framework のエラーハンドリングを実際に体験します。
+多くのケースでは「何もしない」で十分ですが、高度な制御が必要な場合の選択肢を学びます。
+
+### 8.1 シナリオ: 不安定な外部APIとの連携
+
+外部APIが不安定で、時々接続エラーが発生する状況を想定します。
+
+まず、不安定なAPIをシミュレートするノードを作成:
+
+```bash
+railway new contract ExternalDataResult
+railway new node fetch_external_data --output ExternalDataResult
+```
+
+`src/contracts/external_data_result.py`:
+```python
+from railway import Contract
+
+class ExternalDataResult(Contract):
+    data: str
+    value: int
+```
+
+`src/nodes/fetch_external_data.py`:
+```python
+import random
+from railway import node
+from contracts.external_data_result import ExternalDataResult
+
+@node(output=ExternalDataResult)
+def fetch_external_data() -> ExternalDataResult:
+    """不安定な外部APIをシミュレート"""
+    if random.random() < 0.5:
+        raise ConnectionError("Network timeout")
+    return ExternalDataResult(data="success", value=42)
+```
+
+### 8.2 レベル1: retry_on で自動リトライ
+
+一時的なエラーには自動リトライが有効です:
+
+```python
+@node(
+    output=ExternalDataResult,
+    retries=3,
+    retry_on=(ConnectionError,)
+)
+def fetch_with_retry() -> ExternalDataResult:
+    """ConnectionError は3回までリトライ"""
+    if random.random() < 0.5:
+        raise ConnectionError("Network timeout")
+    return ExternalDataResult(data="success", value=42)
+```
+
+**体験**: 何度か実行して、ConnectionErrorが自動リトライされることを確認:
+```bash
+uv run python -c "from nodes.fetch_external_data import fetch_with_retry; print(fetch_with_retry())"
+```
+
+### 8.3 レベル2: デフォルト動作（例外伝播）
+
+何も指定しなければ、例外はそのまま伝播します:
+
+```python
+result = typed_pipeline(fetch_external_data, process_data)
+# 例外発生時: スタックトレース付きで伝播
+```
+
+**これで十分なケースが多いです。** スタックトレースが保持されるため、デバッグが容易です。
+
+### 8.4 レベル3: on_error でPipeline単位の制御
+
+複数のNodeを跨いだ高度な制御が必要な場合:
+
+`src/user_report.py` を編集して試してみましょう:
+
+```python
+from railway import entry_point, typed_pipeline
+
+def smart_error_handler(error: Exception, step_name: str):
+    """例外タイプに応じて適切に処理"""
+    match error:
+        case ConnectionError():
+            print(f"⚠️ {step_name}: 接続エラー、フォールバック値を使用")
+            return ExternalDataResult(data="cached", value=0)
+        case _:
+            raise  # 他の例外は再送出
+
+@entry_point
+def main():
+    result = typed_pipeline(
+        fetch_external_data,
+        on_error=smart_error_handler
+    )
+    print(f"Result: {result.data}, Value: {result.value}")
+```
+
+### 8.5 on_step でデバッグ/監査
+
+各ステップの中間結果を取得できます:
+
+```python
+steps = []
+
+def capture_step(step_name: str, output):
+    steps.append({"step": step_name, "output": output})
+    print(f"[{step_name}] -> {output}")
+
+result = typed_pipeline(
+    fetch_users,
+    generate_report,
+    on_step=capture_step  # 各ステップの結果をキャプチャ
+)
+```
+
+### 8.6 恩恵のまとめ
+
+| レベル | いつ使う | 恩恵 |
+|--------|----------|------|
+| retry_on | 一時的エラー | 自動回復、コード簡潔 |
+| デフォルト伝播 | **多くのケース** | スタックトレース保持 |
+| on_error | 高度な制御 | Pipeline単位の柔軟な対応 |
+| on_step | デバッグ/監査 | 中間結果へのアクセス |
+
+**重要**: 多くのケースでは「何もしない」（デフォルト伝播）で十分です。
+高度な機能は必要な時だけ使いましょう。
+
+---
+
+## Step 9: バージョン管理 - 安全なアップグレード体験（5分）
+
+Railway Framework は**プロジェクトのバージョンを追跡**し、安全なアップグレードを支援します。
+
+### 9.1 現状を確認
+
+プロジェクトのバージョン情報を確認します:
+
+```bash
+cat .railway/project.yaml
+```
+
+**出力例:**
+```yaml
+railway:
+  version: "0.10.1"
+  created_at: "2026-01-23T10:30:00+09:00"
+  updated_at: "2026-01-23T10:30:00+09:00"
+
+project:
+  name: "test_project"
+
+compatibility:
+  min_version: "0.10.1"
+```
+
+**ポイント:**
+- `railway init` 時に自動生成される
+- チーム全員で同じバージョン情報を共有（Git管理対象）
+
+---
+
+### 9.2 バージョン不一致の警告
+
+フレームワークがアップグレードされた後に `railway new` を実行すると:
+
+```
+$ railway new node my_new_node
+
+⚠️  バージョン不一致を検出
+    プロジェクト: 0.10.0
+    現在:         0.11.0
+
+    [c] 続行 / [u] 'railway update' を実行 / [a] 中止
+```
+
+**なぜ重要か:**
+- 古いテンプレートと新しいテンプレートの混在を防ぐ
+- チーム内の不整合を防止
+
+---
+
+### 9.3 railway update でマイグレーション
+
+プロジェクトを最新バージョンに更新:
+
+```bash
+# まず変更内容をプレビュー
+railway update --dry-run
+
+# 実際に更新
+railway update
+```
+
+**ポイント:**
+- `--dry-run` で事前確認
+- 更新前に自動バックアップ
+- ユーザーコード（`src/nodes/*`）は変更されない
+
+---
+
+### 9.4 バックアップから復元
+
+問題が発生した場合は簡単に復元:
+
+```bash
+# 一覧表示
+railway backup list
+
+# 復元
+railway backup restore
+```
+
+---
+
+### 9.5 恩恵のまとめ
+
+| 問題 | Railway の解決策 |
+|------|------------------|
+| バージョン不明 | `.railway/project.yaml` で明示 |
+| 手動マイグレーション | `railway update` で自動化 |
+| 失敗時のリカバリ | 自動バックアップ + 復元 |
+| 変更内容不明 | `--dry-run` で事前確認 |
+
+🎉 **これでバージョンアップも安心！**
+
+---
+
+## よくある質問 (FAQ)
+
+### Q: Result型（Ok/Err）は提供しないの？
+
+Railway Framework は意図的にResult型を採用していません。
+
+**理由:**
+- Pythonエコシステム（requests, sqlalchemy等）は例外ベース
+- Result型だとすべてをラップする必要があり冗長
+- スタックトレースが失われデバッグが困難に
+
+代わりに、Python標準の例外機構 + on_error で十分な制御を提供します。
+
+### Q: on_error と try/except の使い分けは？
+
+| 状況 | 推奨 |
+|------|------|
+| 1つのNodeで完結 | Node内で try/except |
+| 複数Nodeを跨ぐ | on_error |
+| リトライで回復可能 | retry_on |
+| 特に制御不要 | **何もしない（例外伝播）** |
+
+### Q: inputs の明示的指定は必要？
+
+Contract型の引数は**自動推論**されるため、通常は不要です:
+
+```python
+# 自動推論される（推奨）
+@node(output=ReportResult)
+def generate_report(users: UsersFetchResult) -> ReportResult:
+    ...
+
+# 明示的に指定も可能（レガシー互換）
+@node(inputs={"users": UsersFetchResult}, output=ReportResult)
+def generate_report(users: UsersFetchResult) -> ReportResult:
+    ...
+```
+
+### Q: 既存プロジェクトにバージョン情報を追加するには？
+
+```bash
+railway update --init
+```
+
+これにより `.railway/project.yaml` が作成され、バージョン追跡が開始されます。
+
+### Q: バージョン不一致の警告を無視できる？
+
+`--force` オプションで警告をスキップできます:
+
+```bash
+railway new node my_node --force
+```
+
+ただし、チーム開発では推奨しません。`railway update` で先にプロジェクトを更新してください。
+
+---
+
+## Step 10: DAGワークフローと終端ノード（5分）
+
+条件分岐が必要なワークフローには `dag_runner` を使用します。
+終端ノードを使うと、ワークフロー終了時に処理を実行できます。
+
+### 10.1 DAGワークフローの作成
+
+```bash
+railway new entry alert_workflow
+```
+
+### 10.2 遷移グラフを定義
+
+`transition_graphs/alert_workflow_*.yml` を編集:
+
+```yaml
+version: "1.0"
+entrypoint: alert_workflow
+description: "アラート処理ワークフロー"
+
+nodes:
+  check_severity:
+    description: "重要度をチェック"
+
+  escalate:
+    description: "エスカレーション"
+
+  # 終端ノード（nodes.exit 配下）
+  exit:
+    success:
+      done:
+        description: "正常終了（Slack通知）"
+    failure:
+      timeout:
+        description: "タイムアウト"
+
+start: check_severity
+
+transitions:
+  check_severity:
+    success::critical: escalate
+    success::normal: exit.success.done
+
+  escalate:
+    success::done: exit.success.done
+    failure::timeout: exit.failure.timeout
+```
+
+### 10.3 終端ノードを実装
+
+**v0.12.3 では終端ノードは `ExitContract` サブクラスを返す必要があります。**
+
+`src/nodes/exit/success/done.py`:
+
+```python
+from railway import ExitContract, node
+
+
+class SuccessDoneResult(ExitContract):
+    """正常終了時の結果。"""
+    exit_state: str = "success.done"
+    processed_count: int
+    summary: str
+
+
+@node(name="exit.success.done")
+def done(ctx) -> SuccessDoneResult:
+    """終端ノードは ExitContract を返す（Outcome 不要）。"""
+    print(f"[完了] ワークフロー正常終了")
+    # Slack通知などの終了処理を記述
+    return SuccessDoneResult(
+        processed_count=ctx.get("count", 0),
+        summary="All items processed successfully",
+    )
+```
+
+`src/nodes/exit/failure/timeout.py`:
+
+```python
+from railway import ExitContract, node
+
+
+class TimeoutResult(ExitContract):
+    """タイムアウト時の結果。"""
+    exit_state: str = "failure.timeout"
+    error_message: str
+    retry_count: int
+
+
+@node(name="exit.failure.timeout")
+def timeout(ctx) -> TimeoutResult:
+    """タイムアウト終端ノード。"""
+    return TimeoutResult(
+        error_message="API request timed out",
+        retry_count=ctx.get("retries", 0),
+    )
+```
+
+**ポイント:**
+- 終端ノードは **ExitContract サブクラスを返す**（Outcome 不要）
+- `exit_state` で終了状態を指定（`success.*` → exit_code=0, それ以外 → 1）
+- カスタムフィールドで任意のデータを返せる
+
+### 10.4 スケルトン自動生成
+
+`railway sync transition` を実行すると、未実装の終端ノードにスケルトンが自動生成されます:
+
+```bash
+$ railway sync transition --entry alert_workflow
+
+生成: src/nodes/exit/success/done.py
+生成: src/nodes/exit/failure/timeout.py
+```
+
+生成されたファイルを編集して、TODO コメントを実装してください。
+
+### 10.5 dag_runner の返り値
+
+`dag_runner()` は終端ノードが返した `ExitContract` を返します:
+
+```python
+from railway.core.dag import dag_runner
+
+result = dag_runner(start=start, transitions=TRANSITIONS)
+
+# 基本プロパティ
+result.is_success       # True if exit_code == 0
+result.exit_code        # 0 (success.*) or 1 (failure.*)
+result.exit_state       # "success.done" など
+
+# カスタムフィールド（ExitContract サブクラスの場合）
+result.processed_count  # 42
+result.summary          # "All items processed successfully"
+
+# メタデータ
+result.execution_path   # ("start", "process", "exit.success.done")
+result.iterations       # 3
+```
+
+### 10.6 コード生成と実行
+
+```bash
+railway sync transition --entry alert_workflow
+railway run alert_workflow
+```
+
+### 10.7 終端ノードの利点
+
+| 項目 | 説明 |
+|------|------|
+| **型安全性** | ExitContract で戻り値の型が保証される |
+| **IDE補完** | カスタムフィールドに補完が効く |
+| **一貫性** | 通常のノードと同じ書き方 |
+| **テスト可能性** | 純粋関数としてテスト可能 |
+| **表現力** | 詳細な終了状態を表現（done, skipped, timeout など） |
+| **自動解決** | module/function は省略可能 |
+
+### 10.8 v0.12.x からの移行
+
+v0.12.x で `dict` や `None` を返していた場合、v0.12.3 で `ExitNodeTypeError` が発生します。
+
+**移行手順:**
+
+1. `railway sync transition` でスケルトン生成
+2. 警告に従ってコード修正
+3. `ExitContract` サブクラスを返すように変更
+
+**Before (v0.12.x):**
+```python
+def done(ctx):
+    return {"status": "ok"}  # ← ExitNodeTypeError in v0.12.3
+```
+
+**After (v0.12.3):**
+```python
+from railway import ExitContract
+
+class DoneResult(ExitContract):
+    exit_state: str = "success.done"
+    status: str
+
+def done(ctx) -> DoneResult:
+    return DoneResult(status="ok")
+```
+
+🎉 **コールバックの概念を知らなくても、型安全な終了処理を実装できます！**
+
+---
+
+## Step 11: コンテキストの引き継ぎ - model_copy パターン（5分）
+
+DAGワークフローでは、**直前のノードの Contract のみが次のノードに渡されます**。
+ワークフロー全体で必要なデータを保持するには、`model_copy()` を使用します。
+
+### 11.1 なぜ model_copy が必要か？
+
+Railway Framework の設計原則:
+
+| 原則 | 説明 |
+|------|------|
+| **明示的なデータフロー** | 何が渡されるか Contract を見れば分かる |
+| **イミュータブル** | Contract は変更不可、新しいインスタンスを作成 |
+| **暗黙的状態の排除** | グローバルコンテキストを使わない |
+
+```python
+# ❌ Contract は直接変更できない（イミュータブル）
+ctx.hostname = "web-01"  # Error!
+
+# ✅ model_copy で新しいインスタンスを作成
+new_ctx = ctx.model_copy(update={"hostname": "web-01"})
+```
+
+### 11.2 ワークフロー用 Contract を定義
+
+ワークフロー全体で必要なフィールドを1つの Contract に含めます:
+
+`src/contracts/alert_context.py`:
+
+```python
+from railway import Contract
+
+
+class AlertContext(Contract):
+    """アラート処理ワークフローのコンテキスト。
+
+    ワークフロー全体で必要なデータを含む。
+    各ノードで model_copy() を使って新しいフィールドを追加する。
+    """
+    # 初期データ（開始ノードで設定）
+    incident_id: str
+    severity: str
+
+    # 各ノードで追加されるデータ（Optional で定義）
+    hostname: str | None = None        # check_host で設定
+    escalated: bool = False            # escalate で設定
+    notification_sent: bool = False    # notify で設定
+```
+
+**ポイント:**
+- 後続ノードで追加されるフィールドは **Optional** または **デフォルト値付き** で定義
+- すべてのノードが同じ Contract 型を使用
+
+### 11.3 ノードで model_copy を使用
+
+各ノードで `model_copy()` を使い、既存データを保持しつつ新しいフィールドを追加:
+
+`src/nodes/check_host.py`:
+
+```python
+from railway import node
+from railway.core.dag import Outcome
+from contracts.alert_context import AlertContext
+
+
+def lookup_hostname(incident_id: str) -> str | None:
+    """ホスト名を取得（実際の実装は省略）。"""
+    return "web-01"
+
+
+@node
+def check_host(ctx: AlertContext) -> tuple[AlertContext, Outcome]:
+    """ホスト情報を取得するノード。"""
+    hostname = lookup_hostname(ctx.incident_id)
+
+    if hostname:
+        # model_copy で既存データを保持しつつ、hostname を追加
+        new_ctx = ctx.model_copy(update={"hostname": hostname})
+        return new_ctx, Outcome.success("found")
+
+    return ctx, Outcome.failure("not_found")
+```
+
+`src/nodes/escalate.py`:
+
+```python
+from railway import node
+from railway.core.dag import Outcome
+from contracts.alert_context import AlertContext
+
+
+@node
+def escalate(ctx: AlertContext) -> tuple[AlertContext, Outcome]:
+    """エスカレーションするノード。"""
+    # ctx.incident_id, ctx.severity, ctx.hostname すべて利用可能
+    print(f"Escalating {ctx.incident_id} on {ctx.hostname}")
+
+    # escalated フラグを追加
+    return ctx.model_copy(update={"escalated": True}), Outcome.success("done")
+```
+
+### 11.4 データフローの可視化
+
+```
+[開始ノード]
+  incident_id="INC-001", severity="critical"
+     │
+     ▼ (Contract がそのまま渡される)
+[check_host]
+  model_copy(update={"hostname": "web-01"})
+     │
+     ▼ (更新された Contract が渡される)
+  incident_id="INC-001", severity="critical", hostname="web-01"
+     │
+     ▼
+[escalate]
+  model_copy(update={"escalated": True})
+     │
+     ▼
+  incident_id="INC-001", severity="critical", hostname="web-01", escalated=True
+     │
+     ▼
+[終端ノード]
+  すべてのデータにアクセス可能
+```
+
+### 11.5 テストでの確認
+
+`model_copy` のデータ引き継ぎをテストで確認:
+
+```python
+from contracts.alert_context import AlertContext
+from nodes.check_host import check_host
+from nodes.escalate import escalate
+from railway.core.dag import Outcome
+
+
+class TestContextFlow:
+    def test_check_host_preserves_initial_data(self):
+        """check_host が初期データを保持すること。"""
+        ctx = AlertContext(incident_id="INC-001", severity="critical")
+
+        result_ctx, outcome = check_host(ctx)
+
+        # 初期データが保持されている
+        assert result_ctx.incident_id == "INC-001"
+        assert result_ctx.severity == "critical"
+        # 新しいデータが追加されている
+        assert result_ctx.hostname == "web-01"
+
+    def test_escalate_receives_all_previous_data(self):
+        """escalate が前ノードのデータを受け取ること。"""
+        # check_host の出力を模擬
+        ctx = AlertContext(
+            incident_id="INC-001",
+            severity="critical",
+            hostname="web-01",
+        )
+
+        result_ctx, outcome = escalate(ctx)
+
+        # すべてのデータが保持されている
+        assert result_ctx.incident_id == "INC-001"
+        assert result_ctx.hostname == "web-01"
+        assert result_ctx.escalated is True
+```
+
+### 11.6 恩恵のまとめ
+
+| 利点 | 説明 |
+|------|------|
+| **型安全性** | Contract でフィールドが明示、IDE 補完が効く |
+| **追跡可能性** | データフローが Contract を見れば分かる |
+| **テスト容易性** | 各ノードを独立してテスト可能 |
+| **デバッグ容易性** | 各ノードの入出力が明確 |
+
+🎉 **model_copy パターンでワークフロー全体のデータを型安全に管理できます！**
+
+---
+
+## Step 12: フィールドベース依存関係（5分）
+
+ワークフローが複雑になると、ノード間のデータ依存を管理する必要があります。
+フィールドベース依存関係で、**YAML だけでワークフローを変更できる**ようにしましょう。
+
+### 12.1 問題の理解
+
+遷移グラフを変更すると、必要なデータがないエラーが発生することがあります:
+
+```yaml
+# Before: check_severity → check_host → escalate
+#         hostname は check_host が提供
+
+# After: check_severity → escalate (check_host を削除)
+#        ↑ hostname がないためエラー！
+```
+
+従来は、YAML 記述者がノードの内部実装を知っている必要がありました。
+
+### 12.2 ノードで依存を宣言
+
+各ノードが必要とするフィールドを **`@node` デコレータで宣言** します:
+
+`src/nodes/check_host.py`:
+```python
+from railway import node
+from railway.core.dag import Outcome
+from contracts.alert_context import AlertContext
+
+
+@node(requires=["incident_id"], provides=["hostname"])
+def check_host(ctx: AlertContext) -> tuple[AlertContext, Outcome]:
+    """ホスト情報を取得。"""
+    hostname = lookup_hostname(ctx.incident_id)
+    return ctx.model_copy(update={"hostname": hostname}), Outcome.success("found")
+```
+
+`src/nodes/escalate.py`:
+```python
+@node(requires=["incident_id"], optional=["hostname"], provides=["escalated"])
+def escalate(ctx: AlertContext) -> tuple[AlertContext, Outcome]:
+    """エスカレーション。hostname は optional。"""
+    if ctx.hostname:  # optional なので存在チェック
+        notify_with_host(ctx.hostname)
+    else:
+        notify_without_host()
+    return ctx.model_copy(update={"escalated": True}), Outcome.success("done")
+```
+
+**ポイント:**
+- `requires`: 必須フィールド。なければ実行エラー
+- `optional`: あれば使用するフィールド。なくても動作する
+- `provides`: このノードが追加するフィールド
+
+### 12.3 YAML には依存を書かない
+
+YAML には **遷移のみ** を記述します。依存情報は **ノードコードに** あります:
+
+```yaml
+# ノード名と遷移のみ - 依存情報は書かない
+nodes:
+  check_severity:
+    description: "重要度チェック"
+  check_host:
+    description: "ホスト情報取得"
+  escalate:
+    description: "エスカレーション"
+
+transitions:
+  check_severity:
+    success::critical: check_host
+    success::normal: escalate   # ← フレームワークが自動検証
+  check_host:
+    success::found: escalate
+```
+
+### 12.4 sync で自動検証
+
+`railway sync transition` を実行すると、依存関係が自動検証されます:
+
+```bash
+$ railway sync transition --entry alert_workflow
+
+✅ 依存関係検証OK
+
+⚠️ 警告:
+  - 経路 'check_severity → escalate' で hostname が利用不可
+    （escalate は optional で宣言しているため問題なし）
+```
+
+### 12.5 依存エラーの例
+
+`escalate` が `hostname` を `requires` で宣言していた場合:
+
+```bash
+$ railway sync transition --entry alert_workflow
+
+❌ 依存関係エラー: 遷移 'check_severity → escalate' が無効です
+
+  escalate が必要とするフィールド:
+    requires: [hostname]  ❌ 利用不可
+
+  この時点で利用可能なフィールド:
+    [incident_id, severity]
+
+  提案:
+    - check_host を経由する遷移に変更
+    - または escalate の requires から hostname を削除
+```
+
+### 12.6 実行時チェック（オプション）
+
+`dag_runner` で `check_dependencies=True` を指定すると、実行時にも依存チェックが行われます:
+
+```python
+result = dag_runner(
+    start=start,
+    transitions=TRANSITIONS,
+    check_dependencies=True,  # 実行時依存チェック
+)
+```
+
+静的検証で不十分な場合や、動的に決まる経路がある場合に有用です。
+
+### 12.7 恩恵のまとめ
+
+| 観点 | 従来 | フィールドベース依存関係 |
+|------|------|------------------------|
+| YAML 変更時 | ノード実装を確認必要 | **自動検証でエラー検出** |
+| 依存情報の場所 | 暗黙的・ドキュメント | **ノードコードに明示** |
+| YAML 記述者の知識 | ノード実装の詳細 | **ノード名と Outcome のみ** |
+
+🎉 **YAML を変更して sync するだけで、依存エラーを検出できます！**
+
+---
+
+## 次のステップ
+
+おめでとうございます！🎉 Railwayの基本と応用を習得しました。
+
+### 学んだこと
+
+- Contract で型契約を定義
+- Node で純粋関数として処理を実装
+- TDD でテストファーストに開発
+- IDE補完の活用
+- typed_pipeline で依存関係を自動解決
+- 安全なリファクタリング
+- **3層エラーハンドリング** (retry_on, デフォルト伝播, on_error)
+- **on_step でデバッグ/監査**
+- **バージョン管理** (`railway update`, `railway backup`)
+- **DAGワークフロー** (dag_runner, 条件分岐)
+- **終端ノード** (ExitContract, 型安全な終了処理)
+- **v0.12.x からの移行** (ExitNodeTypeError 対応)
+- **model_copy パターン** でワークフロー全体のコンテキストを引き継ぎ
+- **フィールドベース依存関係** (`@node(requires=..., optional=..., provides=...)`)
+
+### さらに学ぶ
+
+1. **設定管理**: `config/development.yaml` で環境別設定
+2. **非同期処理**: `typed_async_pipeline` で非同期対応
+3. **ドキュメント**: `railway docs` で詳細を確認
+
+---
+
+## トラブルシューティング
+
+### mypy で型チェックが効かない場合
+
+mypyで「Skipping analyzing "railway"」と表示される場合:
+
+```bash
+# 1. パッケージを再インストール
+uv sync --reinstall-package railway-framework
+
+# 2. mypy キャッシュをクリア
+rm -rf .mypy_cache/
+
+# 3. 確認
+uv run mypy src/
+```
+
+### テストが失敗する場合
+
+```bash
+# pytest キャッシュをクリア
+rm -rf .pytest_cache/ __pycache__/
+
+# 依存関係を再同期
+uv sync
+```
