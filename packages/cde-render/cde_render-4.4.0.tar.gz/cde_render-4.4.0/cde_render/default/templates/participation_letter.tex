@@ -1,0 +1,77 @@
+\documentclass[a4paper,parskip=half,11pt]{scrartcl}
+\usepackage[fromlogo=true,enlargefirstpage=true]{scrletter} % Same as using documentclass scrlttr2 but with sections etc.
+
+\usepackage{fontspec}
+\usepackage[ngerman]{babel}
+
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{microtype}
+
+<<# Use this block to load additional packages, required for your specific participation_letter.override.tex template.
+    You may override the default fontpackage 'libertine' or use it. #>>
+<<% block packages %>>
+    \usepackage{libertine}
+<<% endblock %>>
+
+% define colors
+\definecolor{design}{HTML}{<<< CONFIG.layout.design_color >>>}
+\definecolor{links}{HTML}{<<< CONFIG.layout.link_color >>>}
+\definecolor{light-gray}{gray}{0.4}
+
+\usepackage[
+    colorlinks=True,
+    linkcolor=links,
+    urlcolor=links,
+]{hyperref}
+
+% This has to be set after hyperref is loaded to handle unicode correctly
+% see https://tex.stackexchange.com/a/245969
+\hypersetup{
+    pdftitle={Teilnahmebrief <<< EVENT.title|e >>> – <<< registration.name.common|e >>>},
+    pdfauthor={<<< CONFIG.participation_letter.sender >>>},
+}
+
+<<# This block should be used to define additional layout settings and macros #>>
+<<% block preamble %>><<% endblock %>>
+
+\begin{document}
+    \setkomavar{fromname}{<<% if CONFIG.participation_letter.event_title %>><<< CONFIG.participation_letter.event_title>>><<% else %>>CdE-<<< EVENT.title|e >>><<% endif %>>}
+    \setkomavar{fromaddress}{c/o <<< CONFIG.participation_letter.sender >>>\\<<< CONFIG.participation_letter.sender_address >>>\\<<< CONFIG.participation_letter.sender_postal_code >>> <<< CONFIG.participation_letter.sender_location >>><<% if CONFIG.participation_letter.sender_country %>>\\<<< CONFIG.participation_letter.sender_country >>><<% endif %>>}
+    \setkomavar{fromlogo}{<<% block logo %>><<% if CONFIG.layout.logo_file %>>\includegraphics[height=4cm]{<<< find_asset(CONFIG.layout.logo_file) >>>}<<% endif %>><<% endblock %>>}
+    \setkomavar{place}{<<< CONFIG.participation_letter.sender_location >>>}
+    \setkomavar{date}{den \today}
+
+    \setkomavar{firsthead}{
+      \parbox[b][4cm][t]{8cm}{
+        <<% block sender_header %>>
+        \small\textsf{\usekomavar{fromname} \\
+        \usekomavar{fromaddress}}
+        <<% endblock %>>
+      }
+      \hfill
+      \usekomavar{fromlogo}%
+      %\rule{\textwidth}{0.5pt}
+    }
+    \setkomavar{backaddress}{
+        <<% block back_address_line %>>
+        <<< CONFIG.participation_letter.sender >>> $\cdot$ <<< CONFIG.participation_letter.sender_address >>> $\cdot$ <<< CONFIG.participation_letter.sender_postal_code >>> <<< CONFIG.participation_letter.sender_location >>><<% if CONFIG.participation_letter.sender_country %>> $\cdot$ <<< CONFIG.participation_letter.sender_country >>><<% endif %>>
+        <<% endblock %>>
+    }
+
+    \begin{letter}{
+        <<< registration.name.common|e >>>\\
+        <<< registration.address.full_address|e(linebreaks=True) >>>
+    }
+
+        \setkomavar{subject}{<<% block subject %>>Teilnahmebrief <<< CONFIG.participation_letter.event_title or EVENT.title|e >>><<% endblock %>>}
+
+        \opening{<<% block opening %>>Hallo <<< registration.name.salutation|e >>>,<<% endblock %>>}
+
+        <<% block content %>>
+            <<# TODO write generic participation letter, which is configurable via config options and blocks #>>
+        <<% endblock %>>
+    \end{letter}
+
+    <<% block appendix %>><<% endblock %>>
+\end{document}

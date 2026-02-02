@@ -1,0 +1,116 @@
+<<# This is a base template for all documents except for the participation letter / Teilnahmebrief.
+
+   It includes the document preamble to load the required packages and define the basic layout and design. It is partly
+   controlled by the config data, to allow easy "theming" of all documents, without need to override this template.
+
+   To load additional packages in sub-templates, override the `packages` block. For other preamble definitions, esp.
+   layout makros and definitions, override the `preamble` block.
+-#>>
+\documentclass[<<% block documentclass_options %>>10pt,landscape,parskip=half+<<% endblock %>>]{scrartcl}
+\usepackage{fontspec}
+\usepackage[ngerman]{babel}
+
+<<% if CONFIG['layout']['lua-visual-debug'] -%>>
+    \usepackage{lua-visual-debug}
+<<% endif %>>
+\usepackage{graphicx}
+\usepackage{scrlayer-scrpage}
+\usepackage{longtable}
+\usepackage[table]{xcolor}
+\usepackage{colortbl}
+\usepackage{calc}
+\usepackage{microtype}
+\usepackage[top=2cm, bottom=2cm, left=1.5cm, right=1.5cm, head=1cm, foot=1cm]{geometry}
+
+<<% block packages %>><<% endblock %>>
+
+
+% Load Fonts and define colors
+<<% with cfg = CONFIG.layout %>>
+    \IfFontExistsTF{<<< cfg.fallback_font >>>}{
+        \directlua{
+            luaotfload.add_fallback(
+                "fontfallback",
+                {"<<< cfg.fallback_font >>>:mode=harf"}
+           )
+        }
+    }{
+        \directlua{
+            luaotfload.add_fallback(
+                "fontfallback",
+                <<% set fontfile = find_asset(cfg.fallback_font) %>>
+                <<% if fontfile %>>
+                {"[<<< fontfile >>>]:mode=harf"}
+                <<% else %>>
+                {}
+                <<% endif %>>
+           )
+        }
+    }
+    <<# a) with font packages #>>
+    <<% for package_spec in cfg.font_packages %>>
+        \usepackage[defaultfeatures={RawFeature={fallback=fontfallback}},<<< package_spec[1] >>>]{<<< package_spec[0] >>>}
+    <<% endfor %>>
+    <<% if not cfg.systemfont_headings and not cfg.fontfile_heading %>>
+        \newcommand{\headingfamily}{<<< cfg.fontswitch_headings >>>}
+    <<% endif %>>
+
+    <<# b) use installed system fonts by their family name #>>
+    <<% if cfg.systemfont %>>
+        \setmainfont{<<< cfg.systemfont >>>}[RawFeature={fallback=fontfallback}]
+    <<% endif %>>
+    <<% if cfg.systemfont_headings %>>
+        \newfontfamily\headingfamily{<<< cfg.systemfont_headings >>>}[
+            RawFeature = {fallback=fontfallback},
+        ]
+    <<% endif %>>
+
+    <<# c) use font files from the assets folder #>>
+    <<% if cfg.fontfile %>>
+        \setmainfont{<<< cfg.fontfile >>>}[
+            <<% if cfg.fontfile_dir %>>Path = <<< find_asset(cfg.fontfile_dir) >>>,<<% endif %>>
+            <<% if cfg.fontfile_bold %>>BoldFont = <<< cfg.fontfile_bold >>>,<<% endif %>>
+            <<% if cfg.fontfile_italic %>>ItalicFont = <<< cfg.fontfile_italic >>>,<<% endif %>>
+            <<% if cfg.fontfile_bolditalic %>>BoldItalicFont = <<< cfg.fontfile_bolditalic >>>,<<% endif %>>
+            RawFeature = {fallback=fontfallback},
+        ]
+    <<% endif %>>
+    <<% if cfg.fontfile_heading %>>
+        \newfontfamily\headingfamily{<<< cfg.fontfile_heading >>>}[
+            <<% if cfg.fontfile_heading_dir %>>Path = <<< find_asset(cfg.fontfile_heading_dir|default(cfg.fontfile_dir)) >>>,<<% endif %>>
+            <<% if cfg.fontfile_heading_bold %>>BoldFont = <<< cfg.fontfile_heading_bold >>>,<<% endif %>>
+            <<% if cfg.fontfile_heading_italic %>>ItalicFont = <<< cfg.fontfile_heading_italic >>>,<<% endif %>>
+            <<% if cfg.fontfile_heading_bolditalic %>>BoldItalicFont = <<< cfg.fontfile_heading_bolditalic >>>,<<% endif %>>
+            RawFeature = {fallback=fontfallback},
+        ]
+    <<% endif %>>
+<<% endwith %>>
+
+\definecolor{design}{HTML}{<<< CONFIG.layout.design_color >>>}
+\definecolor{links}{HTML}{<<< CONFIG.layout.link_color >>>}
+\definecolor{rows}{HTML}{<<< CONFIG.layout.row_color >>>}
+
+\usepackage[
+    colorlinks=True,
+    linkcolor=links,
+    urlcolor=links,
+]{hyperref}
+
+% This has to be set after hyperref is loaded to handle unicode correctly
+% see https://tex.stackexchange.com/a/245969
+\hypersetup{
+    pdftitle={<<< title >>>},
+    pdfauthor={<<< CONFIG.meta.pdf_author >>>},
+}
+
+\newcommand{\custombox}[1]{\fbox{\footnotesize{}#1}}
+
+<<# This block should be used to define layout the basic layout, including
+    * header and footer (using \ihead[]{}, \ofoot[]{} etc.)
+    * Macros used for formatting and highlighting (e.g. for table heads and rows)
+    * Changing linewidths and colors #>>
+<<% block preamble %>><<% endblock preamble %>>
+
+\begin{document}
+    <<% block content %>><<% endblock content %>>
+\end{document}

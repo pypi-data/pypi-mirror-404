@@ -1,0 +1,65 @@
+<<# List of participants for checking presence at the train station at arrival
+
+    Required template variables:
+    * participants: Sorted list of all participants to be included in list. Can be sorted in different ways.
+            Note that these are of type 'ParticipantArrivalInfo' rather than 'Registration'.
+    * part: Event part for which the list is generated. Used to check the begin date of the part against the arrival
+            times of the participants.
+    * title_suffix: (optional) Suffix to be appended to the title "Ankunftliste".
+#>>
+<<% extends "_lists.base.override.tex" %>>
+
+<<% set title = ("Zug-Ankunftliste " + part.shortname_if_needed).strip() %>>
+<<% set hide_header = True %>>
+<<% set show_timestamp = True %>>
+<<% set portrait = True %>>
+
+<<% block packages %>>
+    \usepackage{amssymb}
+<<% endblock %>>
+
+<<% block table_columnspec %>>
+    |lllllp{5cm}|
+<<% endblock %>>
+
+
+<<% block table_head %>>
+     & \head{Ankunft} & \head{Vorname} & \head{Nachname} & \head{Handy} & \head{Kommentar}
+<<% endblock %>>
+
+<<% block table_body %>>
+    <<% for arriving_participant in participants %>>
+        $\square$ &
+        <<% if arriving_participant.time_is_missing %>>
+            ?
+        <<% elif arriving_participant.time is none %>>
+            Kein Datenfeld konfiguriert.
+        <<% elif arriving_participant.time.date() == part.begin %>>
+            <<% if not arriving_participant.is_train %>>(<<% endif -%>>
+            <<< arriving_participant.time|datetime('%H:%M') ->>>
+            <<% if not arriving_participant.is_train %>>)<<% endif %>>
+        <<% else %>>
+            <<% if not arriving_participant.is_train %>>(<<% endif -%>>
+            <<< arriving_participant.time|datetime('%d.%m. %H:%M') ->>>
+            <<% if not arriving_participant.is_train %>>)<<% endif %>>
+        <<% endif %>> &
+        <<< arriving_participant.registration.name.list_forename|e >>> &
+        <<< arriving_participant.registration.name.list_surname|e >>> &
+        <<< arriving_participant.registration.mobile|phone|e >>> &
+        % \raggedright {}
+        <<% if arriving_participant.part.status == ENUMS.RegistrationPartStati.guest %>>
+            [Gast]
+        <<% endif %>>
+        <<% if arriving_participant.is_car %>>
+            [Auto]<<% if arriving_participant.comment %>>\newline<<% endif %>>
+        <<% elif arriving_participant.is_stay %>>
+            [bleibt]<<% if arriving_participant.comment %>>\newline<<% endif %>>
+        <<% elif arriving_participant.is_misc %>>
+            [sonstiges Verkehrsmittel]<<% if arriving_participant.comment %>>\newline<<% endif %>>
+        <<% elif not arriving_participant.is_train %>>
+            [unbekanntes Verkehrsmittel]<<% if arriving_participant.comment %>>\newline<<% endif %>>
+        <<% endif %>>
+        <<< arriving_participant.comment|e >>> \\
+        \hline
+    <<% endfor %>>
+<<% endblock %>>

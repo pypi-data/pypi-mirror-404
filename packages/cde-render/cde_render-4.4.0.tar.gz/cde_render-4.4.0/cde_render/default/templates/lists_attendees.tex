@@ -1,0 +1,111 @@
+<<# Attendee lists of all courses to be given to the course instructors. Includes markers for minor attendees. It also
+    shows the course room.
+
+    Required template variables: None.
+#>>
+<<% extends "_base.override.tex" %>>
+
+<<% block documentclass_options %>>12pt,portrait,parskip=half+,a5paper<<% endblock %>>
+
+<<% block packages %>>
+    \usepackage{pgfpages}
+<<% endblock %>>
+
+<<% block preamble %>>
+    \geometry{top=1cm,bottom=1cm,left=1cm,right=1cm}
+    \pgfpagesuselayout{2 on 1}[a4paper,landscape] % Two A5 pages on one A4 page
+
+    \ifoot[]{}
+    \ihead[]{}
+    \cfoot[]{}
+    \ofoot[]{}
+<<% endblock %>>
+
+<<% set title = "Kursteilnahmelisten " + EVENT.title|e %>>
+
+<<% block content %>>
+    <<% for course in EVENT.courses if course.is_active %>>
+
+        \begin{minipage}[t]{\textwidth-2.5cm}%
+            \vspace{0pt}
+            \raggedright
+            \headingfamily\bfseries\Large{}<<< course.nr|e >>>. <<< course.shortname|e >>>\\
+            \normalsize{}<<< course.title|e >>>
+            <<%- if EVENT.tracks|length > 1 -%>>
+                \\
+                (<<% for track in course.tracks.values()|sort if track.status == ENUMS.CourseTrackStati.active -%>>
+                    <<< track.track.title|e >>><<% if not loop.last %>>, <<%endif%>>
+                <<%- endfor %>>)
+            <<% endif %>>
+        \end{minipage}%
+        \hspace{0.5cm}%%
+        \begin{minipage}[t][2cm][t]{2cm}
+            \vspace{0pt}
+            <<% if CONFIG.nametags.course_icon_path -%>>
+                <<%- with icon = find_asset(CONFIG.nametags.course_icon_path, format_data=course.__dict__) -%>>
+                    <<% if icon -%>>
+                        \includegraphics[keepaspectratio=true, width=2cm, height=2cm]{<<< icon >>>}%
+                    <<% endif -%>>
+                <<% endwith -%>>
+            <<% endif -%>>
+        \end{minipage}
+
+        <<# FIXME: Show all participants with active parts in this course #>>
+        <<% with attendees = UTIL.gather_course_attendees(course, CONFIG.attendee_lists.include_guests) %>>
+            <<% if attendees|length > 0 %>>
+                Teilnehmende:
+                \begin{itemize}
+                    <<%- for attendee, attendee_tracks in attendees -%>>
+                        \item
+                            <<< attendee.name.common|e >>>
+                            <<% if not attendee.age_class.is_full %>>\fbox{<<< attendee.age_class.name|e >>>}<<% endif %>>
+                            <<% if course.active_tracks|length > 1 and (CONFIG.attendee_lists.track_identifier or CONFIG.attendee_lists.shortname_map) %>>
+                                (<<% for t in attendee_tracks|sort -%>>
+                                    <<% if CONFIG.attendee_lists.shortname_map -%>>
+                                        <<< CONFIG.attendee_lists.shortname_map[t.shortname]|e >>>
+                                    <<%- elif CONFIG.attendee_lists.track_identifier == "title" -%>>
+                                        <<< t.title|e >>>
+                                    <<%- elif CONFIG.attendee_lists.track_identifier == "shortname" -%>>
+                                        <<< t.shortname|e >>>
+                                    <<%- else -%>>
+                                        Unknown config option track_identifier = <<< CONFIG.attendee_lists.track_identifier|e >>>
+                                    <<%- endif -%>>
+                                    <<%- if CONFIG.attendee_lists.mark_guests and attendee.parts[t.part].status == ENUMS.RegistrationPartStati.guest %>>
+                                        \textit{Gast}
+                                    <<%- endif -%>>
+                                    <<% if not loop.last %>>, <<%endif%>>
+                                <<%- endfor %>>)
+                            <<% elif course.active_tracks|length == 1 and CONFIG.attendee_lists.mark_guests %>>
+                                <<%- if attendee.parts[(course.active_tracks|list)[0].part].status == ENUMS.RegistrationPartStati.guest -%>>
+                                    (\textit{Gast})
+                                <<%- endif %>>
+                            <<%- endif %>>
+                    <<% endfor -%>>
+                \end{itemize}
+            <<% else %>>
+                Kurs ohne Teilnehmende!
+            <<% endif %>>
+        <<% endwith %>>
+
+        \vspace*{\fill}
+        \begin{minipage}[b]{\textwidth-2.5cm}%
+            Kursleitung:
+            <<% for kl in course.instructors -%>>
+                <<< kl.name.common|e >>><<% if not loop.last %>>, <<% endif %>>
+            <<%- endfor %>>\\
+            <<% for track in course.active_tracks %>>
+                <<% if track.course_room_field %>>
+                    Kursraum<<% if course.active_tracks|length > 1 %>> (<<< track.title|e >>>)<<% endif %>>: <<< (course.fields[track.course_room_field] or "–")|e >>>\\
+                <<% endif %>>
+            <<% endfor %>>
+            Stand: <<< EVENT.timestamp|datetime >>>
+        \end{minipage}%
+        \hspace{0.5cm}%
+        <<% if CONFIG.layout.logo_file %>>
+            \begin{minipage}[b][2cm][b]{2cm}%
+                \includegraphics[width=\textwidth]{<<< find_asset(CONFIG.layout.logo_file) >>>}
+            \end{minipage}%
+        <<% endif %>>
+        \pagebreak
+    <<% endfor -%>>
+<<% endblock %>>

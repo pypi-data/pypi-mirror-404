@@ -1,0 +1,193 @@
+<<# Inhabitant- and course-attendee lists for each room in one event part.
+
+    Required template variables:
+    * part: The EventPart to generate the lists for
+    * rooms: A joined list of lodgements and course rooms, including room name, lodgement object and courses with active
+      tracks.Each entry should look like this: (title, lodgment, [(course, [track])]). `lodgment` may be None (in this
+      case, inhabitant listing is skipped). If no course is given, the course listing is omitted.
+
+    We assume that there are not more than ~ ATTENDEES_PER_COLUMN + 3 inhabitants per lodgement not more than
+    ATTENDEES_PER_COLUMN course instructors in a course and not more than 2*ATTENDEES_PER_COLUMN attendees in a course
+    in total.
+#>>
+<<% extends "_base.override.tex" %>>
+
+
+<<% macro overlay_course_icon(course, right_column) -%>>
+    <<% if CONFIG.nametags.course_icon_path -%>>
+        <<%- with icon = find_asset(CONFIG.nametags.course_icon_path, format_data=course.__dict__) -%>>
+            <<% if icon -%>>
+                <<# Based on https://tex.stackexchange.com/a/147220 -#>>
+                \begin{tikzpicture}[remember picture,overlay]
+                    \node[anchor=south east,outer sep=0pt,inner sep=0pt]
+                        <<% if right_column -%>>
+                            at ($(current page.south) +(-2cm, -3cm)$)
+                        <<% else -%>>
+                            at ($(current page.south) +(0, 0cm)$)
+                        <<% endif -%>>
+                        {\includegraphics[keepaspectratio=true, width=3cm, height=3cm]{<<< icon >>>}};
+                \end{tikzpicture}%
+            <<% endif -%>>
+        <<% endwith -%>>
+    <<% endif -%>>
+<<% endmacro %>>
+
+<<% block documentclass_options %>>14pt,landscape,parskip=half+,a4paper<<% endblock %>>
+
+<<% block packages %>>
+    \usepackage{enumitem}
+    \usepackage{tikz}
+    \usetikzlibrary{calc}
+<<% endblock %>>
+
+<<% block preamble %>>
+    \geometry{top=1cm,bottom=2cm,left=2cm,right=2cm,foot=1cm}
+
+    \ihead[]{}
+    \chead[]{}
+    \ohead[]{}
+    \ifoot[]{\rightmark}
+    \cfoot[]{}
+    \ofoot[Stand: <<< EVENT.timestamp|datetime >>>]{Stand: <<< EVENT.timestamp|datetime >>>}
+
+    \setitemize{itemsep=0pt}
+<<% endblock %>>
+
+<<% set title = "Raumlisten " + EVENT.title|e + ((" " + part.title) if (EVENT.parts|length > 1) else "") %>>
+<<% set ATTENDEES_PER_COLUMN = 14 %>>
+
+<<% block content %>>
+    <<% for room in rooms -%>>
+        <<% block room_header scoped %>>
+            \begin{minipage}[t][2cm][c]{\textwidth-5cm}%
+                \vspace{0pt}
+                \raggedright
+                \headingfamily\bfseries\Large{}<<< room.name|e >>>
+            \end{minipage}%
+            \hspace{0.5cm}%
+            <<% if CONFIG.layout.logo_file %>>
+                \begin{minipage}[t]{3cm}%
+                    \vspace{0pt}
+                    \raggedleft
+                    \includegraphics[height=2cm]{<<< find_asset(CONFIG.layout.logo_file) >>>}
+                \end{minipage}%
+            <<% endif %>>
+            \renewcommand{\rightmark}{<<< room.name|e >>>}
+            \thispagestyle{plain}
+        <<% endblock %>>
+
+        \setlength{\columnsep}{2cm}
+        \begin{minipage}[t]{0.5\textwidth}
+            <<% if room.lodgement %>>
+                {
+                    \headingfamily\bfseries Bewohner*innen:
+                }
+                \begin{itemize}
+                    <<%- for inhabitant, campingmat in room.lodgement.parts[part].inhabitants -%>>
+                        \item <<< inhabitant.name.common|e ->>>
+                            <<% if campingmat -%>>
+                                { \small (Isomatte)}
+                            <<%- endif -%>>
+                            <<% if inhabitant.parts[part].status == ENUMS.RegistrationPartStati.guest -%>>
+                                { \small (Gast)}
+                            <<%- endif -%>>
+                            <<% if CONFIG.room_lists.highlight_minors and not inhabitant.age_class.is_full -%>>
+                                {} \fbox{<<< inhabitant.age_class.name >>>}
+                            <<%- endif -%>>
+                    <<% else -%>>
+                        \item \textit{Keine Bewohner*innen}
+                    <<%- endfor -%>>
+                \end{itemize}
+            <<% endif %>>
+        \end{minipage}%
+        <<% set ns = namespace(columns_on_page = 1 if room.lodgement else 0) %>>
+        <<% for course_track in room.course_tracks if course_track.track.part == part -%>>
+            <<# Idea of pagebreaks: Large courses (>ATTENDEES_PER_COLUMN attendees incl. instructors) always get their
+                own page. Small courses get one half page, so we must page-break before the third small course in a row.
+                #>>
+            <<# Output large course (>ATTENDEES_PER_COLUMN attendees) in two columns -#>>
+            <<% if course_track.attendees|length > ATTENDEES_PER_COLUMN -%>>
+                <<% if ns.columns_on_page >= 1 %>>
+                    <<% set ns.columns_on_page = 0 %>>
+
+                    \pagebreak
+                <<% endif %>>
+                <<% set ns.columns_on_page = ns.columns_on_page + 2 %>>
+                <<< overlay_course_icon(course_track.course, true) ->>>
+                {\headingfamily\bfseries
+                    Kurs: <<< course_track.course.shortname|e >>>
+                    <<% if EVENT.tracks|length > 1 %>>
+                        \\\mdseries
+                            <<< course_track.track.title >>>
+                    <<% endif %>>
+                    \vspace{0.6\baselineskip}
+                }
+
+                \begin{minipage}[t]{0.5\textwidth}
+                    <<% if course_track.instructors|length > 0 %>>
+                        Kursleitung:
+                        \begin{itemize}
+                            <<%- for instr in course_track.instructors -%>>
+                                \item <<< instr.name.common|e >>>
+                            <<% endfor -%>>
+                        \end{itemize}
+                    <<% endif %>>
+                    <<% set num_instructors = course_track.instructors|length %>>
+                    Teilnehmende:
+                    \begin{itemize}
+                        <<%- for attendee in course_track.regular_attendees[0:ATTENDEES_PER_COLUMN-num_instructors] -%>>
+                            \item <<< attendee.name.common|e >>>
+                        <<% endfor -%>>
+                    \end{itemize}
+                \end{minipage}%
+                \begin{minipage}[t]{0.5\textwidth}
+                    \begin{itemize}
+                        <<%- for attendee in course_track.regular_attendees[ATTENDEES_PER_COLUMN-num_instructors:] -%>>
+                            \item <<< attendee.name.common|e >>>
+                        <<% endfor -%>>
+                    \end{itemize}
+                \end{minipage}
+
+            <<#- Output short course (<=ATTENDEES_PER_COLUMN attendees) in one column #>>
+            <<% else -%>>
+                <<% if ns.columns_on_page >= 2 %>>
+                    <<% set ns.columns_on_page = 0 %>>
+
+                    \pagebreak
+                <<% endif %>>
+                <<% set ns.columns_on_page = ns.columns_on_page + 1 %>>
+                <<< overlay_course_icon(course_track.course, ns.columns_on_page == 2) ->>>
+                \begin{minipage}[t]{0.5\textwidth}
+                    {\headingfamily\bfseries
+                        Kurs: <<< course_track.course.shortname|e >>>
+                        <<% if EVENT.tracks|length > 1 %>>
+                            \\\mdseries
+                                <<< course_track.title >>>
+                        <<% endif %>>
+                        \vspace{0.6\baselineskip}
+                    }
+
+                    <<% if course_track.instructors|length > 0 %>>
+                        Kursleitung:
+                        \begin{itemize}
+                            <<%- for instr in course_track.instructors -%>>
+                                \item <<< instr.name.common|e >>>
+                            <<% endfor -%>>
+                        \end{itemize}
+                    <<% endif %>>
+                    <<% if course_track.attendees|length > 0 %>>
+                        Teilnehmende:
+                        \begin{itemize}
+                        <<%- for attendee in course_track.regular_attendees -%>>
+                            \item <<< attendee.name.common|e >>>
+                        <<% endfor -%>>
+                        \end{itemize}
+                    <<% endif %>>
+                \end{minipage}%
+            <<% endif %>>
+        <<% endfor %>>
+
+
+        \pagebreak
+    <<% endfor -%>>
+<<% endblock %>>

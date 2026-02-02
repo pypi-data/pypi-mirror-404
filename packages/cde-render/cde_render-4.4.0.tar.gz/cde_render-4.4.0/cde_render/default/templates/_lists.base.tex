@@ -1,0 +1,82 @@
+<<# This is the base template for all long lists (e.g. the participant list, course list, etc.)
+
+    It is based on the `_base.tex` template (and the custom _base.override.tex template) to get all the default packages
+    and the base theme. On to of that, it initializes the page layout for lists, including headers and footers, and
+    constitutes the basic structure of a themed `longtable`.
+
+    The following variables should be set in inherited templates:
+      * title: The document's title, e.g. "Teilnahmeliste PfingstAkadmie 2019". Used as PDF metatag and in the header
+      * num_columns: the number of table columns. Alternatively, you may override the `table_columnspec` block, to
+        provide the full LaTeX table specification.
+      * (optional) hide_header: Set to True to hide the heading and logo section
+      * (optional) portrait: Set to True to use portrait DIN A4 format instead of landscape
+      * (optional) show_timestamp: Set to True to show full timestamp in footer instead of date only
+
+    The following blocks should be specified:
+      * table_head: Should have a form similar to "\head{Column A} & \head{Column B}". Without trailing newline
+        or \hline.
+      * table_body: The complete loop to generate table rows. Including a trailing \hline if you wish one at the bottom.
+#>>
+<<% extends "_base.override.tex" %>>
+
+
+<<% block documentclass_options %>>
+    10pt,<<% if portrait %>>portrait<<% else %>>landscape<<% endif %>>,parskip=half+
+<<% endblock %>>
+
+
+<<% block preamble %>>
+    % Change geometry
+    \geometry{left=1cm,right=1cm}
+
+    % Set header and footer
+    \ifoot[Seite \thepage]{Seite \thepage}
+    \ihead[]{<<< title >>>}
+    \cfoot[]{}
+    <<% if show_timestamp %>>
+        \ofoot[Stand: <<< EVENT.timestamp|datetime >>>]{Stand: <<< EVENT.timestamp|datetime >>>}
+    <<% else %>>
+        \ofoot[Stand: <<< EVENT.timestamp|date >>>]{Stand: <<< EVENT.timestamp|date >>>}
+    <<% endif %>>
+
+    % Coloring of table
+    \arrayrulecolor{design}
+    \newcommand{\head}[1]{\textcolor{white}{\textbf{#1}}}
+<<% endblock preamble %>>
+
+<<% block content %>>
+    <<% if not hide_header %>>
+        \thispagestyle{plain}
+        <<# Special header variant for portrait layout with logo #>>
+        <<% if portrait and CONFIG.layout.logo_file %>>
+            \begin{minipage}[c]{\textwidth-3cm}%
+                \headingfamily\bfseries\huge{}<<< title >>>
+            \end{minipage}%
+            \begin{minipage}[c]{3cm}%
+                \includegraphics[width=\textwidth]{<<< find_asset(CONFIG.layout.logo_file) >>>}
+            \end{minipage}
+        <<% else %>>
+            <<% if CONFIG.layout.logo_file %>>
+                \hspace*{\fill}\includegraphics[height=3cm]{<<< find_asset(CONFIG.layout.logo_file) >>>}\\
+
+                \vspace{-2cm}
+            <<% endif %>>
+            \begin{center}
+                \headingfamily\bfseries\huge{}<<< title >>>
+            \end{center}
+        <<% endif %>>
+    <<% endif %>>
+
+    \rowcolors{2}{rows!25}{white}
+    \begin{longtable}{
+        <<%- block table_columnspec -%>>
+            |<<< "l" * num_columns >>>|
+        <<%- endblock table_columnspec %>>}
+        \hline
+        \rowcolor{design} <<% block table_head %>><<% endblock %>> \\
+        \hline
+        \endhead
+
+        <<% block table_body %>><<% endblock %>>
+    \end{longtable}
+<<% endblock %>>

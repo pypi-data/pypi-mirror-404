@@ -1,0 +1,47 @@
+<<# List of participants and/or guests that need to move to a different lodgement between two event parts.
+
+    Required template variables:
+    * first: The first event part. This determines the lodgement they will move out of.
+    * second: The second event part. This determines the lodgement they will move to.
+    * registrations: A sorted list of registrations filtered by those present in both the first and second part,
+        who stay in different lodgements in those parts.
+    * guest: The RegistrationPartStati member representing a guest. Used to mark guests on the list if configured.
+#>>
+<<% extends "_lists.base.override.tex" %>>
+
+<<% set title = "Umzugsliste (" + first.shortname + " nach " + second.shortname + ")" %>>
+
+<<% set num_columns = 4 %>>
+<<% set portrait = True %>>
+
+<<% block preamble %>>
+    <<< super() >>>
+    \setlength{\fboxsep}{0.5mm}
+<<% endblock %>>
+
+<<% block table_head %>>
+    \head{Vorname} & \head{Nachname}
+    & \head{Unterkunft <<< first.shortname >>>}
+    & \head{Unterkunft <<< second.shortname >>>}
+<<% endblock %>>
+
+<<% block table_body %>>
+    <<% for registration in registrations %>>
+        <<< registration.name.list_forename|e >>> &
+        <<< registration.name.list_surname|e >>> &
+        <<% if registration.parts[first].lodgement == registration.parts[second].lodgement %>>
+            \multicolumn{2}{c|}{(<<< registration.parts[first].lodgement.title|e >>>)}
+        <<% else %>>
+            <<< registration.parts[first].lodgement.title|e >>>
+            <<%- if CONFIG.room_changes.mark_guests -%>>
+                <<% if registration.parts[first].status == guest %>> \fbox{\small Gast}<<% endif %>>
+            <<%- endif -%>>
+            & <<< registration.parts[second].lodgement.title|e >>>
+            <<%- if CONFIG.room_changes.mark_guests -%>>
+                <<% if registration.parts[second].status == guest %>> \fbox{\small Gast}<<% endif %>>
+            <<%- endif -%>>
+        <<% endif %>>
+        \\
+    <<%- endfor %>>
+    \hline
+<<% endblock %>>

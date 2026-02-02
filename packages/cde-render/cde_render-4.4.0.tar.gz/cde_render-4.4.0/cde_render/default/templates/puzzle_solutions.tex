@@ -1,0 +1,58 @@
+<<% extends "_base.override.tex" %>>
+
+<<% block documentclass_options %>>
+    portrait
+<<% endblock %>>
+
+<<% block preamble %>>
+    <<< super() >>>
+    \usepackage{paralist}
+<<% endblock %>>
+
+<<% block content %>>
+    \begin{longtable}[t]{|l|p{14cm}|}
+    \hline
+    <<% for puzzle in all_puzzles %>>
+        \raisebox{-1.5cm}{
+            <<% if find_asset(puzzle.get_asset_name()) %>>
+                \includegraphics[keepaspectratio=true, width=2cm, height=2cm]{<<< find_asset(puzzle.get_asset_name()) >>>}}
+            <<% else %>>
+                \textit{Missing asset: <<< puzzle.get_asset_name() >>>}
+            <<% endif %>> &
+        <<< puzzle.description|e >>>
+
+        <<% if CONFIG.nametags.puzzles.show_frequency %>>
+            (Gesamt: <<< puzzle_stats.frequency[puzzle]|string|e ->>>
+            <<% if puzzle_stats.frequency_by_part|length > 1 %>>,
+            <<%- for ep, counter in puzzle_stats.frequency_by_part.items() %>>
+                <<< ep.shortname|e >>>: <<< counter[puzzle]|string|e + (", " if not loop.last else "") >>>
+            <<%- endfor %>><<% endif %>>)
+        <<% endif %>>\\
+        \hline
+    <<% endfor %>>
+    \end{longtable}
+
+    <<< CONFIG.nametags.puzzles.comment >>>
+
+    <<% if CONFIG.nametags.puzzles.show_distribution %>>
+        Häufigkeit der Symbolanzahl:
+        <<% if puzzle_stats.distribution_by_part|length > 1 %>>
+        \begin{itemize}
+            <<% for part, distribution in puzzle_stats.distribution_by_part.items() %>>
+            \item <<< part.shortname >>>: \begin{compactitem}
+                <<% for num, count in distribution.items()|sort %>>
+                    \item <<< num >>>: <<< count >>>
+                <<% endfor %>>
+                \end{compactitem}
+            <<% endfor %>>
+        \end{itemize}
+        <<% endif %>>
+        <<% if puzzle_stats.distribution %>>
+        \begin{compactitem}
+        <<% for num, count in puzzle_stats.distribution.items()|sort %>>
+            \item <<< num >>>: <<< count >>>
+        <<% endfor %>>
+        \end{compactitem}
+        <<% endif %>>
+    <<% endif %>>
+<<% endblock %>>

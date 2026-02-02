@@ -1,0 +1,87 @@
+<<% extends "_base.override.tex" %>>
+
+<<% block documentclass_options -%>>
+    landscape
+<<%- endblock %>>
+
+<<% block preamble -%>>
+    \usepackage{fix-cm}
+    <<% with cfg = CONFIG.envelopes -%>>
+        \geometry{
+            paperwidth=<<< cfg.paperwidth or "220mm" >>>,
+            paperheight=<<< cfg.paperheight or "110mm" >>>,
+            top=<<< cfg.top_margin or "4cm" >>>,
+            bottom=<<< cfg.bottom_margin or "0.5cm" >>>,
+            left=<<< cfg.left_margin or "1.5cm" >>>,
+            right=<<< cfg.right_margin or "1.5cm" >>>,
+        }
+    <<% endwith %>>
+<<% endblock %>>
+
+<<% block content %>>
+    \pagestyle{empty}
+    \setlength{\parindent}{0cm}
+
+    <<% for r in registrations -%>>
+        <<% block envelope scoped %>>
+
+            \vspace*{\fill}
+            <<% block envelope_name -%>>
+                \fontsize{40}{50}\selectfont
+                \textbf{<<< r.name.common|e >>>}\\
+            <<% endblock -%>>
+
+            <<% block envelope_course -%>>
+                \fontsize{30}{40}\selectfont
+                <<% for reg_track in r.tracks.values()|sort if reg_track.registration_part.status.is_present -%>>
+                    <<% if EVENT.tracks|length > 1 -%>>
+                        <<< reg_track.track.shortname|e >>>:
+                    <<%- endif %>>
+                    <<%- if reg_track.course -%>>
+                        ~<<< reg_track.course.nr|e >>>.\,<<< reg_track.course.shortname[:24]|e >>>
+                        <<%- if r in reg_track.course.instructors %>> <<< CONFIG.nametags.course_instructor_suffix|e >>><<% endif %>>
+                        <<% if r.is_orga and reg_track.registration_part.status == ENUMS.RegistrationPartStati.guest %>>
+                            \,(\textit{Orga, Gast})
+                        <<%- elif r.is_orga -%>>
+                            \,(\textit{Orga})
+                        <<%- elif reg_track.registration_part.status == ENUMS.RegistrationPartStati.guest -%>>
+                            \,(\textit{Gast})
+                        <<%- endif %>>
+                    <<%- elif r.is_orga -%>>
+                        \,\textit{Orga}
+                        <<% if reg_track.registration_part.status == ENUMS.RegistrationPartStati.guest -%>>
+                            \,(\textit{Gast})
+                        <<%- endif %>>
+                    <<%- elif reg_track.registration_part.status == ENUMS.RegistrationPartStati.guest -%>>
+                        \,\textit{Gast}
+                    <<%- endif %>>
+                    <<%- if not loop.last %>>\\<<% endif %>>
+                <<%- else %>>
+                    <<% for reg_part in r.parts.values() if reg_part.status.is_present -%>>
+                    <<% if EVENT.parts|length > 1 -%>>
+                        <<< reg_part.part.shortname|e >>>:
+                    <<%- endif %>>
+                        <<%- if r.is_orga -%>>
+                            \,\textit{Orga}
+                        <<%- endif %>>
+                        <<%- if reg_part.status == ENUMS.RegistrationPartStati.guest -%>>
+                            \,(\textit{Gast})
+                        <<%- endif %>>
+                    <<%- endfor %>>
+                <<%- endfor %>>
+            <<%- endblock -%>>
+
+            <<% block envelope_event -%>>
+                \begin{flushright}
+                    \fontsize{25}{30}\selectfont
+                    <<< EVENT.title|e >>>
+                \end{flushright}
+            <<% endblock -%>>
+
+            <<% if not loop.last -%>>
+                \clearpage
+            <<% endif -%>>
+        <<% endblock -%>>
+    <<% endfor %>>
+
+<<% endblock %>>
