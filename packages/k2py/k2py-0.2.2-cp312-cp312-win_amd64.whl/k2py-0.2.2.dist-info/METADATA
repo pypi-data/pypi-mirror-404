@@ -1,0 +1,79 @@
+Metadata-Version: 2.2
+Name: k2py
+Version: 0.2.2
+Summary: Python bindings for k2
+Keywords: k2,forced-alignment,speech,asr
+Author: The LattifAI Development Team
+License: Apache-2.0
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: Intended Audience :: Science/Research
+Classifier: License :: OSI Approved :: Apache Software License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Programming Language :: Python :: 3.14
+Classifier: Programming Language :: C++
+Classifier: Topic :: Scientific/Engineering :: Artificial Intelligence
+Classifier: Topic :: Multimedia :: Sound/Audio :: Speech
+Project-URL: Homepage, https://github.com/lattifai/k2py
+Project-URL: Repository, https://github.com/lattifai/k2py.git
+Project-URL: Issues, https://github.com/lattifai/k2py/issues
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+
+# k2py
+
+Python bindings for k2
+
+## Features
+
+- **Efficient Streaming Decoding**: OnlineDenseIntersecter for real-time forced alignment
+- **Cross-Platform**: Supports Linux, macOS, and Windows
+- **Python 3.10+**: Compatible with modern Python versions
+- **Built with pybind11**: Fast C++ bindings with minimal overhead
+
+## Installation
+
+### From PyPI
+
+```bash
+pip install k2py
+```
+
+## Usage
+
+### Basic Example
+
+```python
+from k2py import OnlineDenseIntersecter, CreateFsaVecFromStr
+import numpy as np
+
+# Create FSA from string representation
+fsa_str = "0 1 1 1.0\n1 2 2 1.0\n2"
+result = CreateFsaVecFromStr(fsa_str, final_state=2)
+
+# Initialize decoder
+decoder = OnlineDenseIntersecter(
+    result["fsa"],
+    result["aux_labels"],
+    search_beam=20.0,
+    output_beam=8.0,
+    min_active_states=30,
+    max_active_states=10000
+)
+
+# Prepare acoustic scores (num_frames x vocab_size)
+scores = np.random.randn(100, 50).astype(np.float32)
+
+# Decode
+lattice = decoder.DecodeWithArray(scores, return_lattice=True)
+
+# Get final alignment result
+alignment = decoder.Finish()
+print(f"Token IDs: {alignment['token_ids']}")
+print(f"Timestamps: {alignment['timestamps']}")
+print(f"Durations: {alignment['durations']}")
+```
