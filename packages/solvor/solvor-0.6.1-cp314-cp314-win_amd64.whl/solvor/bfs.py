@@ -1,0 +1,161 @@
+r"""
+Breadth-first and depth-first search for unweighted graphs.
+
+BFS is the polite algorithm: it waits its turn, exploring level by level,
+guaranteeing shortest paths. DFS is the curious one: it dives deep before
+backtracking, useful when you just need any path or want to explore everything.
+
+    from solvor.bfs import bfs, dfs
+
+    result = bfs(start, goal, neighbors)           # shortest path
+    result = dfs(start, goal, neighbors)           # any path
+    result = bfs(start, None, neighbors)           # all reachable nodes
+
+How it works: BFS uses a queue (FIFO), DFS uses a stack (LIFO). Both mark
+nodes as visited to avoid cycles. O(V + E) time complexity.
+
+Use this for:
+
+- Mazes and grid navigation
+- Finding any path or shortest path (unweighted)
+- Flood fill and connectivity checks
+- When goal is None, explores all reachable nodes
+
+Parameters:
+
+    start: starting node
+    goal: target node, predicate function, or None (explore all)
+    neighbors: function returning iterable of adjacent nodes
+
+Two variants available:
+
+    bfs(), dfs() - Callback-based, works with any node type (pure Python)
+    bfs_edges(), dfs_edges() - Edge-list, integer nodes 0..n-1, has Rust backend (3-5x faster)
+
+Use bfs_edges(backend="python") or dfs_edges(backend="python") for pure Python.
+
+For weighted graphs use dijkstra. For heuristic search use astar.
+For negative edges use bellman_ford.
+"""
+
+from collections import deque
+from collections.abc import Callable, Iterable
+
+from solvor.rust import with_rust_backend
+from solvor.types import Result, Status
+from solvor.utils import reconstruct_path
+
+__all__ = ["bfs", "dfs", "bfs_edges", "dfs_edges"]
+
+
+def bfs[S](
+    start: S,
+    goal: S | Callable[[S], bool] | None,
+    neighbors: Callable[[S], Iterable[S]],
+    *,
+    max_iter: int = 1_000_000,
+) -> Result:
+    """Breadth-first search, guarantees shortest path in unweighted graphs."""
+    is_goal = (lambda s: s == goal) if not callable(goal) and goal is not None else goal
+
+    parent: dict[S, S] = {}
+    visited: set[S] = {start}
+    queue: deque[S] = deque([start])
+    iterations = 0
+
+    while queue and iterations < max_iter:
+        current = queue.popleft()
+        iterations += 1
+
+        if is_goal and is_goal(current):
+            path = reconstruct_path(parent, current)
+            return Result(path, len(path) - 1, iterations, len(visited), Status.OPTIMAL)
+
+        for neighbor in neighbors(current):
+            if neighbor not in visited:
+                visited.add(neighbor)
+                parent[neighbor] = current
+                queue.append(neighbor)
+
+    if is_goal:
+        if iterations >= max_iter:
+            return Result(None, float("inf"), iterations, len(visited), Status.MAX_ITER)
+        return Result(None, float("inf"), iterations, len(visited), Status.INFEASIBLE)
+
+    return Result(visited, len(visited), iterations, len(visited))
+
+
+def dfs[S](
+    start: S,
+    goal: S | Callable[[S], bool] | None,
+    neighbors: Callable[[S], Iterable[S]],
+    *,
+    max_iter: int = 1_000_000,
+) -> Result:
+    """Depth-first search, finds a path (not necessarily shortest)."""
+    is_goal = (lambda s: s == goal) if not callable(goal) and goal is not None else goal
+
+    parent: dict[S, S] = {}
+    visited: set[S] = {start}
+    stack: list[S] = [start]
+    iterations = 0
+
+    while stack and iterations < max_iter:
+        current = stack.pop()
+        iterations += 1
+
+        if is_goal and is_goal(current):
+            path = reconstruct_path(parent, current)
+            return Result(path, len(path) - 1, iterations, len(visited), Status.FEASIBLE)
+
+        for neighbor in neighbors(current):
+            if neighbor not in visited:
+                visited.add(neighbor)
+                parent[neighbor] = current
+                stack.append(neighbor)
+
+    if is_goal:
+        if iterations >= max_iter:
+            return Result(None, float("inf"), iterations, len(visited), Status.MAX_ITER)
+        return Result(None, float("inf"), iterations, len(visited), Status.INFEASIBLE)
+
+    return Result(visited, len(visited), iterations, len(visited))
+
+
+@with_rust_backend
+def bfs_edges(
+    n_nodes: int,
+    edges: list[tuple[int, int]],
+    source: int,
+    *,
+    target: int | None = None,
+) -> Result:
+    """Edge-list BFS for integer node graphs."""
+    adj: list[list[int]] = [[] for _ in range(n_nodes)]
+    for u, v in edges:
+        adj[u].append(v)
+
+    result = bfs(source, target, lambda s: adj[s])
+    if target is None:
+        # Convert visited set to sorted list for consistent output
+        return Result(sorted(result.solution), 0, result.iterations, result.evaluations)
+    return result
+
+
+@with_rust_backend
+def dfs_edges(
+    n_nodes: int,
+    edges: list[tuple[int, int]],
+    source: int,
+    *,
+    target: int | None = None,
+) -> Result:
+    """Edge-list DFS for integer node graphs."""
+    adj: list[list[int]] = [[] for _ in range(n_nodes)]
+    for u, v in edges:
+        adj[u].append(v)
+
+    result = dfs(source, target, lambda s: adj[s])
+    if target is None:
+        return Result(sorted(result.solution), 0, result.iterations, result.evaluations)
+    return result
