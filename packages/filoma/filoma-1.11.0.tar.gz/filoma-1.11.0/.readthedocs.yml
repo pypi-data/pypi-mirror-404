@@ -1,0 +1,34 @@
+version: 2
+
+build:
+  os: ubuntu-22.04
+  tools:
+    python: "3.10"
+  jobs:
+    install:
+      - python3 -m pip install --upgrade pip || python3 -m ensurepip --upgrade || (curl -sS https://bootstrap.pypa.io/get-pip.py | python3 -)
+      - python3 -m pip install -r docs/requirements-docs.txt
+    pre_build:
+      - mkdir -p src/filoma
+      - cp docs/rtd_stubs/filoma_core.py src/filoma/filoma_core.py
+      - cp -r src/filoma .
+    build:
+      html:
+        - mkdocs build -d "$READTHEDOCS_OUTPUT/html"
+
+# (No explicit `python.version` key — installation is handled in
+# `build.commands` to avoid RTD schema validation errors.)
+# Tell RTD we are using MkDocs and point at the repo config
+mkdocs:
+  configuration: mkdocs.yml
+
+# Make the package importable by copying `src/filoma` to the repo root during
+# the build. This avoids needing to set `PYTHONPATH` in the RTD YAML.
+
+# Notes for maintainers:
+# - If you want RTD to install the package itself (e.g. for examples that
+#   import compiled extensions), add a pip install step (path: .) but be
+#   aware that this will invoke the build backend and require Rust/tooling.
+# - If you later need a Rust extension present in RTD builds, enable a
+#   pre-build step to install rust (or use a custom build image) and
+#   then pip-install the package in editable mode with the docs extras.
