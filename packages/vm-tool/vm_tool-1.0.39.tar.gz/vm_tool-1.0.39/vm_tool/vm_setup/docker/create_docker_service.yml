@@ -1,0 +1,63 @@
+- name: Clean up Docker Environment and Set up Docker Service
+  block:
+    - name: Check if Docker Service File Exists
+      ansible.builtin.stat:
+        path: "{{ service_file_path }}"
+      register: service_file_stat
+    
+    - name: Stop project service and ignore errors
+      ansible.builtin.systemd:
+        name: project
+        state: stopped
+      ignore_errors: yes
+
+    # - name: Run Docker System Prune
+    #   ansible.builtin.command:
+    #     cmd: docker system prune -f
+    #   ignore_errors: yes
+
+    - name: Remove Existing Docker Service File
+      ansible.builtin.file:
+        path: "{{ service_file_path }}"
+        state: absent
+      when: service_file_stat.stat.exists
+
+    - name: Create Docker Service File
+      ansible.builtin.file:
+        path: "{{ service_file_path }}"
+        state: touch
+        mode: '0644'
+
+    - name: Check if Docker Compose File Path is Valid
+      ansible.builtin.stat:
+        path: "{{ project_dest_dir }}/{{ DOCKER_COMPOSE_FILE_PATH | default('docker-compose.yml') }}"
+      register: compose_file_stat
+
+    - name: Fail if Docker Compose File Path is Invalid
+      ansible.builtin.fail:
+        msg: "The specified Docker Compose file path '{{ project_dest_dir }}/{{ DOCKER_COMPOSE_FILE_PATH | default('docker-compose.yml') }}' does not exist."
+      when: not compose_file_stat.stat.exists
+
+    - name: Insert Docker Service Configuration
+      ansible.builtin.blockinfile:
+        path: "{{ service_file_path }}"
+        block: |
+          [Unit]
+          Description=Project Docker Container
+          After=docker.service
+
+          [Service]
+          Type=simple
+          WorkingDirectory={{ project_dest_dir }}
+          ExecStart={{ DEPLOY_COMMAND if DEPLOY_COMMAND is defined else ('docker compose -f ' + (DOCKER_COMPOSE_FILE_PATH | default('docker-compose.yml')) + (' --env-file ' + ENV_FILE_PATH if ENV_FILE_PATH is defined else '') + ' up -d') }}
+          Restart=always
+          RestartSec=10s
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Reload Systemd Daemon
+      ansible.builtin.systemd:
+        daemon_reload: yes
+
+  become: yes
