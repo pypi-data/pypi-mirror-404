@@ -1,0 +1,238 @@
+/**
+ * List page for {{ plural_name }}.
+ *
+ * ✅ YOUR CODE - Safe to modify, will not be overwritten.
+ * This file was generated once by Prism and is yours to customize.
+ */
+
+import React, { useState{% if enable_bulk_actions %}, useCallback{% endif %} } from 'react';
+import type { JSX } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { use{{ model_name }}List{% if has_mutations %}, use{{ model_name }}Mutations{% endif %} } from '../../hooks/use{{ model_name }}';
+import { {{ model_name }}Table } from '../../components/{{ kebab_name }}/{{ model_name }}Table';
+import type { {{ model_name }} } from '../../types/generated';
+
+export default function {{ plural_name }}ListPage(): JSX.Element {
+  const navigate = useNavigate();
+  const [page, setPage] = useState(1);
+{% if filterable_fields %}  const [filters, setFilters] = useState<Record<string, string>>({});
+{% endif %}
+  const { data, loading, error, totalCount, hasNextPage, hasPreviousPage, refetch } = use{{ model_name }}List({
+    page,
+    pageSize: 20,
+{% if filterable_fields %}    ...filters,
+{% endif %}
+  });
+{%- if has_mutations %}
+  const { {% if ops_delete %}remove, {% endif %}loading: mutating } = use{{ model_name }}Mutations();
+{%- endif %}
+{% if enable_bulk_actions %}
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+
+  const toggleSelection = useCallback((id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const toggleAll = useCallback(() => {
+    if (!data) return;
+    if (selectedIds.size === data.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(data.map((item: {{ model_name }}) => item.id)));
+    }
+  }, [data, selectedIds.size]);
+{% if ops_delete %}
+  const handleBulkDelete = useCallback(async () => {
+    if (!window.confirm(`Delete ${selectedIds.size} item(s)?`)) return;
+    for (const id of selectedIds) {
+      await remove(id);
+    }
+    setSelectedIds(new Set());
+    refetch();
+  }, [selectedIds, remove, refetch]);
+{% endif %}
+{% endif %}
+{% if enable_export %}
+  const handleExportCSV = () => {
+    if (!data || data.length === 0) return;
+    const keys = Object.keys(data[0]);
+    const csv = [keys.join(','), ...data.map((row: any) =>
+      keys.map((k) => JSON.stringify(row[k] ?? '')).join(',')
+    )].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = '{{ plural_kebab }}.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportJSON = () => {
+    if (!data || data.length === 0) return;
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = '{{ plural_kebab }}.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+{% endif %}
+
+  const handleRowClick = (item: {{ model_name }}) => {
+    navigate(`/{{ plural_kebab }}/${item.id}`);
+  };
+{% if ops_update %}
+  const handleEdit = (item: {{ model_name }}) => {
+    navigate(`/{{ plural_kebab }}/${item.id}/edit`);
+  };
+{% endif %}
+{%- if ops_delete %}
+  const handleDelete = async (item: {{ model_name }}) => {
+    if (window.confirm('Are you sure you want to delete this {{ model_name_lower }}?')) {
+      await remove(item.id);
+      refetch();
+    }
+  };
+{% endif %}
+{%- if show_create_button %}
+
+  const handleCreate = () => {
+    navigate('/{{ plural_kebab }}/new');
+  };
+{% endif %}
+
+  if (error) {
+    return (
+      <div className="page-container">
+        <div className="alert-error">
+          <p>Error: {error.message}</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="page-container">
+      <header className="page-header flex items-center justify-between">
+        <div>
+          <h1 className="page-title">{{ plural_name }}</h1>
+          <p className="page-subtitle">Manage your {{ plural_name_lower }}</p>
+        </div>
+        <div className="flex items-center gap-2">
+{% if enable_export %}
+          <div className="relative group">
+            <button className="btn-secondary text-sm">
+              Export
+              <svg className="w-3 h-3 ml-1 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            <div className="absolute right-0 mt-1 w-32 bg-surface-elevated border border-border rounded-nordic shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10">
+              <button onClick={handleExportCSV} className="block w-full px-3 py-2 text-sm text-left text-foreground hover:bg-surface-sunken">
+                Export CSV
+              </button>
+              <button onClick={handleExportJSON} className="block w-full px-3 py-2 text-sm text-left text-foreground hover:bg-surface-sunken">
+                Export JSON
+              </button>
+            </div>
+          </div>
+{% endif %}
+{% if enable_import %}
+          <button onClick={() => navigate('/{{ plural_kebab }}/import')} className="btn-secondary text-sm">
+            Import
+          </button>
+{% endif %}
+{% if show_create_button %}
+          <button onClick={handleCreate} className="btn-primary">
+            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            Create {{ model_name }}
+          </button>
+{% endif %}
+        </div>
+      </header>
+{% if filterable_fields %}
+
+      <div className="flex flex-wrap gap-2 mb-4">
+{% for field in filterable_fields %}
+        <input
+          type="text"
+          placeholder="Filter by {{ field }}..."
+          className="input-field text-sm w-48"
+          value={filters['{{ field }}'] || ''}
+          onChange={(e) => setFilters((f) => ({ ...f, '{{ field }}': e.target.value }))}
+        />
+{% endfor %}
+        <button
+          onClick={() => setFilters({})}
+          className="btn-secondary text-sm"
+        >
+          Clear
+        </button>
+      </div>
+{% endif %}
+{% if enable_bulk_actions %}
+
+      {selectedIds.size > 0 && (
+        <div className="flex items-center gap-3 mb-4 p-3 bg-surface-sunken rounded-nordic">
+          <span className="text-sm text-foreground font-medium">
+            {selectedIds.size} selected
+          </span>
+{% if ops_delete %}
+          <button onClick={handleBulkDelete} className="btn-secondary text-sm text-red-600 hover:text-red-700">
+            Delete selected
+          </button>
+{% endif %}
+          <button onClick={() => setSelectedIds(new Set())} className="btn-secondary text-sm">
+            Clear selection
+          </button>
+        </div>
+      )}
+{% endif %}
+
+      <div className="card overflow-hidden">
+        <{{ model_name }}Table
+          data={data}
+          loading={{ '{loading || mutating}' if has_mutations else '{loading}' }}
+          onRowClick={handleRowClick}
+{%- if ops_update %}
+          onEdit={handleEdit}
+{%- endif %}
+{%- if ops_delete %}
+          onDelete={handleDelete}
+{%- endif %}
+        />
+      </div>
+
+      <div className="mt-6 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setPage((p) => p - 1)}
+            disabled={!hasPreviousPage || loading}
+            className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Previous
+          </button>
+          <button
+            onClick={() => setPage((p) => p + 1)}
+            disabled={!hasNextPage || loading}
+            className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Next
+          </button>
+        </div>
+        <p className="text-sm text-muted">
+          Page {page} · {totalCount} total
+        </p>
+      </div>
+    </div>
+  );
+}

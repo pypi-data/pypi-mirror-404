@@ -1,0 +1,119 @@
+name: Terraform
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Terraform action to perform'
+        required: true
+        default: 'plan'
+        type: choice
+        options:
+          - plan
+          - apply
+          - destroy
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+
+jobs:
+  terraform:
+    name: Terraform
+    runs-on: ubuntu-latest
+    if: {% raw %}${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}{% endraw %}
+
+    defaults:
+      run:
+        working-directory: deploy/terraform
+
+    env:
+      TF_VAR_hcloud_token: {% raw %}${{ secrets.HCLOUD_TOKEN }}{% endraw %}
+      TF_VAR_ssh_public_key: {% raw %}${{ secrets.SSH_PUBLIC_KEY }}{% endraw %}
+{% if enable_remote_state %}
+      AWS_ACCESS_KEY_ID: {% raw %}${{ secrets.HETZNER_S3_ACCESS_KEY }}{% endraw %}
+      AWS_SECRET_ACCESS_KEY: {% raw %}${{ secrets.HETZNER_S3_SECRET_KEY }}{% endraw %}
+{% endif %}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.5"
+          terraform_wrapper: false
+
+      - name: Determine environment
+        id: env
+        run: |
+          if [ "{% raw %}${{ github.event_name }}{% endraw %}" = "workflow_dispatch" ]; then
+            echo "environment={% raw %}${{ github.event.inputs.environment }}{% endraw %}" >> $GITHUB_OUTPUT
+            echo "action={% raw %}${{ github.event.inputs.action }}{% endraw %}" >> $GITHUB_OUTPUT
+          else
+            echo "environment=staging" >> $GITHUB_OUTPUT
+            echo "action=apply" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Plan
+        id: plan
+        run: |
+          terraform plan \
+            -var-file={% raw %}${{ steps.env.outputs.environment }}{% endraw %}.tfvars \
+            -out=tfplan \
+            -no-color
+        continue-on-error: true
+
+      - name: Terraform Plan Status
+        if: steps.plan.outcome == 'failure'
+        run: exit 1
+
+      - name: Terraform Apply
+        if: {% raw %}${{ steps.env.outputs.action == 'apply' || github.event_name == 'workflow_run' }}{% endraw %}
+        run: terraform apply -auto-approve tfplan
+
+      - name: Terraform Destroy
+        if: {% raw %}${{ steps.env.outputs.action == 'destroy' }}{% endraw %}
+        run: |
+          terraform destroy \
+            -var-file={% raw %}${{ steps.env.outputs.environment }}{% endraw %}.tfvars \
+            -auto-approve
+
+      - name: Get Terraform Outputs
+        if: {% raw %}${{ steps.env.outputs.action == 'apply' || github.event_name == 'workflow_run' }}{% endraw %}
+        id: outputs
+        run: |
+          SERVER_IP=$(terraform output -raw {% raw %}${{ steps.env.outputs.environment }}{% endraw %}_server_ip 2>/dev/null || echo "")
+          echo "server_ip=${SERVER_IP}" >> $GITHUB_OUTPUT
+          echo "Server IP: ${SERVER_IP}"
+
+      - name: Save Deploy Config
+        if: {% raw %}${{ (steps.env.outputs.action == 'apply' || github.event_name == 'workflow_run') && steps.outputs.outputs.server_ip != '' }}{% endraw %}
+        run: |
+          mkdir -p {% raw %}${{ github.workspace }}{% endraw %}/deploy-config
+          cat > {% raw %}${{ github.workspace }}{% endraw %}/deploy-config/config.json << EOF
+          {
+            "server_ip": "{% raw %}${{ steps.outputs.outputs.server_ip }}{% endraw %}",
+            "environment": "{% raw %}${{ steps.env.outputs.environment }}{% endraw %}"
+          }
+          EOF
+
+      - name: Upload Deploy Config
+        if: {% raw %}${{ (steps.env.outputs.action == 'apply' || github.event_name == 'workflow_run') && steps.outputs.outputs.server_ip != '' }}{% endraw %}
+        uses: actions/upload-artifact@v4
+        with:
+          name: deploy-config
+          path: {% raw %}${{ github.workspace }}{% endraw %}/deploy-config/
+          retention-days: 1
