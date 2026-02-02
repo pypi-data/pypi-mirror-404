@@ -1,0 +1,49 @@
+# NAS MCP Server
+
+MCP server for Plex, Radarr, and Overseerr integration.
+
+## Installation
+
+### Claude Desktop / Claude Code
+
+Add to your MCP configuration:
+
+```json
+{
+  "mcpServers": {
+    "nas-mcp-server": {
+      "command": "uvx",
+      "args": ["nas-mcp-server"],
+      "env": {
+        "PLEX_URL": "http://your-nas:32400",
+        "PLEX_TOKEN": "your_plex_token",
+        "RADARR_URL": "http://your-nas:7878",
+        "RADARR_API_KEY": "your_radarr_api_key",
+        "OVERSEERR_URL": "http://your-nas:5055",
+        "OVERSEERR_API_KEY": "your_overseerr_api_key"
+      }
+    }
+  }
+}
+```
+
+## Environment Variables
+
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `PLEX_URL` | Plex server URL | Yes |
+| `PLEX_TOKEN` | Plex authentication token | Yes |
+| `RADARR_URL` | Radarr server URL | No |
+| `RADARR_API_KEY` | Radarr API key | No |
+| `OVERSEERR_URL` | Overseerr server URL | No |
+| `OVERSEERR_API_KEY` | Overseerr API key | No |
+
+## Features
+
+- **Plex**: Browse your library, get recommendations, check watch status
+- **Radarr**: Add/remove movies, monitor downloads
+- **Overseerr**: Search actors, view filmographies, request movies
+
+## License
+
+MIT
