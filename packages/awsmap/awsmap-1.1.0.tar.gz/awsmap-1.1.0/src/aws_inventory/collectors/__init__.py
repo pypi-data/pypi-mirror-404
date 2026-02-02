@@ -1,0 +1,3 @@
+"""
+AWS service collectors package.
+"""
