@@ -1,0 +1,1 @@
+import{p as e,L as n,i as p,l as r,H as m}from"./svelte-B9Ye91X-.js";import{g as i}from"./@roxi-Bw7qXphd.js";import"./clsx-B-dksMZM.js";import"./esm-env-rsSWfq8L.js";import"./hookar-BMRD9G9H.js";import"./consolite-DlCuI0F9.js";function _($,t){e(t,!1);const o=()=>n(i,"$goto",s),[s,a]=m();o(),o()("/management/content/"),p(),r(),a()}export{_ as default};

@@ -1,0 +1,1 @@
+const a=(t,o,c)=>{const n=new Blob([t],{type:c}),e=document.createElement("a");e.download=o,e.href=window.URL.createObjectURL(n);const l=new MouseEvent("click",{view:window,bubbles:!0,cancelable:!0});e.dispatchEvent(l),e.remove()};export{a as d};

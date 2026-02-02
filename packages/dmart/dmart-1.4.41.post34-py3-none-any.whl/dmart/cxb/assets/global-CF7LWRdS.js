@@ -1,0 +1,1 @@
+import{w as o}from"./svelte-B9Ye91X-.js";import{R as s}from"./@edraj-D-9hi9vU.js";const a=o(null),c=o(null),i=o({data:new Map,refresh:null}),l=[s.role,s.permission],u=["roles","permissions","groups"],m=[s.user,s.content,s.folder,s.ticket];var e=(r=>(r.form="form",r.json="json",r))(e||{});export{e as I,c as a,m as b,a as c,u as d,l as r,i as s};
