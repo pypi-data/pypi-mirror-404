@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+<meta charset="utf-8" />
+<title>${fileconfig['system']['name']}-${userinfo['nickname']}-kcwebs云管</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+<meta name="HandheldFriendly" content="true"/>
+<meta name="MobileOptimized" content="320"/>
+<%include file="../include/static.html"/>
+</head>
+<style>
+.van-tabbar-item, .van-tabbar-item--active{}
+</style>
+<body>
+<div id="app">
+    <div>
+        <div :style="'width:100%;height:'+header.height+'px;overflow: hidden;position:fixed'">
+            <div class="van-nav-bar van-hairline--bottom" style="background:#60515B;color:#FFF;height:49px;overflow: hidden;">
+                <div v-if="header.type=='lefturl'" class="van-nav-bar__left" @click="gethtml(header.lefturl.url,header.title,header.icon)">
+                    <i class="van-icon van-icon-arrow-left van-nav-bar__arrow" style="color:#FFF"><!----></i><span style="color:#FFF" class="van-nav-bar__text">{{header.lefturl.text}}</span>
+                </div>
+                <div v-else class="van-nav-bar__left" @click="show1=true">
+                    <div style="float:left;margin-top:-2px;width:22px;height:22px;line-height:12px;"><img src="${userinfo['icon']}" style="display: inline-block; vertical-align: middle;max-width:100%;max-height:100%" alt=""></div>
+                    &nbsp${userinfo['name']}
+                </div>
+                <div class="van-nav-bar__title van-ellipsis" style="color:#FFF"><span>{{header.title}}</span></div>
+                <div class="van-nav-bar__right"><div style="float:left;margin-top:-2px;width:22px;height:22px;line-height:22px;"><img :src="header.icon" style="display: inline-block; vertical-align: middle;max-width:100%;max-height:100%" alt=""></div></div>
+            </div>
+            <div><van-progress v-if="jdt" style="float:left;margin-top:-4px;width:100%;z-index: 999;" pivot-text="" color="#3897FF" :percentage="jdt" stroke-width="3"/></div>
+        </div>
+        <div :style="'width:100%;height:'+header.height+'px;overflow: hidden;'"></div>
+        <div :style="'width:100%;height:'+(winheight-tabbar.height-header.height)+'px;'">
+            <iframe v-if="iframedoc!='myapp'" :src="url" id="iframe" style="margin:0px;padding:0px;overflow:hidden;" frameborder="0" border="0" marginwidth="0" marginheight="0" scrolling="yes" allowtransparency="no" width="100%" v-bind:height="(winheight-tabbar.height-header.height-4)+'px'"></iframe>
+            <div v-else :style="'height:'+(winheight-tabbar.height-header.height-1)+'px;overflow-y: scroll;'">
+                <van-grid square :column-num="4">
+                    <van-grid-item v-for="(item,index) in menudata.leftlist" @click="gethtmls(item.url,item.title,item.icon)" :key="item.id" icon="photo-o" :text="item.title"/>
+                        <img :src="item.icon" style="height:40px;"/>
+                        <div style="text-align:center"><span>{{item.title}}</span></div>
+                    </van-grid-item>
+                </van-grid>
+                <van-grid square :column-num="3">
+                    <van-grid-item v-for="(item,index) in menudata.header" @click="gethtmls(item.url,item.title,item.icon)" :key="item.id" icon="photo-o" :text="item.title"/>
+                        <img :src="item.icon" style="height:40px;"/>
+                        <div style="text-align:center"><span>{{item.title}}</span></div>
+                    </van-grid-item>
+                </van-grid>
+            </div>
+            <!-- <div v-if="header.height>10" :style="'height:'+(tabbar.height-10)+'px'"></div> -->
+        </div>
+        <van-tabbar v-model="active" active-color="#07c160" inactive-color="#000" :style="'height:'+tabbar.height+'px;overflow: hidden;'">
+            <van-tabbar-item v-for="(item,index) in menudata.leftlist" v-if="index<2" @click="gethtml(item.url,item.title,item.icon)" :name="item.url">
+                <span>{{item.title}}</span>
+                <template #icon="props">
+                    <img v-if="active==item.url" :src="item.icon" style="height:30px;margin-top:-10px"/>
+                    <img v-else :src="item.icon" />
+                </template>
+            </van-tabbar-item>
+            <van-tabbar-item @click="gethtml('myapp','应用','https://img.kwebapp.cn/icon/app.png')" name="myapp">
+                <span>我的应用</span>
+                <template #icon="props">
+                    <img v-if="active=='myapp'" src="https://img.kwebapp.cn/icon/app.png" style="height:30px;margin-top:-10px"/>
+                    <img v-else src="https://img.kwebapp.cn/icon/app.png"/>
+                </template>
+            </van-tabbar-item>
+            <van-tabbar-item v-for="(item,index) in menudata.leftlist" v-if="index>=2 && index<4" @click="gethtml(item.url,item.title,item.icon)" :name="item.url">
+                <span>{{item.title}}</span>
+                <template #icon="props">
+                    <img v-if="active==item.url" :src="item.icon" style="height:30px;margin-top:-10px"/>
+                    <img v-else :src="item.icon" />
+                </template>
+            </van-tabbar-item>
+        </van-tabbar>
+    </div>
+    <!-- <van-action-sheet v-model="show" title="我的应用">
+        <div :style="'height:'+(winheight/1.5)+'px;overflow-y: scroll;'">
+            <van-grid square :column-num="4">
+                <van-grid-item v-for="(item,index) in menudata.leftlist" @click="gethtmls(item.url,item.title,item.icon)" :key="item.id" icon="photo-o" :text="item.title"/>
+                    <img :src="item.icon" style="height:40px;"/>
+                    <div style="text-align:center"><span>{{item.title}}</span></div>
+                </van-grid-item>
+            </van-grid>
+            <van-grid square :column-num="3">
+                <van-grid-item v-for="(item,index) in menudata.header" @click="gethtmls(item.url,item.title,item.icon)" :key="item.id" icon="photo-o" :text="item.title"/>
+                    <img :src="item.icon" style="height:40px;"/>
+                    <div style="text-align:center"><span>{{item.title}}</span></div>
+                </van-grid-item>
+            </van-grid>
+        </div>
+    </van-action-sheet> -->
+    <van-action-sheet v-model="show1" title="用户">
+        <div :style="">
+            <div role="button" tabindex="0" class="van-cell van-cell--clickable van-coupon-cell">
+                <div class="van-cell__title"><span>姓名</span></div>
+                <div class="van-cell__value van-coupon-cell__value"><span>${userinfo['name']}</span></div>
+                <!-- <i class="van-icon van-icon-arrow van-cell__right-icon"></i> -->
+            </div>
+            <div role="button" tabindex="0" class="van-cell van-cell--clickable van-coupon-cell">
+                <div class="van-cell__title"><span>昵称</span></div>
+                <div class="van-cell__value van-coupon-cell__value"><span>${userinfo['nickname']}</span></div>
+                <!-- <i class="van-icon van-icon-arrow van-cell__right-icon"></i> -->
+            </div>
+            <div role="button" tabindex="0" class="van-cell van-cell--clickable van-coupon-cell" @click="show2=true">
+                <div class="van-cell__title"><span>设置登录密码</span></div>
+                <div class="van-cell__value van-coupon-cell__value"><span></span></div>
+                <i class="van-icon van-icon-arrow van-cell__right-icon"></i>
+            </div>
+            <div role="button" tabindex="0" class="van-cell van-cell--clickable van-coupon-cell" @click="reboot()">
+                <div class="van-cell__title"><span>重启服务器</span></div>
+                <div class="van-cell__value van-coupon-cell__value">
+                    <span v-if="netstatus==1 || netstatus==2"><i class="fa fa-play" style="color:#67C23A;"></i>运行中</span>
+                    <span v-else-if="netstatus==3"><van-loading size="24px">服务器重启中...</van-loading></span>
+                    <span v-else-if="netstatus==4"><van-loading size="24px">等待服务器启动</van-loading></span>
+                </div>
+                <i class="van-icon van-icon-arrow van-cell__right-icon"></i>
+            </div>
+            <div role="button" tabindex="0" class="van-cell van-cell--clickable van-coupon-cell" @click="rekcwebps()">
+                <div class="van-cell__title"><span>重启应用</span></div>
+                <div class="van-cell__value van-coupon-cell__value">
+                    <span v-if="netstatus==1"><i class="fa fa-play" style="color:#67C23A;"></i>运行中</span>
+                    <span v-else-if="netstatus==2"><van-loading size="24px">应用重启中...</van-loading></span>
+                    <span v-else-if="netstatus==3"><van-loading size="24px">服务器重启中...</van-loading></span>
+                    <span v-else-if="netstatus==4"><van-loading size="24px">等待服务器启动</van-loading></span>
+                </div>
+                <i class="van-icon van-icon-arrow van-cell__right-icon"></i>
+            </div>
+            <van-button type="primary" block @click="outlogin">退出登录</van-button>
+        </div>
+    </van-action-sheet>
+    <van-dialog v-model="show2" title="输入新密码" show-cancel-button @confirm="setmypwd">
+            <van-field v-model="password" type="password" placeholder="输入新密码"/>
+    </van-dialog>
+</div>
+<script>
+function setheader(header){
+    setheaders(header)
+}
+function vantabbar(type,data){
+    vantabbars(type,data)
+}
+function topgethtml(url,title,icon){
+    gethtml(url,title,icon)
+}
+ var VU=new Vue({
+    el: '#app',
+    data:{
+        winheight:document.documentElement.clientHeight,winwidth:document.documentElement.clientWidth,
+        active:'myapp',jdt:0,iframedoc:"kcwebps",title:'',icon:"${fileconfig['system']['logo']}",url:'/',
+        show:false,show1:false,show2:false,password:'',
+        netstatus:1,  //1正常  2应用重启中 3服务器重启中 4等待服务器启动
+        menudata:{},
+        tabbar:{height:70},
+        header:{
+            height:49,
+            type:'',
+            lefturl:{text:'返回',url:''},
+            title:'首页',
+            icon:"${fileconfig['system']['logo']}"
+        },
+    },
+    mounted:function(){
+        self=this
+        window.onresize = function(){
+            self.winheight=document.documentElement.clientHeight
+            self.winwidth=document.documentElement.clientWidth
+        }
+        window.vantabbars = this.vantabbars;
+        window.gethtml = this.gethtml;
+        window.setheaders = this.setheaders;
+        self.get("/index/index/index/menu").then(function(res){
+            self.menudata=res.data
+            self.gethtml(self.active,'应用',"https://img.kwebapp.cn/icon/app.png")
+        })
+    },
+    methods: {
+        setheaders:function(header){
+            var self=this
+            self.header=header
+        },
+        vantabbars:function(type,data){
+            var self=this
+            if(type=='settabbarheight'){
+                self.tabbar.height=data
+            }
+        },
+        checkserver:function(types){
+            var self=this
+            self.post("/index/index/pub/checkserver").then(function(res){
+                self.netstatus=1
+            }).catch(function(){
+                if(types=='rekcwebps'){
+                    self.netstatus=2
+                }else{
+                    self.netstatus=4
+                }
+                setTimeout(function(){
+                    self.checkserver(types)
+                },1000)
+            });
+        },
+        reboot:function(){
+            self=this
+            self.$dialog.confirm({
+                title: '提示',
+                message: '此操作将重新启动您的服务器, 是否继续',
+            }).then(function(){
+                self.netstatus=3
+                self.post("/index/index/index/reboot/reboot",{shell:'reboot'}).then(function(res){
+                    setTimeout(function(){
+                        self.reboot()
+                    },200)
+                }).catch(function(){
+                    self.netstatus=3
+                    setTimeout(function(){
+                        self.checkserver('reboot')
+                    },60000)
+                });
+            }).catch(function(){});
+        },
+        rekcwebps:function(){
+            self=this
+            self.$dialog.confirm({
+                title: '提示',
+                message: '此操作将重新启动您的应用, 是否继续',
+            }).then(function(){
+                self.netstatus=2
+                self.post("/index/index/index/reboot/app",{shell:'bash server.sh'}).then(function(res){
+                    // self.netstatus=1
+                    setTimeout(function(){
+                        self.rekcwebps()
+                    },200)
+                }).catch(function(){
+                    self.netstatus=2
+                    setTimeout(function(){
+                        self.checkserver('rekcwebps')
+                    },3000)
+                });
+            }).catch(function(){});
+        },
+        setmypwd:function(){
+            self=this
+            self.post('/index/index/admin/setmypwd',{password:md5('kcws'+self.password)}).then(function(res){
+                self.$notify({type: 'success',message: '您的设置的密码是: ' + self.password});
+            })
+        },
+        
+        setjdt:function(){
+            var self=this
+            if(self.jdt<80){
+                setTimeout(function(){
+                    self.jdt+=10;
+                    self.setjdt();
+                },50)
+            }else if(self.jdt<90){
+                setTimeout(function(){
+                    self.jdt+=0.2;
+                    self.setjdt();
+                },100)
+            }else if(self.jdt<94){
+                setTimeout(function(){
+                    self.jdt+=0.2;
+                    self.setjdt();
+                },500)
+            }else if(self.jdt<97){
+                setTimeout(function(){
+                    self.jdt+=0.1;
+                    self.setjdt();
+                },500)
+            }
+        },
+        gethtmls:function(url,title,icon){
+            var self=this
+            self.show=false
+            self.gethtml(url,title,icon)
+        },
+        gethtml:function(url,title,icon){
+            var self=this
+            self.show=false
+            if(url=='myapp'){
+                self.iframedoc=url
+                self.title=title;self.icon=icon;
+                self.header={
+                    height:49,
+                    type:'',
+                    lefturl:{text:'返回',url:'myapp'},
+                    title:'应用',
+                    icon:'https://img.kwebapp.cn/icon/app.png'
+                }
+                self.tabbar.height=70
+                self.show=true
+                return
+            }
+            if(url=='/index/index/index/home' || url=='/index/index/admin' || url=='/index/index/modular' || url.indexOf("/index/index/plug") != -1){
+                if(url.indexOf("/index/index/plug") != -1){
+                    self.active="/index/index/plug"
+                }else{
+                    self.active=url
+                }
+                // setTimeout(function(){
+                //     self.header.title=title
+                //     self.header.icon=icon
+                // },200)
+            }
+            // self.setjdt()
+            self.icon='/images/icon/timg.gif';self.url=url;
+            self.iframedoc='dsgeg'
+            // setTimeout(function(){
+            //     self.icon=icon;
+            // },300)
+            return
+            // self.getcontent(url).then(function(html){
+            //     // self.jdt=100;
+            //     setTimeout(function(){
+            //         self.title=title;self.icon=icon;
+            //         self.jdt=0;
+            //     },100)
+            //     self.iframedoc=html
+            //     self.show=true
+            // }).catch(function(err){
+            //     setTimeout(function(){
+            //         // setTimeout(function(){self.jdt=0;},300)
+            //         if (err.response) {
+            //             self.title=title;self.icon=icon;
+            //             self.iframedoc=err.response.data
+            //         }else{
+            //             self.$notify({message: "网络异常",type: 'warning'});
+            //         }
+            //         self.show=true
+            //     },300)
+            // });
+        },
+        outlogin:function(){
+            self=this
+            self.delete('/index/index/pub/outlogin',null,'正在退出').then(function(res){
+                if(res.code==0){
+                    location.reload()
+                }
+            })
+        },
+    }
+ });
+  </script>
+</body>
+</html>

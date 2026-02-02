@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<html>
+<head>
+<meta charset="utf-8" />
+<title>kcwebps</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+<meta name="HandheldFriendly" content="true"/>
+<meta name="MobileOptimized" content="320"/>
+<%include file="/app/common/html/include/static.html"/>
+</head>
+<style>
+*{padding:0px;margin:0px}
+.el-header, .el-footer {background-color: #B3C0D1;line-height: 60px;padding:0px;}
+.kcws-side-scroll::-webkit-scrollbar{width:0px;}
+.el-table__header-wrapper {width: 100%;height:10px}
+.el-tabs__content {
+    overflow: hidden;
+    position: relative;
+    margin-top: -14px;
+}
+</style>
+<body>
+<div id="app">
+<div style="padding:10px">
+    <div style="height:38px;padding-top:0px;background:#FFF;padding-top:5px;margin:4px auto;width:100%">
+        &nbsp&nbsp
+        <el-button-group>
+            <el-button size="mini" type="success"  @click="admindialog={status:true,title:'添加启动项'},admin={value:'',name:'',types:'shell',icon:''}">添加启动项</el-button>
+        </el-button-group>
+        <el-button-group style="float:right;margin-right:10px">
+            <!-- <el-button v-if="platform.indexOf('Linux') !== -1" size="mini" type="success"  @click="openurl('/intapp/file/index/folderace?filename=/usr/bin/startkcwebs','文件目录：/usr/bin/startkcwebs')">startkcwebs自启文件</el-button> -->
+            <el-button v-if="platform.indexOf('Linux') !== -1" size="mini" type="success"  @click="openurl('/intapp/file/index/folderace?filename=/usr/bin/startkcwebs.sh','文件目录：/usr/bin/startkcwebs.sh')">startkcwebs.sh自启文件</el-button>
+            <!-- <el-button v-if="platform.indexOf('Windows') !== -1" size="mini" type="success" >自启文件</el-button> -->
+        </el-button-group>
+    </div>
+    <el-table :data="data.lists" :height="winheight-80">
+        <el-table-column fixed prop="icon" label="" width="40">
+            <template slot-scope="scope">
+                <img v-if="scope.row.icon" :src="scope.row.icon" style="height:26px;float:left">
+            </template>
+        </el-table-column>
+        <el-table-column prop="name" label="名称" width="200"></el-table-column>
+        <el-table-column prop="types" label="类型" width="180">
+            <template slot-scope="scope">
+                <el-tag v-if="scope.row.types=='shell'" type="success">随系统启动</el-tag>
+                <el-tag v-else-if="scope.row.types=='kcwebps'">随kcwebps应用启动</el-tag>
+            </template>
+        </el-table-column>
+        <el-table-column prop="value" label="值">
+            <template slot-scope="scope">
+                <el-tag type="success">{{scope.row.value}}</el-tag>
+            </template>
+        </el-table-column>
+        <el-table-column prop="addtime" label="添加时间" width="120">
+            <template slot-scope="scope">
+                <span v-html="time_date(scope.row.addtime)"></span>
+            </template>
+        </el-table-column>
+        <el-table-column prop="addtime" label="" width="120">
+            <template slot-scope="scope">
+                <el-button type="danger" icon="el-icon-delete" circle @click="delstart(scope.row)"></el-button>
+            </template>
+        </el-table-column>
+    </el-table>
+    <el-dialog
+    :title="admindialog.title"
+    :visible.sync="admindialog.status"
+    width="500px">
+    <el-form ref="form" :model="admin" label-width="80px" label-position="left" size="mini">
+        <el-form-item label="图标">
+            <el-input placeholder="图标" v-model="admin.icon" style="width:80%"></el-input>
+            <el-button @click="openurl('/intapp/imgmt?select=1')" size="mini">选择图片</el-button>
+        </el-form-item>
+        <el-form-item label="名字">
+            <el-input placeholder="名字" v-model="admin.name"></el-input>
+        </el-form-item>
+        <el-form-item label="脚本内容">
+            <el-input placeholder="脚本内容" v-model="admin.value"></el-input>
+        </el-form-item>
+    </el-form>
+    <span slot="footer" class="dialog-footer">
+        <el-button @click="admindialog.status = false">取 消</el-button>
+        <el-button type="primary" @click="addstart">添加</el-button>
+    </span>
+    </el-dialog>
+</div>
+</div>
+</body>
+<script>
+var VUE=null;
+function setimgmt(domain,paths,item){
+    mysetimgmt(domain,paths,item)
+    layer.closeAll();
+}
+VUE=new Vue({
+    el: '#app',
+    data:{
+        kcwebsimg:"${config.domain['kcwebsimg']}",platform:"${platform}",
+        winheight:document.documentElement.clientHeight,winwidth:document.documentElement.clientWidth,
+        admin:{value:'',name:'',types:'',icon:''},admindialog:{status:false,title:'添加启动项'},
+        data:{
+            'count':0,
+            'pagenow':1,
+            'lists':[]
+        }
+       
+    },
+    mounted:function(){
+        self=this
+        window.onresize = function(){
+            self.winheight=document.documentElement.clientHeight
+            self.winwidth=document.documentElement.clientWidth
+        }
+        window.mysetimgmt = this.mysetimgmt;
+        self.obtain()
+    },
+    methods: {
+        //打开页面
+        openurl:function(url,title){
+            try {
+                parent.window.openurl(url,title,['85%', '90%']);
+            } catch (error) {
+                layer.open({
+                    type: 2,title: title,shadeClose: true,shade: 0.1,maxmin:true,
+                    area: ['92%', '92%'],content:url
+                });
+            }
+        },
+        mysetimgmt:function(domain,paths,item){
+            var self=this
+            if (item.suffix=='jpg' || item.suffix=='JPG' || item.suffix=='png' || item.suffix=='PNG' || item.suffix=='gif' || item.suffix=='GIF'){
+                self.admin.icon=domain+paths+item.name
+            }else{
+                self.$message({type: 'error',message: '请选择图片文件'});
+            }
+        },
+        obtain:function(){
+			var self=this
+			self.get("/index/index/setup/startlist",{pagenow:self.data.pagenow},'获取中...').then(function(res){
+                self.data=res.data
+			})
+		},addstart:function(){
+			var self=this
+			self.post("/index/index/setup/addstart",self.admin,"请稍后...").then(function(res){
+				self.admindialog.status=false
+				self.obtain()
+			}).catch(function(err){
+                self.admindialog.status=false
+            })
+		},delstart:function(item){
+            var self=this
+            if(item.admin_id==0){
+                self.$confirm("这是系统添加的启动项，确定要删除", '警告', {
+                    confirmButtonText: '删除',
+                    cancelButtonText: '取消',
+                    type: 'warning'
+                }).then(function(){
+                    self.delete("/index/index/setup/delstart",item,"请稍后...").then(function(res){
+                        self.obtain()
+                    })
+                }).catch(function(){});
+            }else{
+                self.delete("/index/index/setup/delstart",item,"请稍后...").then(function(res){
+                    self.obtain()
+                })
+            }
+        },
+    }
+});
+</script>
+</html>

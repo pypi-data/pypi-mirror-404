@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+<meta charset="utf-8" />
+<title>kcwebs云管</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+<meta name="HandheldFriendly" content="true"/>
+<meta name="MobileOptimized" content="320"/>
+<%include file="../include/static.html"/>
+</head>
+<body>
+<div id="app">
+    <div style="height:50px;position:fixed;width:100%;z-index: 999;top:-1px">
+        <van-search v-model="kw" background="#4fc08d" show-action placeholder="请输入搜索关键词" @search="ssgetlist">
+            <template #action>
+                <van-button type="info" size="small"  @click="admindialog={status:true,title:'添加项目'},admin={id:'',title:'',icon:'',descs:'',paths:'',filename:'',types:'',other:''}">添加项目</van-button>
+            </template>
+        </van-search>
+    </div><div style="height:50px;"></div>
+    <div>
+        <van-swipe-cell v-for="(item,index) in data.lists" style="border-top:1px solid #cccccc">
+            <div class="goods-card van-card" :style="'width:'+(winwidth)+'px;overflow: hidden;'" @click="admindialog={status:true,title:'设置项目'},admin=item">
+                <div class="van-card__header">
+                    <a class="van-card__thumb">
+                        <div class="van-image" style="width: 100%; height: 100%;">
+                            <img v-if="item.icon" :src="item.icon" class="van-image__img" style="object-fit: cover;">
+                            <img v-else src="https://img.kwebapp.cn/icon/user1.png" class="van-image__img" style="object-fit: cover;">
+                        </div>
+                    </a>
+                    <div class="van-card__content">
+                        <div>
+                            <div class="van-card__title van-multi-ellipsis--l2">{{item.title}}</div>
+                            <div class="van-card__desc van-ellipsis">{{item.descs}}</div>
+                        </div>
+                        <div>
+                            <span v-if="item.status==1" style="float:left">
+                                <i class="fa fa-play" style="color:#67C23A;"></i>运行中&nbsp
+                            </span>
+                            <span v-else style="float:left">
+                                <i class="fa fa-pause" style="color:red;"></i>已停止&nbsp
+                            </span>
+                            <!--<span style="float:left"><van-button type="primary" size="mini">运行日志</van-button></span>-->
+                        </div>
+                        <div class="van-card__bottom">
+                            <div class="van-card__price">
+                                <div>
+                                    <span class="van-card__price-currency">运行目录：{{item.paths}}</span>
+                                </div>
+                            </div>
+                            <div class="van-card__num"><span class="van-card__price-decimal">启动文件：{{item.filename}}</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <template #right>
+                <van-button v-if="item.status==1" @click="restart(item,'stop')" square type="warning" text="停止" style="float:left;height:100%"></van-button>
+                <van-button v-if="item.status==1" @click="restart(item,'restart')" square type="primary" text="重启" style="float:left;height:100%"></van-button>
+                <van-button v-else @click="restart(item,'start')" square type="info" text="启动" style="float:left;height:100%"></van-button>
+                <!-- <van-button square text="运行日志" style="float:left;height:100%"></van-button> -->
+                <van-button @click="addstart(item)" square type="info" text="开机启动" style="float:left;height:100%"></van-button>
+                <van-button @click="logpythonrun(item)" square type="primary" text="日志" style="float:left;height:100%"></van-button>
+                <van-button square type="danger" @click="deletes(item.id)" text="删除" style="float:left;height:100%"></van-button>
+            </template>
+        </van-swipe-cell>
+        <div v-if="status==1">
+            <van-divider><van-loading size="24px">加载中...</van-loading></van-divider>
+        </div>
+        <div v-else-if="status==0">
+            <van-divider v-if="data.pagenow<data.pagecount" @click="xyygetlist"><span>下一页</span></van-divider>
+            <van-divider v-else-if="data.count<=0" style="margin-top:200px">暂无数据</van-divider>
+            <van-divider v-else>我已到底了</van-divider>
+        </div>
+        <div style="height:50px"></div>
+    </div>
+    <van-action-sheet v-model="admindialog.status" :title="admindialog.title">
+        <div :style="'height:'+(winheight-160)+'px;overflow-y: scroll;'">
+        <van-cell-group>
+            <van-field v-model="admin.title" label="项目名称" placeholder="项目名称"></van-field>
+            <van-field v-model="admin.icon" label="图标" placeholder="图标地址">
+                <template #button>
+                        <van-button @click="win.show=true;win.url='/intapp/imgmt?select=1'" size="small" type="primary">选择图片</van-button>
+                </template>
+            </van-field>
+            <van-field v-model="admin.descs" label="项目描述" placeholder="项目描述"></van-field>
+            <van-field v-model="admin.paths" label="运行目录" placeholder="运行目录">
+                <template #button>
+                    <!-- <van-button @click="openurl('/intapp/file?select=1')" size="small" type="primary">选择目录</van-button> -->
+                    <van-button @click="win.show=true;win.url='/intapp/file?select=1'" size="small" type="primary">选择目录</van-button>
+                </template>
+            </van-field>
+            <van-field v-model="admin.filename" label="运行文件" placeholder="运行文件">
+                <template #button>
+                    <!-- <van-button @click="openurl('/intapp/file?select=1')" size="small" type="primary">选择文件</van-button> -->
+                    <van-button @click="win.show=true;win.url='/intapp/file?select=1'" size="small" type="primary">选择文件</van-button>
+                </template>
+            </van-field>
+            <van-field label="运行环境">
+                <template #input>
+                    <van-radio-group v-model="admin.types">
+                        <van-radio name="python3.6">python3.6解释器</van-radio><br>
+                        <van-radio name="python3.8">python3.8解释器</van-radio><br>
+                        <van-radio name="php7.2">php7.2解释器</van-radio><br>
+                        <van-radio name="php7.3">php7.3解释器</van-radio><br>
+                    </van-radio-group>
+                </template>
+            </van-field>
+            <van-field v-model="admin.other" label="运行参数" placeholder="运行参数"></van-field>
+            <van-button v-if="admin.id" @click="setpythonrun()" type="primary" block>保存并运行</van-button>
+            <van-button v-else @click="setpythonrun()" type="primary" block>添加并运行</van-button>
+        </van-cell-group>
+        </div>
+    </van-action-sheet>
+    <van-action-sheet v-model="logpythonrunstatus" :title="'项目运行日志'">
+       <pre :style="'height:'+(winheight-200)+'px;overflow-y:auto;background:#000;color:#FFF; white-space:pre-line;display:block;font-size:12px;'">{{runlog}}</pre>
+    </van-action-sheet>
+<van-action-sheet v-model="win.show" :title="win.title">
+    <div :style="'height:'+(winheight-160)+'px;overflow-y: scroll;'">
+        <iframe :src="win.url" id="iframe" style="margin:0px;padding:0px;overflow:hidden;" frameborder="0" border="0" marginwidth="0" marginheight="0" scrolling="yes" allowtransparency="no" width="100%" v-bind:height="(winheight-124)+'px'"></iframe>
+    </div>
+</van-action-sheet>
+</div>
+<script>
+function setimgmt(domain,paths,item){
+    mysetimgmt(domain,paths,item)
+}
+function setfile(paths,item){
+    // layer.closeAll();
+    setadmin(paths,item)
+}
+ var VU=new Vue({
+    el: '#app',
+    data:{
+        winheight:document.documentElement.clientHeight,winwidth:document.documentElement.clientWidth,
+        kw:'',admin:{id:'',title:'',icon:'',descs:'',paths:'',filename:"",types:'',other:''},admindialog:{status:false,title:'添加项目'},
+        data:{
+            count:0,
+            lists:[],
+            pagecount:0,
+            pagenow:1,
+            pagesize:10
+        },
+        startdata:{value:'',name:'',types:'shell',icon:''},
+        win:{show:false,title:'',url:''},
+        logpythonrunstatus:false,runlog:'',
+    },
+    mounted:function(){
+        self=this
+        window.onresize = function(){
+            self.winheight=document.documentElement.clientHeight
+            self.winwidth=document.documentElement.clientWidth
+        }
+        window.setadmin = this.setadmin;
+        window.mysetimgmt = this.mysetimgmt;
+        try{
+            parent.window.setheader({height:49,type:'lefturl',title:'cli项目管理',icon:'https://img.kwebapp.cn/icon/run.png',
+                lefturl:{text:'系统设置',url:'/index/index/setup'}
+            })
+        }catch(exception){}
+        self.getlist()
+    },
+    methods: {
+        openurl:function(url){
+            layer.open({
+                type: 2,title:' ',shadeClose: true,shade: 0.8,
+                area: ['100%', '90%'],content:url
+            }); 
+        },
+        mysetimgmt:function(domain,paths,item){
+            var self=this
+            this.win.show=false
+            if (item.suffix=='jpg' || item.suffix=='JPG' || item.suffix=='png' || item.suffix=='PNG' || item.suffix=='gif' || item.suffix=='GIF'){
+                self.admin.icon=domain+paths+item.name
+            }else{
+                self.$notify({type: 'error',message: '请选择图片文件'});
+            }
+        },
+        setadmin:function(paths,item){
+            this.win.show=false
+            if (item.types=='file'){
+                this.admin.filename=item.name
+            }else{
+                this.admin.paths=paths+item.name
+            }
+        },
+        logpythonrun:function(item){
+            var self=this
+            self.logpythonrunstatus=true;
+            self.runlog="日志加载中..."
+            self.get("/index/index/setup/logpythonrun/"+item.id).then(function(res){
+				self.runlog=res.data
+			}).catch(function(err){
+                self.runlog="加载失败"
+            });
+        },
+        setpythonrun:function(){
+			self=this
+            if(!self.admin.types||!self.admin.paths||!self.admin.filename||!self.admin.title){
+                self.$notify({type: 'warning',message: '输入不全!'}); return
+            }
+			self.post("/index/index/setup/setpythonrun",self.admin,"请稍后...").then(function(res){
+                self.admindialog.status=false
+				self.getlist()
+			}).catch(function(err){
+                self.admindialog.status=false
+            })
+		},
+        gethtml:function(url,title,icon){
+            parent.window.topgethtml(url,title,icon)
+        },
+        addstart:function(item){
+			var self=this
+            var interpreter=md5(item['paths']+item['types']+item['filename']+item['other'])
+            self.startdata.name=item.title
+            self.startdata.icon=item.icon
+            if(item['other']){
+                self.startdata.value="cd "+item['paths']+" && nohup "+interpreter+" "+item['filename']+" "+item['other']+"  > "+item['paths']+"/"+interpreter+".log 2>&1 &"
+            }else{
+                self.startdata.value="cd "+item['paths']+" && nohup "+interpreter+" "+item['filename']+" > "+item['paths']+"/"+interpreter+".log 2>&1 &"
+            }
+			self.post("/index/index/setup/addstart",self.startdata,"请稍后...").then(function(res){
+				self.$notify({type: 'success',message: '加入成功'}); return
+			})
+        },
+        restart:function(item,types){
+            var self=this
+            if(types=='restart'){
+                self.post("/index/index/setup/restart/stop",item).then(function(res){
+                    item.status=0
+                    self.post("/index/index/setup/restart/start",item,"启动中...").then(function(res){
+                        item.status=1
+                        self.$notify({type: 'success',message: '重启成功'}); return
+                    })
+                })
+            }else{
+                self.post("/index/index/setup/restart/"+types,item,"请稍后...").then(function(res){
+                    if(types=='stop'){
+                        item.status=0
+                    }else{
+                        item.status=1
+                    }
+                    self.$notify({type: 'success',message: '成功'}); return
+                })
+            }
+        },
+        deletes:function(id){
+			self=this
+            self.$dialog.confirm({
+                title: '删除提醒',
+                message: '此操作将永久删除该记录, 是否继续?',
+            }).then(function(){
+                self.delete("/index/index/setup/delpythonrun/"+id,null,"正在删除中...").then(function(res){
+                    self.data.pagenow=1
+                    self.getlist()
+                    self.$notify({type: 'success',message: '选中记录已删除!'});
+                })
+            }).catch(function(){});
+		},
+        xyygetlist:function(){//下一页
+            var self=this;
+            self.data.pagenow+=1
+            self.getlist()
+        },
+        ssgetlist:function(){//搜索
+            var self=this;
+            self.data.pagenow=1
+            self.getlist()
+        },
+        getlist:function(){
+            self=this
+            self.status=1
+			self.get("/index/index/setup/pythonrulists",{'kw':self.kw}).then(function(res){
+				self.data.count=res.data.count
+                self.data.pagecount=res.data.pagecount
+                self.data.pagenow=res.data.pagenow
+                self.data.pagesize=res.data.pagesize
+                if(self.data.pagenow==1){
+                    self.data.lists=[]
+                }
+                for (var i=0;i<res.data.lists.length;i++){
+                    self.data.lists.push(res.data.lists[i])
+                }
+                self.status=0
+			})
+        },
+    }
+ });
+  </script>
+</body>
+</html>

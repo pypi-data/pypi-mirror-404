@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<html>
+<head>
+<meta charset="utf-8" />
+<title>任务</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+<meta name="HandheldFriendly" content="true"/>
+<meta name="MobileOptimized" content="320"/>
+<%include file="/app/common/html/include/static.html"/>
+</head>
+<style>
+*{padding:0px;margin:0px}
+.el-header, .el-footer {
+    background-color: #B3C0D1;
+    line-height: 60px;
+    padding:0px;
+    }
+.kcws-side-scroll::-webkit-scrollbar{width:0px}
+</style>
+<body>
+<div id="app">
+        <div style="margin:1px auto;width:100%">
+            <el-table :data="data.lists" :height="winheight-61">
+                <!--<el-table-column fixed prop="id" label="" width="10"></el-table-column>-->
+                <el-table-column prop="title" label="任务名称" width="300">
+                    <template slot-scope="scope">
+                        {{scope.row.title}}
+                    </template>
+                </el-table-column>
+                <el-table-column width="420" label="进度">
+                    <template slot-scope="scope">
+                        
+                        <div v-if="scope.row.describes!='后台任务脚本'" style="float:left">
+                            <el-progress style="width:200px;" :text-inside="true" :stroke-width="20" :percentage="scope.row.start" status="success"></el-progress>
+                        </div>
+                        <div style="float:left;margin-left:15px;">
+                            <span v-if="scope.row.endtime">
+                                <el-tag v-if="parseInt(scope.row.start)>=100" type="success" size="mini">
+                                    用时
+                                    <span v-if="scope.row.endtime-scope.row.addtime<60">{{parseInt(scope.row.endtime-scope.row.addtime)}}秒钟</span>
+                                    <span v-else>{{parseInt((scope.row.endtime-scope.row.addtime)/60)}}分钟</span>
+                                    完成{{scope.row.start}}%
+                                </el-tag>
+                                <el-tag v-else type="danger" size="mini">
+                                    用时
+                                    <span v-if="scope.row.endtime-scope.row.addtime<60">{{parseInt(scope.row.endtime-scope.row.addtime)}}秒钟</span>
+                                    <span v-else>{{parseInt((scope.row.endtime-scope.row.addtime)/60)}}分钟</span>
+                                    完成{{scope.row.start}}%
+                                </el-tag>
+                            </span>
+                            <span v-else>
+                                <span v-if="parseFloat(scope.row.starts)">
+                                    预计<el-tag size="mini" effect="dark">{{returndate(parseInt((100-scope.row.start)/parseFloat(parseFloat(scope.row.starts).toFixed(4))))}}</el-tag>后完成
+                                </span>
+                                <el-tag v-else-if="scope.row.code==2" size="mini" type="warning">排队中</el-tag>
+                                <span v-else-if="scope.row.code==3">
+                                    <el-tag v-if="scope.row.describes!='后台任务脚本'" size="mini"><i class="el-icon-loading"></i>正在执行...</el-tag>
+                                    <span v-else>
+                                        <i class="fa fa-play" style="color:#67C23A;"></i>后台任务脚本 运行中
+                                    </span>
+                                </span>
+                            </span>
+                        </div>
+                    </template>
+                </el-table-column>
+                <el-table-column prop="endtime" label="添加时间" width="150">
+                    <template slot-scope="scope">
+                        {{time_date(scope.row.addtime)}}
+                    </template>
+                </el-table-column>
+                <el-table-column prop="msg" label="执行明细">
+                    <template slot-scope="scope">
+                        <el-popover placement="left-start" width="600" trigger="hover">
+                            <div :style="'max-height:'+(winheight-200)+'px;overflow-y:auto;'">
+                                <el-descriptions class="margin-top" title="执行明细" :column="1" border>
+                                    <el-descriptions-item label="任务名称"><div style="width:400px">{{scope.row.title}}</div></el-descriptions-item>
+                                    <el-descriptions-item label="任务描述">
+                                        <div style="width:400px">
+                                            <span v-if="scope.row.describes" v-html="scope.row.describes"></span>
+                                            <el-tag v-else type="success" size="mini">无</el-tag>
+                                        </div>
+                                    </el-descriptions-item>
+                                    <el-descriptions-item label="异常">
+                                        <div style="width:400px">
+                                            <span v-if="scope.row.error" v-html="scope.row.error"></span>
+                                            <el-tag v-else type="success" size="mini">无</el-tag>
+                                        </div>
+                                    </el-descriptions-item>
+                                    <el-descriptions-item label="时间">
+                                        <div style="width:400px">
+                                            <span v-if="scope.row.endtime">
+                                                从
+                                                <el-tag type="success" size="mini">{{time_date(scope.row.addtime)}}</el-tag> 到 <el-tag size="mini" type="success">{{time_date(scope.row.endtime)}}</el-tag> 结束
+                                            </span>
+                                            <span v-else type="warning">
+                                                <el-tag size="mini" type="warning">{{time_date(scope.row.addtime)}}添加</el-tag>
+                                            </span>
+                                        </div>
+                                    </el-descriptions-item>
+                                    <el-descriptions-item label="状态">
+                                        <div style="width:400px">
+                                            <el-tag v-if="scope.row.code==1" size="mini" type="danger">执行结束</el-tag>
+                                            <el-tag v-else-if="scope.row.code==2" size="mini" type="warning"><i class="el-icon-loading"></i>排队中</el-tag>
+                                            <el-tag v-else-if="scope.row.code==3" size="mini"><i class="el-icon-loading"></i>进行中...</el-tag>
+                                            <el-tag v-else-if="scope.row.code==4" size="mini" type="success">执行完成</el-tag>
+                                        </div>
+                                    </el-descriptions-item>
+                                    <el-descriptions-item v-if="!scope.row.jsonmsg" label="任务明细">
+                                        <div style="width:400px">
+                                            <span v-if="scope.row.msg" v-html="scope.row.msg"></span>
+                                            <el-tag v-else type="success" size="mini">无</el-tag>
+                                        </div>
+                                    </el-descriptions-item>
+                                </el-descriptions>
+                                <div v-if="scope.row.jsonmsg">
+                                    <el-descriptions :column="1" border style="margin-top:20px;" title="任务明细">
+                                        <el-descriptions-item v-if="scope.row.jsonmsg.contents.pic" label="图标"><div style="width:500px"><img :src="scope.row.jsonmsg.contents.pic" style="height:40px;"></div></el-descriptions-item>
+                                        <el-descriptions-item label="名称"><div style="width:500px">{{scope.row.jsonmsg.contents.title}}</div></el-descriptions-item>
+                                        <el-descriptions-item label="描述"><div style="width:500px">{{scope.row.jsonmsg.contents.descs}}</div></el-descriptions-item>
+                                    </el-descriptions>
+                                    <el-descriptions :column="1" border style="margin-top:2px;">
+                                        <el-descriptions-item v-for="(item,index) in scope.row.jsonmsg.contents.lists" :label="item.key"><div>{{item.value}}</div></el-descriptions-item>
+                                    </el-descriptions>
+                                </div>
+                            </div>
+                            <div v-if="scope.row.msg" slot="reference">
+                                <el-tag v-if="scope.row.jsonmsg" type="info" size="mini">
+                                    <img :src="scope.row.jsonmsg.contents.pic" style="height:20px;float:left">
+                                    {{scope.row.jsonmsg.contents.title}} {{scope.row.jsonmsg.contents.descs}}
+                                    <span v-for="(item,index) in scope.row.jsonmsg.contents.lists">
+                                        ，{{item.key}}:{{item.value}}
+                                    </span>
+                                </el-tag>
+                                <el-tag v-else type="info" size="mini">{{scope.row.msg}}</el-tag>
+                            </div>
+                            <div v-else slot="reference">
+                                <el-tag v-if="scope.row.error" type="info" size="mini">{{scope.row.error}}</el-tag>
+                                <el-tag v-else-if="scope.row.describes" type="info" size="mini">{{scope.row.describes}}</el-tag>
+                                <el-tag v-else type="info" size="mini">任务详细</el-tag>
+                            </div>
+                        </el-popover>
+                    </template> 
+                </el-table-column>
+            </el-table>
+            <div class="block" style="background:#FFF;margin-top:4px;height:36px;padding-top:4px">
+                <span style="float:left;margin-top:2px">&nbsp&nbsp&nbsp<el-button size="mini" type="danger" @click="delhist" icon="el-icon-delete">清除任务历史记录</el-button>&nbsp</span>
+                <el-pagination
+                    @size-change="handleSizeChange" @current-change="handleCurrentChange"
+                    :current-page="1" :page-size="data.pagesize"
+                    layout="total, sizes, prev, pager, next, jumper" :total="data.count">
+                </el-pagination>
+            </div>
+        </div>
+    
+
+    
+</div>
+</body>
+<script>
+new Vue({
+    el: '#app',
+    data:{
+        winheight:document.documentElement.clientHeight,
+        winwidth:document.documentElement.clientWidth,
+        data:{
+            'count':0,
+            'pagenow':1,
+            'lists':[]
+        },
+        kw:null
+    },
+    mounted:function(){
+        self=this
+        window.onresize = function(){
+            self.winheight=document.documentElement.clientHeight
+            self.winwidth=document.documentElement.clientWidth
+        }
+        self.obtain()
+    },
+    methods: {
+        delhist:function(){
+            var self=this;
+            self.delete("/index/index/task/delhist").then(function(res){
+                self.$message({type: 'success',message: '已删除'});
+                setTimeout(function(){
+                    location.reload();
+                },2000)
+            })
+        },
+        taslstatus1:function(item,v){
+            var self=this
+            item.start+=parseFloat(item.starts)/10
+            item.start=parseFloat(item.start.toFixed(3))
+            if(item.start>100){
+                item.start=100
+                self.taslstatus(item,0)
+            }else if(v<90){
+                setTimeout(function(){
+                    self.taslstatus1(item,v+1)
+                },100)
+            }
+        },
+        taslstatus:function(item,t){
+            var self=this
+            if(!t){
+                t=10000
+            }
+            if(item.code==2 || item.code==3){
+                setTimeout(function(){
+                    self.get("/index/index/task/taskstatus/"+item.taskid).then(function(res){
+                        item.code=res.data.code
+                        item.msg=res.data.msg
+                        item.error=res.data.error
+                        item.describes=res.data.describes
+                        item.endtime=res.data.endtime
+                        item.start=res.data.start
+                        try {
+                            item.jsonmsg=eval('(' + res.data.msg + ')');
+                        } catch(e) {
+                            item.jsonmsg=''
+                        }
+                        if(res.data.code==3 && parseFloat(item.starts)>0){
+                            self.taslstatus1(item,0)
+                        }
+                        if(res.data.code==2 || res.data.code==3){
+                            self.taslstatus(item)
+                        }
+                    })
+                },t);
+            }
+        },
+        obtain:function(){
+			var self=this
+			self.get("/index/index/task/task",{pagenow:self.data.pagenow,pagesize:14},'获取中...').then(function(res){
+                self.data=res.data
+                for(var i=0;i<res.data.lists.length;i++){
+                    try {
+                        self.data.lists[i].jsonmsg=eval('(' + self.data.lists[i].msg + ')');
+                    } catch(e) {
+                        self.data.lists[i].jsonmsg=''
+                    }
+                    if(res.data.lists[i].code==2){
+                        self.taslstatus(res.data.lists[i],10000)
+                    }else if(res.data.lists[i].code==3){
+                        self.taslstatus(res.data.lists[i],10)
+                    }
+                }
+			})
+		},
+		handleSizeChange:function(val) {
+            self=this
+			self.data.pagesize=val
+			self.obtain()
+		},
+		handleCurrentChange:function(val) {
+			self.data.pagenow=val
+			self.obtain()
+		}
+    }
+});
+</script>
+</html>

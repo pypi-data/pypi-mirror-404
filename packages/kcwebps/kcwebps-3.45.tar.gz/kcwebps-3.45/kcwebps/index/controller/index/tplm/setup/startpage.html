@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+<meta charset="utf-8" />
+<title>kcwebs云管</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+<meta name="HandheldFriendly" content="true"/>
+<meta name="MobileOptimized" content="320"/>
+<%include file="../include/static.html"/>
+</head>
+<body>
+<div id="app">
+        <van-swipe-cell v-for="(item,index) in data.lists" style="border-top:1px solid #cccccc">
+            <div class="goods-card van-card" :style="'width:'+(winwidth)+'px;overflow: hidden;'">
+                <div class="van-card__header">
+                    <a class="van-card__thumb">
+                        <div class="van-image" style="width: 100%; height: 100%;">
+                            <img v-if="item.icon" :src="item.icon" class="van-image__img" style="object-fit: cover;">
+                            <img v-else src="https://img.kwebapp.cn/icon/user1.png" class="van-image__img" style="object-fit: cover;">
+                        </div>
+                    </a>
+                    <div class="van-card__content">
+                        <div>
+                            <div class="van-card__title van-multi-ellipsis--l2">{{item.name}}</div>
+                            <div class="van-card__desc van-ellipsis">执行内容：{{item.value}}</div>
+                        </div>
+                        <div class="van-card__bottom">
+                            <div class="van-card__price">
+                                <div>
+                                    <span class="van-card__price-currency">{{time_date(item.updtime)}} 更新</span>
+                                </div>
+                            </div>
+                            <div class="van-card__num"><span class="van-card__price-decimal">{{time_date(item.addtime)}} 添加</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <template #right>
+                <van-button square type="danger" @click="delstart(item)" text="删除" style="float:left;height:100%"></van-button>
+            </template>
+        </van-swipe-cell>
+        <div v-if="data.count <= 0" style="padding-top:200px;">
+            <van-divider>暂无数据</van-divider>
+        </div>
+        <div style="text-align:right;position: fixed;bottom: 0;width:100%">
+            <van-button @click="admindialog={status:true,title:'添加启动项'};admin={value:'',name:'',types:'shell',icon:''}" type="primary" size="small">添加启动项</van-button>
+        </div>
+        <van-action-sheet v-model="admindialog.status" :title="admindialog.title">
+                <van-cell-group>
+                    <van-field v-model="admin.icon" label="图标" placeholder="图标">
+                        <template #button>
+                            <van-button @click="win.show=true;win.url='/intapp/imgmt?select=1'" size="small" type="primary">选择图片</van-button>
+                        </template>
+                    </van-field>
+                    <van-field v-model="admin.name" label="名字" placeholder="名字"></van-field>
+                    <van-field v-model="admin.value" label="脚本内容" placeholder="脚本内容"></van-field>
+                </van-cell-group>
+                <van-button @click="addstart()" type="primary" block>添加</van-button>
+        </van-action-sheet>
+<van-action-sheet v-model="win.show" :title="win.title">
+    <div :style="'height:'+(winheight-120)+'px;overflow-y: scroll;'">
+        <iframe :src="win.url" id="iframe" style="margin:0px;padding:0px;overflow:hidden;" frameborder="0" border="0" marginwidth="0" marginheight="0" scrolling="yes" allowtransparency="no" width="100%" v-bind:height="(winheight-124)+'px'"></iframe>
+    </div>
+</van-action-sheet>
+</div>
+<script>
+function setimgmt(domain,paths,item){
+    mysetimgmt(domain,paths,item)
+}
+ var VU=new Vue({
+    el: '#app',
+    data:{
+        kcwebsimg:"${config.domain['kcwebsimg']}",
+        winheight:document.documentElement.clientHeight,winwidth:document.documentElement.clientWidth,
+        admin:{value:'',name:'',types:'',icon:''},admindialog:{status:false,title:'添加启动项'},
+        data:{
+            'count':0,
+            'pagenow':1,
+            'lists':[]
+        },
+        win:{show:false,title:'',url:''},
+    },
+    mounted:function(){
+        self=this
+        window.onresize = function(){
+            self.winheight=document.documentElement.clientHeight
+            self.winwidth=document.documentElement.clientWidth
+        }
+        window.mysetimgmt = this.mysetimgmt;
+        self.obtain()
+        try{
+            parent.window.setheader({height:49,type:'lefturl',title:'开机启动项',icon:'https://img.kwebapp.cn/icon/mb.png',
+                lefturl:{text:'系统设置',url:'/index/index/setup'}
+            })
+        }catch(exception){}
+    },
+    methods: {
+        mysetimgmt:function(domain,paths,item){
+            this.win.show=false
+            if (item.suffix=='jpg' || item.suffix=='JPG' || item.suffix=='png' || item.suffix=='PNG' || item.suffix=='gif' || item.suffix=='GIF'){
+                self.admin.icon=domain+paths+item.name
+            }else{
+                self.$notify({type: 'warning',message: '请选择图片文件'});
+            }
+        },
+        gethtml:function(url,title,icon){
+            parent.window.topgethtml(url,title,icon)
+        },
+        obtain:function(){
+			var self=this
+			self.get("/index/index/setup/startlist",{pagenow:self.data.pagenow},'获取中...').then(function(res){
+                self.data=res.data
+			})
+		},addstart:function(){
+			var self=this
+			self.post("/index/index/setup/addstart",self.admin,"请稍后...").then(function(res){
+                self.admindialog.status=false
+				self.obtain()
+			}).catch(function(err){
+            })
+		},delstart:function(item){
+            var self=this
+            if(item.admin_id==0){
+                self.$dialog.confirm({
+                    title: '警告',
+                    message: '这是系统添加的启动项，确定要删除',
+                }).then(function(){
+                    self.delete("/index/index/setup/delstart",item,"请稍后...").then(function(res){
+                        self.obtain()
+                    })
+                }).catch(function(){});
+            }else{
+                self.delete("/index/index/setup/delstart",item,"请稍后...").then(function(res){
+                    self.obtain()
+                })
+            }
+        },
+    }
+ });
+  </script>
+</body>
+</html>

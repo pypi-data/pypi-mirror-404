@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<html>
+
+<head>
+    <meta charset="utf-8" />
+    <title>kcwebps</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no" />
+    <meta name="HandheldFriendly" content="true" />
+    <meta name="MobileOptimized" content="320" />
+    <%include file="/app/common/html/include/static.html"/>
+</head>
+<style>
+*{padding:0px;margin:0px}
+.el-header, .el-footer {
+    background-color: #B3C0D1;
+    line-height: 60px;
+    padding:0px;
+    }
+.kcws-side-scroll::-webkit-scrollbar{width:0px}
+</style>
+<body>
+<div id="app">
+    <div style="margin:10px auto;width:99%">
+		<el-col :span="24">
+			<el-card shadow="always">
+				<el-form ref="form" :model="form" label-width="200px" size="small" style="width:100%">
+					<el-form-item label="任务名称">
+						<el-input v-model="form.name"></el-input>
+					</el-form-item>
+					<el-form-item label="任务类型">
+						<el-select v-model="form.types" placeholder="" @change="change">
+						<el-option label="shell脚本" value="shell"></el-option>
+						<el-option label="备份文稿" value="docgao"></el-option>
+						<el-option label="访问URL" value="openurl"></el-option>
+						<el-option label="备份mysql5.6数据" value="backupmysql5.6"></el-option>
+						<el-option label="备份mysql5.7数据" value="backupmysql5.7"></el-option>
+						<el-option label="备份mysql8.0数据" value="backupmysql8.0"></el-option>
+						<el-option label="重启php-fpm" value="restart-php-fpm"></el-option>
+						</el-select>
+					</el-form-item>
+					<el-form-item v-if="form.types=='shell'" label="脚本内容">
+						<el-input type="textarea" :rows="4" v-model="form.value"></el-input>
+					</el-form-item>
+					<el-form-item v-if="form.types=='docgao'" label="文稿备份脚本">
+						<el-input v-model="form.value" disabled></el-input>
+						<div>同时备份到阿里云对象存储OSS <el-switch @change="OSSchange" v-model="form.oss" active-color="#13ce66" inactive-color="#CCC"></el-switch>
+						<span style="color:red" v-if="form.oss">需提前在系统配置中保存阿里云配置信息，已配置请忽略</span>
+						</div>
+					</el-form-item>
+					<el-form-item v-if="form.types=='backupmysql5.6'" label="备份mysql5.6">
+						<el-input v-model="form.value" disabled></el-input>
+						<span style="color:red">温馨提示：该功能需要您提前在插件下的<el-button type="text" @click="openurl('/intapp/soft?kw=mysql')">“软件管理”</el-button>中安装mysql5.6</span>
+						<div>同时备份到阿里云对象存储OSS <el-switch @change="OSSchange" v-model="form.oss" active-color="#13ce66" inactive-color="#CCC"></el-switch>
+							<span style="color:red" v-if="form.oss">需提前在系统配置中保存阿里云配置信息，已配置请忽略</span>
+						</div>
+					</el-form-item>
+					<el-form-item v-else-if="form.types=='backupmysql5.7'" label="备份mysql5.7">
+						<el-input v-model="form.value" disabled></el-input>
+						<span style="color:red">温馨提示：该功能需要您提前在插件下的<el-button type="text" @click="openurl('/intapp/soft?kw=mysql')">“软件管理”</el-button>中安装mysql5.7</span>
+						<div>同时备份到阿里云对象存储OSS <el-switch @change="OSSchange" v-model="form.oss" active-color="#13ce66" inactive-color="#CCC"></el-switch>
+							<span style="color:red" v-if="form.oss">需提前在系统配置中保存阿里云配置信息，已配置请忽略</span>
+						
+						</div>
+					</el-form-item>
+					<el-form-item v-else-if="form.types=='backupmysql8.0'" label="备份mysql8.0">
+						<el-input v-model="form.value" disabled></el-input>
+						<span style="color:red">温馨提示：该功能需要您提前在插件下的<el-button type="text" @click="openurl('/intapp/soft?kw=mysql')">“软件管理”</el-button>中安装mysql8.0</span>
+						<div>同时备份到阿里云对象存储OSS <el-switch @change="OSSchange" v-model="form.oss" active-color="#13ce66" inactive-color="#CCC"></el-switch>
+							<span style="color:red" v-if="form.oss">需提前在系统配置中保存阿里云配置信息，已配置请忽略</span>
+						
+						</div>
+					</el-form-item>
+					<el-form-item v-else-if="form.types=='openurl'" label="URL地址">
+						<el-input v-model="form.value"></el-input>
+					</el-form-item>
+					<el-form-item v-else-if="form.types=='restart-php-fpm'" label="php版本">
+						<!-- <el-input v-model="form.value"></el-input> -->
+						<el-select v-model="form.value" placeholder="请选择">
+							<el-option key="php7.4" label="php7.4" value="php7.4"></el-option>
+							<el-option key="php7.3" label="php7.3" value="php7.3"></el-option>
+							<el-option key="php7.2" label="php7.2" value="php7.2"></el-option>
+							<el-option key="php7.1" label="php7.1" value="php7.1"></el-option>
+							<el-option key="php7.0" label="php7.0" value="php7.0"></el-option>
+							<el-option key="php5.6" label="php5.6" value="php5.6"></el-option>
+						</el-select>
+						<span style="color:red">温馨提示：该功能需要您提前在插件下的<el-button type="text" @click="openurl('/intapp/soft?kw=php')">“软件管理”</el-button>中安装对应版本php</span>
+					</el-form-item>
+					<el-form-item label="执行周期">
+						<el-select v-model="form.cycle" placeholder="" style="width:100px;float:left;background:#F5F7FA;border:1px solid #CCC">
+						<el-option label="每分钟" value="minute"></el-option>
+						<el-option label="每小时" value="hour"></el-option>
+						<el-option label="每天" value="day"></el-option>
+						<el-option label="每周" value="day_of_week"></el-option>
+						<el-option label="每月" value="month"></el-option>
+						<el-option label="每年" value="year"></el-option>
+						<el-option label="固定时间" value="fixed"></el-option>
+						<el-option label="N/秒" value="NS"></el-option>
+						<el-option label="N/分钟" value="NM"></el-option>
+						<el-option label="N/小时" value="NH"></el-option>
+						<el-option label="N/天" value="ND"></el-option>
+						</el-select>
+						<span v-if="form.cycle=='minute'" style="float:left;background:#F5F7FA;border:1px solid #CCC">
+							<el-input-number style="width:82px" v-model="form.second" controls-position="right" :min="00" :max="59">
+							</el-input-number> 秒
+						</span>
+						<span v-else-if="form.cycle=='hour'" style="float:left;background:#F5F7FA;border:1px solid #CCC">
+							<el-input-number style="width:82px" v-model="form.minute" controls-position="right" :min="00" :max="59">
+							</el-input-number> 分
+							<el-input-number style="width:82px" v-model="form.second" controls-position="right" :min="00" :max="59">
+							</el-input-number> 秒
+						</span>
+						<span v-else-if="form.cycle=='day'" style="float:left;background:#F5F7FA;border:1px solid #CCC">
+							<el-input-number style="width:82px" v-model="form.hour" controls-position="right" :min="00" :max="23">
+							</el-input-number> 点
+							<el-input-number style="width:82px" v-model="form.minute" controls-position="right" :min="00" :max="59">
+							</el-input-number> 分
+							<el-input-number style="width:82px" v-model="form.second" controls-position="right" :min="00" :max="59">
+							</el-input-number> 秒
+						</span>
+						<span v-else-if="form.cycle=='day_of_week'" style="float:left;background:#F5F7FA;border:1px solid #CCC">
+							<el-select v-model="form.day_of_week" placeholder="" style="width:100px">
+								<el-option label="星期一" value="Mon"></el-option>
+								<el-option label="星期二" value="Tues"></el-option>
+								<el-option label="星期三" value="Wednes"></el-option>
+								<el-option label="星期四" value="Thurs"></el-option>
+								<el-option label="星期五" value="Fri"></el-option>
+								<el-option label="星期六" value="Satur"></el-option>
+								<el-option label="星期日" value="Sun"></el-option>
+							</el-select>
+							<el-input-number style="width:82px" v-model="form.hour" controls-position="right" :min="00" :max="23">
+							</el-input-number> 点
+							<el-input-number style="width:82px" v-model="form.minute" controls-position="right" :min="00" :max="59">
+							</el-input-number> 分
+							<el-input-number style="width:82px" v-model="form.second" controls-position="right" :min="00" :max="59">
+							</el-input-number> 秒
+						</span>
+						<span v-else-if="form.cycle=='month'" style="float:left;background:#F5F7FA;border:1px solid #CCC">
+							<el-input-number style="width:82px" v-model="form.day" controls-position="right" :min="01" :max="30">
+							</el-input-number> 号
+							<el-input-number style="width:82px" v-model="form.hour" controls-position="right" :min="00" :max="23">
+							</el-input-number> 点
+							<el-input-number style="width:82px" v-model="form.minute" controls-position="right" :min="00" :max="59">
+							</el-input-number> 分
+							<el-input-number style="width:82px" v-model="form.second" controls-position="right" :min="00" :max="59">
+							</el-input-number> 秒
+						</span>
+						<span v-else-if="form.cycle=='year'" style="float:left;background:#F5F7FA;border:1px solid #CCC">
+							<el-input-number style="width:82px" v-model="form.month" controls-position="right" :min="01" :max="12">
+							</el-input-number> 月
+							<el-input-number style="width:82px" v-model="form.day" controls-position="right" :min="01" :max="30">
+							</el-input-number> 号
+							<el-input-number style="width:82px" v-model="form.hour" controls-position="right" :min="00" :max="23">
+							</el-input-number> 点
+							<el-input-number style="width:82px" v-model="form.minute" controls-position="right" :min="00" :max="59">
+							</el-input-number> 分
+							<el-input-number style="width:82px" v-model="form.second" controls-position="right" :min="00" :max="59">
+							</el-input-number> 秒
+						</span>
+						<span v-else-if="form.cycle=='fixed'" style="float:left;background:#F5F7FA;border:1px solid #CCC">
+							<el-input-number style="width:102px" v-model="form.year" controls-position="right" :min="2020" :max="2120">
+							</el-input-number> 年
+							<el-input-number style="width:82px" v-model="form.month" controls-position="right" :min="01" :max="12">
+							</el-input-number> 月
+							<el-input-number style="width:82px" v-model="form.day" controls-position="right" :min="01" :max="30">
+							</el-input-number> 号
+							<el-input-number style="width:82px" v-model="form.hour" controls-position="right" :min="00" :max="23">
+							</el-input-number> 点
+							<el-input-number style="width:82px" v-model="form.minute" controls-position="right" :min="00" :max="59">
+							</el-input-number> 分
+							<el-input-number style="width:82px" v-model="form.second" controls-position="right" :min="00" :max="59">
+							</el-input-number> 秒 
+						</span>
+						<span v-else-if="form.cycle=='NS'" style="float:left;background:#F5F7FA;border:1px solid #CCC;margin-left:10px">
+							 每隔<el-input-number style="width:120px" v-model="form.second" controls-position="right" :min="5" :max="86400"></el-input-number> 秒 执行
+						</span>
+						<span v-else-if="form.cycle=='NM'" style="float:left;background:#F5F7FA;border:1px solid #CCC;margin-left:10px">
+							 每隔<el-input-number style="width:100px" v-model="form.minute" controls-position="right" :min="1" :max="1440"></el-input-number> 分钟 执行
+						</span>
+						<span v-else-if="form.cycle=='NH'" style="float:left;background:#F5F7FA;border:1px solid #CCC;margin-left:10px">
+							 每隔<el-input-number style="width:100px" v-model="form.hour" controls-position="right" :min="1" :max="744"></el-input-number> 小时 执行
+						</span>
+						<span v-else-if="form.cycle=='ND'" style="float:left;background:#F5F7FA;border:1px solid #CCC;margin-left:10px">
+							 每隔<el-input-number style="width:100px" v-model="form.day" controls-position="right" :min="1" :max="365"></el-input-number> 天 执行
+						</span>
+					</el-form-item>
+					<el-form-item>
+						<el-button type="primary" @click="add">添加</el-button>
+					</el-form-item>
+				</el-form>
+			</el-card>
+		</el-col>
+	</div>
+	<div style="margin:10px auto;width:99%">
+		<el-col :span="24">
+			<el-card shadow="always">
+			<el-table :data="data.lists" @selection-change="handleSelectionChange">
+                <el-table-column type="selection" width="55"></el-table-column>
+                <el-table-column prop="name" label="任务名称" width="180"></el-table-column>
+				<el-table-column prop="" label="执行周期">
+                    <template slot-scope="scope">
+						<span v-if="scope.row.cycle=='minute'">每分钟的第 <span style="color:#67C23A">{{scope.row.second}}秒</span></span>
+						<span v-else-if="scope.row.cycle=='hour'">每小时的第 <span style="color:#67C23A">{{scope.row.minute}}分{{scope.row.second}}秒</span></span>
+						<span v-else-if="scope.row.cycle=='day'">每天 <span style="color:#67C23A">{{scope.row.hour}}点{{scope.row.minute}}分{{scope.row.second}}秒</span></span>
+						<span v-else-if="scope.row.cycle=='day_of_week'">每周 <span style="color:#67C23A">
+							<span v-if="scope.row.day_of_week=='Mon'">星期一</span>
+							<span v-if="scope.row.day_of_week=='Tues'">星期二</span>
+							<span v-if="scope.row.day_of_week=='Wednes'">星期三</span>
+							<span v-if="scope.row.day_of_week=='Thurs'">星期四</span>
+							<span v-if="scope.row.day_of_week=='Fri'">星期五</span>
+							<span v-if="scope.row.day_of_week=='Satur'">星期六</span>
+							<span v-if="scope.row.day_of_week=='Sun'">星期日</span>
+							{{scope.row.hour}}点{{scope.row.minute}}分{{scope.row.second}}秒</span></span>
+						<span v-else-if="scope.row.cycle=='month'">每月 <span style="color:#67C23A">{{scope.row.day}}号{{scope.row.hour}}点{{scope.row.minute}}分{{scope.row.second}}秒</span></span>
+						<span v-else-if="scope.row.cycle=='year'">每年 <span style="color:#67C23A">{{scope.row.month}}月{{scope.row.day}}号{{scope.row.hour}}点{{scope.row.minute}}分{{scope.row.second}}秒</span></span>
+						<span v-else-if="scope.row.cycle=='fixed'">计划在 <span style="color:#67C23A">{{scope.row.year}}年{{scope.row.month}}月{{scope.row.day}}号{{scope.row.hour}}点{{scope.row.minute}}分{{scope.row.second}}秒</span></span>
+						<span v-else-if="scope.row.cycle=='NS'">每隔 <span style="color:#67C23A">{{scope.row.second}}秒</span></span>
+						<span v-else-if="scope.row.cycle=='NM'">每隔 <span style="color:#67C23A">{{scope.row.minute}}分钟</span></span>
+						<span v-else-if="scope.row.cycle=='NH'">每隔 <span style="color:#67C23A">{{scope.row.hour}}小时</span></span>
+						<span v-else-if="scope.row.cycle=='ND'">每隔 <span style="color:#67C23A">{{scope.row.day}}天</span></span>
+
+						<span v-if="scope.row.types=='shell'">执行命令：<span style="color:#409EFF">{{scope.row.value}}</span><span></span></span>
+						<span v-else-if="scope.row.types=='docgao'">备份<span style="color:#409EFF">系统文稿数据</span><span v-if="scope.row.oss=='1'" >，同时上传到阿里云对象存储oss</span></span>
+						<span v-else-if="scope.row.types=='openurl'">访问URL：<span style="color:#409EFF">{{scope.row.value}}</span></span>
+						<span v-else-if="scope.row.types=='restart-php-fpm'">重启php-fpm,版本：<span style="color:#409EFF">{{scope.row.value}}</span></span>
+						<span v-else-if="scope.row.types=='backupmysql5.6'">备份mysql5.6数据库 <span style="color:#409EFF"></span><span v-if="scope.row.oss=='1'" >，同时上传到阿里云对象存储oss</span></span>
+						<span v-else-if="scope.row.types=='backupmysql5.7'">备份mysql5.7数据库 <span style="color:#409EFF"></span><span v-if="scope.row.oss=='1'" >，同时上传到阿里云对象存储oss</span></span>
+						<span v-else-if="scope.row.types=='backupmysql8.0'">备份mysql8.0数据库 <span style="color:#409EFF"></span><span v-if="scope.row.oss=='1'" >，同时上传到阿里云对象存储oss</span></span>
+                    </template>
+				</el-table-column>
+				<el-table-column prop="addtime" label="操作" width="200">
+					<template slot-scope="scope">
+						<span v-if="scope.row.types=='shell'" @click="copy(scope.row.value)" style="cursor:pointer">复制命令</span>
+						<span v-if="scope.row.types=='openurl'" @click="copy(scope.row.value)" style="cursor:pointer">复制URL</span>
+						<span v-if="scope.row.types=='backupmysql5.6'" @click="copy(scope.row.value)" style="cursor:pointer">复制命令</span>
+						<span v-if="scope.row.types=='backupmysql5.7'" @click="copy(scope.row.value)" style="cursor:pointer">复制命令</span>
+						<span v-if="scope.row.types=='backupmysql8.0'" @click="copy(scope.row.value)" style="cursor:pointer">复制命令</span>
+						<span v-if="scope.row.types=='docgao'" @click="copy(scope.row.value)" style="cursor:pointer">复制命令</span>
+						<span @click="planstatus=true;getlog(scope.row.iden)" style="cursor:pointer">最后一次日志</span>
+					</template>
+				</el-table-column>
+				<el-table-column prop="addtime" label="添加时间" width="100">
+                    <template slot-scope="scope">
+                        <span v-html="time_date(scope.row.addtime)"></span>
+                    </template>
+                </el-table-column>
+            </el-table>
+			<div class="block" style="background:#FFF;margin-top:4px;height:36px;padding-top:4px">
+                <span style="float:left;margin-top:2px">&nbsp&nbsp&nbsp<el-button @click=del size="mini" type="danger" icon="el-icon-delete">删除选中</el-button>&nbsp</span>
+                <el-pagination
+                    @size-change="handleSizeChange" @current-change="handleCurrentChange"
+                    :current-page="currentPage" :page-size="data.pagesize"
+                    layout="total, sizes, prev, pager, next, jumper" :total="data.count">
+                </el-pagination>
+            </div>
+			</el-card>
+		</el-col>
+	</div>
+	<el-dialog title="任务日志" :visible.sync="planstatus" width="1000px">
+			<pre :style="'height:'+(winheight-300)+'px;overflow-y:auto;background:#000;color:#FFF;'">{{log}}</pre>
+	</el-dialog>
+</div>
+</body>
+<script>
+var vm = new Vue({
+	el: '#app',
+	data: {
+		winheight:document.documentElement.clientHeight,
+		form:{name:"",types:"shell",value:"",cycle:"minute",year:"2020",month:"06",day:"15",day_of_week:"Mon",hour:"02",minute:"30",second:"30",oss:false},
+		data:{
+			'pagesize':20,
+			'count':0,
+			'pagenow':1,
+			'lists':[]
+		},adminChange:[],
+		mysql57:{},
+		currentPage: 5,
+		planstatus:false,log:'',
+		strconfig:{
+			backmysqlpath:'', //mysql备份目录
+			endpoint:'http://oss-cn-beijing.aliyuncs.com',
+			Bucket:'',
+			access_key_id:'',
+			access_key_secret:''
+		}
+	},
+	mounted:function(){
+		self=this
+		window.onresize = function(){
+			self.winheight=document.documentElement.clientHeight
+		}
+		self.obtain()
+	},
+	methods: {
+		obtain:function(){
+			self=this
+			self.get("/index/index/plan/get",{'pagesize':self.data.pagesize,'pagenow':self.data.pagenow},'获取中...').then(function(res){
+				self.data=res.data
+				if(res.data.strconfig && res.data.strconfig.endpoint){
+					self.strconfig=res.data.strconfig
+				}
+				// self.get("/intapp/soft/index/gettitle/mysql/5.7",null,'获取中...').then(function(res){
+				// 	self.mysql57=res.data
+				// })
+			})
+		},
+		// setconfig:function(path){
+		// 	self=this
+		// 	self.post("/index/index/plan/setconfig/set/"+path,self.strconfig,'保存中...').then(function(res){
+		// 		self.$message({type: 'success',message:res.msg});
+		// 	})
+		// },
+		getlog:function(iden){
+			self=this
+			self.get("/index/index/plan/log/"+iden,null,'获取中...').then(function(res){
+				self.log=res.data
+			})
+		},
+		add:function(){
+			self=this
+			self.post("/index/index/plan/add",self.form,"请稍后...").then(function(res){
+				if (res.code==0){
+					self.$message({type: 'success',message:res.msg});
+					self.obtain()
+				}
+			})
+		},
+		del:function(){
+			self=this
+			if(!self.adminChange.length){
+				self.$message.error('您未选择任何内容');
+			}else{
+				self.$confirm('此操作将永久删除该记录, 是否继续?', '删除提醒', {
+				confirmButtonText: '删除',
+				cancelButtonText: '取消',
+				type: 'warning'
+				}).then(function(){
+					id=[]
+					for(var i=0;i<self.adminChange.length;i++){
+						id.push(self.adminChange[i].id)
+					}
+					self.post("/index/index/plan/delpl",id,"正在删除中...").then(function(res){
+						self.data.pagenow=1
+						self.obtain()
+						self.$message({type: 'success',message:res.msg});
+					})
+				}).catch(function(){});
+			}
+		},
+		handleSelectionChange:function(val) {
+            self=this
+			self.adminChange=val
+		},
+		handleSizeChange:function(val) {
+            self=this
+			self.data.pagesize=val
+			self.obtain()
+		},
+		handleCurrentChange:function(val) {
+			self.data.pagenow=val
+			self.obtain()
+		},
+		openurl:function(url){
+            layer.open({
+                type: 2,title: false,shadeClose: true,shade: 0.8,
+                area: ['80%', '90%'],content:url
+            }); 
+        },
+		change:function(key){
+			if(key=='docgao'){
+				this.form.value="kcwebps index/index/setup/backup --cli"
+				this.form.name="备份文稿"
+			}else if(key=='backupmysql5.6'){
+				this.form.value="kcwebps /intapp/soft/mysql/backups/whole/bankup_all_databases/0/5.6 --cli"
+				this.form.name="备份mysql5.6"
+			}else if(key=='backupmysql5.7'){
+				this.form.value="kcwebps /intapp/soft/mysql/backups/whole/bankup_all_databases/0/5.7 --cli"
+				this.form.name="备份mysql5.7"
+			}else if(key=='backupmysql8.0'){
+				this.form.value="kcwebps /intapp/soft/mysql/backups/whole/bankup_all_databases/0/8.0 --cli"
+				this.form.name="备份mysql8.0"
+			}else{
+				this.form.value=""
+			}
+			this.form.oss=false
+		},
+		OSSchange:function(key){
+			if(this.form.types=='docgao'){
+				if(key){
+					this.form.value="kcwebps index/index/setup/backup/aliyun --cli"
+				}else{
+					this.form.value="kcwebps index/index/setup/backup --cli"
+				}
+			}else if(this.form.types=='backupmysql5.6'){
+				if(key){
+					this.form.value="kcwebps /intapp/soft/mysql/backups/whole/bankup_all_databases/1/5.6 --cli"
+				}else{
+					this.form.value="kcwebps /intapp/soft/mysql/backups/whole/bankup_all_databases/0/5.6 --cli"
+				}
+			}else if(this.form.types=='backupmysql5.7'){
+				if(key){
+					this.form.value="kcwebps /intapp/soft/mysql/backups/whole/bankup_all_databases/1/5.7 --cli"
+				}else{
+					this.form.value="kcwebps /intapp/soft/mysql/backups/whole/bankup_all_databases/0/5.7 --cli"
+				}
+			}else if(this.form.types=='backupmysql8.0'){
+				if(key){
+					this.form.value="kcwebps /intapp/soft/mysql/backups/whole/bankup_all_databases/1/8.0 --cli"
+				}else{
+					this.form.value="kcwebps /intapp/soft/mysql/backups/whole/bankup_all_databases/0/8.0 --cli"
+				}
+			}
+		},
+    }
+})
+</script>
+</html>

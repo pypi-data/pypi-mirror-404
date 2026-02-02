@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<html>
+<head>
+<meta charset="utf-8" />
+<title>kcwebps</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+<meta name="HandheldFriendly" content="true"/>
+<meta name="MobileOptimized" content="320"/>
+<%include file="/app/common/html/include/static.html"/>
+<style>
+*{padding:0px;margin:0px}
+.el-header, .el-footer {background-color: #B3C0D1;line-height: 60px;padding:0px;}
+.kcws-side-scroll::-webkit-scrollbar{width:0px}
+</style>
+</head>
+<body>
+<div id="app">
+    <div style="height:38px;padding-top:0px;background:#FFF;padding-top:5px;margin:4px auto;width:100%">
+        &nbsp&nbsp
+        <el-button-group>
+            <el-input size="mini" style="width:200px;float:left" placeholder="白名单角色名" v-model="kw"></el-input>
+            <el-button size="mini" icon="el-icon-search" @click="data.pagenow=1;getlist()" type="success">搜索</el-button>
+            <el-button size="mini" type="success"  @click="admindialog={status:true,title:'添加白名单角色'},admin={title:'',icon:'',describes:'',roleroute:[]}">添加白名单角色</el-button>
+        </el-button-group>
+    </div>
+    <div style="margin:0 auto;width:100%">
+            <el-table :data="data.lists" :height="winheight-100" @selection-change="handleSelectionChange">
+                <el-table-column fixed type="selection" width="55"></el-table-column>
+                <el-table-column prop="id" label="id" width="100"></el-table-column>
+                <el-table-column prop="name" label="创建人" width="120">
+                    <template slot-scope="scope">
+                        <el-tag v-if="scope.row.admin_id">{{scope.row.name}}</el-tag>
+                        <el-tag v-else type="info">系统</el-tag>
+                    </template>
+                </el-table-column>
+                <el-table-column prop="title" label="角色名" width="120"></el-table-column>
+                <el-table-column prop="describes" label="说明"></el-table-column>
+                <el-table-column prop="updtime" label="更新于" width="100">
+                    <template slot-scope="scope">
+                        <span v-html="time_date(scope.row.updtime)"></span>
+                    </template>
+                </el-table-column>
+                <el-table-column label="操作" width="160">
+                <template slot-scope="scope">
+                    <el-button-group>
+                        <el-button :disabled="(scope.row.types=='system')?true:false" @click="self.admindialog.status=true,self.admin=scope.row;" size="small">编辑</el-button>
+                    </el-button-group>
+                </template>
+                </el-table-column>
+            </el-table>
+            <div class="block" style="background:#FFF;margin-top:4px;height:36px;padding-top:4px">
+                <span style="float:left;margin-top:2px">&nbsp&nbsp&nbsp<el-button size="mini" type="danger" @click="deletes" icon="el-icon-delete">删除选中</el-button>&nbsp</span>
+                <el-pagination background
+                    @size-change="handleSizeChange" @current-change="handleCurrentChange"
+                    :current-page="1" :page-size="data.pagesize"
+                    layout="total, sizes, prev, pager, next, jumper" :total="data.count">
+                </el-pagination>
+            </div>
+    </div>
+    <el-dialog :visible.sync="admindialog.status" width="90%" top="50px">
+        <el-form ref="form" :model="admin" label-width="100px" label-position="right" size="mini">
+        <el-form-item label="角色名">
+            <el-input placeholder="角色名" v-model="admin.title"></el-input>
+        </el-form-item>
+        <el-form-item label="说明">
+            <el-input placeholder="说明" v-model="admin.describes"></el-input>
+        </el-form-item>
+        <div :style="'height:'+(winheight-250)+'px;overflow:hidden;overflow-y: scroll;'" class="kcws-side-scroll">
+            <el-form-item v-for="(item,index) in getpluglist" :label="item.title">
+                <el-checkbox :indeterminate="item.isIndeterminate" v-model="item.checkAll" @change="handleCheckAllChange($event,item)">全选</el-checkbox>
+                <el-checkbox-group v-model="admin.roleroute">
+                    <el-checkbox v-for="item1 in item.role" :label="item1.value" :key="item1.value" style="width:160px;margin:0px;overflow:hidden;" :title="item1.name">
+                        {{item1.name}}
+                    </el-checkbox>
+                </el-checkbox-group>
+            </el-form-item>
+        </div>
+        </el-form>
+        <span slot="footer" class="dialog-footer">
+            <el-button @click="admindialog.status = false" size="mini">取 消</el-button>
+            <el-button v-if="admin.id" type="primary" @click="update" size="mini">修改角色</el-button>
+            <el-button v-else type="primary" @click="insert" size="mini">添加角色</el-button>
+        </span>
+    </el-dialog>
+</div>
+</body>
+<script>
+var vm = new Vue({
+    el: '#app',
+    data: {
+        winheight:document.documentElement.clientHeight,winwidth:document.documentElement.clientWidth,
+        admin:{title:'',icon:'',describes:'',roleroute:[]},admindialog:{status:false,title:'添加角色'},admindialog1:{status:false,title:'设置权限'},
+        kw:'',
+        data:{
+            'pagesize':20,
+            'count':0,
+            'pagenow':1,
+            'lists':[]
+        },Change:[],
+        getpluglist:[],
+        isIndeterminate:[],checkAll:[],
+        
+    },
+    mounted:function(){
+        self=this
+        window.onresize = function(){
+            self.winheight=document.documentElement.clientHeight
+            self.winwidth=document.documentElement.clientWidth
+        }
+        self.get("/index/index/admin/getmypluglist").then(function(res){
+            self.getpluglist=[]
+            for(var i=0;i<res.data.length;i++){
+                if(typeof res.data[i].role=='number' || typeof res.data[i].role == 'string'){
+                    res.data[i].role=JSON.parse(res.data[i].role);
+                }
+                res.data[i]['isIndeterminate']=false;
+                res.data[i]['checkAll']=false;
+                self.getpluglist.push(res.data[i])
+            }
+            self.getlist()
+        })
+    },
+    methods: {
+        handleCheckAllChange(val,item) {
+            if(val){
+                for(var i=0;i<item.role.length;i++){
+                    this.admin.roleroute.push(item.role[i].value);
+                }
+            }else{
+                for(var i=0;i<item.role.length;i++){
+                    for(var j=0;j<this.admin.roleroute.length;j++){
+                        if(this.admin.roleroute[j]==item.role[i].value){
+                            delete this.admin.roleroute.splice(j,1);;
+                        }
+                    }
+                }
+            }
+            item.isIndeterminate = false;
+        },
+        openurl:function(url){
+            layer.open({
+                type: 2,title: false,shadeClose: true,shade: 0.8,
+                area: ['60%', '60%'],content:url
+            }); 
+        },
+        getlist:function(){
+            self=this
+			self.get("/index/index/admin/getrolelist",{'kw':self.kw,'pagesize':self.data.pagesize,'pagenow':self.data.pagenow},'获取中...').then(function(res){
+				self.data=res.data
+			})
+        },
+        insert:function(){
+			self=this
+			self.post("/index/index/admin/insertrole",self.admin,"请稍后...").then(function(res){
+				self.admindialog.status=false
+				self.getlist()
+			}).catch(function(err){
+                self.admindialog.status=false
+            })
+		},
+        deletes:function(){
+			self=this
+			if(!self.Change.length){
+				self.$message.error('您未选择任何内容');
+			}else{
+				self.$confirm('此操作将永久删除该记录, 是否继续?', '删除提醒', {
+				confirmButtonText: '删除',
+				cancelButtonText: '取消',
+				type: 'warning'
+				}).then(function(){
+					id=[]
+					for(var i=0;i<self.Change.length;i++){
+						id.push(self.Change[i].id)
+					}
+					self.delete("/index/index/admin/deleterole",id,"正在删除中...").then(function(res){
+						self.data.pagenow=1
+						self.getlist()
+						self.$message({type: 'success',message: '选中记录已删除!'});
+					})
+				}).catch(function(){});
+			}
+		},
+        update:function(){
+			self=this
+            var roleroute=[]
+            for(var i=0;i<self.admin.roleroute.length;i++){
+                for(var j=0;j<self.getpluglist.length;j++){
+                    for(var k=0;k<self.getpluglist[j].role.length;k++){
+                        if(self.admin.roleroute[i]==self.getpluglist[j].role[k].value){
+                            roleroute.push(self.admin.roleroute[i])
+                        }
+                    }
+                }
+            }
+            self.admin.roleroute=roleroute
+			self.put("/index/index/admin/updaterole",self.admin,"请稍后...").then(function(res){
+				self.admindialog.status=false
+			})
+		},
+        handleSelectionChange:function(val) {
+            self=this
+			self.Change=val
+		},
+        handleSizeChange:function(val) {
+            self=this
+			self.data.pagesize=val
+			self.getlist()
+		},
+        handleCurrentChange:function(val) {
+			self.data.pagenow=val
+			self.getlist()
+		}
+    }
+});
+</script>
+</html>

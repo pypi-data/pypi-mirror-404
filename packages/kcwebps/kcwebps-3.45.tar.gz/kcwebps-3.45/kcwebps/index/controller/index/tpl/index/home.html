@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<html>
+
+<head>
+    <meta charset="utf-8" />
+    <title>kcwebps</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no" />
+    <meta name="HandheldFriendly" content="true" />
+    <meta name="MobileOptimized" content="320" />
+    <%include file="/app/common/html/include/static.html"/>
+    <script src="${config.domain['kcwebsstatic']}/echarts/4.5.0/echarts.min.js"></script>
+</head>
+<body>
+    <div id="app">
+    <div class="background">
+        <el-card class="box-card" style="width:99%;margin:0px auto;font-size:16px">
+            
+            <span v-if="data.platform">
+                <i v-if="data.platform.indexOf('Windows')!=-1" class="fa fa-windows" aria-hidden="true"></i>
+                <i v-else-if="data.platform.indexOf('Linux')!=-1"><img src="${config.domain['kcwebsimg']}/icon/Linux.png" style="float:left;height:18px;margin-top:2px" alt=""></i>
+                <i v-else class="fa fa-linux" aria-hidden="true"></i>
+            </span>
+            <span v-if="data.platform">
+                &nbsp{{data.platform}}
+                &nbsp&nbsp&nbsp&nbsp系统运行: {{data.sysrundate}}
+                &nbsp&nbsp&nbsp&nbsp控制板已不间断运行: {{data.rundate}}
+            </span>
+            % if kcwebps:
+            <span @click="openurl('/intapp/file/index/folderace?paths=${kcwebpspath}','${kcwebps['name']}框架目录：${kcwebpspath},为了系统安全运行，不建议您修改当前目录下的文件')" style="cursor:pointer;color:#409EFF">
+                &nbsp&nbsp&nbsp框架版本 ${kcwebps['name']}-${kcwebps['version']}
+            </span>
+            % endif
+            <el-button @click="processstatus=true" style="float:right" size="mini" type="success">进程列表</el-button>
+            <div style="padding-top:5px;">
+                运行目录：${ppath} <span style="cursor:pointer;color:#409EFF" @click="openurl('/intapp/file/index/folderace?paths=${ppath}','运行目录：${ppath}')">打开</span>
+                &nbsp&nbsp&nbsp
+                
+                &nbsp&nbsp&nbsp
+                <span v-if="data.platform && data.platform.indexOf('Linux')!=-1" style="cursor:pointer;color:#409EFF" @click="openurl('/intapp/file/index/folderace?edit=trye&filename=/etc/profile','快捷查看服务器环境变量/etc/profile')">服务器环境变量</span>
+            </div>
+        </el-card>
+        <el-card class="box-card" style="width:99%;margin:0px auto;font-size:12px">
+            <span v-for="item in disks.partitions">
+                <span v-if="data.platform.indexOf('Windows')!=-1">
+                    <el-col :span="4" v-if="item.name!='/'" style="height:200px;text-align:center">
+                        <div>{{item.name}}</div>
+                        <el-progress v-if="item.userate > 90" type="circle" :percentage="item.userate" stroke-width="10"  color="red"></el-progress>
+                        <el-progress v-else-if="item.userate > 80" type="circle" :percentage="item.userate" stroke-width="10"  color="#F56C6C"></el-progress>
+                        <el-progress v-else-if="item.userate > 70" type="circle" :percentage="item.userate" stroke-width="10"  color="#E6A23C"></el-progress>
+                        <el-progress v-else type="circle" :percentage="item.userate" stroke-width="10"  color="#67C23A"></el-progress>
+                        <div v-if="parseInt(item.used/1024/1024) >= 1" style="font-size:12px">{{parseInt(item.used/1024/1024/1024)}}GB / {{parseInt(item.count/1024/1024/1024)}}GB</div>
+                        <div v-else style="font-size:12px">{{parseInt(item.used/1024/1024)}}MB / {{parseInt(item.count/1024/1024)}}MB</div>
+                    </el-col>
+                </span>
+                <el-col :span="4" v-else style="height:200px;text-align:center">
+                    <div>{{item.name}}</div>
+                    <el-progress v-if="item.userate > 90" type="circle" :percentage="item.userate" stroke-width="10"  color="red"></el-progress>
+                    <el-progress v-else-if="item.userate > 80" type="circle" :percentage="item.userate" stroke-width="10"  color="#F56C6C"></el-progress>
+                    <el-progress v-else-if="item.userate > 70" type="circle" :percentage="item.userate" stroke-width="10"  color="#E6A23C"></el-progress>
+                    <el-progress v-else type="circle" :percentage="item.userate" stroke-width="10"  color="#67C23A"></el-progress>
+                    <div v-if="parseInt(item.used/1024/1024) >= 1" style="font-size:12px">{{parseInt(item.used/1024/1024/1024)}}GB / {{parseInt(item.count/1024/1024/1024)}}GB</div>
+                    <div v-else style="font-size:12px">{{parseInt(item.used/1024/1024)}}MB / {{parseInt(item.count/1024/1024)}}MB</div>
+                </el-col>
+            </span>
+            
+            <el-col v-if="cpumes.cpu" :span="4" style="height:200px;text-align:center">
+                <div>CPU使用率</div>
+                <el-progress v-if="cpumes.cpu.use > 90" type="circle" :percentage="cpumes.cpu.use" stroke-width="10"  color="red"></el-progress>
+                <el-progress v-else-if="cpumes.cpu.use > 80" type="circle" :percentage="cpumes.cpu.use" stroke-width="10"  color="#F56C6C"></el-progress>
+                <el-progress v-else-if="cpumes.cpu.use > 70" type="circle" :percentage="cpumes.cpu.use" stroke-width="10"  color="#E6A23C"></el-progress>
+                <el-progress v-else type="circle" :percentage="cpumes.cpu.use" stroke-width="10"  color="#67C23A"></el-progress>
+                <div style="font-size:12px">{{cpumes.cpu.count}}核心</div>
+            </el-col>
+            <el-col v-if="cpumes.memory" :span="4" style="height:200px;text-align:center">
+                <div>物理内存使用率</div>
+                <el-progress v-if="cpumes.memory.physics.userate > 90" type="circle" :percentage="cpumes.memory.physics.userate" stroke-width="10"  color="red"></el-progress>
+                <el-progress v-else-if="cpumes.memory.physics.userate > 80" type="circle" :percentage="cpumes.memory.physics.userate" stroke-width="10"  color="#F56C6C"></el-progress>
+                <el-progress v-else-if="cpumes.memory.physics.userate > 70" type="circle" :percentage="cpumes.memory.physics.userate" stroke-width="10"  color="#E6A23C"></el-progress>
+                <el-progress v-else type="circle" :percentage="cpumes.memory.physics.userate" stroke-width="10"  color="#67C23A"></el-progress>
+                <div style="font-size:12px">{{Math.ceil(cpumes.memory.physics.used/1024/1024)}}MB / {{Math.ceil(cpumes.memory.physics.count/1024/1024)}}MB</div>
+            </el-col>
+            <el-col v-if="cpumes.memory" :span="4" style="height:200px;text-align:center">
+                <div>swap内存使用率</div>
+                <el-progress v-if="cpumes.memory.swap.userate > 90" type="circle" :percentage="cpumes.memory.swap.userate" stroke-width="10"  color="red"></el-progress>
+                <el-progress v-else-if="cpumes.memory.swap.userate > 80" type="circle" :percentage="cpumes.memory.swap.userate" stroke-width="10"  color="#F56C6C"></el-progress>
+                <el-progress v-else-if="cpumes.memory.swap.userate > 70" type="circle" :percentage="cpumes.memory.swap.userate" stroke-width="10"  color="#E6A23C"></el-progress>
+                <el-progress v-else type="circle" :percentage="cpumes.memory.swap.userate" stroke-width="10"  color="#67C23A"></el-progress>
+                <div style="font-size:12px">{{Math.ceil(cpumes.memory.swap.used/1024/1024)}}MB / {{Math.ceil(cpumes.memory.swap.count/1024/1024)}}MB</div>
+            </el-col>
+        </el-card>
+    
+        <div style="width:100%;margin:10px auto;font-size:12px">
+            <div id="echarts" :style="'width: '+(winwidth)+'px;height:'+(winheight-350)+'px;'"></div>
+        </div>
+        <div style="height:4px"></div>
+        <el-dialog title="进程管理" :visible.sync="processstatus" width="80%" style="overflow: hidden">
+            <el-table :data="process" height="450" border style="width: 100%">
+                <el-table-column prop="name" label="名"> </el-table-column>
+                <el-table-column prop="pid" label="pid"> </el-table-column>
+            </el-table>
+        </el-dialog>
+    </div>
+</div>
+</body>
+<script>
+var vm = new Vue({
+    el: '#app',
+    data: {
+        winheight:document.documentElement.clientHeight,
+        winwidth:document.documentElement.clientWidth,
+        data:{},
+        disks:{},
+        cpumes:{},
+        net:{
+            bytes_recv:[],
+            bytes_sent:[],
+            date:[],
+            syc:{bytes_recv:-1,bytes_sent:-1} //上一次数据包
+        },
+        myChart:null,
+        process:[],processstatus:false
+    },
+    mounted:function(){
+        self=this
+        window.onresize = function(){
+            self.winheight=document.documentElement.clientHeight
+            self.winwidth=document.documentElement.clientWidth
+        }
+        setTimeout(function(){
+            self.get("/index/index/index/homes").then(function(res){
+                self.data=res.data
+                self.get("/index/index/index/process",{}).then(function(res){
+                    self.process=res.data
+                    self.disk()
+                })
+            })
+        },300);
+    },
+    methods: {
+        //打开页面
+        openurl:function(url,title){
+            try {
+                parent.window.openurl(url,title,['85%', '90%']);
+            } catch (error) {
+                layer.open({
+                    type: 2,title: title,shadeClose: true,shade: 0.1,maxmin:true,
+                    area: ['92%', '92%'],content:url
+                });
+            }
+        },
+        disk:function(){
+            self=this
+            self.get("/index/index/index/disk",{}).then(function(res){
+                self.disks=res.data
+                self.cpume()
+            })
+        },
+        cpume:function(){
+            self=this
+            self.get("/index/index/index/cpume").then(function(res){
+                self.test(res)
+            }).catch(function(){
+                setTimeout(function(){
+                    self.cpume()
+                }, 1000);
+            });
+        },
+        test:function(res){
+            self=this
+            self.cpumes=res.data
+                if(self.net.syc.bytes_recv>-1 && self.net.syc.bytes_sent>-1){
+                    if (self.net.bytes_sent.length > 30){
+                        self.net.bytes_sent.splice(0,1);
+                        self.net.bytes_recv.splice(0,1);
+                        self.net.date.splice(0,1);
+                    }
+                    var date = new Date(res.time*1000);
+                    self.net.bytes_sent.push(((res.data.net.bytes_sent-self.net.syc.bytes_sent)/1024).toFixed(2))
+                    self.net.bytes_recv.push(((res.data.net.bytes_recv-self.net.syc.bytes_recv)/1024).toFixed(2))
+                    self.net.date.push(date.getHours()+"点"+date.getMinutes()+"分"+date.getSeconds())
+
+                }
+                self.net.syc.bytes_sent=res.data.net.bytes_sent
+                self.net.syc.bytes_recv=res.data.net.bytes_recv
+                
+                var option = {
+    title: {text: '当前网络波动'},
+    tooltip : {
+        trigger: 'axis',
+        axisPointer: {
+            type: 'cross',
+            label: {backgroundColor: '#6a7985'}
+        }
+    },
+    legend: {data:['下行','上行']},
+    toolbox: {
+        feature: {
+            saveAsImage: {}
+        }
+    },
+    grid: {left: "-100px",right: '0%',bottom: '1%',containLabel: true},
+    xAxis : [
+        {
+            type : 'category',
+            boundaryGap : false,
+            data : self.net.date //['周一','周二','周三','周四','周五','周六','周日']
+        }
+    ],
+    yAxis : [
+        {
+            type : 'value',
+            axisLabel: {formatter: '{value} kb/秒'}
+        }
+    ],
+    series : [
+        {
+            type: 'line',
+            name: "下行",
+            smooth: 0.8,
+            symbol: 'none',
+            lineStyle: {
+                color: 'green',
+                width: 5
+            },
+            markLine: {
+                symbol: ['none', 'none'],
+                label: {show: false},
+                data: [
+                    {xAxis: 1},
+                    {xAxis: 3},
+                    {xAxis: 5},
+                    {xAxis: 7}
+                ]
+            },
+            areaStyle: {},
+            data:self.net.bytes_recv
+        },
+        {
+            type: 'line',
+            name: "上行",
+            smooth: 0.8,
+            symbol: 'none',
+            lineStyle: {
+                color: 'green',
+                width: 5
+            },
+            markLine: {
+                symbol: ['none', 'none'],
+                label: {show: false},
+                data: [
+                    {xAxis: 1},
+                    {xAxis: 3},
+                    {xAxis: 5},
+                    {xAxis: 7}
+                ]
+            },
+            areaStyle: {},
+            data:self.net.bytes_sent
+        },
+    ]
+};
+                // 使用刚指定的配置项和数据显示图表。
+                if(!self.myChart){
+                    self.myChart=echarts.init(document.getElementById('echarts'));
+                }
+                self.myChart.setOption(option);
+                setTimeout(function(){
+                    self.cpume()
+                }, 1000);
+        }
+    }
+})
+</script>
+</html>

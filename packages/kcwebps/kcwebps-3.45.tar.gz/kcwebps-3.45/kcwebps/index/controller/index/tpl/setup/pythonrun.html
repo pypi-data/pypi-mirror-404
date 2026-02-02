@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+<meta charset="utf-8" />
+<title>kcwebps</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+<meta name="HandheldFriendly" content="true"/>
+<meta name="MobileOptimized" content="320"/>
+<%include file="/app/common/html/include/static.html"/>
+<style>
+*{padding:0px;margin:0px}
+.el-header, .el-footer {background-color: #B3C0D1;line-height: 60px;padding:0px;}
+.kcws-side-scroll::-webkit-scrollbar{width:0px}
+</style>
+</head>
+<body>
+<div id="app" class="background">
+    <div style="height:33px;padding-top:10px;margin:4px auto;width:100%">
+        &nbsp&nbsp
+        <el-button-group>
+            <el-input size="mini" style="width:200px;float:left" placeholder="项目名称" v-model="kw"></el-input>
+            <el-button :disabled="data.pagecount>1?false:true" size="mini" icon="el-icon-search" @click="data.pagenow=1;getlist()" type="success">搜索</el-button>
+            <el-button size="mini" type="success"  @click="admindialog={status:true,title:'添加项目'},admin={id:'',title:'',icon:'',descs:'',paths:'',filename:'',types:'',other:''}">添加项目</el-button>
+        </el-button-group>
+        <el-button icon="el-icon-download" size="mini" @click="backxz('app/intapp/controller/index/common/file')" style="float:left">下载数据</el-button>
+        <el-upload class="upload-demo" action="/index/index/setup/upunback?paths=app/intapp/controller/index/common/file" :show-file-list="false" accept="*.zip" :on-success="onsuccess" :on-error="onerror" style="float:left">
+            <el-button icon="el-icon-upload" size="mini">上传intapp_index.zip</el-button>
+        </el-upload>
+    </div>
+    <div style="margin:0 auto;width:100%">
+            <el-table :data="data.lists" :height="winheight-100" @selection-change="handleSelectionChange">
+                <el-table-column type="selection" width="55"></el-table-column>
+                <el-table-column prop="icon" label="" width="280">
+                    <template slot-scope="scope">
+                        <!-- <img v-if="scope.row.icon" :src="scope.row.icon" alt="" style="height:30px"> -->
+                         <div v-if="scope.row.info.memory">
+                            <div style="float:left;width:100%">
+                                <div style="float:left;margin-top:-4px;font-size:7px">
+                                    CPU使用率 {{scope.row.info.cpu}}%
+                                </div>
+                                <div style="float:right;width:120px">
+                                    <el-progress v-if="scope.row.info.cpu<70" :percentage="scope.row.info.cpu" status="success" text-color="#000"></el-progress>
+                                    <el-progress v-else-if="scope.row.info.cpu<80" :percentage="scope.row.info.cpu" status="warning" text-color="#000"></el-progress>
+                                    <el-progress v-else  :percentage="scope.row.info.cpu" status="exception" text-color="#000"></el-progress>
+                                </div>
+                            </div>
+                            <div style="float:left;width:100%">
+                                <div style="float:left;margin-top:-4px;font-size:7px">
+                                    内存{{(scope.row.info.memory/1024/1024).toFixed(1)}}MB/{{(scope.row.info.allmemory/1024/1024/1024).toFixed(1)}}GB
+                                </div>
+                                <div style="float:right;width:120px;">
+                                    <el-progress v-if="scope.row.info.usememorys<70" :percentage="scope.row.info.usememorys" status="success" text-color="#000"></el-progress>
+                                    <el-progress v-else-if="scope.row.info.usememorys<80" :percentage="scope.row.info.usememorys" status="warning" text-color="#000"></el-progress>
+                                    <el-progress v-else  :percentage="scope.row.info.usememorys" status="exception" text-color="#000"></el-progress>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+                </el-table-column>
+                <el-table-column prop="title" label="项目名称" width="200">
+                    <template slot-scope="scope">
+                        <el-tag size="small" style="background:#FFF;color:#000">{{scope.row.title}}</el-tag>
+                        <el-tag v-if="scope.row.descs=='daemon'" type="success" size="small">守护进程</el-tag>
+                        <el-tag v-else size="small">cli进程</el-tag>&nbsp;
+                        
+                    </template>
+                </el-table-column>
+                
+                <el-table-column prop="" label="运行状态" width="220">
+                    <template slot-scope="scope">
+                        <span v-if="scope.row.status==1">
+                            <i class="fa fa-play" style="color:#67C23A;"></i>
+                            <el-button type="danger" @click="restart(scope.row,'stop')" size="mini" plain style="height:20px;padding-top:4px">停止</el-button>
+                            <el-button type="danger" @click="restart(scope.row,'restart')" size="mini" plain style="height:20px;padding-top:4px">重启</el-button>
+                        </span>
+                        <span v-else>
+                            <i class="fa fa-pause" style="color:red;"></i>已停止 &nbsp<el-button plain type="primary" style="height:20px;padding-top:4px" @click="restart(scope.row,'start')" size="mini">启动</el-button>
+                        </span>
+                        <el-button type="text" @click="logpythonrun(scope.row)">日志</el-button>
+                        
+                    </template>
+                </el-table-column>
+                <el-table-column prop="addtime" label="添加时间" width="140">
+                    <template slot-scope="scope">
+                        <span v-html="time_date(scope.row.addtime)"></span>
+                    </template>
+                </el-table-column>
+                <el-table-column label="" width="200">
+                    <template slot-scope="scope">
+                        <el-button v-if="scope.row.status==0" @click="self.admindialog.status=true,self.admin=scope.row" size="mini">设置</el-button>
+                        <el-button @click="addstart(scope.row)" size="mini">加入开机启动</el-button>
+                    </template>
+                </el-table-column>
+                
+                <el-table-column prop="" label="命令">
+                    <template slot-scope="scope">
+                        <div v-if="scope.row.types=='kcwebps'">
+                            <el-tag style="cursor:pointer;color:#fff" v-if="scope.row.status!=1" size="small" color="#000" @click="openurl('/intapp/terminal/socket/shell?cdpath='+encodeURIComponent('${yunpath}')+'&cmdstr='+encodeURIComponent(JSON.stringify([
+                            'kcwebps '+scope.row.other+' --cli'
+                        ])),'在终端中调试',['800px','800px'],false)" title="在终端中调试">调试</el-tag>
+                            <el-tag v-if="scope.row.status==1" size="small" type="success">cd ${yunpath} && kcwebps {{scope.row.other}} --cli</el-tag>
+                            <el-tag v-else size="small" type="warning">cd ${yunpath} && kcwebps {{scope.row.other}} --cli</el-tag>
+                        </div>
+                        <div v-else-if="scope.row.types=='customize'">
+                            <el-tag style="cursor:pointer;color:#fff" v-if="scope.row.status!=1" size="small" color="#000" @click="openurl('/intapp/terminal/socket/shell?cdpath='+encodeURIComponent(scope.row.paths)+'&cmdstr='+encodeURIComponent(JSON.stringify([
+                            scope.row.other
+                        ])),'在终端中调试',['800px','800px'],false)" title="在终端中调试">调试</el-tag>
+                            <el-tag v-if="scope.row.status==1" size="small" type="success">cd {{scope.row.paths}} && {{scope.row.other}}</el-tag>
+                            <el-tag v-else size="small" type="warning">cd {{scope.row.paths}} && {{scope.row.other}}</el-tag>
+                        </div>
+                        <div v-else>
+                            <el-tag style="cursor:pointer;color:#fff" v-if="scope.row.status!=1" size="small" color="#000" @click="openurl('/intapp/terminal/socket/shell?cdpath='+encodeURIComponent(scope.row.paths)+'&cmdstr='+encodeURIComponent(JSON.stringify([
+                            scope.row.interpreter+' '+scope.row.filename+scope.row.other
+                        ])),'在终端中调试',['800px','800px'],false)" title="在终端中调试">调试</el-tag>
+                            <el-tag v-if="scope.row.status==1" size="small" type="success">cd {{scope.row.paths}} && {{scope.row.types}} {{scope.row.filename}}{{scope.row.other}}</el-tag>
+                            <el-tag v-else size="small" type="warning">cd {{scope.row.paths}} && {{scope.row.types}} {{scope.row.filename}}{{scope.row.other}}</el-tag>
+                        </div>
+                    </template>
+                </el-table-column>
+            </el-table>
+            <div class="block" style="background:#FFF;margin-top:4px;height:36px;padding-top:4px">
+                <span style="float:left;margin-top:2px">&nbsp&nbsp&nbsp<el-button size="mini" type="danger" @click="deletes" icon="el-icon-delete">删除选中</el-button>&nbsp</span>
+                <el-pagination background
+                    @size-change="handleSizeChange" @current-change="handleCurrentChange"
+                    :current-page="1" :page-size="data.pagesize"
+                    layout="total, sizes, prev, pager, next, jumper" :total="data.count">
+                </el-pagination>
+            </div>
+    </div>
+    <el-dialog
+    :title="admindialog.title"
+    :visible.sync="admindialog.status"
+    width="500px">
+    <el-form ref="form" :model="admin" label-width="80px" label-position="left" size="mini">
+    <div style="padding:20px">
+        <el-form-item label="项目名称">
+            <el-input placeholder="项目名称" v-model="admin.title"></el-input>
+        </el-form-item>
+        <el-form-item label="图标">
+            <el-input placeholder="图标地址" v-model="admin.icon" style="width:70%"></el-input>
+            <el-button @click="openurl('/intapp/imgmt?select=1')" size="mini">选择图片</el-button>
+        </el-form-item>
+        <el-form-item label="运行方式">
+            <el-select v-model="admin.descs" placeholder="请选择">
+                <el-option key="cli" label="cli运行" value="cli">cli运行 (脚本本身是长期运行的情况下选择)</el-option>
+                <el-option key="daemon" label="守护进程运行" value="daemon">守护进程运行(脚本可能停止的情况下选择)</el-option>
+            </el-select>
+        </el-form-item>
+        <el-form-item label="运行环境">
+            <el-select v-model="admin.types" placeholder="请选择">
+                <el-option key="kcwebps" label="kcwebps项目管理器" value="kcwebps">kcwebps项目管理器</el-option>
+                <el-option key="customize" label="自定义" value="customize">自定义</el-option>
+                <el-option key="python3.6" label="python3.6解释器" value="python3.6">python3.6解释器</el-option>
+                <el-option key="python3.8" label="python3.8解释器" value="python3.8">python3.8解释器</el-option>
+                <el-option key="python3.9" label="python3.9解释器" value="python3.9">python3.9解释器</el-option>
+                <el-option key="npm" label="npm运行" value="npm">npm运行</el-option>
+                <el-option key="php7.2" label="php7.2解释器" value="php7.2">php7.2解释器</el-option>
+                <el-option key="php7.3" label="php7.3解释器" value="php7.3">php7.3解释器</el-option>
+                <el-option key="php7.4" label="php7.4解释器" value="php7.4">php7.4解释器</el-option>
+                <el-option key="php8.2" label="php8.2解释器" value="php8.2">php8.2解释器</el-option>
+                <el-option key="php8.3" label="php8.3解释器" value="php8.3">php8.3解释器</el-option>
+                
+            </el-select><br>
+            <span v-if="admin.types=='php7.2'" style="color:red">您必须提前在<el-button type="text" @click="openurl('/intapp/soft?kw=php')">“软件管理”</el-button>中安装php7.2，已安装请忽略，其他安装方式将无效</span>
+            <span v-if="admin.types=='php7.3'" style="color:red">您必须提前在<el-button type="text" @click="openurl('/intapp/soft?kw=php')">“软件管理”</el-button>中安装php7.3，已安装请忽略，其他安装方式将无效</span>
+            <span v-if="admin.types=='php7.4'" style="color:red">您必须提前在<el-button type="text" @click="openurl('/intapp/soft?kw=php')">“软件管理”</el-button>中安装php7.4，已安装请忽略，其他安装方式将无效</span>
+            <span v-if="admin.types=='php8.2'" style="color:red">您必须提前在<el-button type="text" @click="openurl('/intapp/soft?kw=php')">“软件管理”</el-button>中安装php8.2，已安装请忽略，其他安装方式将无效</span>
+            <span v-if="admin.types=='php8.3'" style="color:red">您必须提前在<el-button type="text" @click="openurl('/intapp/soft?kw=php')">“软件管理”</el-button>中安装php8.3，已安装请忽略，其他安装方式将无效</span>
+        </el-form-item>
+        <el-form-item v-if="admin.types!='kcwebps'" label="运行目录">
+            <el-input v-if="admin.paths" placeholder="运行目录" v-model="admin.paths" disabled style="width:80%;float:left"></el-input>
+            <!-- <div style="float:left" id="paths"></div> -->
+            <img @click="openurl('/intapp/file/?select=1&paths='+admin.paths)" title="选择目录" src="${config.domain['kcwebsimg']}/icon/folder.png" style="height:26px;float:left;margin-left:10px;margin-top:0px;cursor:pointer">
+        </el-form-item>
+        <el-form-item v-if="admin.types!='npm' && admin.types!='kcwebps' && admin.types!='customize'" label="运行文件">
+            <el-input v-if="admin.filename" placeholder="运行文件" v-model="admin.filename" disabled style="width:80%;float:left"></el-input>
+            <img @click="openurl('/intapp/file/?select=1&paths='+admin.paths)" title="选择运行文件" src="${config.domain['kcwebsimg']}/icon/folder.png" style="height:26px;float:left;margin-left:10px;margin-top:0px;cursor:pointer">
+        </el-form-item>
+        <el-form-item v-if="admin.types=='customize'"  label="启动命令">
+            <el-input  placeholder="启动命令" v-model="admin.other"></el-input>
+        </el-form-item>
+        <el-form-item v-else  label="运行参数">
+            <el-input  :placeholder="(admin.types=='kcwebps')?'kcwebps项目路由地址 如：index/index':'运行参数'" v-model="admin.other"></el-input>
+        </el-form-item>
+        </el-form>
+        <span slot="footer" class="dialog-footer">
+            <el-button @click="admindialog.status = false">取 消</el-button>
+            <el-button v-if="admin.id" type="primary" @click="setpythonrun">修改</el-button>
+            <el-button v-else type="primary" @click="setpythonrun">添加</el-button>
+        </span>
+    </div>
+    </el-dialog>
+    <el-dialog title="日志" :visible.sync="logpythonrunstatus" width="1000px">
+            <pre :style="'height:'+(winheight-300)+'px;overflow-y:auto;background:#000;color:#FFF;'">{{runlog}}</pre>
+    </el-dialog>
+</div>
+</body>
+<script>
+var VUE=null
+function setimgmt(domain,paths,item){
+    mysetimgmt(domain,paths,item)
+    layer.closeAll();
+}
+function setfile(paths,item){
+    layer.closeAll();
+    setadmin(paths,item)
+}
+VUE = new Vue({
+    el: '#app',
+    data: {
+        color: [
+          {color: '#f56c6c', percentage: 20},
+          {color: '#e6a23c', percentage: 40},
+          {color: '#5cb87a', percentage: 60},
+          {color: '#1989fa', percentage: 80},
+          {color: '#6f7ad3', percentage: 100}
+        ],
+        winheight:document.documentElement.clientHeight,winwidth:document.documentElement.clientWidth,
+        admin:{id:'',title:'',icon:'',descs:'',paths:'',filename:"",types:'',other:''},admindialog:{status:false,title:'添加管理'},kcwebstype:'web',
+        kw:'',
+        data:{
+            'pagesize':10,
+            'count':0,
+            'pagenow':1,
+            'lists':[]
+        },Change:[],
+        startdata:{value:'',name:'',types:'shell',icon:''},
+        logpythonrunstatus:false,runlog:'',
+    },
+    mounted:function(){
+        self=this
+        window.onresize = function(){
+            self.winheight=document.documentElement.clientHeight
+            self.winwidth=document.documentElement.clientWidth
+        }
+        window.mysetimgmt = this.mysetimgmt;
+        window.setadmin = this.setadmin;
+        self.getlist()
+    },
+    methods: {
+        //打开页面
+        openurl:function(url,title='',area=['92%', '92%'],maxmin=true){
+            // try {
+            //     parent.window.openurl(url,title,area,maxmin);
+            // } catch (error) {
+                layer.open({
+                    type: 2,title: title,shadeClose: true,shade: 0.1,maxmin:maxmin,
+                    area: area,content:url
+                });
+            // }
+        },
+        backxz:function(paths){
+            var self=this;
+            window.location.href="/index/index/setup/backxz/intapp_index.zip?paths="+paths;
+        },onsuccess:function(response, file, fileList){
+			var self=this;
+			self.$message({type: 'success',message: '上传成功'});
+		},onerror:function(){
+			var self=this;
+			self.$message({type: 'error',message: '上传失败'});
+		},
+        logpythonrun:function(item){
+            var self=this
+            self.logpythonrunstatus=true;
+            self.runlog="日志加载中..."
+            self.get("/index/index/setup/logpythonrun/"+item.id).then(function(res){
+				self.runlog=res.data
+			}).catch(function(err){
+                self.logpythonrunstatus=false;
+                // self.runlog="加载失败"
+            });
+        },
+        mysetimgmt:function(domain,paths,item){
+            var self=this
+            if (item.suffix=='jpg' || item.suffix=='JPG' || item.suffix=='png' || item.suffix=='PNG' || item.suffix=='gif' || item.suffix=='GIF'){
+                self.admin.icon=domain+paths+item.name
+            }else{
+                self.$message({type: 'error',message: '请选择图片文件'});
+            }
+        },
+        addstart:function(item){
+			var self=this
+            self.startdata.name=item.title
+            self.startdata.icon=item.icon
+            self.startdata.types='shell'
+            if(item.descs!='daemon' && item.types=='kcwebps'){
+                self.startdata.types='kcwebps'
+            }
+            self.startdata.value=item.cmd
+            self.post("/index/index/setup/addstart",self.startdata,"请稍后...").then(function(res){
+                self.$message({type: 'success',message: '加入成功'}); return
+            })
+		},
+        restart:function(item,types){
+            var self=this
+            if(types=='restart'){
+                self.post("/index/index/setup/restart/stop",item).then(function(res){
+                    item.status=0
+                    self.post("/index/index/setup/restart/start",item,"启动中...").then(function(res){
+                        item.status=1
+                        self.$message({type: 'success',message: '重启成功'}); return
+                    })
+                })
+            }else{
+                self.post("/index/index/setup/restart/"+types,item,"请稍后...").then(function(res){
+                    if(types=='stop'){
+                        item.status=0
+                    }else{
+                        item.status=1
+                    }
+                    self.$message({type: 'success',message: '成功'}); return
+                })
+            }
+        },
+        setadmin:function(paths,item){
+            if (item.types=='file'){
+                this.admin.filename=item.name
+            }else{
+                this.admin.paths=paths+item.name
+            }
+            
+        },
+        get_cli_info:function(items,t){
+            self=this
+            setTimeout(function(){
+                self.post("/index/index/setup/get_cli_info",items).then(function(res){
+                    if(res.data.memory){
+                        //if(res.data.cpu>100){res.data.cpu=100;}
+                        items['info']=res.data;
+                        if(res.data.cpu>1){
+                            t=5000
+                        }else{
+                            t=30000
+                        }
+                    }
+                    self.get_cli_info(items,t)
+                }).catch(function(err){
+                    self.get_cli_info(items,10000)
+                })
+            },t)
+        },
+        getlist:function(){
+            self=this
+			self.get("/index/index/setup/pythonrulists",{'kw':self.kw,'pagesize':self.data.pagesize,'pagenow':self.data.pagenow}).then(function(res){
+                for(var i=0;i<res.data.lists.length;i++){
+                    res.data.lists[i]['info']={cpu:0,memory:''};
+                }
+				self.data=res.data
+                if(self.data.pagecount==1){
+                    for(var i=0;i<self.data.lists.length;i++){
+                        if(self.data.lists[i].status==1){
+                            self.get_cli_info(self.data.lists[i],2000)
+                        }
+                    }
+                }
+			})
+        },
+        setpythonrun:function(){
+			self=this
+            if(self.admin.types=='npm'){
+                self.admin.filename='';
+            }else if(self.admin.types=='kcwebps'){
+                self.admin.filename='';self.admin.paths='';
+            }
+            if(!self.admin.types || !self.admin.title){
+                self.$message({type: 'error',message: '输入不全!'}); return
+            }
+			self.post("/index/index/setup/setpythonrun",self.admin,"请稍后...").then(function(res){
+				self.admindialog.status=false
+				self.getlist()
+			}).catch(function(err){
+                self.admindialog.status=false
+            })
+		},
+        deletes:function(){
+			self=this
+			if(!self.Change.length){
+				self.$message.error('您未选择任何内容');
+			}else{
+				self.$confirm('此操作将永久删除该记录, 是否继续?', '删除提醒', {
+				confirmButtonText: '删除',
+				cancelButtonText: '取消',
+				type: 'warning'
+				}).then(function(){
+					id=[]
+					for(var i=0;i<self.Change.length;i++){
+						id.push(self.Change[i].id)
+					}
+					self.post("/index/index/setup/delpythonrun",id,"正在删除中...").then(function(res){
+						self.data.pagenow=1
+						self.getlist()
+						self.$message({type: 'success',message: '选中记录已删除!'});
+					})
+				}).catch(function(){});
+			}
+		},
+       
+        handleSelectionChange:function(val) {
+            self=this
+			self.Change=val
+		},
+        handleSizeChange:function(val) {
+            self=this
+			self.data.pagesize=val
+			self.getlist()
+		},
+        handleCurrentChange:function(val) {
+			self.data.pagenow=val
+			self.getlist()
+		}
+    }
+});
+</script> 
+</html>

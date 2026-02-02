@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<html>
+<head>
+<meta charset="utf-8" />
+<title>基本配置</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+<meta name="HandheldFriendly" content="true"/>
+<meta name="MobileOptimized" content="320"/>
+<%include file="/app/common/html/include/static.html"/>
+</head>
+<style>
+*{padding:0px;margin:0px}
+.el-header, .el-footer {background-color: #B3C0D1;line-height: 60px;padding:0px;}
+.kcws-side-scroll::-webkit-scrollbar{width:0px;}
+.el-table__header-wrapper {width: 100%;height:10px}
+.el-tabs__content {
+    overflow: hidden;
+    position: relative;
+    margin-top: -14px;
+}
+</style>
+<body>
+<div id="app">
+    <el-card class="box-card" :style="'width:47%;height:380px;float:left;margin:1%;overflow-y:auto;height:'+(winheight-60)+'px;'">
+        <div slot="header" class="clearfix">
+            <span>基础设置</span>
+            <el-button style="float: right; padding: 3px 0" type="text"></el-button>
+            <el-button type="primary" size="mini" @click="setbaseconfig('set')" style="float: right;">保存</el-button>
+        </div>
+        <el-form ref="form" :model="config" label-width="120px" size="mini">
+            <el-form-item label="系统编号">
+                <el-input v-model="config.system.id" placeholder="如果是分布式集群环境 编号必须唯一"></el-input>
+            </el-form-item>
+            <el-form-item label="系统名称">
+                <el-input v-model="config.system.name" placeholder=""></el-input>
+            </el-form-item>
+            <el-form-item label="静态资源">
+                <el-input v-model="config.system.staticurl" placeholder="如：https://static.kwebapp.cn/"></el-input>
+            </el-form-item>
+            <el-form-item label="系统logo">
+                <el-input v-model="config.system.logo" placeholder="图标地址" style="width:80%"></el-input>
+                <el-button @click="openurl('/intapp/imgmt?select=1')" size="mini">选择图片</el-button>
+            </el-form-item>
+        </el-form>
+   
+        <el-form ref="form" :model="config" label-width="120px" size="mini">
+            <el-form-item label="阿里云地域节点">
+                <el-input v-model="config.aliyun.address" placeholder="如：http://oss-cn-hangzhou.aliyuncs.com"></el-input>
+            </el-form-item>
+            <el-form-item label="阿里云存储桶">
+                <el-input v-model="config.aliyun.bucket" placeholder="bucket"></el-input>
+            </el-form-item>
+            <el-form-item label="阿里云账号">
+                <el-input v-model="config.aliyun.access_key" placeholder="access_key"></el-input>
+            </el-form-item>
+            <el-form-item label="阿里云密钥">
+                <el-input v-model="config.aliyun.access_key_secret" placeholder="access_key_secret"></el-input>
+            </el-form-item>
+            <el-form-item label="阿里云备份目录">
+                <el-input v-model="config.aliyun.backpath" placeholder="backpath"></el-input>
+            </el-form-item>
+        </el-form>
+        <el-form v-if="config.email" ref="form" :model="config" label-width="120px" size="mini">
+            <el-form-item label="发件人邮箱账号">
+                <el-input v-model="config.email.sender" placeholder=""></el-input>
+            </el-form-item>
+            <el-form-item label="发件人邮箱密码">
+                <el-input v-model="config.email.pwd" placeholder="如申请的smtp给的口令"></el-input>
+            </el-form-item>
+            <el-form-item label="默认收件人">
+                <el-input v-model="config.email.recuser" placeholder="默认收件人邮箱"></el-input>
+            </el-form-item>
+        </el-form>
+        <el-form v-if="config.kcwebsapi" ref="form" :model="config" label-width="120px" size="mini">
+            <el-form-item label="kcwebsapi镜像">
+                <el-input v-model="config.kcwebsapi.host" placeholder="如：https://kcwebsapi.kwebapp.cn"></el-input>
+            </el-form-item>
+            <el-form-item label="kcwebsfile镜像">
+                <el-input v-model="config.kcwebsapi.filehost" placeholder="如：https://file.kwebapp.cn"></el-input>
+            </el-form-item>
+        </el-form>
+    </el-card>
+    <el-card v-if="showdomc" class="box-card" style="width:47%;height:380px;float:left;margin:1%">
+        <div slot="header" class="clearfix">
+            <span>映射域名<span style="font-size:12px;color:#999999">（域名映射后 您可以通过域名来访问本系统）</span></span>
+            <el-button type="primary" size="mini" @click="banddomainall" style="float: right;">保存</el-button>
+            <el-tooltip class="item" effect="dark" content="添加代理" placement="top">
+                <el-button size="mini" @click="webitem.proxy_pass.push({'types':'websocket','rule':'','url':''})"  icon="fa fa-plus" style="float: right;margin-right:10px"></el-button>
+            </el-tooltip>
+            <el-tooltip v-if="isdomain" class="item" effect="dark" content="删除域名映射" placement="top">
+                <el-button @click="delbanddomain" type="danger" size="mini"  icon="el-icon-delete-solid" style="float: right;margin-right:10px"></el-button>
+            </el-tooltip>
+        </div>
+        <div style="overflow-y:auto;height:300px;margin-top:-15px">
+            <el-input placeholder="" v-model="webitem.client_max_body_size" style="width:210px">
+                <template slot="prepend">上传大小(M)</template>
+             </el-input>
+             <el-input placeholder="" v-model="webitem.read_timeout" style="width:210px">
+                <template slot="prepend">超时</template>
+             </el-input>
+            <el-input type="textarea" :rows="4" placeholder="绑定域名，支持多个域名，以换行符分隔" v-model="webitem.domain"></el-input>
+            <table style="width:100%;">
+                <tr><td></td><td width="40"></td></tr>
+                <tr v-for="(item,index) in webitem.proxy_pass">
+                    <td>
+                        <el-tooltip class="item" effect="dark" :content="item.notes?item.notes:''" placement="top">
+                            <el-select size="mini" placeholder="类型" v-model="item.types" style="float:left;width:20%">
+                                <el-option key="http" label="http代理" value="http"> </el-option>
+                                <el-option key="websocket" label="websocket代理" value="websocket"> </el-option>
+                            </el-select>
+                        </el-tooltip>
+                        <el-tooltip class="item" effect="dark" :content="item.notes?item.notes:''" placement="top">
+                            <el-input size="mini" v-model="item.rule" :placeholder="'规则'+(index+1)" style="margin-left:1%;float:left;width:38%"></el-input>
+                        </el-tooltip>
+                        <el-tooltip class="item" effect="dark" :content="item.notes?item.notes:''" placement="top">
+                            <el-input size="mini" v-model="item.url" :placeholder="'地址'+(index+1)" style="margin-left:1%;float:left;width:38%"></el-input>
+                        </el-tooltip>
+                    </td>
+                    <td>
+                        <el-tooltip class="item" effect="dark" :content="item.notes?item.notes:''" placement="top">
+                            <el-button @click="webitem.proxy_pass.splice(index,1)" size="mini" type="danger" icon="el-icon-delete" circle title="删除"></el-button>
+                        </el-tooltip>
+                    </td>
+                </tr>
+            </table>
+        </div>
+        
+    </el-card>
+    
+</div>
+</body>
+<script>
+var backup="";
+var Vues=null;
+function setimgmt(domain,paths,item){
+    mysetfile(domain,paths,item)
+    layer.closeAll();
+}
+Vues=new Vue({
+    el: '#app',
+    data:{
+        kcwebsimg:"${config.domain['kcwebsimg']}",
+        winheight:document.documentElement.clientHeight,winwidth:document.documentElement.clientWidth,
+        config:{
+            aliyun:{
+                access_key:'',
+                access_key_secret:'',
+                address:'',
+                backpath:'',
+                bucket:''
+            },
+            system:{
+                name:'',
+                logo:'',
+                kcwebsuser:{}
+            },
+            email:{
+                sender:'',
+                pwd:'',
+                recuser:''
+            },
+        },
+        showdomc:false,isdomain:false,
+        webitem:{
+            domain:'',
+            client_max_body_size:20,
+            read_timeout:60,
+            proxy_pass:[]
+        }
+    },
+    mounted:function(){
+        self=this
+        window.onresize = function(){
+            self.winheight=document.documentElement.clientHeight
+            self.winwidth=document.documentElement.clientWidth
+        }
+        window.mysetfile = this.mysetfile;
+        self.getbanddomain();
+        self.setbaseconfig('get')
+    },
+    methods: {
+        getbanddomain:function(){
+            self=this
+            self.get("/index/index/setup/getbanddomain").then(function(res){
+                if (res.data.domain){
+                    self.webitem.domain=res.data.domain;
+                    self.webitem.client_max_body_size=res.data.client_max_body_size;
+                    self.webitem.read_timeout=res.data.other.read_timeout;
+                    self.webitem.proxy_pass=res.data.other.proxy_pass;
+                    self.isdomain=true;
+                }else{
+                    self.isdomain=false;
+                }
+                self.showdomc=true
+            })
+        },
+        banddomainall:function(){
+			self=this
+			self.put("/index/index/setup/banddomainall",self.webitem,"请稍后...").then(function(res){
+                self.$notify({title: '保存成功',duration:5000,message:res.msg,type: 'success'});
+                self.getbanddomain();
+			}).catch(function(err) {})
+		},
+        delbanddomain:function(){
+            self=this
+            self.$confirm('删除后，你将无法通过以下域名访问本系统, 是否继续?', '警告', {
+                confirmButtonText: '删除',
+                cancelButtonText: '取消',
+                type: 'warning'
+            }).then(function(){
+                self.delete("/index/index/setup/delbanddomain",{},"请稍后...").then(function(res){
+                    self.$notify({title: '删除成功',duration:5000,message:res.msg,type: 'success'});
+                    self.getbanddomain();
+                }).catch(function(err) {})
+            }).catch(function(){});
+        },
+        mysetfile:function(domain,paths,item){
+            if (item.suffix=='jpg' || item.suffix=='JPG' || item.suffix=='png' || item.suffix=='PNG' || item.suffix=='gif' || item.suffix=='GIF'){
+                self.config.system.logo=domain+paths+item.name
+            }else{
+                self.$message({type: 'error',message: '请选择图片文件'});
+            }
+        },
+        openurl:function(url){
+            layer.open({
+                type: 2,title: false,shadeClose: true,shade: 0.8,
+                area: ['80%', '90%'],content:url
+            }); 
+        },
+        setbaseconfig:function(types){
+            self=this
+            if(types=='set'){
+                self.put("/index/index/setup/setbaseconfig/"+types,self.config,'请稍后...').then(function(res){
+                    self.$notify({title: '成功',duration:5000,message:res.msg,type: 'success'});
+                })
+            }else{
+                self.get("/index/index/setup/setbaseconfig/"+types,self.config,'请稍后...').then(function(res){
+                    self.config=res.data
+                    if(!self.config.system){
+                        self.config.system={
+                            name:'',logo:'',kcwebsuser:{}
+                        }
+                    }
+                })
+            }
+        }
+    }
+});
+</script>
+</html>

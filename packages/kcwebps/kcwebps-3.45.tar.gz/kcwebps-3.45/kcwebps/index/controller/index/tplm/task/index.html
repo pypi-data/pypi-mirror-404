@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+<meta charset="utf-8" />
+<title>kcwebs云管</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+<meta name="HandheldFriendly" content="true"/>
+<meta name="MobileOptimized" content="320"/>
+<%include file="../include/static.html"/>
+</head>
+<body>
+<div id="app">
+    <van-cell v-for="item in data.lists" :label="item.error">
+        <template #title>
+            <span class="custom-title">{{item.title}}</span>
+        </template>
+        <template #right-icon>
+            {{item.msg}}&nbsp{{time_date(item.addtime)}}
+        </template>
+    </van-cell>
+
+    <div v-if="status==1">
+        <van-divider><van-loading size="24px">加载中...</van-loading></van-divider>
+    </div>
+    <div v-else-if="status==0">
+        <van-divider v-if="data.pagenow<data.pagecount"  @click="xyygetlist"><span>下一页</span></van-divider>
+        <van-divider v-else-if="data.count<=0" style="padding-top:200px">暂无数据</van-divider>
+        <van-divider v-else>我已到底了</van-divider>
+    </div>
+</div>
+<script>
+ var VU=new Vue({
+    el: '#app',
+    data:{
+        kcwebsimg:"${config.domain['kcwebsimg']}",
+        winheight:document.documentElement.clientHeight,winwidth:document.documentElement.clientWidth,
+        data:{
+            count:0,
+            lists:[],
+            pagecount:0,
+            pagenow:1,
+            pagesize:10
+        }
+    },
+    mounted:function(){
+        self=this
+        window.onresize = function(){
+            self.winheight=document.documentElement.clientHeight
+            self.winwidth=document.documentElement.clientWidth
+        }
+        try{
+            parent.window.setheader({height:49,type:'lefturl',title:'任务队列',icon:'https://img.kwebapp.cn/icon/task.png',
+                lefturl:{text:'系统设置',url:'/index/index/setup'}
+            })
+        }catch(exception){}
+        self.obtain()
+    },
+    methods: {
+        gethtml:function(url,title,icon){
+            parent.window.topgethtml(url,title,icon)
+        },
+        taslstatus:function(item,index){
+            var self=this 
+			setTimeout(function(){
+                self.get("/index/index/task/taskstatus/"+item.taskid).then(function(res){
+                    if(res.data.code==3){
+                        self.taslstatus(item,index)
+                    }else{
+                        self.data.lists[index].code=res.data.code
+                        self.data.lists[index].msg=res.data.msg
+                        self.data.lists[index].error=res.data.error
+                        self.data.lists[index].describes=res.data.describes
+                    }
+                })
+            },5000);
+        },
+        xyygetlist:function(){//下一页
+            var self=this;
+            self.data.pagenow+=1
+            self.obtain()
+        },
+        obtain:function(){
+            var self=this
+            self.status=1
+			self.get("/index/index/task/task",{pagenow:self.data.pagenow},'获取中...').then(function(res){
+                self.data.count=res.data.count
+                self.data.pagecount=res.data.pagecount
+                self.data.pagenow=res.data.pagenow
+                self.data.pagesize=res.data.pagesize
+                if(self.data.pagenow==1){
+                    self.data.lists=[]
+                }
+                for (var i=0;i<res.data.lists.length;i++){
+                    if(res.data.lists[i].code==3){
+                        self.taslstatus(res.data.lists[i],i)
+                    }
+                    self.data.lists.push(res.data.lists[i])
+                }
+                self.status=0
+			})
+		},
+    }
+ });
+  </script>
+</body>
+</html>
