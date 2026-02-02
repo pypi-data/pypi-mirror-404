@@ -1,0 +1,74 @@
+import inspect
+import logging
+import queue
+import logging.handlers
+import os
+import sys
+from . import utils
+
+loggers = {}
+
+def setup_custom_logger(name):
+    global loggers
+
+    if loggers.get(name):
+        return loggers.get(name)
+    else:
+        formatter = logging.Formatter(
+            "%(asctime)s [%(module)s:%(lineno)d] %(levelname)s %(message)s"
+        )
+
+        logger = logging.getLogger(name)
+        # clean the handlers, otherwise you get duplicated records when logging
+        if logger.hasHandlers():
+            return logger
+            # logger.handlers.clear()
+        logger.propagate = False
+        level = logging.getLevelName(utils.get_logging_level())
+        logger.setLevel(level)
+        log_queue = queue.Queue()
+        queue_handler = logging.handlers.QueueHandler(log_queue)
+        # set the non-blocking handler first
+        logger.addHandler(queue_handler)
+
+        if hasattr(sys.stdout, "reconfigure"):
+            try:
+                sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+                sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+
+        # Stream is important for looking at the k8s pod logs.
+        stream_handler = logging.StreamHandler(stream=sys.stdout)
+        stream_handler.setLevel(logging.DEBUG)
+        stream_handler.setFormatter(formatter)
+
+        handler_list = [stream_handler]
+        env_value = os.environ.get("ENV")
+        if env_value is None or env_value.upper() == "DEV":
+            # Local file logging is only used in DEV environments.
+            timerotating_handler = logging.handlers.TimedRotatingFileHandler(
+                utils.get_log_path().joinpath("app_rolling.log"), when="D", backupCount=30, encoding="utf-8"
+            )
+            timerotating_handler.setLevel(utils.get_logging_level())
+            timerotating_handler.setFormatter(formatter)
+            handler_list.append(timerotating_handler)
+
+        listener = logging.handlers.QueueListener(
+            log_queue, *handler_list, respect_handler_level=True
+        )
+
+        # Only print the following when instantiated by the main.py file - and not other files.
+        # This will ensure that the important project variables are printet on startup.
+        current_stack = inspect.stack()
+        if any("main.py" in frame.filename for frame in current_stack):
+            # Print settings:
+            logger.info(f"Starting {utils.get_application_name()} in {utils.get_environment()}.")
+            logger.info(f"Domain {utils.get_domain_name()}")
+            logger.info(f"Root {utils.get_project_root()}")
+            logger.info(f"Log Path {utils.get_log_path()}")
+            logger.info(f"Logging Level {utils.get_logging_level()}")
+
+        listener.start()
+
+    return logger
