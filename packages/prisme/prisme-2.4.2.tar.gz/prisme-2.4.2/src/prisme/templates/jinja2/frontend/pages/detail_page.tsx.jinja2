@@ -1,0 +1,116 @@
+/**
+ * Detail page for {{ model_name }}.
+ *
+ * ✅ YOUR CODE - Safe to modify, will not be overwritten.
+ * This file was generated once by Prism and is yours to customize.
+ */
+
+import React from 'react';
+import type { JSX } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { use{{ model_name }}{% if has_mutations %}, use{{ model_name }}Mutations{% endif %} } from '../../hooks/use{{ model_name }}';
+import { {{ model_name }}Detail } from '../../components/{{ kebab_name }}/{{ model_name }}Detail';
+
+export default function {{ model_name }}DetailPage(): JSX.Element {
+  const navigate = useNavigate();
+  const { id } = useParams<{ id: string }>();
+  const { data, loading, error } = use{{ model_name }}(id ? parseInt(id, 10) : null);
+{%- if has_mutations %}
+  const { {% if ops_delete %}remove, {% endif %}loading: mutating } = use{{ model_name }}Mutations();
+{%- endif %}
+
+  const handleBack = () => {
+    navigate('/{{ plural_kebab }}');
+  };
+{% if ops_update %}
+  const handleEdit = () => {
+    navigate(`/{{ plural_kebab }}/${id}/edit`);
+  };
+{% endif %}
+{%- if ops_delete %}
+  const handleDelete = async () => {
+    if (!id) return;
+    if (window.confirm('Are you sure you want to delete this {{ model_name_lower }}?')) {
+      const success = await remove(parseInt(id, 10));
+      if (success) {
+        navigate('/{{ plural_kebab }}');
+      }
+    }
+  };
+{% endif %}
+  if (error) {
+    return (
+      <div className="page-container">
+        <div className="alert-error">
+          <p>Error: {error.message}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (loading || !data) {
+    return (
+      <div className="page-container">
+        <div className="card p-12 flex items-center justify-center">
+          <div className="animate-pulse flex items-center gap-3">
+            <div className="w-2 h-2 bg-muted rounded-full animate-bounce" />
+            <div className="w-2 h-2 bg-muted rounded-full animate-bounce [animation-delay:0.1s]" />
+            <div className="w-2 h-2 bg-muted rounded-full animate-bounce [animation-delay:0.2s]" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="page-container">
+      <{{ model_name }}Detail
+        data={data}
+        loading={{ '{mutating}' if has_mutations else '{false}' }}
+        onBack={handleBack}
+{%- if ops_update %}
+        onEdit={handleEdit}
+{%- endif %}
+{%- if ops_delete %}
+        onDelete={handleDelete}
+{%- endif %}
+      />
+{% if related_models %}
+
+      {/* Related records */}
+      <div className="mt-6">
+        <div className="border-b border-border mb-4">
+          <nav className="flex gap-4">
+{% for rel in related_models %}
+            <span className="px-1 pb-2 text-sm font-medium text-muted border-b-2 border-transparent hover:text-foreground hover:border-primary cursor-pointer">
+              {{ rel.plural_name }}
+            </span>
+{% endfor %}
+          </nav>
+        </div>
+{% for rel in related_models %}
+        {/* {{ rel.plural_name }} related to this {{ model_name }} */}
+        {data.{{ rel.name }} && Array.isArray(data.{{ rel.name }}) && data.{{ rel.name }}.length > 0 && (
+          <div className="card overflow-hidden mb-4">
+            <div className="px-4 py-2 bg-surface-sunken border-b border-border">
+              <h3 className="text-sm font-medium text-foreground">{{ rel.plural_name }} ({data.{{ rel.name }}.length})</h3>
+            </div>
+            <ul className="divide-y divide-border">
+              {data.{{ rel.name }}.map((item: any) => (
+                <li
+                  key={item.id}
+                  className="px-4 py-3 text-sm text-foreground hover:bg-surface-sunken cursor-pointer"
+                  onClick={() => navigate(`/{{ rel.plural_kebab }}/${item.id}`)}
+                >
+                  {item.name || item.title || `{{ rel.target_model }} #${item.id}`}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+{% endfor %}
+      </div>
+{% endif %}
+    </div>
+  );
+}

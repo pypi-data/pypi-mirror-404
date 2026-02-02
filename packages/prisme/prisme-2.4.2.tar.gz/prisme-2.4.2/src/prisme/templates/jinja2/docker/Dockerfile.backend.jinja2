@@ -1,0 +1,32 @@
+FROM python:3.13-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    postgresql-client \
+{% for pkg in system_packages %}
+    {{ pkg }} \
+{% endfor %}
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv
+RUN pip install --no-cache-dir uv
+
+# Copy and install from correct directory
+COPY {{ backend_path }}/pyproject.toml {{ backend_path }}/
+COPY {{ backend_path }}/uv.lock* {{ backend_path }}/
+WORKDIR /app/{{ backend_path }}
+RUN uv pip install --system -e .
+WORKDIR /app
+
+# Copy application code
+COPY {{ backend_path }} ./{{ backend_path }}
+COPY specs ./specs
+
+ENV PYTHONPATH=/app/{{ backend_path }}/src
+
+EXPOSE 8000
+
+CMD ["uvicorn", "{{ backend_module }}.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

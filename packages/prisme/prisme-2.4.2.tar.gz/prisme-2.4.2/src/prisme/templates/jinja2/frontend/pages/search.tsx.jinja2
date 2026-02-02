@@ -1,0 +1,105 @@
+/**
+ * Global search page.
+ *
+ * ✅ YOUR CODE - Safe to modify, will not be overwritten.
+ * This file was generated once by Prism and is yours to customize.
+ */
+
+import React, { useState, useCallback } from 'react';
+import type { JSX } from 'react';
+import { useNavigate } from 'react-router-dom';
+{% for model in models %}
+import { use{{ model.name }}List } from '../hooks/use{{ model.name }}';
+{% endfor %}
+
+export default function SearchPage(): JSX.Element {
+  const navigate = useNavigate();
+  const [query, setQuery] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
+
+{% for model in models %}
+  const { data: {{ model.plural_name | lower }}Data, loading: {{ model.plural_name | lower }}Loading } = use{{ model.name }}List({
+    page: 1,
+    pageSize: 5,
+    search: searchTerm || undefined,
+  });
+{% endfor %}
+
+  const handleSearch = useCallback((e: React.FormEvent) => {
+    e.preventDefault();
+    setSearchTerm(query);
+  }, [query]);
+
+  const loading = {% for model in models %}{{ model.plural_name | lower }}Loading{{ ' || ' if not loop.last else '' }}{% endfor %}{% if not models %}false{% endif %};
+
+  return (
+    <div className="page-container">
+      <header className="page-header">
+        <h1 className="page-title">Search</h1>
+        <p className="page-subtitle">Search across all records</p>
+      </header>
+
+      <form onSubmit={handleSearch} className="mb-6">
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search..."
+            className="input-field flex-1"
+            autoFocus
+          />
+          <button type="submit" className="btn-primary" disabled={!query.trim()}>
+            Search
+          </button>
+        </div>
+      </form>
+
+      {searchTerm && (
+        <div className="space-y-6">
+          {loading && (
+            <div className="card p-8 text-center">
+              <p className="text-muted">Searching...</p>
+            </div>
+          )}
+{% for model in models %}
+
+          {/* {{ model.plural_name }} results */}
+          {{ '{' }}{{ model.plural_name | lower }}Data && {{ model.plural_name | lower }}Data.length > 0 && (
+            <div className="card">
+              <div className="px-4 py-3 border-b border-border">
+                <h2 className="text-sm font-semibold text-foreground">
+                  {{ model.plural_name }} ({{ '{' }}{{ model.plural_name | lower }}Data.length{{ '}' }})
+                </h2>
+              </div>
+              <ul className="divide-y divide-border">
+                {{ '{' }}{{ model.plural_name | lower }}Data.map((item: any) => (
+                  <li
+                    key={item.id}
+                    className="px-4 py-3 hover:bg-surface-sunken cursor-pointer transition-colors"
+                    onClick={() => navigate(`/{{ model.plural_kebab }}/${item.id}`)}
+                  >
+                    <span className="text-sm text-foreground">
+                      {item.name || item.title || `{{ model.name }} #${item.id}`}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+{% endfor %}
+
+          {!loading &&
+{% for model in models %}
+            (!{{ model.plural_name | lower }}Data || {{ model.plural_name | lower }}Data.length === 0){{ ' &&' if not loop.last else '' }}
+{% endfor %}
+           && (
+            <div className="card p-8 text-center">
+              <p className="text-muted">No results found for "{searchTerm}"</p>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
