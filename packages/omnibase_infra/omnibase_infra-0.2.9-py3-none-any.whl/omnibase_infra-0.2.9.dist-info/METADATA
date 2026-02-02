@@ -1,0 +1,197 @@
+Metadata-Version: 2.4
+Name: omnibase_infra
+Version: 0.2.9
+Summary: ONEX Infrastructure - Service integration and database infrastructure tools
+License: MIT
+License-File: LICENSE
+Author: OmniNode Team
+Author-email: team@omninode.ai
+Requires-Python: >=3.12,<4.0
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Programming Language :: Python :: 3.14
+Requires-Dist: aiofiles (>=23.2.1,<24.0.0)
+Requires-Dist: aiohttp (>=3.9.0,<4.0.0)
+Requires-Dist: aiokafka (>=0.11.0,<0.12.0)
+Requires-Dist: asyncpg (>=0.29.0,<0.30.0)
+Requires-Dist: circuitbreaker (>=2.0.0,<3.0.0)
+Requires-Dist: click (>=8.1.0,<9.0.0)
+Requires-Dist: confluent-kafka (>=2.12.0,<3.0.0)
+Requires-Dist: cryptography (>=46.0.3,<47.0.0)
+Requires-Dist: dependency-injector (>=4.48.1,<5.0.0)
+Requires-Dist: fastapi (>=0.120.1,<0.121.0)
+Requires-Dist: httpx (>=0.28.1,<0.29.0)
+Requires-Dist: hvac (>=2.1.0,<3.0.0)
+Requires-Dist: jinja2 (>=3.1.6,<4.0.0)
+Requires-Dist: jsonschema (>=4.20.0,<5.0.0)
+Requires-Dist: mcp (>=1.25.0,<2.0.0)
+Requires-Dist: neo4j (>=5.15.0,<6.0.0)
+Requires-Dist: omnibase-core (>=0.11.0,<0.12.0)
+Requires-Dist: omnibase-spi (>=0.6.4,<0.7.0)
+Requires-Dist: opentelemetry-api (>=1.27.0,<2.0.0)
+Requires-Dist: opentelemetry-exporter-otlp (>=1.27.0,<2.0.0)
+Requires-Dist: opentelemetry-instrumentation (>=0.48b0,<0.49)
+Requires-Dist: opentelemetry-instrumentation-aiohttp-client (>=0.48b0,<0.49)
+Requires-Dist: opentelemetry-instrumentation-asyncpg (>=0.48b0,<0.49)
+Requires-Dist: opentelemetry-instrumentation-fastapi (>=0.48b0,<0.49)
+Requires-Dist: opentelemetry-instrumentation-kafka-python (>=0.48b0,<0.49)
+Requires-Dist: opentelemetry-instrumentation-redis (>=0.48b0,<0.49)
+Requires-Dist: opentelemetry-sdk (>=1.27.0,<2.0.0)
+Requires-Dist: prometheus-client (>=0.19.0,<0.20.0)
+Requires-Dist: psycopg2-binary (>=2.9.10,<3.0.0)
+Requires-Dist: pydantic (>=2.11.7,<3.0.0)
+Requires-Dist: pydantic-settings (>=2.2.1,<3.0.0)
+Requires-Dist: python-consul (>=1.1.0,<2.0.0)
+Requires-Dist: pyyaml (>=6.0.2,<7.0.0)
+Requires-Dist: qdrant-client (>=1.12.0,<2.0.0)
+Requires-Dist: redis (>=6.0.0,<7.0.0)
+Requires-Dist: rich (>=13.7.0,<14.0.0)
+Requires-Dist: slowapi (>=0.1.9,<0.2.0)
+Requires-Dist: sqlparse (>=0.4.4,<0.5.0)
+Requires-Dist: structlog (>=23.2.0,<24.0.0)
+Requires-Dist: tenacity (>=9.0.0,<10.0.0)
+Requires-Dist: uvicorn (>=0.32.0,<0.33.0)
+Description-Content-Type: text/markdown
+
+# ONEX Infrastructure
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
+[![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
+[![Type checked: mypy](https://img.shields.io/badge/type%20checked-mypy-blue.svg)](https://mypy.readthedocs.io/)
+[![Pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit&logoColor=white)](https://github.com/pre-commit/pre-commit)
+[![Framework: Infrastructure](https://img.shields.io/badge/framework-infrastructure-green.svg)](https://github.com/OmniNode-ai/omnibase_infra)
+
+**Production infrastructure services for the ONEX execution layer.** Handlers, adapters, and runtime services for PostgreSQL, Kafka, Consul, Vault, and Redis.
+
+## What is This?
+
+This repository provides the **infrastructure layer** for ONEX-based systems. While [omnibase_core](https://github.com/OmniNode-ai/omnibase_core) defines the execution protocol and node archetypes, this package provides:
+
+- **Handlers** for external services (database, HTTP, messaging)
+- **Adapters** wrapping infrastructure clients
+- **Event bus** abstractions for Kafka/Redpanda
+- **Runtime services** deployable via Docker
+
+Built on `omnibase-core` ^0.8.0 and `omnibase-spi` ^0.5.0.
+
+## Quick Start
+
+```bash
+# Clone the repository
+git clone https://github.com/OmniNode-ai/omnibase_infra.git
+cd omnibase_infra
+
+# Start the runtime with Docker
+cd docker
+cp .env.example .env
+# Edit .env - set POSTGRES_PASSWORD, VAULT_TOKEN, REDIS_PASSWORD
+
+docker compose -f docker-compose.runtime.yml --profile main up -d --build
+
+# Verify it's running
+curl http://localhost:8085/health
+```
+
+## Docker Services
+
+The runtime deploys as containerized services connecting to your infrastructure:
+
+| Service | Profile | Port | Description |
+|---------|---------|------|-------------|
+| **runtime-main** | `main` | 8085 | Core kernel - request/response handling |
+| **runtime-effects** | `effects` | 8086 | External service I/O (DB, HTTP, messaging) |
+| **runtime-worker** | `workers` | — | Scalable compute workers (default: 2 replicas) |
+
+**Profiles:**
+```bash
+# Core only
+docker compose -f docker-compose.runtime.yml --profile main up -d
+
+# Core + effects
+docker compose -f docker-compose.runtime.yml --profile effects up -d
+
+# Core + workers (parallel compute)
+docker compose -f docker-compose.runtime.yml --profile workers up -d
+
+# Everything
+docker compose -f docker-compose.runtime.yml --profile all up -d
+```
+
+## Infrastructure Dependencies
+
+The runtime connects to external services (not included in compose):
+
+| Service | Purpose | Default Host | Environment Variable |
+|---------|---------|--------------|---------------------|
+| **PostgreSQL** | Persistence | `localhost:5432` | `POSTGRES_HOST`, `POSTGRES_PORT` |
+| **Kafka/Redpanda** | Event bus | `localhost:9092` | `KAFKA_BOOTSTRAP_SERVERS` |
+| **Consul** | Service discovery | `localhost:8500` | `CONSUL_HOST`, `CONSUL_PORT` |
+| **Vault** | Secrets management | `localhost:8200` | `VAULT_ADDR` |
+| **Redis/Valkey** | Caching | `localhost:6379` | `REDIS_HOST`, `REDIS_PORT` |
+
+Configure via `.env` file - see [docker/README.md](docker/README.md) for details.
+
+## Documentation
+
+| I want to... | Go to... |
+|--------------|----------|
+| Get started quickly | [Quick Start Guide](docs/getting-started/quickstart.md) |
+| Understand the architecture | [Architecture Overview](docs/architecture/overview.md) |
+| Deploy with Docker | [Docker Guide](docker/README.md) |
+| See a complete example | [Registration Walkthrough](docs/guides/registration-example.md) |
+| Write a contract | [Contract Reference](docs/reference/contracts.md) |
+| Find implementation patterns | [Pattern Documentation](docs/patterns/README.md) |
+| Read coding standards | [CLAUDE.md](CLAUDE.md) |
+
+**Full documentation**: [docs/index.md](docs/index.md)
+
+## Repository Structure
+
+```
+src/omnibase_infra/
+├── handlers/          # Request/message handlers
+├── event_bus/         # Kafka/Redpanda abstractions
+├── clients/           # Service clients
+├── models/            # Pydantic models
+├── nodes/             # ONEX nodes (Effect, Compute, Reducer, Orchestrator)
+├── errors/            # Error hierarchy
+├── mixins/            # Reusable behaviors
+└── enums/             # Centralized enums
+```
+
+## Development
+
+```bash
+# Install dependencies
+poetry install
+
+# Run tests
+poetry run pytest
+
+# Type checking
+poetry run mypy src/omnibase_infra/
+
+# Format code
+poetry run ruff format .
+poetry run ruff check --fix .
+```
+
+### Pre-commit Hooks Setup
+
+Run once after cloning:
+```bash
+poetry run pre-commit install
+poetry run pre-commit install --hook-type pre-push
+```
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for commit conventions and PR guidelines.
+
+## License
+
+MIT License - see [LICENSE](LICENSE) for details.
+
