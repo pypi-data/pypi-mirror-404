@@ -1,0 +1,399 @@
+syntax = "proto3";
+
+import "google/protobuf/struct.proto";
+
+package secgemini.api_hub;
+
+service ApiHub {
+  // Bi-directional streaming for all interactions
+  rpc Connect (stream ClientMessage) returns (stream ServerMessage);
+
+  // File Upload
+  rpc UploadFile (stream UploadFileRequest) returns (UploadFileResponse);
+}
+
+// -- Enums --
+
+enum JobStatus {
+  NOT_INITIALIZED = 0;
+  PENDING = 1;
+  RUNNING = 2;
+  PAUSED = 3;
+  CANCELED = 4;
+  COMPLETED = 5;
+  FAILED = 6;
+  WAITING_FOR_TOOL_CONFIRMATION = 7;
+  WAITING_FOR_CLARIFICATION = 8;
+  MAX_ATTEMPTS_EXCEEDED = 9;
+}
+
+enum McpStatus {
+  MCP_UNKNOWN = 0;
+  MCP_RUNNING = 1;
+  MCP_UNREACHABLE = 2;
+}
+
+enum SourceType {
+  SOURCE_TYPE_UNSPECIFIED = 0;
+  SOURCE_TYPE_USER = 1;
+  SOURCE_TYPE_AGENT = 2;
+  SOURCE_TYPE_SYSTEM = 3;
+}
+
+enum MessageType {
+  MESSAGE_TYPE_UNSPECIFIED = 0;
+  MESSAGE_TYPE_USER_QUERY = 1;
+  MESSAGE_TYPE_RESPONSE = 2;
+  MESSAGE_TYPE_THOUGHT = 3;
+  MESSAGE_TYPE_TOOL_CALL = 4;
+  MESSAGE_TYPE_TOOL_RESULT = 5;
+  MESSAGE_TYPE_ERROR = 6;
+  MESSAGE_TYPE_INFO = 7;
+  MESSAGE_TYPE_DEBUG = 8;
+  MESSAGE_TYPE_AGENT_IS_DONE = 9;
+  MESSAGE_TYPE_USER_QUERY_COMPLETED = 10;
+  MESSAGE_TYPE_TOOL_CONFIRMATION_REQUEST = 11;
+  MESSAGE_TYPE_TOOL_CONFIRMATION_RESPONSE = 12;
+  MESSAGE_TYPE_CLARIFICATION_REQUEST = 13;
+  MESSAGE_TYPE_CLARIFICATION_RESPONSE = 14;
+}
+
+enum RenderType {
+  RENDER_TYPE_UNSPECIFIED = 0;
+  RENDER_TYPE_MARKDOWN = 1;
+  RENDER_TYPE_TEXT = 2;
+  RENDER_TYPE_HTML = 3;
+  RENDER_TYPE_GRAPH = 4;
+  RENDER_TYPE_TABLE = 5;
+  RENDER_TYPE_TIMELINE = 6;
+  RENDER_TYPE_JSON = 7;
+}
+
+enum MimeType {
+  MIME_TYPE_UNSPECIFIED = 0;
+  MIME_TYPE_TEXT = 1;
+  MIME_TYPE_MARKDOWN = 2;
+  MIME_TYPE_SERIALIZED_JSON = 3;
+  MIME_TYPE_BINARY = 4;
+  MIME_TYPE_JPEG = 5;
+  MIME_TYPE_PNG = 6;
+  MIME_TYPE_TIFF = 7;
+  MIME_TYPE_GIF = 8;
+  MIME_TYPE_SVG = 9;
+  MIME_TYPE_WEBP = 10;
+  MIME_TYPE_AVIF = 11;
+  MIME_TYPE_WAV = 12;
+  MIME_TYPE_MP3 = 13;
+  MIME_TYPE_OGG = 14;
+  MIME_TYPE_WEBM = 15;
+  MIME_TYPE_MP4 = 16;
+  MIME_TYPE_C = 17;
+  MIME_TYPE_CPP = 18;
+  MIME_TYPE_JAVA = 19;
+  MIME_TYPE_RUST = 20;
+  MIME_TYPE_GOLANG = 21;
+  MIME_TYPE_PYTHON = 22;
+  MIME_TYPE_PHP = 23;
+  MIME_TYPE_PERL = 24;
+  MIME_TYPE_RUBY = 25;
+  MIME_TYPE_SWIFT = 26;
+  MIME_TYPE_KOTLIN = 27;
+  MIME_TYPE_SCALA = 28;
+  MIME_TYPE_JAVASCRIPT = 29;
+  MIME_TYPE_TYPESCRIPT = 30;
+  MIME_TYPE_HTML = 31;
+  MIME_TYPE_CSS = 32;
+  MIME_TYPE_CSV = 33;
+  MIME_TYPE_XML = 34;
+  MIME_TYPE_YAML = 35;
+  MIME_TYPE_TOML = 36;
+  MIME_TYPE_SQL = 37;
+  MIME_TYPE_JSON = 38;
+  MIME_TYPE_JSONL = 39;
+  MIME_TYPE_PDF = 40;
+  MIME_TYPE_DOCX = 41;
+  MIME_TYPE_XLSX = 42;
+  MIME_TYPE_PPTX = 43;
+  MIME_TYPE_DOC = 44;
+  MIME_TYPE_XLS = 45;
+  MIME_TYPE_PPT = 46;
+  MIME_TYPE_RTF = 47;
+  MIME_TYPE_ODT = 48;
+}
+
+// -- Common Structures --
+
+message McpTool {
+  string name = 1;
+  string description = 2;
+}
+
+message McpSkill {
+  string name = 1;
+  string description = 2;
+}
+
+message McpInfo {
+  string name = 1;
+  string uri = 2;
+  McpStatus status = 3;
+  repeated McpTool tools = 4;
+  repeated McpSkill skills = 5;
+}
+
+message SessionInfo {
+  string session_id = 1;
+  JobStatus status = 2;
+}
+
+message ToolCallConfirmationInfo {
+  string id = 1;
+  string tool_name = 2;
+  google.protobuf.Struct tool_args = 3;
+  string message = 4;
+}
+
+message Error {
+  string code = 1;
+  string message = 2;
+}
+
+message Message {
+  string id = 1;
+  double timestamp = 2;
+  SourceType source_type = 3;
+  string source = 4;
+  string title = 5;
+  string content = 6;
+  MessageType message_type = 7;
+  MimeType mime_type = 8;
+  RenderType render_type = 9;
+  string snapshot_id = 10;
+}
+
+// -- Client Messages --
+
+message ClientMessage {
+  string req_id = 1; // Correlation ID for request/response pairing
+  string session_id = 2;
+  oneof payload {
+    RegisterRequest register = 3;
+    CreateSessionRequest create_session_request = 4;
+    DeleteSessionRequest delete_session_request = 5;
+    PauseSessionRequest pause_session_request = 6;
+    ResumeSessionRequest resume_session_request = 7;
+    ListMcpsRequest list_mcps_request = 8;
+    ListSkillsRequest list_skills_request = 9;
+    ListSessionsRequest list_sessions_request = 10;
+    PromptRequest prompt_request = 11;
+    ConfirmActionRequest confirm_action_request = 12;
+    CancelSessionRequest cancel_session_request = 13;
+    StreamMessagesRequest stream_messages_request = 14;
+    StopStreamMessagesRequest stop_stream_messages_request = 15;
+    ListFilesRequest list_files_request = 16;
+    DeleteFileRequest delete_file_request = 17;
+    SetMcpsRequest set_mcps_request = 18;
+    SetConfirmationConfigRequest set_confirmation_config_request = 19;
+    GetConfirmationInfoRequest get_confirmation_info_request = 20;
+  }
+}
+
+message RegisterRequest {
+  string api_key = 1;
+}
+
+message CreateSessionRequest {
+}
+
+message ListMcpsRequest {
+}
+
+message ListSkillsRequest {
+}
+
+message ListSessionsRequest {
+}
+
+message PromptRequest {
+  string prompt = 2;
+  map<string, string> meta = 3;
+}
+
+message DeleteSessionRequest {
+}
+
+message ConfirmActionRequest {
+  string confirmation_id = 2;
+  bool confirmation_response = 3;
+}
+
+message CancelSessionRequest {
+}
+
+message StreamMessagesRequest {
+}
+message StopStreamMessagesRequest {
+}
+
+message ListFilesRequest {
+}
+
+message SetMcpsRequest {
+  repeated string mcp_servers = 1;
+}
+
+message GetConfirmationInfoRequest {
+}
+
+message SetConfirmationConfigRequest {
+  bool always_ask_for_tool_confirmation = 1;
+}
+
+// -- Server Messages --
+
+message ServerMessage {
+  string req_id = 1; // Correlation ID matching the request
+  oneof payload {
+    RegisterResponse register_response = 2;
+    CreateSessionResponse create_session_response = 3;
+    DeleteSessionResponse delete_session_response = 4;
+    PauseSessionResponse pause_session_response = 5;
+    ResumeSessionResponse resume_session_response = 6;
+    ListMcpsResponse list_mcps_response = 7;
+    ListSkillsResponse list_skills_response = 8;
+    ListSessionsResponse list_sessions_response = 9;
+    PromptResponse prompt_response = 10;
+    ConfirmActionResponse confirm_action_response = 11;
+    CancelSessionResponse cancel_session_response = 12;
+    Message message = 13;
+    SessionStateChange session_state_change = 14;
+    SessionNotFound session_not_found = 15;
+    ListFilesResponse list_files_response = 16;
+    DeleteFileResponse delete_file_response = 17;
+    SetMcpsResponse set_mcps_response = 18;
+    SetConfirmationConfigResponse set_confirmation_config_response = 19;
+    GetConfirmationInfoResponse get_confirmation_info_response = 20;
+  }
+}
+
+message RegisterResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message CreateSessionResponse {
+  bool success = 1;
+  string session_id = 2;
+}
+
+message DeleteSessionResponse {
+  bool success = 1;
+}
+
+message PauseSessionRequest {
+  bool success= 1;
+}
+
+message ResumeSessionRequest {
+  bool success= 1;
+}
+
+message DeleteFileRequest {
+  string session_id = 1;
+  string filename = 2;
+}
+
+message DeleteFileResponse {
+  bool success = 1;
+  string error_message = 2;
+}
+
+message PauseSessionResponse {
+  bool success = 1;
+}
+
+message ResumeSessionResponse {
+  bool success = 1;
+}
+
+message GetConfirmationInfoResponse {
+  bool success = 1;
+  ToolCallConfirmationInfo confirmation_info = 2;
+}
+
+message ListMcpsResponse {
+  bool success = 1;
+  repeated McpInfo mcps = 2;
+}
+
+message ListSkillsResponse {
+  bool success = 1;
+  repeated McpInfo mcps = 2;
+}
+
+message ListSessionsResponse {
+  bool success = 1;
+  repeated SessionInfo sessions = 2;
+}
+
+message PromptResponse {
+  bool success = 1;
+}
+
+message ConfirmActionResponse {
+  bool success = 1;
+}
+
+message CancelSessionResponse {
+  bool success = 1;
+}
+
+message SessionStateChange {
+  string session_id = 1;
+  JobStatus status = 2;
+}
+
+message SessionNotFound {
+  string session_id = 1;
+}
+
+message FileInfo {
+  string filename = 1;
+  string content_type = 2;
+  string url = 3;
+  string session_id = 4;
+}
+
+message ListFilesResponse {
+  bool success = 1;
+  repeated FileInfo files = 2;
+}
+
+message SetMcpsResponse {
+  bool success = 1;
+}
+
+message SetConfirmationConfigResponse {
+  bool success = 1;
+}
+
+// -- Upload Messages --
+
+message FileMetadata {
+  string filename = 1;
+  string content_type = 2;
+  string session_id = 3;
+}
+
+message UploadFileRequest {
+  oneof payload {
+    FileMetadata metadata = 1;
+    bytes chunk = 2;
+  }
+}
+
+message UploadFileResponse {
+  bool success = 1;
+
+  string error_message = 3;
+}
