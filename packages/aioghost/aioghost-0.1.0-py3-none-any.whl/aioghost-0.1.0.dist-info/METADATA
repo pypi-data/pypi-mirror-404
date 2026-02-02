@@ -1,0 +1,136 @@
+Metadata-Version: 2.4
+Name: aioghost
+Version: 0.1.0
+Summary: Async Python client for the Ghost Admin API
+Project-URL: Homepage, https://github.com/vitrixbot/aioghost
+Project-URL: Documentation, https://github.com/vitrixbot/aioghost#readme
+Project-URL: Repository, https://github.com/vitrixbot/aioghost
+Project-URL: Issues, https://github.com/vitrixbot/aioghost/issues
+Author-email: vitrixbot <vitrixclawd@icloud.com>
+License-Expression: MIT
+License-File: LICENSE
+Keywords: aiohttp,api,async,asyncio,cms,ghost
+Classifier: Development Status :: 4 - Beta
+Classifier: Framework :: AsyncIO
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Internet :: WWW/HTTP
+Requires-Python: >=3.11
+Requires-Dist: aiohttp>=3.8.0
+Requires-Dist: pyjwt>=2.0.0
+Provides-Extra: dev
+Requires-Dist: aioresponses>=0.7.0; extra == 'dev'
+Requires-Dist: mypy>=1.0.0; extra == 'dev'
+Requires-Dist: pytest-aiohttp>=1.0.0; extra == 'dev'
+Requires-Dist: pytest-asyncio>=0.21.0; extra == 'dev'
+Requires-Dist: pytest>=7.0.0; extra == 'dev'
+Requires-Dist: ruff>=0.1.0; extra == 'dev'
+Description-Content-Type: text/markdown
+
+# aioghost
+
+Async Python client for the [Ghost Admin API](https://ghost.org/docs/admin-api/).
+
+## Installation
+
+```bash
+pip install aioghost
+```
+
+## Quick Start
+
+```python
+import asyncio
+from aioghost import GhostAdminAPI
+
+async def main():
+    async with GhostAdminAPI(
+        site_url="https://your-site.ghost.io",
+        admin_api_key="your-admin-api-key"
+    ) as api:
+        # Get site info
+        site = await api.get_site()
+        print(f"Site: {site['title']}")
+
+        # Get member counts
+        members = await api.get_members_count()
+        print(f"Total members: {members['total']}")
+        print(f"Paid members: {members['paid']}")
+
+        # Get MRR
+        mrr = await api.get_mrr()
+        print(f"MRR: ${mrr.get('usd', 0) / 100:.2f}")
+
+asyncio.run(main())
+```
+
+## Features
+
+- **Fully async** — Built on `aiohttp` for non-blocking I/O
+- **Type hints** — Full type annotations for IDE support
+- **Context manager** — Automatic session cleanup with `async with`
+- **Parallel requests** — Uses `asyncio.gather()` for efficient batching
+- **Proper exceptions** — Typed exceptions for different error cases
+
+## API Coverage
+
+| Endpoint | Method |
+|----------|--------|
+| Site info | `get_site()` |
+| Posts count | `get_posts_count()` |
+| Latest post | `get_latest_post()` |
+| Members count | `get_members_count()` |
+| MRR | `get_mrr()` |
+| Newsletters | `get_newsletters()` |
+| Latest email | `get_latest_email()` |
+| Comments count | `get_comments_count()` |
+| Tiers | `get_tiers()` |
+| ActivityPub stats | `get_activitypub_stats()` |
+| Webhooks | `create_webhook()`, `delete_webhook()` |
+| Validate credentials | `validate_credentials()` |
+
+## Getting Your Admin API Key
+
+1. Log in to your Ghost Admin panel
+2. Go to **Settings → Integrations**
+3. Click **Add custom integration**
+4. Copy the **Admin API Key** (format: `id:secret`)
+
+## Exceptions
+
+```python
+from aioghost import (
+    GhostError,           # Base exception
+    GhostAuthError,       # Invalid API key
+    GhostConnectionError, # Network error
+    GhostNotFoundError,   # 404 response
+    GhostValidationError, # Invalid request
+)
+```
+
+## Passing Your Own Session
+
+If you want to reuse an existing `aiohttp.ClientSession`:
+
+```python
+import aiohttp
+from aioghost import GhostAdminAPI
+
+async def main():
+    async with aiohttp.ClientSession() as session:
+        api = GhostAdminAPI(
+            site_url="https://your-site.ghost.io",
+            admin_api_key="your-key",
+            session=session,
+        )
+        site = await api.get_site()
+        # Session is NOT closed when api goes out of scope
+```
+
+## License
+
+MIT License - see [LICENSE](LICENSE) for details.
