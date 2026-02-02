@@ -1,0 +1,715 @@
+use anyhow::{anyhow, Result};
+use std::io::{Read, Write};
+
+use crate::amd::{AmdFamily, AmdGenerator};
+use crate::arm::{ArmGenerator, ArmSimdGenerator};
+use crate::builder::Builder;
+use crate::complexify::Complexifier;
+use crate::defuns::Defuns;
+use crate::generator::Generator;
+use crate::machine::MachineCode;
+use crate::matrix::{combine_matrixes, Matrix};
+use crate::mir::{CompiledMir, Mir};
+use crate::model::Program;
+use crate::riscv64::RiscV;
+use crate::symbol::Loc;
+use crate::utils::*;
+
+use rayon::prelude::*;
+
+#[derive(Debug, PartialEq, Copy, Clone)]
+pub enum CompilerType {
+    /// generates bytecode (interpreter).
+    ByteCode,
+    /// generates code for the detected CPU (default)
+    Native,
+    /// generates x86-64 (AMD64) code.
+    Amd,
+    /// generates AVX code for x86-64 architecture.
+    AmdAVX,
+    /// generates SSE2 code for x86-64 architecture.
+    AmdSSE,
+    /// generates aarch64 (ARM64) code.
+    Arm,
+    /// generates riscv64 (RISC V) code.
+    RiscV,
+    /// debug mode, generates both bytecode and native codes
+    /// and compares the outputs.
+    Debug,
+}
+
+pub struct Application {
+    pub prog: Program,
+    pub mir: Mir,
+    pub compiled: Box<dyn Compiled<f64>>,
+    pub compiled_simd: Option<Box<dyn Compiled<f64>>>,
+    pub compiled_fast: Option<Box<dyn Compiled<f64>>>,
+    pub params: Vec<f64>,
+    pub use_simd: bool,
+    pub use_threads: bool,
+    pub can_fast: bool,
+    pub first_state: usize,
+    pub first_param: usize,
+    pub first_obs: usize,
+    pub first_diff: usize,
+    pub count_states: usize,
+    pub count_params: usize,
+    pub count_obs: usize,
+    pub count_diffs: usize,
+    // pub size: usize,
+}
+
+impl Application {
+    pub fn new(mut prog: Program, df: &Defuns) -> Result<Application> {
+        let first_state = 0;
+        let first_param = 0;
+        let first_obs = first_state + prog.count_states;
+        let first_diff = first_obs + prog.count_obs;
+
+        let count_states = prog.count_states;
+        let count_params = prog.count_params;
+        let count_obs = prog.count_obs;
+        let count_diffs = prog.count_diffs;
+
+        let params = vec![0.0; count_params + 1];
+
+        let mut mir = prog.builder.compile_mir(df)?;
+
+        if prog.config().is_complex() {
+            mir = Complexifier::new(*prog.config()).complexify(&mir)?;
+        }
+
+        let compiled = Self::compile_ty(prog.config().compiler_type(), &mir, &mut prog)?;
+
+        let use_simd = prog.config().use_simd() && prog.count_loops == 0;
+        let use_threads = prog.config().use_threads() && prog.mem_size() < 128;
+
+        let can_fast = prog.config().may_fast()
+            && count_states <= 8
+            && count_params == 0
+            && count_obs == 1
+            && count_diffs == 0;
+
+        Ok(Application {
+            prog,
+            mir,
+            compiled,
+            compiled_simd: None,
+            compiled_fast: None,
+            params,
+            use_simd,
+            use_threads,
+            can_fast,
+            first_state,
+            first_param,
+            first_obs,
+            first_diff,
+            count_states,
+            count_params,
+            count_obs,
+            count_diffs,
+        })
+    }
+
+    /********************* compile_* functions *************************/
+
+    fn compile_ty(
+        ty: CompilerType,
+        mir: &Mir,
+        prog: &mut Program,
+    ) -> Result<Box<dyn Compiled<f64>>> {
+        match ty {
+            CompilerType::AmdAVX => Self::compile_avx(mir, prog),
+            CompilerType::AmdSSE => Self::compile_sse(mir, prog),
+            CompilerType::Arm => Self::compile_arm(mir, prog),
+            CompilerType::RiscV => Self::compile_riscv(mir, prog),
+            CompilerType::ByteCode => Self::compile_debugger(mir, prog, false),
+            CompilerType::Debug => Self::compile_debugger(mir, prog, true),
+            _ => Err(anyhow!("invalid compiler type")),
+        }
+    }
+
+    fn compile<G: Generator>(
+        mir: &Mir,
+        prog: &mut Program,
+        mut generator: G,
+        size: usize,
+        arch: &str,
+        lanes: usize,
+    ) -> Result<Box<dyn Compiled<f64>>> {
+        let mem: Vec<f64> = vec![0.0; size];
+        prog.builder.compile_from_mir(
+            mir,
+            &mut generator,
+            prog.count_states,
+            prog.count_obs,
+            prog.count_params,
+        )?;
+        let code = MachineCode::new(arch, generator.bytes(), mem, false, lanes);
+        let compiled: Box<dyn Compiled<f64>> = Box::new(code);
+        Ok(compiled)
+    }
+
+    fn compile_fast<G: Generator>(
+        mir: &Mir,
+        prog: &mut Program,
+        mut generator: G,
+        idx_ret: u32,
+        arch: &str,
+    ) -> Result<Box<dyn Compiled<f64>>> {
+        let mem: Vec<f64> = Vec::new();
+        prog.builder.compile_fast_from_mir(
+            mir,
+            &mut generator,
+            prog.count_states,
+            prog.count_obs,
+            idx_ret as i32,
+        )?;
+        let code = MachineCode::new(arch, generator.bytes(), mem, true, 1);
+        let compiled: Box<dyn Compiled<f64>> = Box::new(code);
+
+        Ok(compiled)
+    }
+
+    fn compile_sse(mir: &Mir, prog: &mut Program) -> Result<Box<dyn Compiled<f64>>> {
+        Self::compile::<AmdGenerator>(
+            mir,
+            prog,
+            AmdGenerator::new(AmdFamily::SSEScalar, *prog.config()),
+            prog.mem_size(),
+            "x86_64",
+            1,
+        )
+    }
+
+    fn compile_avx(mir: &Mir, prog: &mut Program) -> Result<Box<dyn Compiled<f64>>> {
+        Self::compile::<AmdGenerator>(
+            mir,
+            prog,
+            AmdGenerator::new(AmdFamily::AvxScalar, *prog.config()),
+            prog.mem_size(),
+            "x86_64",
+            1,
+        )
+    }
+
+    fn compile_avx_simd(mir: &Mir, prog: &mut Program) -> Result<Box<dyn Compiled<f64>>> {
+        Self::compile::<AmdGenerator>(
+            mir,
+            prog,
+            AmdGenerator::new(AmdFamily::AvxVector, *prog.config()),
+            prog.mem_size() * 4,
+            "x86_64",
+            4,
+        )
+    }
+
+    fn compile_arm(mir: &Mir, prog: &mut Program) -> Result<Box<dyn Compiled<f64>>> {
+        Self::compile::<ArmGenerator>(
+            mir,
+            prog,
+            ArmGenerator::new(*prog.config()),
+            prog.mem_size(),
+            "aarch64",
+            1,
+        )
+    }
+
+    fn compile_arm_simd(mir: &Mir, prog: &mut Program) -> Result<Box<dyn Compiled<f64>>> {
+        Self::compile::<ArmSimdGenerator>(
+            mir,
+            prog,
+            ArmSimdGenerator::new(*prog.config()),
+            prog.mem_size() * 2,
+            "aarch64",
+            2,
+        )
+    }
+
+    fn compile_riscv(mir: &Mir, prog: &mut Program) -> Result<Box<dyn Compiled<f64>>> {
+        Self::compile::<RiscV>(
+            mir,
+            prog,
+            RiscV::new(*prog.config()),
+            prog.mem_size(),
+            "riscv64",
+            1,
+        )
+    }
+
+    fn compile_amd_fast(
+        mir: &Mir,
+        prog: &mut Program,
+        idx_ret: u32,
+    ) -> Result<Box<dyn Compiled<f64>>> {
+        if prog.config().has_avx() {
+            Self::compile_fast(
+                mir,
+                prog,
+                AmdGenerator::new(AmdFamily::AvxScalar, *prog.config()),
+                idx_ret,
+                "x86_64",
+            )
+        } else {
+            Self::compile_fast(
+                mir,
+                prog,
+                AmdGenerator::new(AmdFamily::SSEScalar, *prog.config()),
+                idx_ret,
+                "x86_64",
+            )
+        }
+    }
+
+    fn compile_arm_fast(
+        mir: &Mir,
+        prog: &mut Program,
+        idx_ret: u32,
+    ) -> Result<Box<dyn Compiled<f64>>> {
+        Self::compile_fast(
+            mir,
+            prog,
+            ArmGenerator::new(*prog.config()),
+            idx_ret,
+            "aarch64",
+        )
+    }
+
+    fn compile_riscv_fast(
+        mir: &Mir,
+        prog: &mut Program,
+        idx_ret: u32,
+    ) -> Result<Box<dyn Compiled<f64>>> {
+        Self::compile_fast(mir, prog, RiscV::new(*prog.config()), idx_ret, "riscv64")
+    }
+
+    fn compile_bytecode(mir: &Mir, prog: &mut Program) -> Result<Box<dyn Compiled<f64>>> {
+        // println!("{:#?}", &mir);
+        let mem: Vec<f64> = vec![0.0; prog.mem_size()];
+        let stack: Vec<f64> = vec![0.0; prog.builder.block().sym_table.num_stack];
+        let code = CompiledMir::new(mir.clone(), mem, stack);
+        let compiled: Box<dyn Compiled<f64>> = Box::new(code);
+        Ok(compiled)
+    }
+
+    fn compile_debugger(
+        mir: &Mir,
+        prog: &mut Program,
+        debug: bool,
+    ) -> Result<Box<dyn Compiled<f64>>> {
+        let compiled = Self::compile_ty(prog.config().native_compiler_type(), mir, prog)?;
+        let bytecode = Self::compile_bytecode(mir, prog)?;
+        let debugger: Box<dyn Compiled<f64>> = Box::new(Debugger::new(
+            prog.builder.clone(),
+            compiled,
+            bytecode,
+            debug,
+        ));
+        Ok(debugger)
+    }
+
+    /**********************************************************/
+
+    #[inline]
+    pub fn exec(&mut self) {
+        self.compiled.exec(&self.params[..]);
+    }
+
+    pub fn exec_callable(&mut self, xx: &[f64]) -> f64 {
+        let mem = self.compiled.mem_mut();
+        mem[self.first_state..self.first_state + self.count_states].copy_from_slice(xx);
+        // mem[self.idx_iv] = 0.0;
+        self.compiled.exec(&self.params[..]);
+        self.compiled.mem()[self.first_obs]
+    }
+
+    pub fn prepare_simd(&mut self) {
+        // SIMD compilation is lazy!
+        if self.compiled_simd.is_none() && self.use_simd {
+            if self.prog.config().has_avx() {
+                self.compiled_simd = Self::compile_avx_simd(&self.mir, &mut self.prog).ok();
+            } else if self.prog.config().is_arm64() {
+                self.compiled_simd = Self::compile_arm_simd(&self.mir, &mut self.prog).ok();
+            }
+        };
+    }
+
+    fn prepare_fast(&mut self) {
+        // fast func compilation is lazy!
+        if self.compiled_simd.is_none() && self.can_fast {
+            if self.prog.config().is_amd64() {
+                self.compiled_fast =
+                    Self::compile_amd_fast(&self.mir, &mut self.prog, self.first_obs as u32).ok();
+            } else if self.prog.config().is_arm64() {
+                self.compiled_fast =
+                    Self::compile_arm_fast(&self.mir, &mut self.prog, self.first_obs as u32).ok();
+            } else if self.prog.config().is_riscv64() {
+                self.compiled_fast =
+                    Self::compile_riscv_fast(&self.mir, &mut self.prog, self.first_obs as u32).ok();
+            }
+        };
+    }
+
+    pub fn get_fast(&mut self) -> Option<CompiledFunc<f64>> {
+        self.prepare_fast();
+        self.compiled_fast.as_ref().map(|c| c.func())
+    }
+
+    pub fn exec_vectorized(&mut self, states: &Matrix, obs: &mut Matrix) {
+        if !self.compiled.support_indirect() {
+            self.exec_vectorized_simple(states, obs);
+            return;
+        }
+
+        self.prepare_simd();
+
+        if let Some(simd) = &self.compiled_simd {
+            self.exec_vectorized_simd(states, obs, self.use_threads, simd.count_lanes());
+        } else {
+            self.exec_vectorized_scalar(states, obs, self.use_threads);
+        }
+    }
+
+    pub fn exec_vectorized_simple(&mut self, states: &Matrix, obs: &mut Matrix) {
+        assert!(states.ncols == obs.ncols);
+        let n = states.ncols;
+        let params = &self.params[..];
+
+        for t in 0..n {
+            {
+                let mem = self.compiled.mem_mut();
+                // mem[self.idx_iv] = t as f64;
+                for i in 0..self.count_states {
+                    mem[self.first_state + i] = states.get(i, t);
+                }
+            }
+
+            self.compiled.exec(params);
+
+            {
+                let mem = self.compiled.mem_mut();
+                for i in 0..self.count_obs {
+                    obs.set(i, t, mem[self.first_obs + i]);
+                }
+            }
+        }
+    }
+
+    fn exec_single(t: usize, v: &Matrix, params: &[f64], f: CompiledFunc<f64>) {
+        f(std::ptr::null(), v.p.as_ptr(), t, params.as_ptr());
+    }
+
+    pub fn exec_vectorized_scalar(&mut self, states: &Matrix, obs: &mut Matrix, threads: bool) {
+        assert!(states.ncols == obs.ncols);
+        let n = states.ncols;
+        let f = self.compiled.func();
+        let params = &self.params[..];
+        let v = combine_matrixes(states, obs);
+
+        if threads {
+            (0..n)
+                .into_par_iter()
+                .for_each(|t| Self::exec_single(t, &v, params, f));
+        } else {
+            (0..n)
+                //.into_iter()
+                .for_each(|t| Self::exec_single(t, &v, params, f));
+        }
+    }
+
+    pub fn exec_vectorized_simd(
+        &mut self,
+        states: &Matrix,
+        obs: &mut Matrix,
+        threads: bool,
+        l: usize,
+    ) {
+        assert!(states.ncols == obs.ncols);
+        let n = states.ncols;
+        let params = &self.params[..];
+        let n0 = l * (n / l);
+        let v = combine_matrixes(states, obs);
+
+        if let Some(g) = &mut self.compiled_simd {
+            let f = g.func();
+            if threads {
+                (0..n / l)
+                    .into_par_iter()
+                    .for_each(|t| Self::exec_single(t, &v, params, f));
+            } else {
+                (0..n / l).for_each(|t| Self::exec_single(t, &v, params, f));
+            }
+        }
+
+        let f = self.compiled.func();
+
+        if threads {
+            (n0..n)
+                .into_par_iter()
+                .for_each(|t| Self::exec_single(t, &v, params, f));
+        } else {
+            (n0..n).for_each(|t| Self::exec_single(t, &v, params, f));
+        }
+    }
+
+    pub fn dump(&mut self, name: &str, what: &str) -> bool {
+        match what {
+            "scalar" => {
+                self.compiled.dump(name);
+                true
+            }
+            "simd" => {
+                self.prepare_simd();
+
+                if let Some(f) = &self.compiled_simd {
+                    f.dump(name);
+                    true
+                } else {
+                    false
+                }
+            }
+            "fast" => {
+                self.prepare_fast();
+
+                if let Some(f) = &self.compiled_fast {
+                    f.dump(name);
+                    true
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        }
+    }
+
+    pub fn dumps(&self) -> Vec<u8> {
+        self.compiled.dumps()
+    }
+
+    /************************** save/load ******************************/
+
+    const MAGIC: usize = 0x40568795410d08e9;
+}
+
+impl Storage for Application {
+    fn save(&self, stream: &mut impl Write) -> Result<()> {
+        stream.write_all(&Self::MAGIC.to_le_bytes())?;
+
+        let version: usize = 1;
+        stream.write_all(&version.to_le_bytes())?;
+
+        self.prog.save(stream)?;
+
+        let mut mask: usize = if self.compiled.as_machine().is_some() {
+            1
+        } else {
+            0
+        };
+
+        if self.compiled_fast.is_some()
+            && self.compiled_fast.as_ref().unwrap().as_machine().is_some()
+        {
+            mask |= 2;
+        }
+
+        if self.compiled_simd.is_some()
+            && self.compiled_simd.as_ref().unwrap().as_machine().is_some()
+        {
+            mask |= 4;
+        }
+
+        stream.write_all(&mask.to_le_bytes())?;
+
+        if let Some(compiled) = self.compiled.as_machine() {
+            compiled.save(stream)?;
+        }
+
+        if let Some(compiled) = &self.compiled_fast {
+            compiled.as_machine().unwrap().save(stream)?;
+        }
+
+        if let Some(compiled) = &self.compiled_simd {
+            compiled.as_machine().unwrap().save(stream)?;
+        }
+
+        Ok(())
+    }
+
+    fn load(stream: &mut impl Read) -> Result<Self> {
+        let mut bytes: [u8; 8] = [0; 8];
+
+        stream.read_exact(&mut bytes)?;
+
+        if usize::from_le_bytes(bytes) != Self::MAGIC {
+            return Err(anyhow!("invalid magic number"));
+        }
+
+        stream.read_exact(&mut bytes)?;
+
+        if usize::from_le_bytes(bytes) != 1 {
+            return Err(anyhow!("invalid sjb version"));
+        }
+
+        let prog = Program::load(stream)?;
+
+        stream.read_exact(&mut bytes)?;
+        let mask = usize::from_le_bytes(bytes);
+
+        let compiled: Box<dyn Compiled<f64>> = Box::new(MachineCode::load(stream)?);
+
+        let compiled_fast: Option<Box<dyn Compiled<f64>>> = if mask & 2 != 0 {
+            Some(Box::new(MachineCode::load(stream)?))
+        } else {
+            None
+        };
+
+        let compiled_simd: Option<Box<dyn Compiled<f64>>> = if mask & 4 != 0 {
+            Some(Box::new(MachineCode::load(stream)?))
+        } else {
+            None
+        };
+
+        let first_state = 0;
+        let first_param = 0;
+        let first_obs = first_state + prog.count_states;
+        let first_diff = first_obs + prog.count_obs;
+
+        let count_states = prog.count_states;
+        let count_params = prog.count_params;
+        let count_obs = prog.count_obs;
+        let count_diffs = prog.count_diffs;
+
+        let params = vec![0.0; count_params + 1];
+        let mir = Mir::new(*prog.config(), &Defuns::new());
+
+        let use_simd = prog.config().use_simd() && prog.count_loops == 0;
+        let use_threads = prog.config().use_threads() && prog.mem_size() < 128;
+
+        let can_fast = prog.config().may_fast()
+            && count_states <= 8
+            && count_params == 0
+            && count_obs == 1
+            && count_diffs == 0;
+
+        Ok(Application {
+            prog,
+            mir,
+            compiled,
+            compiled_simd,
+            compiled_fast,
+            params,
+            use_simd,
+            use_threads,
+            can_fast,
+            first_state,
+            first_param,
+            first_obs,
+            first_diff,
+            count_states,
+            count_params,
+            count_obs,
+            count_diffs,
+        })
+    }
+}
+
+/***************************************************/
+
+pub struct Debugger {
+    builder: Builder,
+    compiled: Box<dyn Compiled<f64>>,
+    bytecode: Box<dyn Compiled<f64>>,
+    debug: bool,
+}
+
+impl Debugger {
+    pub fn new(
+        builder: Builder,
+        compiled: Box<dyn Compiled<f64>>,
+        bytecode: Box<dyn Compiled<f64>>,
+        debug: bool,
+    ) -> Debugger {
+        Debugger {
+            builder,
+            compiled,
+            bytecode,
+            debug,
+        }
+    }
+
+    fn assert_equal(&self) {
+        let p = self.compiled.mem();
+        let q = self.bytecode.mem();
+
+        // accept if the difference is less that 1e-15 to count for rounding error
+        // because of different operation order
+        if p.iter().zip(q).any(|(x, y)| !(f64::abs(*x - *y) < 1e-6)) {
+            for (key, sym) in self.builder.block_shared().sym_table.syms.iter() {
+                if let Loc::Mem(idx) = sym.borrow().loc {
+                    let a = p[idx as usize];
+                    let b = q[idx as usize];
+                    let eq = if a == b { "pass" } else { "fail" };
+                    println!("{:14.8} {:14.8} {} -> \t{}", a, b, eq, key);
+                }
+            }
+            panic!("discrepencies detected!");
+        }
+    }
+}
+
+impl Compiled<f64> for Debugger {
+    fn exec(&mut self, params: &[f64]) {
+        if !self.debug {
+            self.bytecode.exec(params);
+            return;
+        }
+
+        let p = self.compiled.mem_mut();
+        let q = self.bytecode.mem();
+        p.copy_from_slice(q);
+
+        self.bytecode.exec(params);
+        self.compiled.exec(params);
+        self.assert_equal();
+    }
+
+    fn evaluate(&mut self, args: &[f64], outs: &mut [f64]) {
+        self.compiled.evaluate(args, outs);
+    }
+
+    fn evaluate_single(&mut self, args: &[f64]) -> f64 {
+        self.compiled.evaluate_single(args)
+    }
+
+    fn mem(&self) -> &[f64] {
+        self.bytecode.mem()
+    }
+
+    fn mem_mut(&mut self) -> &mut [f64] {
+        self.bytecode.mem_mut()
+    }
+
+    fn dump(&self, name: &str) {
+        self.bytecode.dump(name);
+    }
+
+    fn dumps(&self) -> Vec<u8> {
+        self.bytecode.dumps()
+    }
+
+    fn func(&self) -> CompiledFunc<f64> {
+        unreachable!()
+    }
+
+    fn support_indirect(&self) -> bool {
+        false
+    }
+
+    fn count_lanes(&self) -> usize {
+        1
+    }
+
+    fn as_machine(&self) -> Option<&MachineCode<f64>> {
+        None
+    }
+}
