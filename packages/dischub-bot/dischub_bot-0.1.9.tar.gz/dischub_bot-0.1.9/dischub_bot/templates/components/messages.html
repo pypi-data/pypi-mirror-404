@@ -1,0 +1,175 @@
+{% load static %}
+<style>
+    /* Dark Overlay */
+    .overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.7); /* Dark transparent background */
+        display: flex; /* Use Flexbox for centering */
+        justify-content: center;
+        align-items: center;
+        z-index: 9999; /* Ensure it appears above other elements */
+    }
+
+    /* Notification Box */
+    .notification {
+        background-color: white;
+        color: #333;
+        border-radius: 10px;
+        padding: 20px;
+        width: 300px;
+        text-align: center;
+        box-shadow: 0 4px 6px rgba(14, 2, 2, 0.1);
+        animation: fadeIn 0.3s ease-out;
+    }
+
+    .notification h3 {
+        margin: 0 0 10px;
+        font-size: 1.5rem;
+    }
+
+    .notification-title h4 {
+        font-size: 1.5rem;
+    }
+
+    .notification-title span {
+        display: flex;
+        align-items: center;
+    }
+
+    .notification-title i {
+        font-size: 1.5rem;
+    }
+
+    .notification p {
+        margin: 0 0 20px;
+    }
+
+    .notification button {
+        background-color: grey;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-size: 1rem;
+    }
+
+    .notification button:hover {
+        background-color: black;
+    }
+
+    /* Increase gap between icon and text */
+    .notification-title .d-flex {
+        gap: 10px; /* Adjust the gap as needed */
+    }
+
+    .notification-title h4 {
+        margin-left: 5px; /* Additional margin if needed */
+    }
+
+    /* Fade-in Animation */
+    @keyframes fadeIn {
+        from {
+            opacity: 0;
+            transform: scale(0.9);
+        }
+        to {
+            opacity: 1;
+            transform: scale(1);
+        }
+    }
+</style>
+
+{% for message in messages %}
+    <div class="overlay" id="notificationOverlay" data-type="{{ message.tags }}">
+        <div class="notification">
+            <div class="notification-title my-3">
+                {% if message.tags == 'success' %}
+                <div class='d-flex align-items-center'>
+                    <span class="text-success">
+                        <i class="fas fa-check-circle"></i>
+                    </span>
+                    <h4 class="text-success mb-0">Success</h4>
+                </div>
+                {% elif message.tags == 'info' %}
+                <div class='d-flex align-items-center'>
+                    <span class="text-primary">
+                        <i class="fas fa-info-circle"></i>
+                    </span>
+                    <h4 class="text-primary mb-0">Info</h4>
+                </div>
+                {% elif message.tags == 'error' %}
+                <div class='d-flex align-items-center'>
+                    <span class="text-danger">
+                        <i class="fas fa-exclamation-triangle"></i>
+                    </span>
+                    <h4 class="text-danger mb-0">Error</h4>
+                </div>
+                {% elif message.tags == 'warning' %}
+                <div class='d-flex align-items-center'>
+                    <span class="text-primary">
+                        <i class="fas fa-bell"></i>
+                    </span>
+                    <h4 class="text-primary mb-0">Warning</h4>
+                </div>
+                {% endif %}
+            </div>
+            <p>{{ message|safe }}</p>
+            {% if message.tags == 'warning' %} 
+                <div class="text-center d-flex justify-content-center align-items-center"> 
+                    <div class="spinner-border text-primary" role="status"> 
+                        <span id="payment-status" class="visually-hidden"></span> 
+                    </div> 
+                    <div class="ms-2 fw-bold" id="payment-status"> 
+                        Processing ... 
+                    </div> 
+                </div> 
+            {% else %} 
+                <button onclick="closeNotification()">Close</button> 
+            {% endif %}
+        </div>
+    </div>
+{% endfor %}
+
+<script>
+    function closeNotification() {
+        const overlay = document.getElementById("notificationOverlay");
+        overlay.style.display = "none"; 
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+        const overlay = document.getElementById("notificationOverlay");
+        overlay.style.display = "flex";
+
+        // Play sound based on message type
+        const type = overlay.dataset.type; // success, info, error, warning
+        let soundSrc = "";
+
+        switch(type) {
+            case "success":
+                soundSrc = "{% static 'sounds/success2.mp3' %}";
+                break;
+            case "info":
+                soundSrc = "{% static 'sounds/info2.mp3' %}";
+                break;
+            case "error":
+                soundSrc = "{% static 'sounds/error.mp3' %}";
+                break;
+            case "warning":
+                soundSrc = "{% static 'sounds/info.mp3' %}";
+                break;
+        }
+        if (soundSrc) {
+            const audio = new Audio(soundSrc);
+            audio.play();
+        }
+        if (navigator.vibrate) {
+            navigator.vibrate([200, 100, 200]);
+        }
+    });
+</script>
+
