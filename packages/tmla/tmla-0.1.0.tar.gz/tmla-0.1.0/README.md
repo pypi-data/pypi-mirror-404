@@ -1,0 +1,132 @@
+# T-MLA: A Targeted Multiscale Log-Exponential Attack Framework for Neural Image Compression
+
+**Wavelet-aware adversarial perturbations.** (a) PGD-based attack with small-magnitude noise, visually clean yet disruptive after compression. (b) Proposed wavelet-aware attack is also imperceptible but more stealthy. (c) Wavelet coefficients of (a) reveal widespread noise in flat regions. (d) Coefficients of (b) closely resemble the clean input, indicating reduced detectability.
+
+![Wavelet-aware adversarial perturbations](images/wavelet_attack_motivation.png)
+
+Official implementation of **"T-MLA: A targeted multiscale log–exponential attack framework for neural image compression"** ([Information Sciences](https://www.sciencedirect.com/science/article/pii/S0020025526000745), Q1).
+
+## 📄 Abstract
+
+Neural image compression (NIC) has become the state-of-the-art for rate-distortion performance, yet its security vulnerabilities remain significantly less understood than those of classifiers. Existing adversarial attacks on NICs are often naive adaptations of pixel-space methods, overlooking the unique, structured nature of the compression pipeline. In this work, we propose a more advanced class of vulnerabilities by introducing T-MLA, the first targeted multiscale log–exponential attack framework. We introduce adversarial perturbations in the wavelet domain that concentrate on less perceptually salient coefficients, improving the stealth of the attack. Extensive evaluation across multiple state-of-the-art NIC architectures on standard image compression benchmarks reveals a large drop in reconstruction quality while the perturbations remain visually imperceptible. On standard NIC benchmarks, T-MLA achieves targeted degradation of reconstruction quality while improving perturbation imperceptibility (higher PSNR/VIF of the perturbed inputs) compared to PGD-style baselines at comparable attack success, as summarized in our main results. Our findings reveal a critical security flaw at the core of generative and content delivery pipelines. 
+![Pipeline Overview](images/pipeline_overview.png)
+
+## Installation
+
+### Option 1: From GitHub (recommended)
+
+```bash
+pip install git+https://github.com/nkalmykovsk/tmla.git
+```
+
+Then clone the repo to get `scripts/`, `init.py`, and `demo.ipynb`, and run setup:
+
+```bash
+git clone https://github.com/nkalmykovsk/tmla.git
+cd tmla
+python3 init.py   # LIC_TCM + data + weights
+```
+
+### Option 2: Clone and install locally
+
+1. **Clone the repository**
+   ```bash
+   git clone git@github.com:nkalmykovsk/tmla.git
+   cd tmla
+   ```
+
+2. **Environment**
+   - *venv:*
+     ```bash
+     python3 -m venv venv && source ./venv/bin/activate
+     pip install -r requirements.txt
+     pip install -e .
+     ```
+   - *Docker:*
+     ```bash
+     docker build -t tmla-lic-tcm:latest .
+     docker run -d --gpus all --name tmla-dev \
+       -v "$(pwd)":/app -w /app tmla-lic-tcm:latest tail -f /dev/null
+     ```
+
+3. **Model and data**  
+   Fetch the [LIC-TCM](https://github.com/jmliu206/LIC_TCM.git) model and datasets ([Kodak](https://www.kaggle.com/datasets/sherylmehta/kodak-dataset), [DIV2K](https://www.kaggle.com/datasets/soumikrakshit/div2k-high-resolution-images), [CLIC](https://www.kaggle.com/datasets/)):
+   ```bash
+   python3 init.py
+   ```
+   With Docker: `docker exec -it tmla-dev python3 init.py`
+
+4. **Notebook**  
+   Open `demo.ipynb` from project root (so `tmla` is importable).
+
+---
+
+## Project structure
+
+**Repository** = the whole project (this repo, folder `tmla/` on disk).  
+**Package** = the Python code you import (`import tmla`); that is the `tmla/` directory and its `.py` files. Having the repo and the package share the same name (`tmla`) is normal (e.g. `numpy`, `requests`).
+
+- **`tmla/`** — Python package: `config`, `attacks` (multiscale attack, decomposition, reconstruction, metrics), `tcm` (loader for LIC_TCM model), `utils`.
+- **`scripts/`** — CLI entry points: `run_attack.py`, `run_batch_parallel.py`, `compute_entropy.py`, `collect_metrics.py`, `build_chart.py`.
+- **`init.py`** — setup script (clones LIC_TCM, downloads data and weights).
+- **`LIC_TCM/`** — cloned repo and weights (created by `init.py`); TCM model code is loaded from here at runtime.
+
+---
+
+## Usage
+
+### Attacks
+
+- **Single image**
+  ```bash
+  python3 scripts/run_attack.py --image path/to/image.png --model model_name
+  ```
+- **Batch (dataset × model list)**
+  ```bash
+  python3 scripts/run_batch_parallel.py
+  ```
+
+### Image complexity (entropy)
+
+Local entropy reflects spatial complexity and is used in the paper for analysis. The script below computes the normalized local Shannon entropy map Ẽ(x,y) ∈ [0, 1] and the global complexity score μ_E.
+
+```bash
+python3 scripts/compute_entropy.py path/to/image.png --save entropy_map.png --show
+```
+
+---
+
+---
+
+## Publishing the package (for maintainers)
+
+The package is ready to publish. Users can already install it from GitHub (see above). To publish on **PyPI** so that `pip install tmla` works:
+
+1. Create an account on [pypi.org](https://pypi.org) (and [test.pypi.org](https://test.pypi.org) for testing).
+2. Install build tools: `pip install build twine`.
+3. From the project root:
+   ```bash
+   python -m build
+   twine upload dist/*
+   ```
+   For Test PyPI first: `twine upload --repository testpypi dist/*`.
+4. After publishing, anyone can run: `pip install tmla`. They will still need to clone the repo and run `init.py` to get LIC_TCM and datasets (or use the repo as the main way to get scripts and data).
+
+---
+
+## Citation
+
+If you use this code or the ([paper](https://www.sciencedirect.com/science/article/pii/S0020025526000745)), please cite:
+
+```bibtex
+@article{kalmykov2026tmla,
+  title   = {T-MLA: A Targeted Multiscale Log--Exponential Attack Framework for Neural Image Compression},
+  author  = {Kalmykov, N. I. and Dibo, R. and Shen, K. and Zhonghan, X. and Phan, A. H. and Liu, Y. and Oseledets, I.},
+  journal = {Information Sciences},
+  volume  = {702},
+  pages   = {123143},
+  year    = {2026},
+  publisher = {Elsevier},
+  doi     = {10.1016/j.ins.2025.123143}
+}
+```
