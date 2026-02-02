@@ -1,0 +1,250 @@
+syntax = "proto3";
+
+package unrealon.v1;
+
+// ═══════════════════════════════════════════════════════════
+// MAIN SERVICE
+// ═══════════════════════════════════════════════════════════
+
+service UnrealonService {
+    // Bidirectional stream for all SDK ↔ Server communication
+    rpc Connect(stream ClientMessage) returns (stream ServerMessage) {}
+
+    // Unary RPCs
+    rpc Register(RegisterRequest) returns (RegisterResponse) {}
+    rpc Deregister(DeregisterRequest) returns (DeregisterResponse) {}
+
+    // Send command to connected service (called by HTTP API)
+    rpc SendCommand(SendCommandRequest) returns (SendCommandResponse) {}
+}
+
+// ═══════════════════════════════════════════════════════════
+// CLIENT → SERVER MESSAGES
+// ═══════════════════════════════════════════════════════════
+
+message ClientMessage {
+    string service_id = 1;
+    int64 sequence = 2;
+
+    oneof payload {
+        Heartbeat heartbeat = 10;
+        LogBatch logs = 11;
+        CommandAck command_ack = 12;
+        StatusUpdate status_update = 13;
+        MetricsUpdate metrics_update = 14;
+        ScheduleAck schedule_ack = 15;
+    }
+}
+
+message Heartbeat {
+    string status = 1;
+    SystemMetrics metrics = 2;
+}
+
+message SystemMetrics {
+    float memory_mb = 1;
+    float cpu_percent = 2;
+    float uptime_seconds = 3;
+    int64 items_processed = 4;
+    int64 errors_count = 5;
+}
+
+message LogBatch {
+    repeated LogEntry entries = 1;
+}
+
+message LogEntry {
+    string level = 1;
+    string message = 2;
+    string timestamp = 3;
+    string extra = 4;
+}
+
+message CommandAck {
+    string command_id = 1;
+    CommandStatus status = 2;
+    string result = 3;
+    string error = 4;
+}
+
+enum CommandStatus {
+    COMMAND_STATUS_UNSPECIFIED = 0;
+    ACKNOWLEDGED = 1;
+    EXECUTING = 2;
+    COMPLETED = 3;
+    FAILED = 4;
+}
+
+message StatusUpdate {
+    string status = 1;
+    string error_message = 2;
+}
+
+message MetricsUpdate {
+    int64 items_processed_delta = 1;
+    int64 errors_count_delta = 2;
+}
+
+// ═══════════════════════════════════════════════════════════
+// SERVER → CLIENT MESSAGES
+// ═══════════════════════════════════════════════════════════
+
+message ServerMessage {
+    int64 sequence = 1;
+
+    oneof payload {
+        HeartbeatAck heartbeat_ack = 10;
+        Command command = 11;
+        ConfigUpdate config_update = 12;
+        ServerStatus server_status = 13;
+    }
+}
+
+message HeartbeatAck {
+    bool received = 1;
+    string server_time = 2;
+    int32 commands_pending = 3;
+}
+
+message Command {
+    string id = 1;
+    string type = 2;
+    string params = 3;
+    int64 timeout_ms = 4;
+    int32 priority = 5;
+}
+
+message ConfigUpdate {
+    int32 heartbeat_interval_seconds = 1;
+    int32 log_batch_size = 2;
+    ScheduleConfig schedule_config = 3;
+}
+
+message ServerStatus {
+    bool accepting_connections = 1;
+    string message = 2;
+}
+
+// ═══════════════════════════════════════════════════════════
+// REGISTRATION (Unary RPCs)
+// ═══════════════════════════════════════════════════════════
+
+message RegisterRequest {
+    string name = 1;
+    string hostname = 2;
+    int32 pid = 3;
+    string description = 4;
+    string source_code = 5;
+    string executable_path = 6;
+    string working_directory = 7;
+    string sdk_version = 8;
+    string python_version = 9;
+}
+
+message RegisterResponse {
+    bool success = 1;
+    string service_id = 2;
+    string message = 3;
+    string server_time = 4;
+    ConfigUpdate initial_config = 5;
+    ScheduleConfig schedule_config = 6;
+}
+
+message DeregisterRequest {
+    string service_id = 1;
+    string reason = 2;
+}
+
+message DeregisterResponse {
+    bool success = 1;
+    string message = 2;
+}
+
+// Send command to connected service
+message SendCommandRequest {
+    string service_id = 1;
+    string command_type = 2;       // run, pause, resume, stop, custom
+    string params = 3;             // JSON params
+    int64 timeout_ms = 4;
+    int32 priority = 5;
+}
+
+message SendCommandResponse {
+    bool success = 1;
+    string command_id = 2;
+    string message = 3;
+    string error = 4;
+}
+
+// ═══════════════════════════════════════════════════════════
+// SCHEDULING
+// ═══════════════════════════════════════════════════════════
+
+// Schedule configuration sent from server to client
+message ScheduleConfig {
+    repeated Schedule schedules = 1;
+    int64 config_version = 2;
+}
+
+// Individual schedule definition
+message Schedule {
+    string id = 1;
+    string name = 2;
+    bool enabled = 3;
+
+    // Cron expression (Unix 5-field format: minute hour day month weekday)
+    string cron_expression = 4;     // e.g., "0 9 * * *" = daily at 9:00
+    string timezone = 5;            // e.g., "Europe/Moscow"
+
+    // Action configuration
+    string action_type = 6;         // process, pause, resume, custom
+    string action_params = 7;       // JSON string
+
+    // Execution settings
+    int64 timeout_ms = 8;
+    int32 max_retries = 9;
+    int64 retry_delay_ms = 10;
+
+    // Next scheduled run
+    string next_run_at = 11;        // ISO timestamp
+}
+
+// Schedule execution acknowledgment (client → server)
+message ScheduleAck {
+    string schedule_id = 1;
+    string run_id = 2;
+    ScheduleRunStatus status = 3;
+    string result = 4;              // JSON string
+    string error = 5;
+    int64 items_processed = 6;
+    int64 duration_ms = 7;
+}
+
+// Schedule run status
+enum ScheduleRunStatus {
+    SCHEDULE_RUN_STATUS_UNSPECIFIED = 0;
+    SCHEDULE_STARTED = 1;
+    SCHEDULE_COMPLETED = 2;
+    SCHEDULE_FAILED = 3;
+    SCHEDULE_SKIPPED = 4;
+    SCHEDULE_TIMEOUT = 5;
+}
+
+// ═══════════════════════════════════════════════════════════
+// SERVICE STATUS
+// ═══════════════════════════════════════════════════════════
+
+// Service status enum (mirrors Django ServiceStatus)
+enum ServiceStatus {
+    SERVICE_STATUS_UNSPECIFIED = 0;
+    SERVICE_STATUS_INITIALIZING = 1;
+    SERVICE_STATUS_RUNNING = 2;
+    SERVICE_STATUS_IDLE = 3;          // Running, waiting for commands
+    SERVICE_STATUS_BUSY = 4;          // Actively processing/parsing
+    SERVICE_STATUS_PAUSED = 5;
+    SERVICE_STATUS_STOPPING = 6;
+    SERVICE_STATUS_STOPPED = 7;
+    SERVICE_STATUS_ERROR = 8;
+    SERVICE_STATUS_OFFLINE = 9;
+    SERVICE_STATUS_STALE = 10;
+}
