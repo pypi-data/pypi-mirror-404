@@ -1,0 +1,254 @@
+"""
+Generic configuration framework for lazy dataclass resolution.
+
+This framework provides a complete system for hierarchical configuration management
+with lazy resolution, dual-axis inheritance, and UI integration.
+
+Key Features:
+- Lazy dataclass factory with dynamic field resolution
+- Dual-axis inheritance (context hierarchy + sibling inheritance)
+- Contextvars-based context management
+- Placeholder text generation for UI
+- Thread-local global configuration storage
+
+Quick Start:
+    >>> from objectstate import (
+    ...     set_base_config_type,
+    ...     LazyDataclassFactory,
+    ...     config_context,
+    ... )
+    >>> from myapp.config import GlobalConfig
+    >>> 
+    >>> # Initialize framework
+    >>> set_base_config_type(GlobalConfig)
+    >>> 
+    >>> # Create lazy dataclass
+    >>> LazyStepConfig = LazyDataclassFactory.make_lazy_simple(StepConfig)
+    >>> 
+    >>> # Use with context
+    >>> with config_context(pipeline_config):
+    ...     step = LazyStepConfig()
+    ...     # Fields resolve from pipeline_config context
+
+Architecture:
+    The framework uses a dual-axis resolution system:
+    
+    X-Axis (Context Hierarchy):
+        Step context → Pipeline context → Global context → Static defaults
+    
+    Y-Axis (Sibling Inheritance):
+        Fields within the same context inherit from sibling dataclasses
+    
+    This enables sophisticated configuration patterns where fields can inherit
+    from both parent contexts and sibling configurations.
+
+Modules:
+    - lazy_factory: Lazy dataclass factory and decorator system
+    - dual_axis_resolver: Dual-axis inheritance resolver
+    - context_manager: Contextvars-based context management
+    - placeholder: Placeholder text generation for UI
+    - global_config: Thread-local global configuration storage
+    - config: Framework configuration (pluggable types and behaviors)
+"""
+
+# Ensure openhcs.config_framework.* imports resolve to this package's modules
+import importlib
+import sys
+
+# Keep objectstate and openhcs.config_framework pointing to the same package instance
+_alias_prefix = 'openhcs.config_framework' if __name__ == 'objectstate' else 'objectstate'
+sys.modules[_alias_prefix] = sys.modules[__name__]
+
+_submodules = [
+    'lazy_factory',
+    'dual_axis_resolver',
+    'context_manager',
+    'placeholder',
+    'global_config',
+    'config',
+    'live_context_resolver',
+    'token_cache',
+    'object_state',
+    'snapshot_model',
+    'parametric_axes',
+    'reified_generics',
+]
+
+for _mod in _submodules:
+    try:
+        _module = importlib.import_module(f'{__name__}.{_mod}')
+    except Exception:
+        continue
+    # Ensure both namespaces resolve to the same submodule object
+    sys.modules[f'{_alias_prefix}.{_mod}'] = _module
+    setattr(sys.modules[_alias_prefix], _mod, _module)
+
+# Factory
+from objectstate.lazy_factory import (
+    LazyDataclassFactory,
+    auto_create_decorator,
+    register_lazy_type_mapping,
+    get_base_type_for_lazy,
+    get_lazy_type_for_base,
+    ensure_global_config_context,
+    # Constructor patching for code execution
+    register_lazy_type,
+    get_registered_lazy_types,
+    patch_lazy_constructors,
+    # Global config type checking
+    GlobalConfigBase,
+    GlobalConfigMeta,
+    # Abbreviation decorator for config classes and fields
+    abbreviation,
+    is_global_config_type,
+    is_global_config_instance,
+    # Raw-value-preserving utilities
+    replace_raw,
+)
+
+# Resolver
+from objectstate.dual_axis_resolver import (
+    resolve_field_inheritance,
+    _has_concrete_field_override,
+)
+
+# Context
+from objectstate.context_manager import (
+    config_context,
+    get_current_temp_global,
+    set_current_temp_global,
+    clear_current_temp_global,
+    merge_configs,
+    extract_all_configs,
+    get_base_global_config,
+    # Context hierarchy utilities
+    get_context_type_stack,
+    get_normalized_stack,
+    get_types_before_in_stack,
+    is_ancestor_in_context,
+    is_same_type_in_context,
+    # Hierarchy registry (populated by form managers)
+    register_hierarchy_relationship,
+    unregister_hierarchy_relationship,
+    get_ancestors_from_hierarchy,
+    # Scope key utilities
+    get_root_from_scope_key,
+    is_scope_affected,
+    # Context stack building (framework-agnostic)
+    build_context_stack,
+    # Threading utility for context propagation
+    spawn_thread_with_context,
+)
+
+# Placeholder
+from objectstate.placeholder import LazyDefaultPlaceholderService
+
+# Global config
+from objectstate.global_config import (
+    set_current_global_config,
+    get_current_global_config,
+    set_global_config_for_editing,
+    set_saved_global_config,
+    set_live_global_config,
+    get_saved_global_config,
+    get_live_global_config,
+)
+
+# Configuration
+from objectstate.config import (
+    set_base_config_type,
+    get_base_config_type,
+)
+
+# Live context resolver
+from objectstate.live_context_resolver import LiveContextResolver
+
+# Token cache
+from objectstate.token_cache import TokenCache, SingleValueTokenCache, CacheKey
+
+__all__ = [
+    # Factory
+    'LazyDataclassFactory',
+    'auto_create_decorator',
+    'register_lazy_type_mapping',
+    'get_base_type_for_lazy',
+    'get_lazy_type_for_base',
+    'ensure_global_config_context',
+    # Constructor patching for code execution
+    'register_lazy_type',
+    'get_registered_lazy_types',
+    'patch_lazy_constructors',
+    # Global config type checking
+    'GlobalConfigBase',
+    'GlobalConfigMeta',
+    'is_global_config_type',
+    'is_global_config_instance',
+    # Resolver
+    'resolve_field_inheritance',
+    '_has_concrete_field_override',
+    # Context
+    'config_context',
+    'get_current_temp_global',
+    'set_current_temp_global',
+    'clear_current_temp_global',
+    'merge_configs',
+    'extract_all_configs',
+    'get_base_global_config',
+    'get_context_type_stack',
+    'get_root_from_scope_key',
+    'is_scope_affected',
+    'build_context_stack',
+    'spawn_thread_with_context',
+    # Placeholder
+    'LazyDefaultPlaceholderService',
+    # Global config
+    'set_current_global_config',
+    'get_current_global_config',
+    'set_global_config_for_editing',
+    # Configuration
+    'set_base_config_type',
+    'get_base_config_type',
+    # Live context resolver
+    'LiveContextResolver',
+    # Token cache
+    'TokenCache',
+    'SingleValueTokenCache',
+    'CacheKey',
+]
+
+__version__ = '1.0.8'
+__author__ = 'OpenHCS Team'
+__description__ = 'Generic configuration framework for lazy dataclass resolution'
+
+
+# Object state management
+from objectstate.object_state import ObjectState, ObjectStateRegistry
+
+# Snapshot model for time-travel
+from objectstate.snapshot_model import Snapshot, StateSnapshot, Timeline
+
+# Parametric axes
+from objectstate.parametric_axes import axes_type, get_axes
+
+# Reified generics
+from objectstate.reified_generics import List, Dict, Set, Tuple, Optional
+
+# Update __all__
+__all__ += [
+    # Object state
+    'ObjectState',
+    'ObjectStateRegistry',
+    # Snapshot model
+    'Snapshot',
+    'StateSnapshot', 
+    'Timeline',
+    # Parametric axes
+    'axes_type',
+    'get_axes',
+    # Reified generics
+    'List',
+    'Dict',
+    'Set',
+    'Tuple',
+    'Optional',
+]
