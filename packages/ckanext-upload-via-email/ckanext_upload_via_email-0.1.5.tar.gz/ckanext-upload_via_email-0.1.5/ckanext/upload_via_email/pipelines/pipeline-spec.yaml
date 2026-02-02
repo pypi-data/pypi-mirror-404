@@ -1,0 +1,26 @@
+upload_via_email:
+  schedule:
+    crontab: "* * * * *"
+  pipeline:
+  - run: add_ckan_allowed_senders_resource
+    parameters:
+      ckan-host: env:CKAN_URL
+      ckan-api-key: env:CKAN_API_KEY
+  - run: stream_remote_resources
+#  - run: dump.to_path
+#    parameters:
+#      out-path: data/ckan_allowed_senders
+  - flow: download_messages
+  - flow: get_datasets_package
+  - run: ckan.dump.to_ckan
+    parameters:
+      ckan-host: env:CKAN_URL
+      ckan-api-key: env:CKAN_API_KEY
+      ckan-log-resource: ckan-log
+      dataset-properties:
+        private: true
+  - flow: update_created_datasets
+  - run: ckanext.dump_to_path
+    parameters:
+      plugin: upload_via_email
+      out-path: ckan_log
