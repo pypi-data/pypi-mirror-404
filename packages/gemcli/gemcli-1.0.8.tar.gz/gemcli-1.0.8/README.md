@@ -1,0 +1,254 @@
+# GemCLI - Consumer Gemini AI for Code Completions, System Automation, and Image Generation
+
+[![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Built with Rich](https://img.shields.io/badge/Built%20with-Rich-green.svg)](https://github.com/Textualize/rich)
+[![PyPI](https://img.shields.io/pypi/v/gemcli.svg)](https://pypi.org/project/gemcli/)
+
+A professional Python command-line interface that leverages Google's consumer Gemini AI for unlimited code completions, autonomous file operations, system automation, and AI image generation - all directly from your terminal.
+
+GemCLI provides a high-fidelity terminal experience with real-time markdown rendering, customizable themes, and browser-based authentication.
+
+---
+
+**NEW FEATURE: AutoBot Mode** 
+GemCLI now includes **AutoBot**, a fully autonomous agent system capable of planning and executing multi-step tasks. AutoBot can navigate your filesystem, create complex project structures, and manage dependencies without constant manual intervention.
+
+---
+
+**PRIVACY & SECURITY** 
+This is a CLIENT-SIDE application with NO SERVER component. Your data remains on YOUR machine. All processing is local. Session tokens never leave your system.
+
+---
+
+## Key Features
+
+* **AutoBot Autonomous System**: Advanced multi-step task execution and project bootstrapping.
+* **Modern Terminal Interface**: Built with Rich library for beautiful, responsive command-line experience
+* **Four Operating Modes**: Chat, System Agent (AI Coding Assistant), AutoBot (Autonomous), and Image Generation
+* **Browser Cookie Authentication**: Automatic session extraction from Chrome, Edge, or Firefox - no API key needed
+* **File Operations**: Read, edit, search, and create files through AI commands in Agent modes
+* **System Command Execution**: Control system operations - open applications, adjust brightness/volume, launch file explorer, manage media playback
+* **Git Integration**: Automatic commit, push, and AI-generated commit messages for version control
+* **Diff Viewer**: Preview code changes before applying with VS Code or terminal-based diff view
+* **Six Theme Profiles**: Customize with Cyan, Pink, Gold, Green, Purple, or White color schemes
+* **Asynchronous Architecture**: Non-blocking API communication built on asyncio
+* **Complete Privacy**: Client-side only - your session tokens never leave your local machine
+
+---
+
+## Modes & Capabilities
+
+GemCLI offers four distinct operating modes, each tailored for specific use cases:
+
+| Mode | Ask/Response | Read Files | Edit Files | Workspace Search | Autonomous | System Cmds |
+|:---|:---:|:---:|:---:|:---:|:---:|:---:|
+| **Chat** | Yes | No | No | No | No | No |
+| **System Agent** | Yes | Yes | Yes | No | No | Yes |
+| **AutoBot** | Yes | Yes | Yes | Yes | Yes | Yes |
+| **Image Gen** | Yes | No | No | No | No | No |
+
+### Mode Descriptions
+
+#### AutoBot Mode (Autonomous Agent)
+Our flagship autonomous coding assistant. AutoBot can:
+- Search your entire workspace for relevant files
+- Read any files it determines necessary
+- Make coordinated changes across multiple files
+- Work independently to solve complex, multi-step prompts
+- Execute system commands and manage project lifecycles
+
+#### Chat Mode
+Basic conversational AI interface. Ask questions, receive answers, and engage in natural conversations with Gemini.
+
+#### System Agent Mode (AI Coding Assistant)
+Enhanced mode where you specify files to work with. Gemini can suggest code modifications and apply changes with your approval.
+
+#### Image Generation Mode
+Create AI-generated images from text descriptions with customizable save locations.
+
+---
+
+## Installation
+
+### Option 1: Install from PyPI (Recommended)
+
+```bash
+pip install gemcli
+```
+
+### Option 2: Install from GitHub
+
+```bash
+pip install git+https://github.com/Aniketh78/Gemini-Terminal-Tool-GEM-CLI.git
+```
+
+### Option 3: Install from Source
+
+```bash
+git clone https://github.com/Aniketh78/Gemini-Terminal-Tool-GEM-CLI.git
+cd Gemini-Terminal-Tool-GEM-CLI
+pip install .
+```
+
+### Option 4: Development Mode
+
+```bash
+git clone https://github.com/Aniketh78/Gemini-Terminal-Tool-GEM-CLI.git
+cd Gemini-Terminal-Tool-GEM-CLI
+pip install -e .
+```
+
+### Requirements
+
+- Python 3.8 or higher
+- Git (optional, for git integration features)
+- VS Code (optional, for diff previews)
+
+---
+
+## Quick Start
+
+After installation, run GemCLI using:
+
+```bash
+gemcli
+```
+
+---
+
+## Authentication Setup (Cookie-Based)
+
+GemCLI uses browser cookie authentication to connect to Google Gemini. **No API key required!**
+
+### Step-by-Step Cookie Setup
+
+1. **Open Google Gemini** - Visit [gemini.google.com](https://gemini.google.com) in your browser
+2. **Log in** to your Google account
+3. **Open Developer Tools** - Press `F12` (or right-click > "Inspect")
+4. **Navigate to Cookies**:
+   - Go to the **Application** tab (Chrome/Edge) or **Storage** tab (Firefox)
+   - Expand **Cookies** in the sidebar
+   - Click on `https://gemini.google.com`
+5. **Find and copy these cookies**:
+   - `__Secure-1PSID` (required)
+   - `__Secure-1PSIDTS` (optional, but recommended)
+6. **Paste into GemCLI** when prompted on first run
+
+### Is This Safe?
+
+**Yes, absolutely!** Here's why:
+
+| Concern | Answer |
+|:--------|:-------|
+| **Where are cookies stored?** | Locally in `.gemini_cookies.json` in your working directory |
+| **Do cookies leave my machine?** | **NO** - They are only sent directly to Google's Gemini servers |
+| **Is there a server component?** | **NO** - This is 100% client-side |
+| **Can anyone see my cookies?** | Only you - the file stays on your local machine |
+| **Should I share my cookies?** | **NEVER** share your cookies with anyone |
+
+> **Important**: Treat your cookies like passwords. Never commit `.gemini_cookies.json` to version control (it's already in `.gitignore`).
+
+---
+
+## Running GemCLI
+
+### First Run
+
+1. Run `gemcli` in your terminal
+2. When prompted, paste your cookie values (see Authentication Setup above)
+3. Select your desired mode from the menu
+4. Start chatting!
+
+### Subsequent Runs
+
+GemCLI remembers your cookies, so just run:
+
+```bash
+gemcli
+```
+
+And you'll be asked if you want to use saved cookies or enter new ones.
+
+---
+
+## Usage & Commands
+
+### All Modes
+
+| Command | Description |
+|:--------|:------------|
+| `/exit` | Exit the application |
+| `/clear` | Clear the terminal screen |
+| `/mode` | Switch between operating modes |
+
+### System Agent Mode
+
+**Git Integration:**
+| Command | Description |
+|:--------|:------------|
+| `/status` | Show git status and current branch |
+| `/commit` | AI-generated commit with confirmation |
+| `/push` | Push commits to remote repository |
+
+**File Operations:**
+| Command | Description |
+|:--------|:------------|
+| `/path/to/file.py` | Read and include file in AI context |
+
+### Example Workflows
+
+**Ask AI to modify code:**
+```
+You: /gemini_cli.py add a new feature to handle user authentication
+```
+*AI reads the file, suggests changes, opens diff preview, you accept/reject*
+
+**Git with AI commit messages:**
+```
+You: /commit
+```
+*AI analyzes your changes and generates a smart commit message*
+
+**Generate images:**
+```
+You: Create a beautiful sunset over mountains with vibrant colors
+```
+*AI generates and saves the image to your configured directory*
+
+---
+
+## Configuration
+
+Access settings from the main menu:
+
+| Setting | Description |
+|:--------|:------------|
+| **Git Settings** | Configure commit timing, auto-push, branch selection |
+| **Customize Theme** | Choose from Cyan, Pink, Gold, Green, Purple, or White |
+| **Image Settings** | Set save directory for generated images |
+
+---
+
+## Uninstall
+
+To remove GemCLI:
+
+```bash
+pip uninstall gemcli
+```
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](https://github.com/Aniketh78/Gemini-Terminal-Tool-GEM-CLI/blob/main/LICENSE) file for details.
+
+---
+
+## Support
+
+- **Report bugs**: [GitHub Issues](https://github.com/Aniketh78/Gemini-Terminal-Tool-GEM-CLI/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/Aniketh78/Gemini-Terminal-Tool-GEM-CLI/discussions)
+
+---
+
+Made by [89P13](https://github.com/Aniketh78/Gemini-Terminal-Tool-GEM-CLI)
