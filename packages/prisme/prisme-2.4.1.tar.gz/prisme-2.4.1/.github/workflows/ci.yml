@@ -1,0 +1,219 @@
+name: CI
+
+# Codecov integration configured
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Set up Python
+        run: uv python install
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Lint with ruff
+        run: uv run ruff check .
+
+      - name: Check formatting
+        run: uv run ruff format --check .
+
+      - name: Type check with mypy
+        run: uv run mypy src
+
+  test:
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Set up Python
+        run: uv python install
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Run tests with coverage
+        run: uv run pytest --cov --cov-report=xml
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage.xml
+          flags: prism-core
+          slug: Lasse-numerous/prisme
+          fail_ci_if_error: false
+
+  docs:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Set up Python
+        run: uv python install
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Build documentation
+        run: uv run mkdocs build --strict
+
+  e2e:
+    name: End-to-End Tests
+    needs: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Set up Python
+        run: uv python install
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Run E2E tests (non-Docker)
+        run: uv run pytest -m "e2e and not docker and not slow" -v --timeout=300
+
+  e2e-docker:
+    name: End-to-End Tests (Docker)
+    needs: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Set up Python
+        run: uv python install
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Create Docker network for Prism proxy
+        run: docker network create prism_proxy_network
+
+      - name: Run Docker E2E tests
+        run: uv run pytest -m "docker" -v --timeout=600
+
+      - name: Collect Docker logs on failure
+        if: failure()
+        run: |
+          docker ps -a
+          docker logs $(docker ps -aq) 2>/dev/null || true
+
+  generated-code-coverage:
+    name: Generated Code Coverage
+    needs: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: prism
+          POSTGRES_PASSWORD: prism
+          POSTGRES_DB: prism_demo
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Set up Python
+        run: uv python install
+
+      - name: Install Prism dependencies
+        run: uv sync --all-extras
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Generate demo project
+        run: |
+          uv run prisme create demo-app -y
+          cp specs/demo.py demo-app/specs/models.py
+          cd demo-app
+          uv run prisme install
+          uv run prisme generate
+
+      - name: Install backend dependencies
+        working-directory: demo-app/packages/backend
+        run: uv sync --all-extras
+
+      - name: Run backend tests with coverage
+        working-directory: demo-app/packages/backend
+        env:
+          DATABASE_URL: postgresql+asyncpg://prism:prism@localhost:5432/prism_demo
+        run: |
+          uv run pytest --cov=src --cov-report=xml:coverage-backend.xml -v || true
+          ls -la coverage-backend.xml 2>/dev/null || echo "Coverage file not generated"
+
+      - name: Install frontend dependencies
+        working-directory: demo-app/packages/frontend
+        run: pnpm install
+
+      - name: Run frontend tests with coverage
+        working-directory: demo-app/packages/frontend
+        run: |
+          pnpm test:coverage || true
+          ls -la coverage/ 2>/dev/null || echo "Coverage directory not found"
+
+      - name: Upload backend coverage
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: demo-app/packages/backend/coverage-backend.xml
+          flags: generated-backend
+          slug: Lasse-numerous/prisme
+          fail_ci_if_error: false
+
+      - name: Upload frontend coverage
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: demo-app/packages/frontend/coverage/coverage-final.json
+          flags: generated-frontend
+          slug: Lasse-numerous/prisme
+          fail_ci_if_error: false

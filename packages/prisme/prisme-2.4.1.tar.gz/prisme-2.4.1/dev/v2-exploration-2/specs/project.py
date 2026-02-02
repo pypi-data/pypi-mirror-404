@@ -1,0 +1,116 @@
+PRISME_PROJECT_VERSION = 1
+
+from prisme.spec import (  # noqa: E402
+    AuthConfig,
+    BackendConfig,
+    DatabaseConfig,
+    DesignConfig,
+    ExposureConfig,
+    ExposureDefaults,
+    ExtensionConfig,
+    FrontendConfig,
+    FrontendExposureConfig,
+    GraphQLConfig,
+    MCPConfig,
+    ProjectSpec,
+    RESTConfig,
+    TestingConfig,
+    WidgetConfig,
+)
+
+project = ProjectSpec(
+    name="wind-pipeline",
+    backend=BackendConfig(
+        framework="fastapi",
+        module_name="environment_model_demo",
+        port=8000,
+    ),
+    frontend=FrontendConfig(
+        enabled=True,
+        framework="react",
+        port=5173,
+    ),
+    exposure=ExposureConfig(
+        defaults=ExposureDefaults(
+            page_size=20,
+            max_page_size=100,
+            filter_operators=[
+                "eq",
+                "ne",
+                "gt",
+                "lt",
+                "gte",
+                "lte",
+                "like",
+                "ilike",
+                "contains",
+                "in",
+                "between",
+            ],
+            pagination_style="offset",
+        ),
+        rest=RESTConfig(
+            enabled=True,
+        ),
+        graphql=GraphQLConfig(
+            enabled=True,
+            path="/graphql",
+            graphiql=True,
+            subscriptions=False,
+            query_depth_limit=5,
+            use_connection=True,
+            use_dataloader=True,
+        ),
+        mcp=MCPConfig(
+            enabled=True,
+        ),
+        frontend=FrontendExposureConfig(
+            api_style="graphql",
+            generate_form=True,
+            generate_table=True,
+            generate_detail_view=True,
+        ),
+    ),
+    auth=AuthConfig(
+        provider="jwt",
+        admin_panel=True,
+        signup_mode="whitelist",
+        signup_domains=["numerous.com"],
+    ),
+    database=DatabaseConfig(
+        engine="sqlite",
+        async_driver=True,
+        url_env="DATABASE_URL",
+    ),
+    design=DesignConfig(
+        theme="nordic",
+        dark_mode=True,
+        icon_set="lucide",
+        border_radius="md",
+        widgets=WidgetConfig(
+            custom_widgets={
+                "coordinates": "CoordinatesInput",
+                "roughness": "RoughnessDisplay",
+            },
+            field_widgets={
+                "EnvironmentAnalysis.center_lat": "LatitudeInput",
+                "EnvironmentAnalysis.center_lon": "LongitudeInput",
+            },
+        ),
+    ),
+    testing=TestingConfig(
+        unit_tests=True,
+        integration_tests=True,
+        factories=True,
+        graphql_tests=True,
+        component_tests=True,
+        hook_tests=True,
+        test_database="sqlite",
+    ),
+    extensions=ExtensionConfig(
+        services_strategy="generate_base",
+        components_strategy="generate_base",
+        pages_strategy="generate_once",
+        use_protected_regions=True,
+    ),
+)
