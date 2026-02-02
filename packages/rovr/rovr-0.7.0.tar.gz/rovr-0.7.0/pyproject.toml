@@ -1,0 +1,168 @@
+[project]
+name = "rovr"
+version = "0.7.0"
+description = "A post-modern terminal file explorer"
+readme = "README.md"
+requires-python = ">=3.12, <3.14"
+license = "MIT"
+license-files = [ "LICENSE" ]
+authors = [{ name = "NSPC911" }]
+keywords = ["filemanager", "fs", "python", "textual", "tui"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3.13",
+  # "Framework :: Textual", # I highly believe textual deserves its own category
+  "Topic :: Desktop Environment :: File Managers",
+  "Topic :: Utilities",
+]
+dependencies = [
+  "backports-zstd>=1.2.0; python_version < '3.14'",
+  "fastjsonschema>=2.21.2",
+  "humanize>=4.14.0",
+  "natsort>=8.4.0",
+  "pathvalidate>=3.3.1",
+  "pdf2image>=1.17.0",
+  "pillow>=12.0.0",
+  "platformdirs>=4.5.0",
+  "psutil>=7.1.0",
+  "puremagic==1.30", # I will use an exact pin, and you can't make me change it
+  "rarfile>=4.2",
+  "rich>=14.3.1", # issue with 14.3.0 that breaks nerd fonts
+  "rich-click>=1.9.3",
+  "send2trash>=1.8.3",
+  "textual~=7.0",
+  "textual-autocomplete>=4.0.6",
+  "textual-image[textual]>=0.8.4",
+  "textual-speedups>=0.2.1",
+  "tomli>=2.3.0",
+  "ujson>=5.11.0",
+]
+
+[project.urls]
+Issues = "https://github.com/NSPC911/rovr/issues"
+Source = "https://github.com/NSPC911/rovr"
+Documentation = "https://nspc911.github.io/rovr"
+
+[project.scripts]
+rovr = "rovr:main"
+
+[dependency-groups]
+build = [
+  "nuitka",
+  "zstandard>=0.25.0",
+]
+dev = [
+  "json-schema-for-humans>=1.5.1",
+  "poethepoet>=0.38.0",
+  "prek>=0.2.25",
+  "ruff>=0.14.10",
+  "textual-dev>=1.7.0",
+  "ty==0.0.8",
+  "pyinstrument>=5.1.2",
+  "commitizen>=4.10.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.9.0,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.uv]
+compile-bytecode = true
+
+[tool.uv.sources]
+nuitka = { git = "https://github.com/Nuitka/Nuitka", rev = "factory" }
+
+[tool.commitizen]
+name = "cz_conventional_commits"
+tag_format = "$version"
+version_scheme = "pep440"
+version_provider = "uv"
+update_changelog_on_bump = true
+major_version_zero = true
+
+[tool.poe.tasks]
+run.help = "Run rovr"
+run.cmd = "rovr"
+dev.help = "Run rovr in development mode with textual-dev"
+dev.cmd = "textual run --dev rovr.__main__:cli --"
+log.help = "Launch textual's console (need rovr to be launched as dev)"
+log.cmd = "textual console -x WORKER -x SYSTEM -x DEBUG -x EVENT"
+
+gen-schema.help = "Generate the JSON schema for rovr's config"
+gen-schema.cmd = "docs/scripts/generate_schema.py"
+icon-test.help = "Print all available icons to the terminal for testing"
+icon-test.cmd = "docs/scripts/icon_test.py"
+gen-keys.help = "Generate the keybinds documentation"
+gen-keys.cmd = "docs/scripts/generate_keybinds.py"
+check.help = "Run all checks (type checking and linting)"
+check.sequence = [ { cmd = "ty check" },{ cmd = "ruff check" } ]
+
+format.help = "Run ruff related formatters"
+format.sequence = [ { cmd = "ruff check --unsafe-fixes --fix"}, { cmd = "ruff format"} ]
+fmt.help = "(alias) Run ruff related formatters"
+fmt.sequence = ["format"]
+
+screenshot-format.help = "Format all SVG screenshots in the docs"
+screenshot-format.cmd = 'pnpx prettier --write "docs/public/screenshots/*.svg" --parser html --bracket-same-line --print-width 160'
+svg-fmt.help = "(alias) Format all SVG files in the docs"
+svg-fmt.sequence = ["screenshot-format"]
+
+flame.help = "Start rovr with pyinstrument for flamegraph profiling"
+flame.cmd = "pyinstrument --renderer=html --timeline --use-timing-thread --show-all -m rovr"
+
+[tool.poe.tasks.build]
+help = "Build rovr into an executable using Nuitka"
+cmd = 'nuitka --mode=${mode} --assume-yes-for-downloads --enable-plugins=no-qt --python-flag=-m --python-flag="no_docstrings" --include-package-data=rovr --lto=${lto} src/rovr --onefile-cache-mode=cached --onefile-child-grace-time=0 --user-package-configuration-file=nuitka.config.yml'
+args = [
+  { name = "mode", help = "Build mode: onefile (default) or standalone", default = "onefile", positional = true, choices = ["standalone", "onefile"] },
+  { name = "lto", help = "Enable LTO (link time optimization)", default = "yes", choices = ["yes", "no"], options = ["--lto"] },
+]
+
+[tool.ruff]
+force-exclude = true
+exclude = [
+  "src/rovr/monkey_patches/sys_stdout.py"
+]
+
+[tool.ruff.lint]
+select = [
+  "ASYNC220",
+  "ASYNC221",
+  "ASYNC251",
+  "ANN",
+  "COM819",
+  "C400",
+  "DOC",
+  "D404",
+  "E",
+  "F",
+  "I",
+  "N801", "N802", "N805",
+  "PLE1142",
+  "Q",
+  "SIM",
+  "TD",
+  "W",
+]
+ignore = ["W505", "E501", "ANN002", "ANN003", "TD002", "TD003", "ANN401"]
+preview = true
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+preview = true
+
+[tool.ty.src]
+exclude = [
+  "src/rovr/classes/archive.py"
+] # i dont want to add type indicators
+
+[tool.ty.rules]
+# possibly-missing-import = "ignore"
+unresolved-reference = "ignore" # handled by ruff
+unresolved-attribute = "ignore"
+no-matching-overload = "ignore" # not that accurate
+possibly-missing-attribute = "ignore" # no it is not missing
+invalid-assignment = "warn" # probably already but warn for future
