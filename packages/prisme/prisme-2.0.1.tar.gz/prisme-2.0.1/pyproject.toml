@@ -1,0 +1,152 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "prisme"
+version = "2.0.1"
+description = "Code generation framework for full-stack applications from Pydantic models"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.13"
+authors = [
+    { name = "Prism Contributors" }
+]
+keywords = ["code-generation", "pydantic", "fastapi", "graphql", "react"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Code Generators",
+    "Typing :: Typed",
+]
+dependencies = [
+    "pydantic>=2.10",
+    "click>=8.1",
+    "rich>=13.0",
+    "jinja2>=3.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=6.0",
+    "pytest-asyncio>=0.24",
+    "pytest-timeout>=2.3",
+    "ruff>=0.9",
+    "mypy>=1.14",
+    "pre-commit>=4.0",
+    "python-semantic-release>=9.0",
+]
+docs = [
+    "mkdocs>=1.6",
+    "mkdocs-material>=9.5",
+    "mkdocstrings[python]>=0.24",
+    "mkdocs-minify-plugin>=0.8",
+    "pymdown-extensions>=10.0",
+    "pygments>=2.17",
+]
+
+[project.scripts]
+prisme = "prisme.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/Lasse-numerous/prisme"
+Documentation = "https://prisme.readthedocs.io/"
+Repository = "https://github.com/Lasse-numerous/prisme"
+Issues = "https://github.com/Lasse-numerous/prisme/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/prisme"]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # pyflakes
+    "I",      # isort
+    "UP",     # pyupgrade
+    "B",      # flake8-bugbear
+    "SIM",    # flake8-simplify
+    "TCH",    # flake8-type-checking
+    "RUF",    # ruff-specific
+]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+    "W293",   # blank line contains whitespace (false positive in template strings)
+    "RUF001", # ambiguous unicode (intentional in regex patterns)
+    "RUF012", # mutable class attributes without ClassVar (acceptable pattern)
+    "SIM105", # contextlib.suppress vs try-except-pass (readability preference)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["prisme"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["TCH003"]  # Allow runtime imports in tests
+
+[tool.mypy]
+python_version = "3.13"
+# Relaxed strict mode - enable incrementally
+strict = false
+warn_return_any = false
+warn_unused_ignores = false
+disallow_untyped_defs = false
+check_untyped_defs = true
+plugins = ["pydantic.mypy"]
+# Ignore missing type stubs
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+check_untyped_defs = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = [
+    "-ra",
+    "-q",
+    "--strict-markers",
+    "--strict-config",
+    "-m",
+    "not slow and not e2e",
+]
+markers = [
+    "slow: marks tests as slow (run with: pytest -m slow)",
+    "e2e: marks end-to-end tests (run with: pytest -m e2e)",
+    "docker: marks tests requiring Docker (run with: pytest -m docker)",
+]
+timeout = 120
+
+[tool.coverage.run]
+source = ["src/prisme"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]
+
+[tool.semantic_release]
+version_toml = ["pyproject.toml:project.version"]
+branch = "main"
+commit_message = "chore(release): {version}"
+
+[tool.semantic_release.changelog]
+changelog_file = "CHANGELOG.md"
+
+[tool.semantic_release.commit_parser_options]
+allowed_tags = ["build", "chore", "ci", "docs", "feat", "fix", "perf", "refactor", "style", "test"]
+minor_tags = ["feat"]
+patch_tags = ["fix", "perf"]

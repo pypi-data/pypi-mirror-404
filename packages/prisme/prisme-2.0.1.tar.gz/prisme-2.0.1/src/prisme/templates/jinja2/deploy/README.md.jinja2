@@ -1,0 +1,246 @@
+# {{ project_name }} Deployment
+
+This directory contains Infrastructure-as-Code for deploying {{ project_name }} to Hetzner Cloud.
+
+## Overview
+
+- **Infrastructure**: Terraform for Hetzner Cloud VMs, networks, and volumes
+- **Provisioning**: Cloud-init for server setup (Docker, nginx, firewall)
+- **Deployment**: Docker Compose with GitHub Actions CI/CD
+
+## Prerequisites
+
+1. **Hetzner Cloud Account**
+   - Create account at https://console.hetzner.cloud
+   - Generate API token in Cloud Console → Security → API Tokens
+
+2. **Terraform**
+   - Install Terraform 1.5+ from https://terraform.io
+
+3. **SSH Key**
+   - Generate if needed: `ssh-keygen -t ed25519 -C "deploy@{{ project_name }}"`
+
+## Quick Start
+
+### 1. Configure Environment
+
+```bash
+# Set Hetzner API token
+export HCLOUD_TOKEN="your-api-token"
+
+# Set SSH public key (or add to Hetzner Console manually)
+export TF_VAR_ssh_public_key="$(cat ~/.ssh/id_ed25519.pub)"
+export TF_VAR_hcloud_token="${HCLOUD_TOKEN}"
+```
+
+### 2. Initialize Terraform
+
+```bash
+cd terraform
+terraform init
+```
+
+### 3. Deploy Staging
+
+```bash
+# Preview changes
+terraform plan -var-file=staging.tfvars
+
+# Apply changes
+terraform apply -var-file=staging.tfvars
+```
+
+### 4. Configure Application
+
+```bash
+# Get staging server IP
+STAGING_IP=$(terraform output -raw staging_server_ip)
+
+# Copy environment template
+scp ../env/.env.staging.template deploy@${STAGING_IP}:/opt/{{ project_name }}/.env
+
+# SSH to server and configure
+ssh deploy@${STAGING_IP}
+cd /opt/{{ project_name }}
+vim .env  # Configure secrets
+```
+
+### 5. Deploy Application
+
+```bash
+# Copy docker-compose.prod.yml to server (or use CI/CD)
+scp ../../docker-compose.prod.yml deploy@${STAGING_IP}:/opt/{{ project_name }}/
+
+# On server: start application
+ssh deploy@${STAGING_IP} "cd /opt/{{ project_name }} && docker compose -f docker-compose.prod.yml up -d"
+```
+
+### 6. Setup SSL (Optional)
+
+```bash
+ssh deploy@${STAGING_IP}
+
+# Run certbot for your domain
+sudo certbot --nginx -d staging.{{ domain if domain else 'yourdomain.com' }}
+```
+
+## Deploy Production
+
+```bash
+# Deploy production infrastructure
+terraform plan -var-file=production.tfvars
+terraform apply -var-file=production.tfvars
+
+# Get production IP (use floating IP if enabled)
+PROD_IP=$(terraform output -raw production_floating_ip || terraform output -raw production_server_ip)
+```
+
+## Directory Structure
+
+```
+deploy/
+├── README.md                    # This file
+├── terraform/
+│   ├── main.tf                  # Main infrastructure
+│   ├── variables.tf             # Input variables
+│   ├── outputs.tf               # Output values
+│   ├── versions.tf              # Provider versions
+│   ├── staging.tfvars           # Staging configuration
+│   ├── production.tfvars        # Production configuration
+│   ├── cloud-init/
+│   │   └── user-data.yml        # Server provisioning script
+│   └── modules/
+│       ├── server/              # VM module
+│       └── volume/              # Storage volume module
+├── env/
+│   ├── .env.staging.template    # Staging environment template
+│   └── .env.production.template # Production environment template
+└── scripts/
+    ├── deploy.sh                # Deployment script
+    └── rollback.sh              # Rollback script
+```
+
+## Server Specifications
+
+| Environment | Server Type | vCPU | RAM  | Volume |
+|-------------|-------------|------|------|--------|
+| Staging     | {{ hetzner.staging_server_type.value }}        | 1    | 2GB  | {{ hetzner.staging_volume_size }}GB   |
+| Production  | {{ hetzner.production_server_type.value }}        | 2    | 4GB  | {{ hetzner.production_volume_size }}GB   |
+
+## Useful Commands
+
+### Terraform
+
+```bash
+# View current state
+terraform show
+
+# Destroy staging (WARNING: deletes all data)
+terraform destroy -var-file=staging.tfvars
+
+# Import existing resource
+terraform import hcloud_server.main SERVER_ID
+```
+
+### Server Management
+
+```bash
+# SSH to staging
+$(terraform output -raw staging_ssh_command)
+
+# View Docker logs
+ssh deploy@STAGING_IP "cd /opt/{{ project_name }} && docker compose logs -f"
+
+# Restart application
+ssh deploy@STAGING_IP "sudo systemctl restart {{ project_name }}"
+
+# Database backup
+ssh deploy@STAGING_IP "cd /opt/{{ project_name }} && docker compose exec db pg_dump -U {{ postgres_user }} {{ postgres_db }} > backup.sql"
+```
+
+## CI/CD Integration
+
+The workflow chain `CI → Terraform → Deploy` automates infrastructure provisioning and deployment:
+
+1. **CI workflow** (`ci.yml`): Runs tests on push
+2. **Terraform workflow** (`terraform.yml`): Provisions infrastructure after CI passes
+3. **Deploy workflow** (`deploy.yml`): Deploys application after Terraform completes
+
+### Workflow Triggers
+
+| Workflow | Trigger | Description |
+|----------|---------|-------------|
+| CI | Push to any branch | Runs tests and linting |
+| Terraform | CI success on main, or manual | Provisions/updates infrastructure |
+| Deploy | Terraform success, or manual | Deploys application to server |
+
+### Required GitHub Secrets
+
+| Secret | Description |
+|--------|-------------|
+| `HCLOUD_TOKEN` | Hetzner Cloud API token |
+| `SSH_PUBLIC_KEY` | SSH public key for server provisioning |
+| `SSH_PRIVATE_KEY` | SSH private key for deployment access |
+{% if enable_remote_state %}| `HETZNER_S3_ACCESS_KEY` | Hetzner Object Storage access key |
+| `HETZNER_S3_SECRET_KEY` | Hetzner Object Storage secret key |
+{% endif %}
+
+### Manual Workflow Dispatch
+
+You can manually trigger workflows from the GitHub Actions tab:
+
+**Terraform workflow:**
+- `action`: plan, apply, or destroy
+- `environment`: staging or production
+
+**Deploy workflow:**
+- `environment`: staging or production
+- `server_ip`: Target server IP address (required)
+
+## Troubleshooting
+
+### Server not accessible
+
+```bash
+# Check firewall rules in Hetzner Console
+# Verify security group allows ports 22, 80, 443
+terraform output  # Check IP addresses
+```
+
+### Docker containers not starting
+
+```bash
+ssh deploy@SERVER_IP
+cd /opt/{{ project_name }}
+docker compose -f docker-compose.prod.yml logs
+docker compose -f docker-compose.prod.yml ps
+```
+
+### SSL certificate issues
+
+```bash
+# Check certificate status
+sudo certbot certificates
+
+# Renew certificates manually
+sudo certbot renew --dry-run
+```
+
+## Security Notes
+
+1. **Never commit secrets** - Use environment variables or secret management
+2. **Rotate credentials** - Change passwords and API tokens regularly
+3. **Enable firewall** - Only required ports are open (22, 80, 443)
+4. **Use floating IP** - For production zero-downtime deployments
+5. **Regular backups** - Database volumes should be backed up regularly
+
+## Cost Estimation (Hetzner Cloud)
+
+| Resource | Staging | Production |
+|----------|---------|------------|
+| Server   | ~€4/mo  | ~€8/mo     |
+| Volume   | ~€1/mo  | ~€2/mo     |
+| Floating IP | -    | ~€4/mo     |
+| **Total** | ~€5/mo | ~€14/mo    |
+
+*Prices are approximate and may vary. Check Hetzner pricing for current rates.*

@@ -1,0 +1,51 @@
+#!/bin/bash
+set -e
+
+echo "Setting up workspace: ${WORKSPACE_NAME}"
+
+# Set up persist volume symlinks
+mkdir -p /persist/venv
+ln -sfn /persist/venv /workspace/.venv
+{% if frontend_path %}
+mkdir -p /persist/node_modules
+ln -sfn /persist/node_modules /workspace/{{ frontend_path }}/node_modules
+{% endif %}
+
+# Install prisme from local dev source if mounted, otherwise use PyPI version
+if [ -f "/prism/pyproject.toml" ]; then
+    echo "Installing prisme from local dev source..."
+    pip install -e /prism --quiet
+    # Ensure prisme is on PATH for exec and shell sessions
+    if ! grep -q '/.local/bin' "$HOME/.bashrc" 2>/dev/null; then
+        echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
+    fi
+    export PATH="$HOME/.local/bin:$PATH"
+fi
+
+# Backend setup
+if [ -f "pyproject.toml" ]; then
+    echo "Installing Python dependencies..."
+    uv sync
+fi
+
+{% if frontend_path %}
+# Frontend setup
+if [ -f "{{ frontend_path }}/package.json" ]; then
+    echo "Installing Node dependencies..."
+    cd {{ frontend_path }} && pnpm install
+    cd /workspace
+fi
+{% endif %}
+
+{% if spec_path %}
+# Prism generate (if spec exists)
+if [ -f "{{ spec_path }}" ]; then
+    echo "Running prisme generate..."
+    prisme generate || true
+fi
+{% endif %}
+
+echo ""
+echo "Workspace ready!"
+echo "  URL: http://${WORKSPACE_NAME}.localhost"
+echo ""
