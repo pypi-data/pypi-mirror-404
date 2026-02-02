@@ -1,0 +1,3 @@
+from .summarizer import TextSummarizer
+
+__version__ = "1.2.3"
